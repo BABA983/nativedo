@@ -267,7 +267,8 @@ class DiscourseApiClient(
     private inline fun <T> readableRefusal(write: () -> T): T = try {
         write()
     } catch (refused: retrofit2.HttpException) {
-        val body = runCatching { refused.response()?.errorBody()?.string() }.getOrNull()
+        // The session boundary still needs the original body to classify a challenge.
+        val body = runCatching { refused.response()?.errorBody()?.source()?.peek()?.readUtf8() }.getOrNull()
         val message = body
             ?.let { text -> runCatching { NetworkJson.instance.decodeFromString<DiscourseErrorsDto>(text) }.getOrNull() }
             ?.errors

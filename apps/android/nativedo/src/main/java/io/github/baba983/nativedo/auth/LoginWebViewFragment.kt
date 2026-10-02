@@ -49,9 +49,11 @@ import io.github.baba983.nativedo.core.web.saveDiscourseSvgSpriteMarkup
 import java.util.IdentityHashMap
 import java.util.Collections
 
-class LoginWebViewFragment(
+class LoginWebViewFragment @JvmOverloads constructor(
     /** What to do once the session is usable; the gate uses it to move on to the topic list. */
     private val onAuthenticated: Runnable? = null,
+    /** Recovery is an explicit user completion, never inferred from existing login cookies. */
+    private val recoveryMode: Boolean = false,
 ) : BaseFragment() {
     private val fragmentScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var autofillManager: LoginAutofillManager
@@ -69,17 +71,24 @@ class LoginWebViewFragment(
     private var failedUrl: String? = null
     private var navigationGeneration = 0
     private var failedNavigationGeneration = -1
+    private var completedNavigationGeneration = -1
     private var hasWebHistory = false
     private val popupWebViews = Collections.newSetFromMap(IdentityHashMap<WebView, Boolean>())
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun createView(context: Context): View {
         actionBar.setBackButtonDrawable(BackDrawable(false))
-        actionBar.setTitle(context.getString(R.string.login_webview_title))
+        actionBar.setTitle(context.getString(if (recoveryMode) R.string.verification_webview_title else R.string.login_webview_title))
+        if (recoveryMode) {
+            actionBar.setSubtitle(context.getString(R.string.verification_webview_hint))
+            actionBar.createMenu().addItem(1, context.getString(R.string.verification_complete))
+        }
         actionBar.setActionBarMenuOnItemClick(object : ActionBar.ActionBarMenuOnItemClick() {
             override fun onItemClick(id: Int) {
                 if (id == -1 && onBackPressed(false)) {
                     finishFragment()
+                } else if (id == 1 && recoveryMode) {
+                    completeVerification()
                 }
             }
         })
@@ -114,7 +123,7 @@ class LoginWebViewFragment(
     private fun createLoginWebView(context: Context, root: FrameLayout): WebView {
         val loginWebView = LoginWebViewFactory.create(context, appContainer.userAgent)
         LoginWebViewFactory.configureCookies(loginWebView)
-        autofillManager.attach(loginWebView)
+        if (!recoveryMode) autofillManager.attach(loginWebView)
 
         webView = loginWebView
         rendererGone = false
@@ -219,6 +228,11 @@ class LoginWebViewFragment(
             super.onPageStarted(view, url, favicon)
             if (view !== webView) return
             navigationGeneration += 1
+            completedNavigationGeneration = -1
+            if (recoveryMode) {
+                restoreJob?.cancel()
+                restoreJob = null
+            }
             failedNavigationGeneration = -1
             failedUrl = null
             hideLoadError()
@@ -252,9 +266,10 @@ class LoginWebViewFragment(
             if (!loginWebCanCompleteNavigation(navigationGeneration, failedNavigationGeneration)) {
                 return
             }
-            autofillManager.onPageFinished(view, url)
+            completedNavigationGeneration = navigationGeneration
+            if (!recoveryMode) autofillManager.onPageFinished(view, url)
             captureDiscourseAssetsIcons(webView = view, currentUrl = url)
-            maybeCompleteLogin(webView = view, currentUrl = url)
+            if (!recoveryMode) maybeCompleteLogin(webView = view, currentUrl = url)
         }
 
         override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
@@ -284,6 +299,15 @@ class LoginWebViewFragment(
             request: WebResourceRequest,
             errorResponse: WebResourceResponse,
         ) {
+            // Cloudflare's 403 document contains the interactive verification. Do not cover it
+            // with a native error panel, but it is still not a completed navigation.
+            if (recoveryMode && view === webView && request.isForMainFrame && errorResponse.statusCode == 403) {
+                failedNavigationGeneration = navigationGeneration
+                completedNavigationGeneration = -1
+                progressJob?.cancel()
+                progressView?.setProgress(0f, false)
+                return
+            }
             if (loginWebShouldShowMainFrameError(request.isForMainFrame, errorResponse.statusCode)) {
                 showLoadError(
                     view = view,
@@ -512,6 +536,12 @@ class LoginWebViewFragment(
         if (hasFinished) {
             return true
         }
+        if (recoveryMode) {
+            hasFinished = true
+            restoreJob?.cancel()
+            restoreJob = null
+            return true
+        }
         val view = webView ?: return true
         return when (
             loginWebBackAction(
@@ -535,6 +565,7 @@ class LoginWebViewFragment(
     }
 
     override fun canBeginSlide(): Boolean {
+        if (recoveryMode) return true
         return restoreJob?.isActive != true && webView?.canGoBack() != true && !hasWebHistory
     }
 
@@ -607,17 +638,38 @@ class LoginWebViewFragment(
     }
 
     private fun startLoginCompletion(webView: WebView, currentUrl: String) {
+        val generation = navigationGeneration
         restoreJob = fragmentScope.launch {
             val authenticated = appContainer.completeLoginUseCase(webView, currentUrl)
+            if (hasFinished || (recoveryMode && generation != navigationGeneration)) return@launch
             if (authenticated) {
                 hasFinished = true
+                if (recoveryMode) {
+                    Toast.makeText(webView.context, R.string.verification_session_synced, Toast.LENGTH_LONG).show()
+                }
                 val next = onAuthenticated
                 if (next != null) {
                     next.run()
                 } else {
                     finishFragment()
                 }
+            } else if (recoveryMode) {
+                Toast.makeText(webView.context, R.string.verification_not_completed, Toast.LENGTH_LONG).show()
             }
         }
+    }
+
+    private fun completeVerification() {
+        if (hasFinished || restoreJob?.isActive == true) return
+        val view = webView ?: return
+        val url = view.url.orEmpty()
+        if (completedNavigationGeneration != navigationGeneration ||
+            !loginWebCanCompleteNavigation(navigationGeneration, failedNavigationGeneration) ||
+            !shouldAttemptLoginSessionRestore(url, appContainer.baseUrl, hasFinished, false)
+        ) {
+            Toast.makeText(view.context, R.string.verification_not_completed, Toast.LENGTH_LONG).show()
+            return
+        }
+        startLoginCompletion(view, url)
     }
 }

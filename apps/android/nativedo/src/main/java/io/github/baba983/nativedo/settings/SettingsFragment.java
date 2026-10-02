@@ -19,6 +19,7 @@ import org.telegram.ui.ThemeActivity;
 
 import io.github.baba983.nativedo.app.NativeDo;
 import io.github.baba983.nativedo.app.NativeDoActivity;
+import io.github.baba983.nativedo.auth.LoginWebViewFragment;
 import io.github.baba983.nativedo.bookmarks.BookmarksFragment;
 import io.github.baba983.nativedo.core.di.AppContainer;
 import io.github.baba983.nativedo.core.session.SessionSnapshot;
@@ -41,8 +42,9 @@ public class SettingsFragment extends BaseFragment {
     private static final int ROW_BOOKMARKS = 3;
     private static final int ROW_ACCOUNT_HEADER = 4;
     private static final int ROW_ACCOUNT = 5;
-    private static final int ROW_SIGN_OUT = 6;
-    private static final int ROW_COUNT = 7;
+    private static final int ROW_VERIFY = 6;
+    private static final int ROW_SIGN_OUT = 7;
+    private static final int ROW_COUNT = 8;
 
     private AppContainer container;
     private String username = "";
@@ -73,6 +75,8 @@ public class SettingsFragment extends BaseFragment {
                 presentFragment(new BookmarksFragment());
             } else if (position == ROW_ACCOUNT) {
                 presentFragment(ProfileFragment.forUser(username, displayName));
+            } else if (position == ROW_VERIFY) {
+                presentFragment(new LoginWebViewFragment(null, true));
             } else if (position == ROW_SIGN_OUT) {
                 confirmSignOut();
             }
@@ -130,6 +134,9 @@ public class SettingsFragment extends BaseFragment {
                 cell.setText("书签", true);
             } else if (position == ROW_ACCOUNT) {
                 cell.setTextAndValue("已登录", username.isEmpty() ? "" : "@" + username, true);
+            } else if (position == ROW_VERIFY) {
+                cell.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+                cell.setText(getParentActivity().getString(io.github.baba983.nativedo.R.string.reply_failed_verify), true);
             } else if (position == ROW_SIGN_OUT) {
                 cell.setTextColor(Theme.getColor(Theme.key_text_RedRegular));
                 cell.setText("退出登录", false);

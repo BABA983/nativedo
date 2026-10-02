@@ -178,18 +178,46 @@ internal class ReplyTest {
             "the dialog offers the verification page",
             dialogButtonTexts(dialog).any { text -> text.contains("验证") },
         )
+        val shell = harness.activity as io.github.baba983.nativedo.app.NativeDoActivity
+        val layoutField = shell.javaClass.getDeclaredField("actionBarLayout").apply { isAccessible = true }
+        val layout = layoutField.get(shell) as org.telegram.ui.ActionBar.INavigationLayout
+        assertEquals("the action is verification, not a generic dismissal", "打开验证页",
+            (dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE) as android.widget.TextView).text.toString())
+        dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).performClick()
+        harness.idle()
+        harness.await("verification opened from the reply failure") {
+            layout.fragmentStack.last().javaClass.simpleName == "LoginWebViewFragment"
+        }
+        val verification = layout.fragmentStack.last()
+        assertEquals("LoginWebViewFragment", verification.javaClass.simpleName)
+        val web = verification.javaClass.getDeclaredField("webView").apply { isAccessible = true }
+            .get(verification) as android.webkit.WebView
+        val shadow = org.robolectric.Shadows.shadowOf(web)
+        harness.await("the verification navigation") { shadow.lastLoadedUrl != null }
+        web.loadUrl(site.baseUrl)
+        shadow.webViewClient.onPageStarted(web, site.baseUrl, null)
+        shadow.webViewClient.onPageFinished(web, site.baseUrl)
+        harness.idle()
+        assertEquals("old auth must not complete recovery on page load", verification, layout.fragmentStack.last())
+        shell.onBackPressed()
+        harness.idle()
+        assertEquals("cancel returns to the same topic", "TopicFragment", layout.fragmentStack.last().javaClass.simpleName)
+        assertEquals("the original composer and draft survive", marker, composer.fieldText.toString())
+        harness.idleClock(12_000)
+        assertEquals("opening and cancelling verification never replays the reply", 1, postAttempts())
         harness.assertNoTelegramSideEffects()
     }
 
     /** The reply-failure dialog, which may not be the last dialog another test left behind. */
     private fun awaitReplyFailureDialog(): org.telegram.ui.ActionBar.AlertDialog {
+        val shell = harness.activity as io.github.baba983.nativedo.app.NativeDoActivity
+        val layout = shell.javaClass.getDeclaredField("actionBarLayout").apply { isAccessible = true }
+            .get(shell) as org.telegram.ui.ActionBar.INavigationLayout
         repeat(60) {
             harness.idleClock(100)
             harness.idle()
-            val shown = org.robolectric.shadows.ShadowDialog.getShownDialogs()
-                .filterIsInstance<org.telegram.ui.ActionBar.AlertDialog>()
-                .lastOrNull { dialog -> dialog.window?.decorView != null }
-            if (shown != null) {
+            val shown = layout.fragmentStack.last().visibleDialog as? org.telegram.ui.ActionBar.AlertDialog
+            if (shown != null && shown.isShowing && "回复失败" in dialogButtonTexts(shown)) {
                 return shown
             }
             java.util.concurrent.locks.LockSupport.parkNanos(2_000_000L)

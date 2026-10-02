@@ -39,7 +39,12 @@ class SessionCookieInterceptor(private val cookieStore: CookieStore) : Intercept
             "/", "/latest", "/latest.json" -> "feed"
             else -> "other"
         }
-        SessionDiagnostics.response(revision, response.code, accepted, evidence.name, route,
+        val operation = when (url.encodedPath) {
+            "/posts.json" -> "posts"
+            "/topics/timings" -> "timings"
+            else -> "other"
+        }
+        SessionDiagnostics.response(revision, response.code, accepted, evidence.name, route, operation,
             cookies.any { it.name == "_t" }, cookies.any { it.name == "_forum_session" },
             cookies.any { it.name == "cf_clearance" }, cookies.any { it.name == "_rt" },
             responseCookies.any { it.name == "_t" },

@@ -20,6 +20,7 @@ import io.github.baba983.nativedo.harness.shadows.ShadowSQLiteCursor
 import io.github.baba983.nativedo.harness.shadows.ShadowSQLiteDatabase
 import io.github.baba983.nativedo.harness.shadows.ShadowSQLitePreparedStatement
 import io.github.baba983.nativedo.harness.shadows.ShadowUtilities
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -134,7 +135,7 @@ internal class SettingsTabTest {
         harness.layoutApp()
         assertTrue("the reader is signed in to start with", container.cookieStore.hasAuthenticatedCookies())
 
-        clickRow(6)
+        clickNamedRow("退出登录")
         val confirm = ShadowDialog.getLatestDialog() as? AlertDialog
             ?: throw AssertionError("leaving the account asked nothing")
         println("settings: the dialog says " + dialogTexts(confirm))
@@ -153,6 +154,141 @@ internal class SettingsTabTest {
         harness.layoutApp()
         harness.renderApp("settings-signed-out")
         harness.assertNoTelegramSideEffects()
+    }
+
+    /** Existing auth must not auto-close recovery or turn Back into a successful completion. */
+    @Test
+    fun verificationKeepsTheSessionAndCancelDoesNotCompleteItEvenWithHistory() {
+        val shell = openVerificationFromSettings()
+        val identity = container.sessionStore.snapshot()
+        val generation = container.sessionCoordinator.currentRequestContext()
+        val cookies = container.cookieStore.load(site.baseUrl.toHttpUrl())
+        val draftKey = io.github.baba983.nativedo.feature.topic.data.TopicReplyDraftKey(site.baseUrl, "baba", 101)
+        val readKey = io.github.baba983.nativedo.feature.topic.data.TopicReadPositionKey(site.baseUrl, "baba", 101)
+        val draft = io.github.baba983.nativedo.feature.topic.data.TopicReplyDraft("kept draft", 7)
+        container.topicReplyDraftStore.save(draftKey, draft)
+        container.topicReadPositionStore.save(readKey, 19)
+        val web = verificationWebView()
+        finishWebPage(web, site.baseUrl)
+        harness.idleClock(12_000)
+        assertEquals("existing cookies leave the page visible", "LoginWebViewFragment", currentFragmentName(shell))
+        assertEquals("page load is not session recovery", generation, container.sessionCoordinator.currentRequestContext())
+        org.robolectric.Shadows.shadowOf(web).setCanGoBack(true)
+        back()
+        harness.await("cancel back to settings") { currentFragmentName(shell) == "SettingsFragment" }
+        assertEquals(identity, container.sessionStore.snapshot())
+        assertEquals(cookies, container.cookieStore.load(site.baseUrl.toHttpUrl()))
+        assertEquals(draft, container.topicReplyDraftStore.load(draftKey))
+        assertEquals(19, container.topicReadPositionStore.load(readKey))
+        assertEquals(generation, container.sessionCoordinator.currentRequestContext())
+        assertNoWrites()
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /** A late DOM callback after cancellation must not announce recovery or replace the stack. */
+    @Test
+    fun cancelDuringExplicitCompletionDiscardsTheLateResult() {
+        val shell = openVerificationFromSettings()
+        val generation = container.sessionCoordinator.currentRequestContext()
+        val web = verificationWebView()
+        finishWebPage(web, site.baseUrl)
+        completeVerification(shell)
+        val callback = org.robolectric.Shadows.shadowOf(web).lastEvaluatedJavascriptCallback
+            ?: throw AssertionError("completion never asked the page for identity")
+        back()
+        harness.await("cancel the in-flight completion") { currentFragmentName(shell) == "SettingsFragment" }
+        callback.onReceiveValue(org.json.JSONObject.quote("""{"username":"baba","name":"Baba"}"""))
+        harness.idle()
+        assertEquals("SettingsFragment", currentFragmentName(shell))
+        assertEquals("a cancelled completion cannot publish recovery", generation,
+            container.sessionCoordinator.currentRequestContext())
+        assertNoWrites()
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /** Failure and external navigation cannot complete; an explicit same-origin finish only syncs. */
+    @Test
+    fun onlyAnExplicitFinishOnALoadedSitePageSyncsWithoutAWriteProbe() {
+        val shell = openVerificationFromSettings()
+        val web = verificationWebView()
+        val generation = container.sessionCoordinator.currentRequestContext()
+        val client = org.robolectric.Shadows.shadowOf(web).webViewClient
+        web.loadUrl(site.baseUrl)
+        client.onPageStarted(web, site.baseUrl, null)
+        client.onReceivedHttpError(web, object : android.webkit.WebResourceRequest {
+            override fun getUrl() = android.net.Uri.parse(site.baseUrl)
+            override fun isForMainFrame() = true
+            override fun isRedirect() = false
+            override fun hasGesture() = false
+            override fun getMethod() = "GET"
+            override fun getRequestHeaders() = emptyMap<String, String>()
+        }, android.webkit.WebResourceResponse("text/html", "UTF-8", 403, "Forbidden", emptyMap(), null))
+        client.onPageFinished(web, site.baseUrl)
+        completeVerification(shell)
+        assertEquals("a failed page cannot complete", generation, container.sessionCoordinator.currentRequestContext())
+        assertEquals("the challenge page stays available", View.VISIBLE, web.visibility)
+        finishWebPage(web, "https://example.org/oauth")
+        completeVerification(shell)
+        assertEquals("neither can an external page", generation, container.sessionCoordinator.currentRequestContext())
+
+        finishWebPage(web, site.baseUrl)
+        android.webkit.CookieManager.getInstance().setCookie(site.baseUrl, "cf_clearance=renewed-clearance; Path=/")
+        completeVerification(shell)
+        val shadow = org.robolectric.Shadows.shadowOf(web)
+        shadow.lastEvaluatedJavascriptCallback!!.onReceiveValue(
+            org.json.JSONObject.quote("""{"username":"baba","name":"Baba"}"""))
+        harness.await("explicit completion back to settings") { currentFragmentName(shell) == "SettingsFragment" }
+        assertTrue(container.cookieStore.hasAuthenticatedCookies())
+        assertEquals("renewed-clearance", container.cookieStore.load(site.baseUrl.toHttpUrl())
+            .first { it.name == "cf_clearance" }.value)
+        assertTrue("completion actually ran the session use case",
+            generation != container.sessionCoordinator.currentRequestContext())
+        assertNoWrites()
+        harness.assertNoTelegramSideEffects()
+    }
+
+    private fun openVerificationFromSettings(): NativeDoActivity {
+        val shell = harness.bootApp()
+        harness.await("the topic list") { currentFragmentName(shell) == "TopicListFragment" }
+        tapTab(2)
+        harness.await("settings") { currentFragmentName(shell) == "SettingsFragment" }
+        harness.layoutApp()
+        assertTrue("the account area offers non-destructive recovery", "打开验证页" in rowTexts())
+        clickNamedRow("打开验证页")
+        harness.await("verification WebView") { currentFragmentName(shell) == "LoginWebViewFragment" }
+        val web = verificationWebView()
+        harness.await("cookies before the first navigation") {
+            org.robolectric.Shadows.shadowOf(web).lastLoadedUrl != null
+        }
+        assertEquals("the verification entry uses a GET navigation", site.url("/login"),
+            org.robolectric.Shadows.shadowOf(web).lastLoadedUrl)
+        assertTrue("the browser keeps the existing auth", container.cookieSyncBridge.hasAuthenticatedCookiesInWebView())
+        return shell
+    }
+
+    private fun verificationWebView(): android.webkit.WebView =
+        viewsUnder(harness.activity.findViewById(android.R.id.content))
+            .filterIsInstance<android.webkit.WebView>().last()
+
+    private fun finishWebPage(web: android.webkit.WebView, url: String) {
+        web.loadUrl(url)
+        val client = org.robolectric.Shadows.shadowOf(web).webViewClient
+        client.onPageStarted(web, url, null)
+        client.onPageFinished(web, url)
+        harness.idle()
+    }
+
+    private fun completeVerification(shell: NativeDoActivity) {
+        val fragment = currentFragment(shell) as org.telegram.ui.ActionBar.BaseFragment
+        val item = viewsUnder(fragment.actionBar).filterIsInstance<org.telegram.ui.ActionBar.ActionBarMenuItem>()
+            .single { "完成验证" in viewsUnder(it).filterIsInstance<TextView>().map { text -> text.text.toString() } }
+        item.performClick()
+        harness.idle()
+    }
+
+    private fun assertNoWrites() {
+        assertTrue("verification does not probe posts, timings, upload or logout",
+            site.recordedRequests.all { it.startsWith("GET ") || it.startsWith("HEAD ") })
     }
 
     // ------------------------------------------------------------------ shell traversal
@@ -207,6 +343,15 @@ internal class SettingsTabTest {
     }
 
     /** A tap on the row at the adapter's [position], the way the list hands one over. */
+    private fun clickNamedRow(label: String) {
+        harness.layoutApp()
+        val list = contentListOf(harness.activity) ?: throw AssertionError("the settings list is gone")
+        val child = (0 until list.childCount).map { list.getChildAt(it) }
+            .single { label in viewsUnder(it).filterIsInstance<TextView>().map { text -> text.text.toString() } }
+        list.clickItem(child, list.getChildAdapterPosition(child))
+        harness.idle()
+    }
+
     private fun clickRow(position: Int) {
         val list = contentListOf(harness.activity) ?: throw AssertionError("the settings list is gone")
         harness.layoutApp()

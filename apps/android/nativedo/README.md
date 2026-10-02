@@ -176,6 +176,26 @@ stands, and the upstream component each row is meant to use.
 - 设置页：外观 / 我的 / 账号三组的行高与间距是否符合上游观感；退出登录的确认框、清 cookie 后回到登录页、再登录回来后话题与通知是否正常。
 - 通知 tab：没有推送和未读计数时，列表的排序和徽章是否仍然清楚。
 
+### 本片验证（2026-10-03，`emulator-5556`）
+
+- 设置账号区新增上游 `TextSettingsCell`「打开验证页」。恢复 WebView 不自动完成、不填凭据；
+  用户点「完成验证」才同步会话。登录有效不等于 Cloudflare 允许原生写入，不发验证 POST、不重放回复。
+- 先补失败路径测试；设置、登录、回复、阅读进度共 20 项通过，原正向恢复断言保留。
+  完整套件实际跑了 78 项，最后为 76 通过、2 失败：`ProfileScreenTest` 的头像像素等待、
+  `AvatarRenderTest.theTopicListRowsDrawTheAuthorAvatar` 的图片颜色断言。头像相关 4 项独跑、
+  与登录组合的 7 项均通过；全量原因未定，不能算全量绿灯或连续五次通过。
+- 回复入口测试另查到 `readableRefusal` 消耗了挑战 HTML；改为 peek，不改错误分类规则。
+  会话日志新增固定 `operation=posts/timings/other`，不记录正文、cookie、query 或身份。
+- arm64 `assembleDebug` 通过，`adb -s emulator-5556 install -r -t` 覆盖安装成功，版本 `0.1.0 (1)`。
+  APK SHA-256 为 `1cbcd8ff5ad5fa226572fc88911979ab97cbee27857f76e64ca74ded6da3fecf`，
+  已从安装包读回确认相同；保留首次安装数据与代理 `10.0.2.2:7890`。
+- 设备实测：设置入口、完整提示、已登录网页保持可见、系统返回取消并保留登录均通过。
+  系统返回原先绕过 fragment，已在自己的 Activity 注册新返回回调；没有修改上游。
+  窗口最终停在真实已登录站点的验证页，尚未点击「完成验证」。记录和脱敏截图在
+  `.amp/in/artifacts/session-verification/`；该进程的会话日志没有 posts/timings 响应或 login_committed。
+- 待用户完成网页验证并明确继续后，仅在 `/t/topic/2975944` 验证回复、上传、回应。
+  视频按需下载/取消、附件设备复验、同一 HEAD 连续五次全量验证仍未完成。
+
 ### 设备验证结果（2026-10-01/02，AVD `nativedo-test`／android-35 google_apis_tablet arm64-v8a，`emulator-5556`）
 
 环境：Apple Silicon Mac mini，模拟器内全局代理 `10.0.2.2:7890`（这台机器上跑着的 ClashX Meta）。

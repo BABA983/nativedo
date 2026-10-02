@@ -1022,7 +1022,7 @@ public class TopicFragment extends BaseFragment {
             if (reporter != null) {
                 reporter.onSessionRecovered();
             }
-        });
+        }, true);
         presentFragment(holder[0]);
     }
 
@@ -1080,7 +1080,7 @@ public class TopicFragment extends BaseFragment {
                 reporter.onSessionRecovered();
             }
             runRetry();
-        });
+        }, true);
         presentFragment(holder[0]);
     }
 

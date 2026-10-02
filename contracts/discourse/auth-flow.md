@@ -26,6 +26,25 @@ linux.do username/password in native code.
    temporarily, try the homepage bootstrap (`meta[name=current-username]` or
    `#data-preloaded`) before showing a recovery state.
 
+## Visible session recovery
+
+The full-upstream `:nativedo` settings account section and topic recovery actions
+open the same login WebView in recovery mode. Keep the existing cookies, identity,
+topic position and reply draft. Loading a page or pressing Back never completes
+recovery, even with authenticated cookies; Back cancels, including pending DOM
+callbacks. Recovery does not autofill credentials.
+
+After the reader finishes the site's verification, they press `完成验证` on a
+successfully loaded same-origin page outside `/login`. Reuse the login completion
+use case to import cookies and persist the session. A main-frame 403 document
+stays visible so its challenge can be used, but cannot complete recovery until
+a successful navigation. Normal first login still completes automatically.
+
+Authenticated means the login is usable, not that Cloudflare permits native
+writes. Do not send a write probe or replay a reply on opening or completion.
+Topic read recovery may retry the failed read and re-arm its existing timing
+reporter only after explicit completion. A reply still requires a new user send.
+
 ## Native Requests
 
 1. Replay persisted cookies through a network interceptor for JSON and image
@@ -128,7 +147,9 @@ Full browser attribute fidelity remains limited by the Android CookieManager API
 `adb logcat -s NativeDoSession` reports fixed event names, cookie revision,
 HTTP status, response classification, fixed route categories, presence of
 `_t`/`_forum_session`/`cf_clearance`/`_rt`, token update/deletion flags and
-acceptance flags. It never records cookie values, usernames, URLs or response
+acceptance flags. The full-upstream client also labels responses with fixed
+`operation=posts`, `operation=timings` or `operation=other`. It never records
+cookie values, usernames, URLs, query strings or response
 bodies. Events cover native responses, stale browser imports,
 startup recovery, missing auth cookies, committed login and expiration reason,
 plus the rotation reconciles: `webview_session_adopted` (the browser's values

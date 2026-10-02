@@ -113,6 +113,29 @@ internal class SessionGateTest {
         harness.assertNoTelegramSideEffects()
     }
 
+    /** Recovery's explicit finish must not disable normal first-login automatic completion. */
+    @Test
+    fun firstLoginStillCompletesAutomaticallyOnTheSitePage() {
+        val container = containerWithNoSession()
+        harness.bootApp()
+        harness.await("login") { currentFragmentName() == "LoginWebViewFragment" }
+        val fragment = currentFragment() as LoginWebViewFragment
+        val web = LoginWebViewFragment::class.java.getDeclaredField("webView")
+            .apply { isAccessible = true }.get(fragment) as android.webkit.WebView
+        harness.await("login navigation") { org.robolectric.Shadows.shadowOf(web).lastLoadedUrl != null }
+        android.webkit.CookieManager.getInstance().setCookie(baseUrl, "_t=new-login; Path=/")
+        web.loadUrl(baseUrl)
+        val shadow = org.robolectric.Shadows.shadowOf(web)
+        shadow.webViewClient.onPageStarted(web, baseUrl, null)
+        shadow.webViewClient.onPageFinished(web, baseUrl)
+        shadow.lastEvaluatedJavascriptCallback!!.onReceiveValue(
+            org.json.JSONObject.quote("""{"username":"baba","name":"Baba"}"""))
+        harness.await("normal login to open the feed") { currentFragmentName() == "TopicListFragment" }
+        assertTrue(container.cookieStore.hasAuthenticatedCookies())
+        assertEquals("baba", container.sessionStore.snapshot()?.username)
+        harness.assertNoTelegramSideEffects()
+    }
+
     // ------------------------------------------------------------------ fixtures
 
     private fun containerWithNoSession(): AppContainer {

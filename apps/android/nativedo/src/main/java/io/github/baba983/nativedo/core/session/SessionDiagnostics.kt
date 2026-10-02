@@ -5,11 +5,12 @@ import android.util.Log
 /** Only fixed event names, counters and booleans; never URLs, identities or cookie values. */
 internal object SessionDiagnostics {
     fun response(revision: Long, status: Int, accepted: Boolean, evidence: String, route: String,
+        operation: String,
         hasToken: Boolean, hasForumSession: Boolean, hasClearance: Boolean, hasRuntime: Boolean,
         setsToken: Boolean, deletesToken: Boolean) {
         runCatching {
             Log.i("NativeDoSession", "event=native_response revision=$revision status=$status accepted=$accepted " +
-                "evidence=$evidence route=$route hasToken=$hasToken hasForumSession=$hasForumSession " +
+                "evidence=$evidence route=$route operation=$operation hasToken=$hasToken hasForumSession=$hasForumSession " +
                 "hasClearance=$hasClearance hasRuntime=$hasRuntime setsToken=$setsToken deletesToken=$deletesToken")
         }
     }
