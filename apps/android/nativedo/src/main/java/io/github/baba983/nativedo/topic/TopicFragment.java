@@ -993,8 +993,14 @@ public class TopicFragment extends BaseFragment {
         lastFailure = TopicLoadFailure.of(error);
         org.telegram.messenger.FileLog.e("topic failed", error);
         if (!bubbles.isEmpty()) {
-            showError(org.telegram.messenger.ApplicationLoader.applicationContext.getString(
-                    io.github.baba983.nativedo.R.string.topic_failed_title), error);
+            // The topic is on screen, so the rows the reader has are still good: this was a page
+            // that did not arrive, not the topic. It is said in passing - a modal would stop the
+            // reader over something they did not ask for - and the next scroll asks for it again.
+            android.widget.Toast.makeText(
+                    org.telegram.messenger.ApplicationLoader.applicationContext,
+                    org.telegram.messenger.ApplicationLoader.applicationContext.getString(
+                            io.github.baba983.nativedo.R.string.topic_page_failed),
+                    android.widget.Toast.LENGTH_SHORT).show();
             return;
         }
         if (failureView == null) {
