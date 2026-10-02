@@ -83,15 +83,26 @@ internal class ReactionEmojiTest {
 
     private val mappedPath = "emoji/mapped$runToken.png"
     private val failedPath = "emoji/failed$runToken.png"
+    private val htmlId = "h$runToken"
+    private val corruptId = "c$runToken"
+    private val htmlPath = "emoji/notapicture$runToken.html"
+    private val corruptPath = "emoji/corrupt$runToken.png"
 
     /** The colour only the site's own picture has, so a fallback can never be mistaken for it. */
     private val servedMagenta = Color.rgb(255, 0, 255)
+
+    /** The colour of the picture that replaces a corrupt cache entry. */
+    private val servedCyan = Color.rgb(0, 255, 255)
 
     @Before
     fun setUp() {
         site.start()
         site.serveImage(mappedPath, solidPng(servedMagenta, 96))
         // failedPath is deliberately not served: the site answers it 404.
+        // A 200 whose body is not a picture at all, and a picture the cache already holds bad
+        // bytes for: both must end as the reaction's fallback, and the second must be replaced.
+        site.serveImage(htmlPath, "<html>not a picture</html>".toByteArray(), contentType = "text/html")
+        site.serveImage(corruptPath, solidPng(servedCyan, 96))
         site.serveTopic(TOPIC_ID) { post ->
             post.put("cooked", "<p>反应如下。</p>")
             post.put("reaction_users_count", 6)
@@ -119,9 +130,12 @@ internal class ReactionEmojiTest {
 
         val mappedFile = DiscourseReactionEmoji.file(site.url(mappedPath))
         harness.await("the site's picture to land on disk") { mappedFile.exists() && mappedFile.length() > 0 }
-        harness.await("the missing icons to become fallbacks") {
-            DiscourseReactionEmoji.fallbackFile(failedId).exists() &&
-                DiscourseReactionEmoji.fallbackFile(unmappedId).exists()
+        // The registration is what the chip draws from, and it happens after the bytes are written
+        // (and, for the fallbacks, drawn) on another thread, so the wait is for the table entries,
+        // not only the files.
+        harness.await("the ids to be handed to upstream's table") {
+            val table = MediaDataController.getInstance(0).getReactionsMap()
+            table[mappedId] != null && table[failedId] != null && table[unmappedId] != null
         }
 
         val table = MediaDataController.getInstance(0).getReactionsMap()
@@ -181,6 +195,70 @@ internal class ReactionEmojiTest {
         harness.assertNoTelegramSideEffects()
     }
 
+    /**
+     * Two ways a reaction's icon can look fetched but not be drawable: the site answers 200 with
+     * something that is not a picture, or the cache already holds bytes that are not one. Neither
+     * may be published - the chip would ask the loader for it, the decode would fail, and the
+     * reaction would read as a bare count with no fallback. The 200 case falls back; the corrupt
+     * cache is replaced by the picture the site really serves and that picture is drawn.
+     */
+    @Test
+    fun a200ThatIsNotAPictureFallsBackAndACorruptCacheIsReplacedByTheRealPicture() {
+        site.serveTopic(BAD_PICTURE_TOPIC_ID) { post ->
+            post.put("cooked", "<p>坏图。</p>")
+            post.put("reaction_users_count", 2)
+            post.put("reactions", JSONArray().apply {
+                put(JSONObject().put("id", htmlId).put("count", 1).put("icon", site.url(htmlPath)))
+                put(JSONObject().put("id", corruptId).put("count", 1).put("icon", site.url(corruptPath)))
+            })
+        }
+
+        harness.bootApp()
+        harness.await("the topic list to load") { rowCount() == 2 }
+        // Seed the corrupt cache once the app's cache directories exist, before the topic asks for
+        // the picture, so the loader finds bytes that are not a picture where it looks.
+        val corruptFile = DiscourseReactionEmoji.file(site.url(corruptPath))
+        corruptFile.parentFile?.mkdirs()
+        corruptFile.writeBytes("not a picture either".toByteArray())
+        harness.present(TopicFragment.forTopic(BAD_PICTURE_TOPIC_ID, "Bad pictures"))
+        harness.await("the topic to load") { rowCount() == 1 }
+
+        val servedCyanPng = solidPng(servedCyan, 96)
+        harness.await("the corrupt cache to be replaced by the site's picture") {
+            corruptFile.readBytes().contentEquals(servedCyanPng)
+        }
+        harness.await("the chips to draw their pictures") {
+            harness.drawApp()
+            val cell = firstCell()
+            chip(cell, htmlId)?.imageReceiver?.bitmap != null &&
+                chip(cell, corruptId)?.imageReceiver?.bitmap != null
+        }
+
+        val cell = firstCell()
+        val htmlBitmap = chip(cell, htmlId)!!.imageReceiver!!.bitmap!!
+        val corruptBitmap = chip(cell, corruptId)!!.imageReceiver!!.bitmap!!
+        val htmlFallback = dominantColour(DiscourseReactionEmoji.fallbackFile(htmlId))
+        assertTrue(
+            "the 200 that is not a picture drew its fallback",
+            colourCount(htmlBitmap, htmlFallback) > 0,
+        )
+        assertTrue(
+            "the real picture replaced the corrupt cache and is drawn",
+            colourCount(corruptBitmap, servedCyan) > 0,
+        )
+        assertFalse(
+            "and no fallback was used where the picture arrived",
+            DiscourseReactionEmoji.fallbackFile(corruptId).exists(),
+        )
+        println(
+            "reaction-emoji-cache: htmlFallback=${Integer.toHexString(htmlFallback)} " +
+                "pixels=${colourCount(htmlBitmap, htmlFallback)} " +
+                "corruptCacheReplaced=${corruptFile.length()} cyanPixels=${colourCount(corruptBitmap, servedCyan)}",
+        )
+        harness.renderApp("reactions-emoji-bad-cache")
+        harness.assertNoTelegramSideEffects()
+    }
+
     private fun firstCell(): ChatMessageCell =
         laidOutCells().firstOrNull { it.messageObject != null }
             ?: throw AssertionError("the topic drew no message cell")
@@ -229,5 +307,6 @@ internal class ReactionEmojiTest {
 
     private companion object {
         const val TOPIC_ID = 707L
+        const val BAD_PICTURE_TOPIC_ID = 708L
     }
 }

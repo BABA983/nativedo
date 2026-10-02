@@ -1,6 +1,7 @@
 package io.github.baba983.nativedo.topic
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -58,13 +59,19 @@ object DiscourseReactionEmoji {
     /** Fetches the picture when it is not on disk yet; null when the site answered nothing usable. */
     suspend fun cache(client: OkHttpClient, url: String): File? = withContext(Dispatchers.IO) {
         val file = file(url)
-        if (file.exists() && file.length() > 0) {
+        // A cache file that is not a decodable picture is not this reaction's icon: an interstitial
+        // the site answered with a 200, or a transfer that was cut short, must not be published as
+        // one - the loader would fail to decode it and the chip would read as a bare count with no
+        // fallback. So the bytes are checked, not the response code or the content type, and a cache
+        // file that fails is replaced rather than trusted.
+        if (isPicture(file)) {
             return@withContext file
         }
         runCatching {
             client.newCall(Request.Builder().url(url).build()).execute().use { response ->
                 check(response.isSuccessful) { "GET $url answered ${response.code}" }
                 val bytes = response.body?.bytes() ?: error("GET $url answered no body")
+                check(isPicture(bytes)) { "GET $url answered something that is not a picture" }
                 check(AtomicFileWrite.bytes(file, bytes)) { "cannot move ${file.name} into place" }
             }
             file
@@ -72,6 +79,26 @@ object DiscourseReactionEmoji {
             error.printStackTrace()
             null
         }
+    }
+
+    /** Whether the file the loader would open really is a picture it can decode. */
+    private fun isPicture(file: File): Boolean {
+        if (!file.exists() || file.length() <= 0) {
+            return false
+        }
+        val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return false
+        bitmap.recycle()
+        return true
+    }
+
+    /** Whether the bytes the site answered really are a picture, before they are published. */
+    private fun isPicture(bytes: ByteArray): Boolean {
+        if (bytes.isEmpty()) {
+            return false
+        }
+        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return false
+        bitmap.recycle()
+        return true
     }
 
     /**
@@ -134,7 +161,10 @@ object DiscourseReactionEmoji {
         }
     }
 
-    /** A colour of the emoticon's own, so two fallbacks never look alike and a reader can tell them apart. */
+    /**
+     * A colour of the emoticon's own, as a second cue beside the label. There are only so many
+     * hues, so two fallbacks can share one; the label is what tells them apart.
+     */
     private fun colorOf(emoticon: String): Int {
         val hue = Math.floorMod(emoticon.hashCode(), 360).toFloat()
         return Color.HSVToColor(floatArrayOf(hue, 0.62f, 0.78f))

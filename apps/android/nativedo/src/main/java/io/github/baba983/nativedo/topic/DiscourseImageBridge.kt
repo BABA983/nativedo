@@ -296,22 +296,36 @@ object DiscourseImageBridge {
             // The block's own state is what turns on this: it is told the fetch exists before the
             // first byte, so the reader sees a download rather than a play button that seems dead.
             reportVideoProgress(name, 0L, 0L)
-            // The transfer writes a private temporary file, not the clip's own name: the bytes it
-            // has written must not be a file the block could read as the clip, and the name must be
-            // this fetch's own so a cancel removes only its own half-written bytes.
-            val partial = AtomicFileWrite.tempFor(file)
-            // The transfer's own state ends before the bytes it wrote become the file the block
-            // plays, and both are this one step apart, on this thread: a reader who finds the clip
-            // on disk has found it after the fetch ended, never during. The other order publishes
-            // the file while the block is still told a transfer runs - a loading state, and a live
-            // cancel button, over a clip that is already whole.
-            val transferred = try {
-                fetchVideo(call, video, partial, name, cancelled)
+            val outcome = try {
+                // Staging the transfer's own temporary file can itself fail - a cache directory that
+                // cannot be created or written, a name it will not take - and that is a fetch that
+                // failed, not a block left waiting: the failure is mapped below and the block's state
+                // is cleared however this ends. The temporary is this fetch's own, so a cancel
+                // removes only its own half-written bytes.
+                val partial = AtomicFileWrite.tempFor(file)
+                // The transfer's own state ends before the bytes it wrote become the file the block
+                // plays, and both are this one step apart, on this thread: a reader who finds the clip
+                // on disk has found it after the fetch ended, never during. The other order publishes
+                // the file while the block is still told a transfer runs - a loading state, and a live
+                // cancel button, over a clip that is already whole.
+                val transferred = try {
+                    fetchVideo(call, video, partial, name, cancelled)
+                } finally {
+                    NativeDoHooks.setFetchCanceller(name, null)
+                    NativeDoHooks.setFileLoading(name, false)
+                }
+                if (transferred == VideoDownload.Stored) storeVideo(file, partial, name) else transferred
+            } catch (error: Throwable) {
+                if (cancelled.get()) {
+                    VideoDownload.Cancelled
+                } else {
+                    FileLog.e("nativedo: a post's clip could not be staged", error)
+                    VideoDownload.Failed
+                }
             } finally {
                 NativeDoHooks.setFetchCanceller(name, null)
                 NativeDoHooks.setFileLoading(name, false)
             }
-            val outcome = if (transferred == VideoDownload.Stored) storeVideo(file, partial, name) else transferred
             // The block registered itself as an observer of that name, so upstream's own channel is
             // how it learns how the file it was waiting for ended.
             when (outcome) {

@@ -397,6 +397,61 @@ internal class PostVideoTest {
         harness.assertNoTelegramSideEffects()
     }
 
+    /**
+     * A transfer whose temporary file cannot even be created: the play press has already told the
+     * block that a transfer runs, so that state has to end and the block has to be told the fetch
+     * failed - not stay on a cancel button forever. The failure is a real filesystem one, made by
+     * taking write permission off the clip's staging directory (reversible, nothing filled up), not
+     * by a mock; the same press has to fetch the clip once the directory can be written again.
+     */
+    @Test
+    fun aClipThatCannotBeStagedFailsCleanlyAndCanBeFetchedByTheNextPress() {
+        val clip = "uploads/unstageable-clip.mp4"
+        site.serveImage(clip, ByteArray(2048) { 5 }, contentType = "video/mp4")
+
+        val cell = openTopic(videoPost(clip, poster = null))
+        val message = cell.messageObject!!
+        val block = videoBlockOf(message)
+        val name = FileLoader.getAttachFileName(documentOf(message, block))
+        val file = DiscourseImageBridge.videoFile(DiscourseImageBridge.videoOf(block.video_id)!!)
+        val dir = file.parentFile!!
+        dir.mkdirs()
+
+        val failures = observeFailures(name)
+        assertTrue("the staging directory is writable before the test takes that away", dir.canWrite())
+        dir.setWritable(false, false)
+        try {
+            pressPlay(cell, block)
+            harness.await("the block to be told the fetch failed") { failures.isNotEmpty() }
+            assertFalse("the block's loading state was cleared", NativeDoHooks.isFileLoading(name))
+            assertFalse("the clip is not on disk", DiscourseImageBridge.videoFileExists(block.video_id))
+            assertTrue("no temporary was left behind", tempFilesBeside(file).isEmpty())
+        } finally {
+            dir.setWritable(true, false)
+        }
+
+        // The reader presses play again now that the cache can be written: the same press fetches it.
+        pressPlay(cell, block)
+        harness.await("the second press to fetch the clip") {
+            DiscourseImageBridge.videoFileExists(block.video_id)
+        }
+        assertEquals("the clip is whole", 2048L, file.length())
+        assertFalse("and the block is not left loading", NativeDoHooks.isFileLoading(name))
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /** Every `fileLoadFailed` the site's own channel carries for [name], with its reason code. */
+    private fun observeFailures(name: String): List<Int> {
+        val failures = CopyOnWriteArrayList<Int>()
+        val observer = NotificationCenter.NotificationCenterDelegate { id, _, args ->
+            if (id == NotificationCenter.fileLoadFailed && args[0] == name) {
+                failures += args[1] as Int
+            }
+        }
+        NotificationCenter.getInstance(0).addObserver(observer, NotificationCenter.fileLoadFailed)
+        return failures
+    }
+
     /** The temporary files a transfer to [file] would leave beside it, if any survived. */
     private fun tempFilesBeside(file: java.io.File): List<java.io.File> =
         file.parentFile?.listFiles { candidate ->

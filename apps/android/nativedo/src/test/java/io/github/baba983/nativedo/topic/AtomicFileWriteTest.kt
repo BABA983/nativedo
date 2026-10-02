@@ -1,12 +1,15 @@
 package io.github.baba983.nativedo.topic
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Two downloads of one cache file that overlap.
@@ -30,36 +33,58 @@ internal class AtomicFileWriteTest {
 
             val firstHalfWritten = CountDownLatch(1)
             val secondCommitted = CountDownLatch(1)
-            val firstCommitted = CountDownLatch(1)
+            val firstFinished = CountDownLatch(1)
+            val firstError = AtomicReference<Throwable?>(null)
+            val secondError = AtomicReference<Throwable?>(null)
+            val firstCommit = AtomicBoolean(false)
+            val secondCommit = AtomicBoolean(false)
 
             // The first writer stops halfway and waits until the second has written and moved its
-            // whole payload. With a shared temporary name the second's truncation and the first's
-            // resumed write land in the same file; with a private name they cannot.
+            // whole payload; then it writes the rest and moves its own in. Both moves have to land -
+            // the last one wins - so the file has to be exactly the first writer's whole payload.
+            // A shared temporary name would let the second's truncation and the first's resumed
+            // write mix, and one of the two moves would fail.
             val a = Thread {
-                AtomicFileWrite.write(target) { output ->
-                    output.write(first, 0, 60_000)
-                    output.flush()
-                    firstHalfWritten.countDown()
-                    secondCommitted.await(5, TimeUnit.SECONDS)
-                    output.write(first, 60_000, 60_000)
+                try {
+                    firstCommit.set(
+                        AtomicFileWrite.write(target) { output ->
+                            output.write(first, 0, 60_000)
+                            output.flush()
+                            firstHalfWritten.countDown()
+                            secondCommitted.await(5, TimeUnit.SECONDS)
+                            output.write(first, 60_000, 60_000)
+                        },
+                    )
+                } catch (error: Throwable) {
+                    firstError.set(error)
+                } finally {
+                    firstFinished.countDown()
                 }
-                firstCommitted.countDown()
             }
             val b = Thread {
-                firstHalfWritten.await(5, TimeUnit.SECONDS)
-                AtomicFileWrite.write(target) { output -> output.write(second) }
-                secondCommitted.countDown()
+                try {
+                    firstHalfWritten.await(5, TimeUnit.SECONDS)
+                    secondCommit.set(AtomicFileWrite.write(target) { output -> output.write(second) })
+                } catch (error: Throwable) {
+                    secondError.set(error)
+                } finally {
+                    secondCommitted.countDown()
+                }
             }
             a.start()
             b.start()
-            assertTrue("the first writer finished", firstCommitted.await(5, TimeUnit.SECONDS))
+            assertTrue("the first writer finished", firstFinished.await(5, TimeUnit.SECONDS))
             assertTrue("the second writer finished", secondCommitted.await(5, TimeUnit.SECONDS))
+            a.join(5_000)
+            b.join(5_000)
 
-            val written = target.readBytes()
-            val whole = written.contentEquals(first) || written.contentEquals(second)
+            assertNull("the first writer ended without an error", firstError.get())
+            assertNull("the second writer ended without an error", secondError.get())
+            assertTrue("the first writer's move landed", firstCommit.get())
+            assertTrue("the second writer's move landed", secondCommit.get())
             assertTrue(
-                "the cache file is one download's whole payload, not a mixture (was ${written.size} bytes)",
-                whole,
+                "the cache file is the first writer's whole payload (the last move wins), not a mixture",
+                target.readBytes().contentEquals(first),
             )
             assertNoTemporaryLeft(dir)
         } finally {
@@ -74,35 +99,54 @@ internal class AtomicFileWriteTest {
             val target = File(dir, "picture.png")
             val survivorBytes = ByteArray(50_000) { 0xCC.toByte() }
 
-            val doomedStarted = CountDownLatch(1)
+            val survivorHalfWritten = CountDownLatch(1)
             val doomedFailed = CountDownLatch(1)
-            val survivorCommitted = CountDownLatch(1)
+            val survivorFinished = CountDownLatch(1)
+            val survivorError = AtomicReference<Throwable?>(null)
+            val survivorCommit = AtomicBoolean(false)
 
-            // The doomed writer has written a little when the survivor starts and commits its whole
-            // payload; the doomed writer then throws, the way a cancelled transfer does. Its cleanup
-            // must not touch the file the survivor already moved into place.
-            val doomed = Thread {
-                runCatching {
-                    AtomicFileWrite.write(target) { output ->
-                        output.write(ByteArray(1_000) { 0xDD.toByte() })
-                        output.flush()
-                        doomedStarted.countDown()
-                        survivorCommitted.await(5, TimeUnit.SECONDS)
-                        throw IOException("cancelled")
-                    }
-                }
-                doomedFailed.countDown()
-            }
+            // The survivor is halfway through its own temporary when the doomed writer fails and
+            // cleans up. With a private temporary per write, that cleanup cannot see the survivor's
+            // bytes, and the survivor's resumed write and move have to land whole.
             val survivor = Thread {
-                doomedStarted.await(5, TimeUnit.SECONDS)
-                AtomicFileWrite.write(target) { output -> output.write(survivorBytes) }
-                survivorCommitted.countDown()
+                try {
+                    survivorCommit.set(
+                        AtomicFileWrite.write(target) { output ->
+                            output.write(survivorBytes, 0, 25_000)
+                            output.flush()
+                            survivorHalfWritten.countDown()
+                            doomedFailed.await(5, TimeUnit.SECONDS)
+                            output.write(survivorBytes, 25_000, 25_000)
+                        },
+                    )
+                } catch (error: Throwable) {
+                    survivorError.set(error)
+                } finally {
+                    survivorFinished.countDown()
+                }
             }
-            doomed.start()
+            val doomed = Thread {
+                try {
+                    survivorHalfWritten.await(5, TimeUnit.SECONDS)
+                    runCatching {
+                        AtomicFileWrite.write(target) { output ->
+                            output.write(ByteArray(1_000) { 0xDD.toByte() })
+                            throw IOException("cancelled")
+                        }
+                    }
+                } finally {
+                    doomedFailed.countDown()
+                }
+            }
             survivor.start()
+            doomed.start()
             assertTrue("the failed writer is over", doomedFailed.await(5, TimeUnit.SECONDS))
-            assertTrue("the survivor finished", survivorCommitted.await(5, TimeUnit.SECONDS))
+            assertTrue("the survivor finished", survivorFinished.await(5, TimeUnit.SECONDS))
+            survivor.join(5_000)
+            doomed.join(5_000)
 
+            assertNull("the surviving writer ended without an error", survivorError.get())
+            assertTrue("the surviving writer's move landed", survivorCommit.get())
             assertTrue(
                 "the failed writer left the survivor's file whole",
                 target.readBytes().contentEquals(survivorBytes),
