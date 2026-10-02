@@ -502,6 +502,60 @@ internal class ReadProgressTest {
     }
 
     /**
+     * A challenged reporter is released only by a confirmed recovery: a resume is not one, and the
+     * recovery event the session layer raises is.
+     */
+    @Test
+    fun aChallengedReporterIsReArmedOnlyByAConfirmedRecovery() {
+        site.serveJsonFor("latest.json") { latestFeedWithUnread(TOPIC_FLOORS, TOPIC_FLOORS) }
+        site.serveJsonFor("t/$TOPIC_ID.json") { topicJson(floor = 1, total = TOPIC_FLOORS, lastRead = 0) }
+        site.serveResponse("topics/timings") {
+            okhttp3.mockwebserver.MockResponse()
+                .setResponseCode(403)
+                .setHeader("Content-Type", "text/html")
+                .setBody("<html><head><title>Just a moment...</title></head></html>")
+        }
+
+        harness.bootApp()
+        harness.await("the topic list to load") { rowCount() == 1 }
+        openFirstTopic()
+        harness.await("the topic to load") { drawnFloors().isNotEmpty() }
+        harness.idleClock(3_000)
+        scrollTopicToTheEnd()
+        awaitWithClock("the challenged report to be attempted") {
+            site.recordedRequests.any { it.startsWith("POST /topics/timings") }
+        }
+        // Let the failed report finish before the recovery, so the recovery is not racing it: the
+        // point of this case is that only the recovery event re-arms, not that a recovery in flight
+        // is honored (that race is the reporter's own and has its own handling).
+        harness.await("the challenged report to be processed") {
+            topicReporter().hasSettled()
+        }
+        val before = site.recordedRequests.count { it.startsWith("POST /topics/timings") }
+
+        lifecycle("onPause")
+        lifecycle("onResume")
+        harness.idleClock(5_000)
+        harness.idle()
+        assertEquals(
+            "coming back to the screen does not release a challenged reporter",
+            before,
+            site.recordedRequests.count { it.startsWith("POST /topics/timings") },
+        )
+
+        topicReporter().onSessionRecovered()
+        harness.idleClock(5_000)
+        harness.idle()
+        java.util.concurrent.locks.LockSupport.parkNanos(300_000_000L)
+        harness.idleClock(5_000)
+        assertTrue(
+            "a confirmed recovery lets the report be tried again",
+            site.recordedRequests.count { it.startsWith("POST /topics/timings") } > before,
+        )
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
      * A read-progress report that broke in transit. Unlike a challenge this is worth another try,
      * but not on every tick: it is waited out, and the backoff is not forever.
      */

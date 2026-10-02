@@ -85,6 +85,12 @@ class TopicReadReporter(
 
     /** When the next automatic report may run; a transient failure is waited out, not retried. */
     private var nextAttemptAt = 0L
+
+    /**
+     * A recovery arrived while a report was on its way. That report's failure must not re-block over
+     * the recovery, and its completion is what schedules the next attempt.
+     */
+    private var recoveryPending = false
     /** The reader's last scroll, which is what keeps the clock running. */
     private var lastActivityAt = 0L
     /** The floors the viewport holds, by the site's own numbers for them. */
@@ -189,6 +195,9 @@ class TopicReadReporter(
         flush()
     }
 
+    /** Whether no report is on its way; a test waits on this so a recovery does not race one. */
+    internal fun hasSettled(): Boolean = !running
+
     /**
      * The session was recovered - the reader solved the challenge or signed back in, and the app
      * confirmed it. Only that clears the reports a challenge or a lost session stopped, and only
@@ -198,7 +207,10 @@ class TopicReadReporter(
     fun onSessionRecovered() {
         blocked = false
         nextAttemptAt = 0L
-        if (foreground && hasSomethingToReport()) {
+        if (running) {
+            // A report is on its way; its completion honors this recovery rather than re-blocking.
+            recoveryPending = true
+        } else if (foreground && hasSomethingToReport()) {
             schedule(0L)
         }
     }
@@ -295,15 +307,23 @@ class TopicReadReporter(
                 }
                 val failure = report()
                 if (failure == null) {
+                    recoveryPending = false
                     running = false
                     if (hasSomethingToReport()) {
                         schedule(0L)
                     }
                 } else if (endsTheAutomaticReports(failure)) {
-                    // A challenge, or a session that is gone, is not something a timer can solve. The
-                    // reports stop here instead of going out again on the next tick; the reader's
-                    // return to the screen is what gives the report one more chance.
-                    blocked = true
+                    if (recoveryPending) {
+                        // The recovery arrived while this report was in flight, so this failure is
+                        // already stale: honor the recovery instead of re-blocking over it.
+                        recoveryPending = false
+                        blocked = false
+                        if (foreground && hasSomethingToReport()) {
+                            schedule(0L)
+                        }
+                    } else {
+                        blocked = true
+                    }
                 } else {
                     // A transfer that broke or timed out is waited out, not retried on every tick.
                     nextAttemptAt = clock() + TRANSIENT_RETRY_BACKOFF_MILLIS
