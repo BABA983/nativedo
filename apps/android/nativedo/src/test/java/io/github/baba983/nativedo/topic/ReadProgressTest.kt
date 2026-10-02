@@ -65,9 +65,13 @@ internal class ReadProgressTest {
     private val harness = UpstreamUiHarness()
     private val site = FakeDiscourseSite()
 
+    @get:org.junit.Rule
+    val testName = org.junit.rules.TestName()
+
     @Before
     fun setUp() {
         site.start()
+        println("read-test-start: ${testName.methodName}")
         NativeDo.setContainerFactory { context -> site.authenticatedContainer(context) }
     }
 
@@ -484,19 +488,20 @@ internal class ReadProgressTest {
         awaitWithClock("the challenged report to be attempted") {
             site.recordedRequests.any { it.startsWith("POST /topics/timings") }
         }
+        awaitNetwork("the challenge to block the reporter") { topicReporter().hasSettled() }
         val attempts = site.recordedRequests.count { it.startsWith("POST /topics/timings") }
         // A scroll, a flush and leaving/returning to the screen must none of them re-arm it.
         topicReporter().flush()
         scrollTopicToTheEnd()
         lifecycle("onPause")
         lifecycle("onResume")
-        harness.idleClock(5_000)
+        harness.idleClock(70_000)
         harness.idle()
         java.util.concurrent.locks.LockSupport.parkNanos(300_000_000L)
         harness.idleClock(5_000)
         val after = site.recordedRequests.count { it.startsWith("POST /topics/timings") }
         println("read-progress-challenge: attempts=$attempts after=$after")
-        assertTrue("the report was attempted", attempts >= 1)
+        assertEquals("the report was attempted once", 1, attempts)
         assertEquals("a challenged report is attempted once, not retried every tick", attempts, after)
         harness.assertNoTelegramSideEffects()
     }
@@ -544,15 +549,97 @@ internal class ReadProgressTest {
         )
 
         topicReporter().onSessionRecovered()
-        harness.idleClock(5_000)
-        harness.idle()
-        java.util.concurrent.locks.LockSupport.parkNanos(300_000_000L)
-        harness.idleClock(5_000)
-        assertTrue(
-            "a confirmed recovery lets the report be tried again",
-            site.recordedRequests.count { it.startsWith("POST /topics/timings") } > before,
+        awaitNetwork("a confirmed recovery to send and settle the next report") {
+            site.recordedRequests.count { it.startsWith("POST /topics/timings") } > before &&
+                topicReporter().hasSettled()
+        }
+        assertEquals(
+            "a confirmed recovery releases one attempt; another challenge blocks it again",
+            before + 1,
+            site.recordedRequests.count { it.startsWith("POST /topics/timings") },
         )
+        println("read-progress-recovered: clocks=${site.requestClocksFor("POST", "topics/timings")}")
         harness.assertNoTelegramSideEffects()
+    }
+
+    @Test
+    fun aRecoveryWhileAChallengedReportIsInFlightIsNotLostOnCompletion() {
+        recoverWhileReportIsInFlight(403)
+    }
+
+    @Test
+    fun aRecoveryWhileATransientFailureIsInFlightDoesNotLeaveAStaleRecovery() {
+        recoverWhileReportIsInFlight(500)
+    }
+
+    @Test
+    fun aRecoveryWhileASuccessfulReportIsInFlightDoesNotReleaseANewerChallenge() {
+        recoverWhileReportIsInFlight(200)
+    }
+
+    /**
+     * Holds the first response until recovery, not until a guessed sleep elapses. A stale failure
+     * must release a new attempt after the runner is released. A successful first report consumes
+     * the recovery before its next batch, so that batch's challenge is new evidence and must block.
+     */
+    private fun recoverWhileReportIsInFlight(firstStatus: Int) {
+        val received = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val attempts = java.util.concurrent.atomic.AtomicInteger()
+        site.serveJsonFor("latest.json") { latestFeedWithUnread(TOPIC_FLOORS, TOPIC_FLOORS) }
+        site.serveJsonFor("t/$TOPIC_ID.json") { topicJson(floor = 1, total = TOPIC_FLOORS, lastRead = 0) }
+        site.serveResponse("topics/timings") {
+            val status = if (attempts.incrementAndGet() == 1) {
+                received.countDown()
+                check(release.await(4, java.util.concurrent.TimeUnit.SECONDS)) { "response was never released" }
+                firstStatus
+            } else 403
+            okhttp3.mockwebserver.MockResponse()
+                .setResponseCode(status)
+                .setHeader("Content-Type", if (status == 403) "text/html" else "application/json")
+                .setBody(if (status == 403) "<html><head><title>Just a moment...</title></head></html>" else "{}")
+        }
+
+        try {
+            harness.bootApp()
+            harness.await("the topic list to load") { rowCount() == 1 }
+            openFirstTopic()
+            harness.await("the first report to be held at the site") { received.count == 0L }
+            assertTrue("the held response is still in flight", !topicReporter().hasSettled())
+            // The first request carried the opening floors. This adds debt for the next batch.
+            scrollTopicToTheEnd()
+            topicReporter().onSessionRecovered()
+            release.countDown()
+            awaitNetwork("the in-flight recovery to send and settle the next report") {
+                attempts.get() >= 2 && topicReporter().hasSettled()
+            }
+            assertEquals("the new challenge ends the reports again", 2, attempts.get())
+            topicReporter().flush()
+            lifecycle("onPause")
+            lifecycle("onResume")
+            harness.idleClock(70_000)
+            harness.idle()
+            assertEquals("no pending recovery leaks past the newer challenge", 2, attempts.get())
+            println("read-progress-in-flight: firstStatus=$firstStatus clocks=${site.requestClocksFor("POST", "topics/timings")}")
+            harness.assertNoTelegramSideEffects()
+        } finally {
+            release.countDown()
+        }
+    }
+
+    /**
+     * Pumps the response callbacks between network steps within the same 300 ms real-time budget
+     * the old test slept for. One sleep followed by one drain can start CSRF's POST only at the
+     * assertion, leaving the test to race that request instead of observing its completion.
+     */
+    private fun awaitNetwork(what: String, condition: () -> Boolean) {
+        val deadline = System.nanoTime() + 300_000_000L
+        do {
+            harness.idle()
+            if (condition()) return
+            java.util.concurrent.locks.LockSupport.parkNanos(1_000_000L)
+        } while (System.nanoTime() < deadline)
+        throw AssertionError("timed out waiting for $what")
     }
 
     /**
@@ -577,15 +664,17 @@ internal class ReadProgressTest {
         awaitWithClock("the broken report to be attempted") {
             site.recordedRequests.any { it.startsWith("POST /topics/timings") }
         }
-        // Leaving and returning to the screen must not skip the wait: the backoff is the reporter's,
-        // not the screen's.
+        awaitNetwork("the broken report to establish its backoff") { topicReporter().hasSettled() }
+        // Leaving and returning must not skip the wait. The injected-clock case below also pins the
+        // exact deadline; here the screen resumes only after the error has established that wait.
         lifecycle("onPause")
         lifecycle("onResume")
-        // The wait is a minute: drive the clock past it so a second attempt is possible at all.
+        // The wait starts at failure completion, not at request receipt. Advance past it only after
+        // the error has settled, then pump both CSRF and POST callbacks rather than racing the POST.
         harness.idleClock(70_000)
-        harness.idle()
-        java.util.concurrent.locks.LockSupport.parkNanos(300_000_000L)
-        harness.idleClock(5_000)
+        awaitNetwork("the waited-out retry to finish") {
+            site.requestBodiesFor("topics/timings").size >= 2 && topicReporter().hasSettled()
+        }
 
         // The clock the screen's timers run on, as each attempt reached the site. Robolectric's idle
         // advances that clock through the reporter's own wait, so the count alone says nothing; the
@@ -596,9 +685,71 @@ internal class ReadProgressTest {
         assertTrue("the report was attempted more than once", clocks.size >= 2)
         assertTrue(
             "every retry waited the backoff out, not a tick: $gaps",
-            gaps.none { gap -> gap in 1 until 60_000 },
+            gaps.all { gap -> gap >= 60_000 },
         )
         harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * Pins both sides of the deadline through the real repository, Retrofit and cookie interceptor.
+     * The UI clock also advances on worker drains, so it cannot place a settled failure's resume at
+     * an exact instant. The reporter already accepts its own clock; no response or model is mocked.
+     */
+    @Test
+    fun aSettledTransientFailureKeepsItsDeadlineAcrossResumeAndFlush() {
+        site.serveJsonFor("latest.json") { latestFeedWithUnread(TOPIC_FLOORS, TOPIC_FLOORS) }
+        site.serveJsonFor("t/$TOPIC_ID.json") { topicJson(floor = 1, total = TOPIC_FLOORS, lastRead = 0) }
+        site.serveResponse("topics/timings") {
+            okhttp3.mockwebserver.MockResponse().setResponseCode(500).setBody("{}")
+        }
+        harness.bootApp()
+        harness.await("the topic list to load") { rowCount() == 1 }
+        val container = NativeDo.container(harness.context)
+        val repository = io.github.baba983.nativedo.feature.topic.data.TopicRepository(container.discourseApiClient)
+        val detail = kotlinx.coroutines.runBlocking { repository.load(TOPIC_ID).getOrThrow() }
+        val job = kotlinx.coroutines.SupervisorJob()
+        val scope = kotlinx.coroutines.CoroutineScope(job + kotlinx.coroutines.Dispatchers.Main.immediate)
+        var now = 100_000L
+        val reporter = io.github.baba983.nativedo.feature.topic.data.TopicReadReporter(
+            topicId = TOPIC_ID,
+            repository = repository,
+            store = container.topicReadPositionStore,
+            key = null,
+            scope = scope,
+            clock = { now },
+        )
+        fun attempts(): Int = site.requestBodiesFor("topics/timings").size
+        try {
+            reporter.start(detail)
+            reporter.setForeground(true)
+            reporter.visibleFloors(listOf(1, 2, 3))
+            reporter.advanceTo(3)
+            // This recovery precedes the debounced request, so its later failure is not stale.
+            reporter.onSessionRecovered()
+            harness.idleClock(300)
+            awaitNetwork("the first failure to settle at the fixed clock") {
+                attempts() == 1 && reporter.hasSettled()
+            }
+            reporter.setForeground(false)
+            now += 59_999L
+            reporter.setForeground(true)
+            reporter.advanceTo(6)
+            reporter.flush()
+            harness.idleClock(500)
+            awaitNetwork("the resumed reporter to settle before its deadline") { reporter.hasSettled() }
+            assertEquals("resume, scroll and flush cannot skip the remaining millisecond", 1, attempts())
+            now += 1L
+            reporter.flush()
+            awaitNetwork("the report at the deadline to finish") { attempts() >= 2 && reporter.hasSettled() }
+            assertEquals("one retry is released at the deadline", 2, attempts())
+            val retry = fieldsOf(site.requestBodiesFor("topics/timings").last())
+            assertTrue("the failed report's floors are still owed alongside the newly reached ones",
+                (1..6).all { retry.containsKey("timings[$it]") })
+            println("read-progress-deadline: first=100000 resume=159999 retry=$now attempts=${attempts()}")
+            harness.assertNoTelegramSideEffects()
+        } finally {
+            job.cancel()
+        }
     }
 
     private fun rowCount(): Int = contentListOf(harness.activity)?.adapter?.itemCount ?: 0

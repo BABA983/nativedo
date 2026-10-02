@@ -301,35 +301,33 @@ class TopicReadReporter(
         }
         running = true
         reportJob = scope.launch {
-            try {
+            val retry = try {
                 if (delayMillis > 0) {
                     delay(delayMillis)
                 }
                 val failure = report()
-                if (failure == null) {
-                    recoveryPending = false
-                    running = false
-                    if (hasSomethingToReport()) {
-                        schedule(0L)
-                    }
-                } else if (endsTheAutomaticReports(failure)) {
-                    if (recoveryPending) {
-                        // The recovery arrived while this report was in flight, so this failure is
-                        // already stale: honor the recovery instead of re-blocking over it.
-                        recoveryPending = false
-                        blocked = false
-                        if (foreground && hasSomethingToReport()) {
-                            schedule(0L)
-                        }
-                    } else {
+                when {
+                    // Recovery cleared the gates while this request was in flight. Its old failure
+                    // must set neither a block nor a new deadline over that recovery.
+                    recoveryPending -> foreground
+                    failure == null -> true
+                    endsTheAutomaticReports(failure) -> {
                         blocked = true
+                        false
                     }
-                } else {
-                    // A transfer that broke or timed out is waited out, not retried on every tick.
-                    nextAttemptAt = clock() + TRANSIENT_RETRY_BACKOFF_MILLIS
+                    else -> {
+                        // A transfer that broke or timed out is waited out, not retried on every tick.
+                        nextAttemptAt = clock() + TRANSIENT_RETRY_BACKOFF_MILLIS
+                        false
+                    }
                 }
             } finally {
+                recoveryPending = false
                 running = false
+            }
+            // Release the runner before scheduling; otherwise schedule() discards the recovery.
+            if (retry && hasSomethingToReport()) {
+                schedule(0L)
             }
         }
     }
@@ -347,6 +345,8 @@ class TopicReadReporter(
      * can tell "the site said no in a way a timer cannot fix" from "the transfer broke".
      */
     private suspend fun report(): Throwable? {
+        // A recovery during the debounce predates this request; it cannot clear a new failure.
+        recoveryPending = false
         // Time that passed while the previous request was in flight - or since the last tick - is
         // the reader's too, so it is taken here, before the payload is read. It is taken once, not
         // inside the loop: time passes during every request, and re-taking it there would leave the
@@ -379,6 +379,9 @@ class TopicReadReporter(
             if (result.isFailure) {
                 return result.exceptionOrNull() ?: java.io.IOException("the read progress report failed")
             }
+            // A successful request consumes any recovery it overlapped. The next batch starts
+            // after that recovery, so a challenge on it is new evidence and must block normally.
+            recoveryPending = false
             lastFlushAt = clock()
             // What was sent is consumed; a slice the site's own ceiling cut keeps the rest for the
             // next report rather than dropping time the reader really spent.
