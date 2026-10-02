@@ -20,6 +20,7 @@
         <activity
             android:name="io.github.baba983.nativedo.app.NativeDoActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize|uiMode|smallestScreenSize|screenLayout"
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.TMessages.Start">

@@ -280,10 +280,21 @@ public class NativeDoActivity extends Activity {
      * rather than leaving the app. A plain launch has no pending link and just shows the feed.
      */
     private void showRootOrPendingTopic() {
-        showTab(0);
-        if (pendingTopicId != 0) {
-            openPendingTopic();
+        if (pendingTopicId == 0) {
+            showTab(0);
+            return;
         }
+        // A link wants two screens at once: the feed, so back returns to it, and the topic over it.
+        // Presenting both in the same turn drops the second - the first transition is still running
+        // and presentFragment refuses while one is - so the feed goes on the stack without an
+        // animation and the topic is presented over it.
+        selectedTab = 0;
+        if (tabs != null) {
+            tabs.setSelected(0);
+        }
+        actionBarLayout.removeAllFragments();
+        actionBarLayout.addFragmentToStack(rootFor(0));
+        openPendingTopic();
     }
 
     private void openPendingTopic() {
