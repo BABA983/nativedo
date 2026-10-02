@@ -138,6 +138,81 @@ internal class ReplyTest {
         harness.assertNoTelegramSideEffects()
     }
 
+    /**
+     * A reply the edge challenged. One press sends one write, and a challenge ends it: the failure
+     * is shown at once, the reader's draft is kept, and the way through is a verification page they
+     * open themselves - nothing replays a write whose outcome is unknown.
+     */
+    @Test
+    fun aReplyTheEdgeChallengedIsSentOnceKeepsTheDraftAndOffersTheVerificationPage() {
+        site.serveResponse("posts.json") {
+            okhttp3.mockwebserver.MockResponse()
+                .setResponseCode(403)
+                .setHeader("Content-Type", "text/html")
+                .setBody("<html><head><title>Just a moment...</title></head></html>")
+        }
+
+        harness.bootApp()
+        harness.await("the topic list to load") { rowCount() == 2 }
+        harness.present(TopicFragment.forTopic(TOPIC_ID, "Reply"))
+        harness.await("the topic to load") { rowCount() == 1 }
+
+        val composer = composer() ?: throw AssertionError("the screen has no composer")
+        val marker = "NativeDo verification reply marker"
+        composer.setFieldText(marker)
+        harness.idle()
+        composer.sendMessage()
+        harness.idleClock(400)
+
+        val dialog = awaitReplyFailureDialog()
+        assertEquals("one press sent one write", 1, postAttempts())
+        // Several more ticks and a debounce window: a challenge must not be resent on a timer.
+        harness.idleClock(5_000)
+        harness.idle()
+        java.util.concurrent.locks.LockSupport.parkNanos(300_000_000L)
+        harness.idleClock(5_000)
+        assertEquals("and no automatic resend", 1, postAttempts())
+
+        assertEquals("the reader's draft is kept", marker, composer.fieldText.toString())
+        assertTrue(
+            "the dialog offers the verification page",
+            dialogButtonTexts(dialog).any { text -> text.contains("验证") },
+        )
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /** The reply-failure dialog, which may not be the last dialog another test left behind. */
+    private fun awaitReplyFailureDialog(): org.telegram.ui.ActionBar.AlertDialog {
+        repeat(60) {
+            harness.idleClock(100)
+            harness.idle()
+            val shown = org.robolectric.shadows.ShadowDialog.getShownDialogs()
+                .filterIsInstance<org.telegram.ui.ActionBar.AlertDialog>()
+                .lastOrNull { dialog -> dialog.window?.decorView != null }
+            if (shown != null) {
+                return shown
+            }
+            java.util.concurrent.locks.LockSupport.parkNanos(2_000_000L)
+        }
+        throw AssertionError("the reply failure was never shown")
+    }
+
+    private fun dialogButtonTexts(dialog: org.telegram.ui.ActionBar.AlertDialog): List<String> {
+        val out = mutableListOf<String>()
+        collectText(dialog.window?.decorView, out)
+        return out
+    }
+
+    private fun collectText(view: android.view.View?, out: MutableList<String>) {
+        when (view) {
+            is android.widget.TextView -> out += view.text.toString()
+            is ViewGroup -> for (index in 0 until view.childCount) collectText(view.getChildAt(index), out)
+        }
+    }
+
+    private fun postAttempts(): Int =
+        site.recordedRequests.count { request -> request == "POST /posts.json" }
+
     private fun createdPostJson(): String {
         val base = JSONObject(harness.fixture("topic-detail.json"))
         return base.getJSONObject("post_stream").getJSONArray("posts").getJSONObject(0).toString()

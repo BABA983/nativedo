@@ -962,6 +962,15 @@ public class TopicFragment extends BaseFragment {
             loadTopic(topicId);
             return kotlin.Unit.INSTANCE;
         }, error -> {
+            // The composer clears its own field before it hands the text over, so a write that did
+            // not land would lose what the reader wrote. Put it back: the reader can press send
+            // again, and nothing here resends a write whose outcome is unknown.
+            if (composer != null && !raw.trim().isEmpty()) {
+                CharSequence current = composer.getFieldText();
+                if (current == null || current.length() == 0) {
+                    composer.setFieldText(raw);
+                }
+            }
             showReplyError(error);
             return kotlin.Unit.INSTANCE;
         });
@@ -980,8 +989,38 @@ public class TopicFragment extends BaseFragment {
                 new org.telegram.ui.ActionBar.AlertDialog.Builder(getParentActivity());
         builder.setTitle(title);
         builder.setMessage(error.getMessage() == null ? error.toString() : error.getMessage());
-        builder.setPositiveButton("好", null);
+        TopicLoadFailure reason = TopicLoadFailure.of(error);
+        if (reason == TopicLoadFailure.Challenge || reason == TopicLoadFailure.LoginRequired) {
+            // The way through is the verification page, and it is the reader who takes it: the write
+            // this dialog is about has an unknown outcome, so nothing replays it. The draft is in
+            // the field and the reader's own press sends it again.
+            builder.setPositiveButton(
+                    org.telegram.messenger.ApplicationLoader.applicationContext.getString(
+                            io.github.baba983.nativedo.R.string.reply_failed_verify),
+                    (dialog, which) -> openVerificationPage());
+            builder.setNegativeButton("取消", null);
+        } else {
+            builder.setPositiveButton("好", null);
+        }
         showDialog(builder.create());
+    }
+
+    /**
+     * The verification page, the same WebView the app logs in with, with no retry behind it: solving
+     * the challenge there is what makes the site answer the app again, and the write that was left
+     * uncertain is sent again only by the reader. The session is kept - this is a detour through the
+     * site, not a logout.
+     */
+    private void openVerificationPage() {
+        if (getParentActivity() == null) {
+            return;
+        }
+        io.github.baba983.nativedo.auth.LoginWebViewFragment[] holder =
+                new io.github.baba983.nativedo.auth.LoginWebViewFragment[1];
+        holder[0] = new io.github.baba983.nativedo.auth.LoginWebViewFragment(() -> {
+            holder[0].finishFragment();
+        });
+        presentFragment(holder[0]);
     }
 
     /**

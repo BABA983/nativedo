@@ -59,6 +59,18 @@ internal class FakeDiscourseSite {
     /** Every request the site saw, as `METHOD path`, in order. */
     val recordedRequests: List<String> get() = requests.toList()
 
+    /**
+     * When each request on [path] reached the site, on the same clock the screen's timers run on.
+     * The gaps between them are what says whether a retry was waited out or went out on a tick.
+     */
+    fun requestClocksFor(method: String, path: String): List<Long> = synchronized(this) {
+        requestClocks
+            .filter { (recordedMethod, recordedPath, _) ->
+                recordedMethod == method && recordedPath == path.trimStart('/')
+            }
+            .map { (_, _, clock) -> clock }
+    }
+
     /** The body of the last write the site received on [path], form-encoded as it was sent. */
     fun requestBodyFor(path: String): String? = requestBodies[path.trimStart('/')]
 
@@ -157,6 +169,7 @@ internal class FakeDiscourseSite {
                 synchronized(this@FakeDiscourseSite) {
                     requestedPaths += path
                     requests += request.method.orEmpty() + " " + request.path.orEmpty()
+                    requestClocks += Triple(request.method.orEmpty(), path, android.os.SystemClock.elapsedRealtime())
                     if (request.method != "GET" && request.method != "HEAD") {
                         request.body.readUtf8().let { body ->
                             requestBodies[path] = body
@@ -276,6 +289,7 @@ internal class FakeDiscourseSite {
     private val queries = mutableMapOf<String, MutableList<String>>()
 
     private val requests = mutableListOf<String>()
+    private val requestClocks = mutableListOf<Triple<String, String, Long>>()
     private val requestBodies = mutableMapOf<String, String>()
     private val requestBodyLog = mutableListOf<Pair<String, String>>()
     private val csrfHeaders = mutableMapOf<String, String>()

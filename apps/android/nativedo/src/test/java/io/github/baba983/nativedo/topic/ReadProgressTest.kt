@@ -449,6 +449,87 @@ internal class ReadProgressTest {
         return base.toString()
     }
 
+    /**
+     * A read-progress report the edge challenged. The report is a write, and a challenge is not
+     * something a timer can solve: one attempt, then the automatic reports end. The old ticker
+     * re-armed every second against a stale `lastFlushAt`, so a challenged report went out again and
+     * again until the reader left the topic.
+     */
+    @Test
+    fun aChallengeOnAReadProgressReportEndsTheAutomaticReportsInsteadOfRetrying() {
+        site.serveJsonFor("latest.json") { latestFeedWithUnread(TOPIC_FLOORS, TOPIC_FLOORS) }
+        site.serveJsonFor("t/$TOPIC_ID.json") { topicJson(floor = 1, total = TOPIC_FLOORS, lastRead = 0) }
+        site.serveResponse("topics/timings") {
+            okhttp3.mockwebserver.MockResponse()
+                .setResponseCode(403)
+                .setHeader("Content-Type", "text/html")
+                .setBody("<html><head><title>Just a moment...</title></head></html>")
+        }
+
+        harness.bootApp()
+        harness.await("the topic list to load") { rowCount() == 1 }
+        openFirstTopic()
+        harness.await("the topic to load") { drawnFloors().isNotEmpty() }
+        harness.idleClock(3_000)
+        scrollTopicToTheEnd()
+
+        awaitWithClock("the challenged report to be attempted") {
+            site.recordedRequests.any { it.startsWith("POST /topics/timings") }
+        }
+        val attempts = site.recordedRequests.count { it.startsWith("POST /topics/timings") }
+        // Several more ticks' worth of clock: a challenge must end the reports, not be retried.
+        harness.idleClock(5_000)
+        harness.idle()
+        java.util.concurrent.locks.LockSupport.parkNanos(300_000_000L)
+        harness.idleClock(5_000)
+        val after = site.recordedRequests.count { it.startsWith("POST /topics/timings") }
+        println("read-progress-challenge: attempts=$attempts after=$after")
+        assertTrue("the report was attempted", attempts >= 1)
+        assertEquals("a challenged report is attempted once, not retried every tick", attempts, after)
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * A read-progress report that broke in transit. Unlike a challenge this is worth another try,
+     * but not on every tick: it is waited out, and the backoff is not forever.
+     */
+    @Test
+    fun aReadProgressReportThatBrokeInTransitIsWaitedOutNotRetriedEveryTick() {
+        site.serveJsonFor("latest.json") { latestFeedWithUnread(TOPIC_FLOORS, TOPIC_FLOORS) }
+        site.serveJsonFor("t/$TOPIC_ID.json") { topicJson(floor = 1, total = TOPIC_FLOORS, lastRead = 0) }
+        site.serveResponse("topics/timings") {
+            okhttp3.mockwebserver.MockResponse().setResponseCode(500).setBody("{}")
+        }
+
+        harness.bootApp()
+        harness.await("the topic list to load") { rowCount() == 1 }
+        openFirstTopic()
+        harness.await("the topic to load") { drawnFloors().isNotEmpty() }
+        harness.idleClock(3_000)
+        scrollTopicToTheEnd()
+
+        awaitWithClock("the broken report to be attempted") {
+            site.recordedRequests.any { it.startsWith("POST /topics/timings") }
+        }
+        harness.idleClock(5_000)
+        harness.idle()
+        java.util.concurrent.locks.LockSupport.parkNanos(300_000_000L)
+        harness.idleClock(5_000)
+
+        // The clock the screen's timers run on, as each attempt reached the site. Robolectric's idle
+        // advances that clock through the reporter's own wait, so the count alone says nothing; the
+        // gaps are what tell a waited-out retry from one that went out on a tick.
+        val clocks = site.requestClocksFor("POST", "topics/timings")
+        val gaps = clocks.zipWithNext { earlier, later -> later - earlier }
+        println("read-progress-transient: clocks=$clocks gaps=$gaps")
+        assertTrue("the report was attempted more than once", clocks.size >= 2)
+        assertTrue(
+            "every retry waited the backoff out, not a tick: $gaps",
+            gaps.none { gap -> gap in 1 until 60_000 },
+        )
+        harness.assertNoTelegramSideEffects()
+    }
+
     private fun rowCount(): Int = contentListOf(harness.activity)?.adapter?.itemCount ?: 0
 
     private companion object {

@@ -20,6 +20,7 @@
     <string name="topic_failed_forbidden">站点拒绝了这次请求\n点一下重试</string>
     <string name="topic_failed_rate_limited">请求过于频繁\n点一下重试</string>
     <string name="topic_failed_network">网络不通\n点一下重试</string>
+    <string name="reply_failed_verify">打开验证页</string>
     <!--
       Upstream's appearance page is Telegram's "Chat Settings": its title and its rows talk about a
       chat list, chat backgrounds and messages. This client has topics and posts, so the words are

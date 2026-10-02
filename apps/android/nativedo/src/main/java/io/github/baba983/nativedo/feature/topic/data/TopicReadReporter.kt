@@ -30,6 +30,9 @@ private const val FLUSH_INTERVAL_MILLIS = 60 * 1000L
 /** How long the reader has to stop moving before the floors reached so far are reported. */
 private const val REPORT_DEBOUNCE_MILLIS = 250L
 
+/** How long a report that failed for a reason time can fix waits before it is tried again. */
+private const val TRANSIENT_RETRY_BACKOFF_MILLIS = 60 * 1000L
+
 /**
  * The reader's place in one topic, and the report of it the site asks for.
  *
@@ -73,6 +76,15 @@ class TopicReadReporter(
     private var foreground = false
     private var lastTickAt = 0L
     private var lastFlushAt = 0L
+    /**
+     * Whether the last report ended for a reason only the reader can clear - the edge challenged the
+     * write, or the session is gone. The automatic reports stop then; a timer cannot solve either,
+     * and retrying one every tick is what hammered the edge from this screen.
+     */
+    private var blocked = false
+
+    /** When the next automatic report may run; a transient failure is waited out, not retried. */
+    private var nextAttemptAt = 0L
     /** The reader's last scroll, which is what keeps the clock running. */
     private var lastActivityAt = 0L
     /** The floors the viewport holds, by the site's own numbers for them. */
@@ -121,6 +133,11 @@ class TopicReadReporter(
             lastTickAt = now
             lastActivityAt = now
             lastFlushAt = now
+            // The reader is back in front of the screen: a report that ended because the site wanted
+            // verification is worth one more attempt - the reader may have done it while away - but
+            // it only goes now, with the reader here, never on a timer.
+            blocked = false
+            nextAttemptAt = now
             startTicker()
         } else {
             // The span just ended is the reader's, so it is taken while the screen is still in
@@ -218,7 +235,7 @@ class TopicReadReporter(
     private fun tick() {
         val now = clock()
         account(now)
-        if (!running && now - lastFlushAt >= FLUSH_INTERVAL_MILLIS) {
+        if (!blocked && !running && now >= nextAttemptAt && now - lastFlushAt >= FLUSH_INTERVAL_MILLIS) {
             schedule(0L)
         }
     }
@@ -249,7 +266,12 @@ class TopicReadReporter(
      * until then a new position looks like "a report is already running".</p>
      */
     private fun schedule(delayMillis: Long) {
-        if (running) {
+        if (blocked || running) {
+            return
+        }
+        if (clock() < nextAttemptAt) {
+            // A report that broke in transit is waited out. A reader's scroll, a flush and the ticker
+            // all come through here, so the wait is checked at the door, not only in the ticker.
             return
         }
         running = true
@@ -258,11 +280,20 @@ class TopicReadReporter(
                 if (delayMillis > 0) {
                     delay(delayMillis)
                 }
-                if (report()) {
+                val failure = report()
+                if (failure == null) {
                     running = false
                     if (hasSomethingToReport()) {
                         schedule(0L)
                     }
+                } else if (endsTheAutomaticReports(failure)) {
+                    // A challenge, or a session that is gone, is not something a timer can solve. The
+                    // reports stop here instead of going out again on the next tick; the reader's
+                    // return to the screen is what gives the report one more chance.
+                    blocked = true
+                } else {
+                    // A transfer that broke or timed out is waited out, not retried on every tick.
+                    nextAttemptAt = clock() + TRANSIENT_RETRY_BACKOFF_MILLIS
                 }
             } finally {
                 running = false
@@ -270,12 +301,19 @@ class TopicReadReporter(
         }
     }
 
+    /** Failures whose cause is the session or the edge: only the reader can clear them. */
+    private fun endsTheAutomaticReports(error: Throwable): Boolean =
+        error is io.github.baba983.nativedo.core.network.SessionRecoveryRequiredException ||
+            error is io.github.baba983.nativedo.core.session.LoginRequiredException ||
+            error is io.github.baba983.nativedo.core.session.SessionLoggedOutException
+
     /**
      * Reports what the site has not been told about yet - the floors reached, and the dwell of the
      * ones that were on screen - and whether that is all of them: the first report that fails leaves
-     * everything where it is, and the next attempt carries it.
+     * everything where it is, and the next attempt carries it. The failure is returned so the caller
+     * can tell "the site said no in a way a timer cannot fix" from "the transfer broke".
      */
-    private suspend fun report(): Boolean {
+    private suspend fun report(): Throwable? {
         // Time that passed while the previous request was in flight - or since the last tick - is
         // the reader's too, so it is taken here, before the payload is read. It is taken once, not
         // inside the loop: time passes during every request, and re-taking it there would leave the
@@ -286,7 +324,7 @@ class TopicReadReporter(
             val reached = ((reportedFloor + 1)..target).toList()
             val dwell = floorMillis.filterValues { it > 0 }
             if (reached.isEmpty() && dwell.isEmpty() && topicMillis <= 0) {
-                return true
+                return null
             }
             val timings = LinkedHashMap<Int, Long>()
             dwell.forEach { (floor, millis) -> timings[floor] = millis }
@@ -306,7 +344,7 @@ class TopicReadReporter(
                 postTimings = sent.mapValues { (_, millis) -> millis.toInt() },
             )
             if (result.isFailure) {
-                return false
+                return result.exceptionOrNull() ?: java.io.IOException("the read progress report failed")
             }
             lastFlushAt = clock()
             // What was sent is consumed; a slice the site's own ceiling cut keeps the rest for the
