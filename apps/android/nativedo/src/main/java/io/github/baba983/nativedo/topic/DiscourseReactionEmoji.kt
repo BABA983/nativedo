@@ -94,7 +94,9 @@ object DiscourseReactionEmoji {
             return
         }
         val file = withContext(Dispatchers.IO) { fallbackTile(emoticon, label) } ?: return
-        register(emoticon, file)
+        // The entry's title is the reaction's own label, which is the readable description upstream
+        // carries for it; the chip itself has no per-chip accessibility node of its own.
+        register(emoticon, file, title = label)
     }
 
     /** Draws the fallback once and keeps it; the same emoticon always names the same tile. */
@@ -112,6 +114,13 @@ object DiscourseReactionEmoji {
                 textSize = TILE_PX * 0.5f
                 textAlign = Paint.Align.CENTER
                 typeface = Typeface.DEFAULT_BOLD
+            }
+            // The label is the reaction's own; the chip draws the tile small, so the text is scaled
+            // to fit the tile rather than clipped by it.
+            val maxWidth = TILE_PX * 0.84f
+            val measured = paint.measureText(label)
+            if (measured > maxWidth && measured > 0f) {
+                paint.textSize = paint.textSize * (maxWidth / measured)
             }
             val baseline = TILE_PX / 2f - (paint.descent() + paint.ascent()) / 2f
             canvas.drawText(label, TILE_PX / 2f, baseline, paint)
@@ -135,14 +144,14 @@ object DiscourseReactionEmoji {
      * Points the emoticon's entry in upstream's live reaction table at [file], so the chip that
      * looks the emoticon up draws this picture instead of nothing.
      */
-    fun register(emoticon: String, file: File) {
+    fun register(emoticon: String, file: File, title: String = emoticon) {
         if (emoticon.isEmpty() || !file.exists() || file.length() <= 0) {
             return
         }
         val document = document(file)
         val reaction = TLRPC.TL_availableReaction()
         reaction.reaction = emoticon
-        reaction.title = emoticon
+        reaction.title = title
         reaction.static_icon = document
         reaction.center_icon = document
         MediaDataController.getInstance(0).getReactionsMap()[emoticon] = reaction

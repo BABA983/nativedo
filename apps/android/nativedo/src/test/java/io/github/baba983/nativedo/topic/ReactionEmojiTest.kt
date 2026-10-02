@@ -21,6 +21,7 @@ import io.github.baba983.nativedo.harness.shadows.ShadowUtilities
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -71,14 +72,14 @@ internal class ReactionEmojiTest {
     private val site = FakeDiscourseSite()
 
     /**
-     * Ids of this run's own. Upstream's reaction table and the file cache outlive a test class, so
-     * unknown ids (which become their own emoticon) keep a fallback one test wrote from leaking into
-     * another's chip.
+     * Ids of this run's own, short so the drawn fallback label is legible in the chip. Upstream's
+     * reaction table and the file cache outlive a test class, so unknown ids (which become their own
+     * emoticon) keep a fallback one test wrote from leaking into another's chip.
      */
-    private val runToken = System.nanoTime().toString().takeLast(6)
-    private val mappedId = "nativedo_mapped_$runToken"
-    private val failedId = "nativedo_failed_$runToken"
-    private val unmappedId = "nativedo_unmapped_$runToken"
+    private val runToken = System.nanoTime().toString().takeLast(3)
+    private val mappedId = "m$runToken"
+    private val failedId = "f$runToken"
+    private val unmappedId = "u$runToken"
 
     private val mappedPath = "emoji/mapped$runToken.png"
     private val failedPath = "emoji/failed$runToken.png"
@@ -127,6 +128,11 @@ internal class ReactionEmojiTest {
         assertNotNull("the mapped id was handed to upstream's table", table[mappedId])
         assertNotNull("the failed download was handed a fallback", table[failedId])
         assertNotNull("the id the site named no icon for was handed a fallback", table[unmappedId])
+        assertEquals(
+            "the fallback entry carries the reaction's readable label as its description",
+            io.github.baba983.nativedo.core.model.PostReactionRendering.fallbackLabel(failedId),
+            table[failedId]!!.title,
+        )
         assertFalse(
             "the mapped id keeps the site's picture and is not downgraded to a fallback",
             DiscourseReactionEmoji.fallbackFile(mappedId).exists(),
@@ -169,6 +175,9 @@ internal class ReactionEmojiTest {
                 "failedFallback=${Integer.toHexString(failedFallback)} pixels=${colourCount(failedBitmap, failedFallback)} " +
                 "unmappedFallback=${Integer.toHexString(unmappedFallback)} pixels=${colourCount(unmappedBitmap, unmappedFallback)}",
         )
+        // The three states in one frame: the mapped chip shows the site's picture, the 404'd and
+        // icon-less chips each show their own drawn fallback.
+        harness.renderApp("reactions-emoji-states")
         harness.assertNoTelegramSideEffects()
     }
 
