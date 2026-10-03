@@ -125,6 +125,17 @@ internal class PostLinkBrowserTest {
             attemptsBefore,
             ShadowConnectionsManager.REQUEST_ATTEMPTS,
         )
+
+        // A link pressed inside the browser goes through ArticleViewer.openWebpageUrl; with no
+        // tgnet it must load the new page directly instead of waiting on messages.getWebPage.
+        val attemptsBeforeNavigation = ShadowConnectionsManager.REQUEST_ATTEMPTS
+        sheet!!.getArticleViewer().openWebpageUrl(SECOND_LINK, null, null)
+        harness.idle()
+        assertEquals(
+            "a link pressed inside the browser asked Telegram for the page",
+            attemptsBeforeNavigation,
+            ShadowConnectionsManager.REQUEST_ATTEMPTS,
+        )
         harness.assertNoTelegramSideEffects()
     }
 
@@ -151,5 +162,6 @@ internal class PostLinkBrowserTest {
     private companion object {
         const val TOPIC_ID = 709L
         const val LINK = "https://example.com/linked-page"
+        const val SECOND_LINK = "https://example.com/second-page"
     }
 }
