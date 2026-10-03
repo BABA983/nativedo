@@ -34,12 +34,39 @@ live that keep tgnet and Telegram's database switched off.
 ## The upstream lines
 
 `git diff --stat <subtree-merge> -- apps/android/telegram/TMessagesProj apps/android/telegram/settings.gradle`
-reports 4 upstream files, 6 inserted lines: `ConnectionsManager.init` and `ConnectionsManager.isTestBackend`
-return early while the hooks are off, `MessagesStorage.openDatabase` does the same, `RichMessageLayout` asks
-whether a file this client fetches itself is still on its way (the media block's loading condition) and
-hands the block's own cancel button to it, and `settings.gradle` includes this module from outside the
-subtree. Every one of them is a one-line call into `NativeDoHooks`; nothing else upstream is touched —
-rendering, gestures, layout and animation are upstream's own code.
+reports 12 upstream files, 23 inserted lines (18 of them replace the upstream line they sit on):
+`ConnectionsManager.init` and `ConnectionsManager.isTestBackend` return early while the hooks are off,
+`MessagesStorage.openDatabase` does the same, `RichMessageLayout` asks whether a file this client
+fetches itself is still on its way (the media block's loading condition) and hands the block's own
+cancel button to it, `MessagesController.isWebBrowserOpenInApp` asks the hook before it reads Telegram's
+server setting, `LaunchActivity.getLastFragment` / `getSafeLastFragment` fall back to this client's
+shell where `LaunchActivity` itself would answer, `Browser.openInTelegramBrowser` takes the minimized
+browser tabs from the hook, `ActionBarLayout` hands a fresh `BottomSheetTabs` to the host's overlay,
+and `BottomSheetTabs`, `ArticleViewer` and `BottomSheetTabDialog` look the host up the same way for a
+sheet's dismiss, its navigation bar, its close button and the article lookup that is skipped while
+tgnet is off; `settings.gradle` includes this module from outside the subtree. Every one of them is a
+one-line call into `NativeDoHooks`; nothing else upstream is touched — rendering, gestures, layout and
+animation are upstream's own code.
+
+## The in-app browser
+
+A link in a post goes through upstream's `Browser.openUrl` and opens upstream's `ArticleViewer` sheet:
+the page's own action bar, its gestures, and the swipe that minimizes it into the `BottomSheetTabs`
+strip, from which a tap restores it. Upstream finds all of that through `LaunchActivity`
+(`instance.getBottomSheetTabs()`, `getSafeLastFragment()`, `getBottomSheetTabsOverlay()`), which this
+client does not have, so `NativeDoHooks.BrowserHost` is the one place those four answers come from:
+`NativeDoActivity` registers it, mirrors `LaunchActivity`'s host wiring (the `BottomSheetTabsOverlay`
+in the content view, a main `ActionBarLayout` that builds the tabs, back closing the open tabs view),
+and yields its own three-tab strip to the browser's while a page is minimized. The browser's own back
+and close go through the sheet stack of the layout's sheet fragment, upstream's normal path.
+
+Upstream decides in-app vs outside from `MessagesController.webBrowserSettings`, a Telegram account
+setting fetched from the server; with no account it never arrives, and upstream's default would send
+links to a custom tab or the system browser. This client's default is the in-app browser for every
+`http(s)` URL (`NativeDoHooks.isWebBrowserOpenInApp`), and it is imposed only while the shell hosts
+the app, so a real Telegram host keeps its own setting. One more Telegram-only step is skipped:
+`ArticleViewer`'s `messages.getWebPage` lookup, which cannot be answered without tgnet, so the page
+is loaded directly instead of waiting for it.
 
 ## How upstream's cells get our data
 
@@ -147,7 +174,7 @@ stands, and the upstream component each row is meant to use.
 | Start a topic (a title, a category, a body → `POST /posts.json`) | not built | done: the list's own floating button - upstream's, the one its chat list starts a new chat with - opens upstream's titled field, upstream's composer for the body, and the site's categories behind a dialog; the send button appears only when the form is complete | `FragmentFloatingButton`, `EditTextBoldCursor`, `ChatActivityEnterView`, `AlertDialog` of the site's items |
 | Topic detail, cooked HTML to native blocks | done, 41 ports | done | upstream `RichHtml.parse` into `ChatMessageCell` |
 | Post images and the lightbox | done | done | `PhotoViewer` |
-| Links in a post | done | routing wired; embedded browser not verified | `Browser.openUrl`; its embedded branch looks up the host through `LaunchActivity`, which this shell does not register as |
+| Links in a post | done | done: a tap opens upstream's in-app browser — the `ArticleViewer` sheet over the topic, the page minimizing into Telegram's `BottomSheetTabs` strip and restoring from it; the shell supplies the host upstream looks up through `LaunchActivity`, and this client's default is in-app for `http(s)` links | `Browser.openUrl` → `openInTelegramBrowser` → `ArticleViewer` / `BottomSheetTabs` |
 | Onebox link previews (`aside.onebox`) | done, cards | done | upstream's link preview (`TL_messageMediaWebPage`): one bubble per onebox, the bare link line gone from the text, and no bubble draws a forward arrow (`noforwards`) |
 | Video in a post (`<video>`) | partial, opened externally | done, to the clip's own size | upstream's video block (`pageBlockVideo` in `RichMessageLayout`'s media cell). Opening the topic fetches the cover only; the press on the block's own play button fetches the clip (up to 25 MB) while the block draws upstream's own loading state and progress, and the file opens in `PhotoViewer`. A clip over that, one the site refuses, and one the reader cancels - the block's own cancel button stops the transfer and drops the half-written file - is not played by upstream's viewer, which can only play a file this client holds: the first two are streamed by the device's own player, a cancel plays nothing and leaves the cover and the play button behind |
 | Avatars | done | done | the avatar receivers of `ChatMessageCell` / `DialogCell` |
