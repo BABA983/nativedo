@@ -366,12 +366,18 @@ class DiscourseApiClient(
     suspend fun votePoll(postId: Long, pollName: String, optionIds: List<String>): PostPoll? =
         runWithSessionBoundary(requiresAuthentication = true) {
             val csrfToken = service.csrf().csrf
-            service.votePoll(
+            val response = service.votePoll(
                 postId = postId,
                 pollName = pollName,
                 optionIds = optionIds,
                 csrfToken = csrfToken,
-            ).poll?.toModel()
+            )
+            // The answer's `vote` is the site's own echo of the reader's selection, and it is the
+            // only place a regular poll's answer carries it: the option serializer emits no
+            // `chosen` for a single-choice poll (a multiple one merges it per option, the same
+            // selection again). Without this the rebuilt floor draws the new counts as if the
+            // reader had not voted.
+            response.poll?.toModel(votes = response.vote)
         }
 
     /** Retracts the reader's vote; the answer carries the poll's new state. */

@@ -303,6 +303,44 @@ stands, and the upstream component each row is meant to use.
   （`03-profile-top`、`04-profile-mid`、`05-profile-collapsed`）。仍未验：夜间主题、录屏下的连续水滴
   形变（静帧看不出颈部）、刘海融合；列表底部没有为手势条留内边距，最后一行会滚到手势条下面。
 
+### 投票：单投、改票、撤回、多选切换与失败路径（2026-10-04，`emulator-5554`，已登录 @example_user）
+
+- **前提与现场不符，已按授权补足**：指定的私信 2975944 的 3 楼当时没有任何投票——app 现场拉取的
+  窗口（`/t/2975944/3.json`，以及为排除窗口遗漏再拉的 `/t/2975944/999`）都只有 1–3 楼，`polls`
+  为空、cooked HTML 里也没有 `data-poll-name`（用临时的 `NativeDoPoll` 日志核实过，核完已撤回）。
+  为让功能可验，用 app 自己的回复框在该私信发了第 4 楼（`POST /posts.json`，raw 就是两段
+  `[poll]`），站点建出两个真实投票：`device_single`（regular，Alpha/Beta）与 `device_multi`
+  （multiple，Red/Green/Blue）。这是设备上新增的测试内容；结束时两票都已撤回，两个投票本体保留
+  （客户端没有删除入口）。找不到其他被授权的可投投票：站点搜索 `in:personal wbz` 命中的那条
+  7 楼私信也没有投票。
+- **发现并修复**：`regular` 投票的响应里 `poll.options[]` 不带 `chosen`（站点只给 `multiple`
+  的每个选项合并 `chosen`），读者的选择只在响应顶层的 `vote` 数组里。`votePoll` 原来丢掉了它，
+  所以投票后重建的那层楼把新票数画成「还没投」（底栏 `1 vote`，选项没有选中标记与百分比）。
+  修复是 `DiscourseApiClient.votePoll` 把 `response.vote` 并回模型；`contracts/discourse/endpoints.md`
+  的相应句子与 `fixtures/discourse/poll-vote-response.json` 同步修正（fixture 不再带 `chosen`，
+  改由 `vote` 驱动；`PollTest` 断言不变，从此走的是真实响应的形状）。
+- **单投**：点 Alpha → `GET /session/csrf` 200 + `PUT /polls/vote` 200 → 修复后立即出现
+  「100% Alpha 1 / 0% Beta」、选中标记与 `View Votes (1)`；修复前的构建上复现过缺选中态的同
+  画面（截图 `27-vote-alpha`，修复后 `30-change-to-beta`）。
+- **改票**：已投 Alpha 时点 Beta → 一次 PUT 200 → 「0% Alpha / 100% Beta 1」。
+- **撤回**：点已选的 Beta → `DELETE /polls/vote` 200 → 回到未投态（圆点、底栏 `No votes`）。
+- **多选切换**：勾 Red → `Vote` → PUT 200 →「100% Red 1」；再点 Blue → 一次 PUT 200 →
+  {Red, Blue} 各 100% 1；点掉 Red → 一次 PUT 200 → 只剩 Blue；点掉 Blue（集合为空）→
+  DELETE 200 → 回到未投态。`selectionFor` 的「整组发送、空组即撤回」与设备一致。
+- **离开重开看服务端**：返回列表再深链重开 `/t/2975944/4`：已投票时显示服务端的
+  「100% Alpha 1 / View Votes (1)」，撤回后再重开两个投票都是 `No votes`——不是本地残留。
+- **失败路径**：`cmd connectivity airplane-mode enable` 后点 Alpha，约 10 秒后弹出
+  「投票失败／timeout」对话框，气泡仍是未投态（没有假的已投状态），关闭飞行模式再点同一下即
+  PUT 200 成功。图 `36-airplane-fail`、`37-recovered`。
+- 全程 `NativeDoSession` 会话行都是 `status=200 accepted=true`，token/论坛会话/clearance 都在；
+  没有 challenge、没有 crash、没有打印任何 cookie/token。APK 是 arm64 `assembleDebug` 的
+  `485e7da1…`（设备 `base.apk` SHA-256 相同，覆盖安装未卸载未清数据），`:nativedo:testDebugUnitTest`
+  30 类 86 项全过（0 失败、0 error、0 skipped、exit 0）。截图与测试 XML 在
+  `.amp/in/artifacts/poll-wave2/`。
+- **未验证**：`ranked_choice`（客户端本来就把点按转成楼层菜单）、已关闭的投票、选项图与
+  「添加选项」；`View Votes (N)` 点了没有反应（voter list 入口缺失，已知差距）；本机没有软键盘，
+  多行 raw 是用 `input keyevent 66` 注入的（`send_by_enter=false`，回车只换行）。
+
 ### 设备验证结果（2026-10-01/02，AVD `nativedo-test`／android-35 google_apis_tablet arm64-v8a，`emulator-5556`）
 
 环境：Apple Silicon Mac mini，模拟器内全局代理 `10.0.2.2:7890`（这台机器上跑着的 ClashX Meta）。
