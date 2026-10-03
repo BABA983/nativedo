@@ -193,12 +193,12 @@ public class TopicFragment extends BaseFragment {
         listView.setAdapter(new PostAdapter());
         // Upstream's cell only arms its own long press when the touch landed on something it calls
         // pressable, which a rich message's text is not, so the row asks for the menu itself. Same
-        // floor, same dialog as a long press would open.
+        // floor, same menu as a long press would open, anchored on the row that was pressed.
         listView.setOnItemLongClickListener((view, position) -> {
             if (position < 0 || position >= bubbleFloors.size()) {
                 return false;
             }
-            showMessageMenu(bubbleFloors.get(position));
+            showMessageMenu(view, bubbleFloors.get(position));
             return true;
         });
         listView.setVerticalScrollBarEnabled(false);
@@ -825,37 +825,33 @@ public class TopicFragment extends BaseFragment {
     }
 
     /**
-     * What the reader can do with a post: copy its text, copy a link to it, or reply to it. The
-     * dialog is upstream's own, so it looks like every other confirmation in the app. Every bubble
-     * of a floor opens it, and it always speaks for the whole floor, not for one segment of it.
+     * What the reader can do with a post: copy its text, copy a link to it, bookmark it, or reply
+     * to it. The choices are upstream's own scrim popup, anchored on the bubble that was pressed —
+     * the shape a chat uses for a message's menu — so the bubble stays lit above the dim while the
+     * reader decides.
      */
-    private void showMessageMenu(int floor) {
-        if (getParentActivity() == null || floor < 0 || floor >= floors.size()) {
+    private void showMessageMenu(android.view.View scrim, int floor) {
+        if (getParentActivity() == null || scrim == null || floor < 0 || floor >= floors.size()) {
             return;
         }
         boolean bookmarked = floors.get(floor).isBookmarked();
-        String[] items = new String[]{
-                "复制",
-                "复制链接",
-                bookmarked ? "取消书签" : "添加书签",
-                "回复",
-        };
-        org.telegram.ui.ActionBar.AlertDialog.Builder builder =
-                new org.telegram.ui.ActionBar.AlertDialog.Builder(getParentActivity());
-        builder.setItems(items, (dialog, which) -> {
-            if (which == 0) {
-                AndroidUtilities.addToClipboard(plainText(floor));
-            } else if (which == 1) {
-                android.content.ClipboardManager clipboard = (android.content.ClipboardManager)
-                        getParentActivity().getSystemService(Context.CLIPBOARD_SERVICE);
-                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("link", postUrl(floor)));
-            } else if (which == 2) {
-                toggleBookmark(floor);
-            } else {
-                replyTo(floor);
-            }
+        org.telegram.ui.Components.ItemOptions options =
+                org.telegram.ui.Components.ItemOptions.makeOptions(this, scrim);
+        options.add(org.telegram.messenger.R.drawable.msg_copy, "复制",
+                () -> AndroidUtilities.addToClipboard(plainText(floor)));
+        options.add(org.telegram.messenger.R.drawable.msg_link, "复制链接", () -> {
+            android.content.ClipboardManager clipboard = (android.content.ClipboardManager)
+                    getParentActivity().getSystemService(Context.CLIPBOARD_SERVICE);
+            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("link", postUrl(floor)));
         });
-        showDialog(builder.create());
+        options.add(
+                bookmarked
+                        ? org.telegram.messenger.R.drawable.msg_unfave
+                        : org.telegram.messenger.R.drawable.msg_fave,
+                bookmarked ? "取消书签" : "添加书签",
+                () -> toggleBookmark(floor));
+        options.add(org.telegram.messenger.R.drawable.menu_reply, "回复", () -> replyTo(floor));
+        options.show();
     }
 
     /**
@@ -1327,14 +1323,14 @@ public class TopicFragment extends BaseFragment {
             toggleReaction(floors.get(floor).getId(), reactionId);
         }
 
-        /** Long press on any bubble of a floor: the three things a reader does with a post. */
+        /** Long press on any bubble of a floor: the menu a reader opens on a post. */
         @Override
         public void didLongPress(ChatMessageCell cell, float x, float y) {
             int floor = floorOf(cell.getMessageObject());
             if (floor < 0) {
                 return;
             }
-            showMessageMenu(floor);
+            showMessageMenu(cell, floor);
         }
 
         /**
@@ -1382,7 +1378,7 @@ public class TopicFragment extends BaseFragment {
             String digest = new String(answer.option, java.nio.charset.StandardCharsets.UTF_8);
             PollVoteSelection selection = DiscoursePolls.selectionFor(poll, digest);
             if (selection == null) {
-                showMessageMenu(floorOf(message));
+                showMessageMenu(cell, floorOf(message));
                 return true;
             }
             vote(message, poll, selection);
