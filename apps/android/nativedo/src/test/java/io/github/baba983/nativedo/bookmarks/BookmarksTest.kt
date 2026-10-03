@@ -100,8 +100,8 @@ internal class BookmarksTest {
         val items = menuItems()
         println("bookmarks: the menu offers $items")
         assertEquals(
-            "the menu offers the bookmark and nothing else new",
-            listOf("复制", "复制链接", "添加书签", "回复"),
+            "the menu offers the bookmark and the post's text too",
+            listOf("复制", "复制链接", "添加书签", "回复", "选择文本"),
             items,
         )
 

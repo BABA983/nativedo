@@ -69,6 +69,12 @@ public class TopicFragment extends BaseFragment {
     }
 
     private PostListView listView;
+    /**
+     * Upstream's own text selection for chat lists, the one a chat's message list drives: the
+     * posts hand it their touches the way {@code ChatMessageCell} does, and the overlay it draws
+     * (handles, highlight and the copy bar) is added to the content view.
+     */
+    private org.telegram.ui.Cells.TextSelectionHelper.ChatListTextSelectionHelper textSelectionHelper;
     /** The topic's floors, in order: one post each, drawn as one or more bubbles. */
     private final List<Post> floors = new ArrayList<>();
     /** Every bubble of every floor, in order; this is what the list binds. */
@@ -177,7 +183,7 @@ public class TopicFragment extends BaseFragment {
         actionBar.setActionBarMenuOnItemClick(new org.telegram.ui.ActionBar.ActionBar.ActionBarMenuOnItemClick() {
             @Override
             public void onItemClick(int id) {
-                if (id == -1) {
+                if (id == -1 && onBackPressed(true)) {
                     finishFragment();
                 }
             }
@@ -211,6 +217,18 @@ public class TopicFragment extends BaseFragment {
                     // Scrolling is what tells the dwell clock the reader is still reading; without
                     // it a topic left open on a desk would count as read time.
                     reporter.noteActivity();
+                }
+                if (textSelectionHelper != null) {
+                    // A scroll moves the selection's coordinates with the list; upstream's chat does
+                    // the same in its own scroll listener.
+                    textSelectionHelper.onParentScrolled();
+                }
+            }
+
+            @Override
+            public void onScrollStateChanged(@NonNull RecyclerView recyclerView, int newState) {
+                if (newState == RecyclerView.SCROLL_STATE_IDLE && textSelectionHelper != null) {
+                    textSelectionHelper.stopScrolling();
                 }
             }
         });
@@ -247,6 +265,23 @@ public class TopicFragment extends BaseFragment {
         contentView.addView(failureView, org.telegram.ui.Components.LayoutHelper.createFrame(
                 org.telegram.ui.Components.LayoutHelper.MATCH_PARENT,
                 org.telegram.ui.Components.LayoutHelper.MATCH_PARENT));
+
+        // Upstream's selection, wired the way ChatActivity wires it: the overlay is a child of the
+        // content view, the message list is its parent (that is where a handle's coordinates are
+        // computed from), and the callback ends a sliding gesture that the selection supersedes.
+        textSelectionHelper = new org.telegram.ui.Cells.TextSelectionHelper.ChatListTextSelectionHelper();
+        textSelectionHelper.setCallback(new org.telegram.ui.Cells.TextSelectionHelper.Callback() {
+            @Override
+            public void onStateChanged(boolean isSelected) {
+            }
+
+            @Override
+            public void onTextCopied() {
+            }
+        });
+        View selectionOverlay = textSelectionHelper.getOverlayView(context);
+        contentView.addView(selectionOverlay);
+        textSelectionHelper.setParentView(listView);
 
         fragmentView = contentView;
         loadTopic(topicId);
@@ -488,6 +523,21 @@ public class TopicFragment extends BaseFragment {
         if (reporter != null) {
             reporter.setForeground(true);
         }
+    }
+
+    /**
+     * Back means the selection first, the topic second - upstream's chat does the same: a back press
+     * while text is selected drops the selection and the topic stays.
+     */
+    @Override
+    public boolean onBackPressed(boolean invoked) {
+        if (textSelectionHelper != null && textSelectionHelper.isInSelectionMode()) {
+            if (invoked) {
+                textSelectionHelper.clear();
+            }
+            return false;
+        }
+        return super.onBackPressed(invoked);
     }
 
     @Override
@@ -851,7 +901,40 @@ public class TopicFragment extends BaseFragment {
                 bookmarked ? "取消书签" : "添加书签",
                 () -> toggleBookmark(floor));
         options.add(org.telegram.messenger.R.drawable.menu_reply, "回复", () -> replyTo(floor));
+        if (scrim instanceof ChatMessageCell && hasSelectableText((ChatMessageCell) scrim)) {
+            options.add(org.telegram.messenger.R.drawable.msg_select, "选择文本",
+                    () -> startTextSelection((ChatMessageCell) scrim));
+        }
         options.show();
+    }
+
+    /**
+     * Whether the bubble draws text a selection can take. A poll bubble has none of its own - its
+     * answers are buttons - and neither has a bubble whose body was empty.
+     */
+    private static boolean hasSelectableText(ChatMessageCell cell) {
+        return cell.getMessageObject() != null
+                && cell.getMessageObject().richLayout != null
+                && !cell.getMessageObject().richLayout.textBlocks.isEmpty()
+                && cell.getMessageObject().richLayout.joinedText.length() > 0;
+    }
+
+    /**
+     * The reader asked for the post's text. Upstream starts a selection by holding a finger on a
+     * message's text, and the message has to be in the state its menu put it in; our menu is a popup
+     * that owns the screen while it is up, so the menu is where the selection starts: the whole text
+     * is picked, and the handles are what narrows it. From there the overlay is upstream's own.
+     */
+    private void startTextSelection(ChatMessageCell cell) {
+        if (textSelectionHelper == null || cell == null || cell.getMessageObject() == null
+                || cell.getMessageObject().richLayout == null) {
+            return;
+        }
+        CharSequence text = cell.getMessageObject().richLayout.joinedText;
+        if (text == null || text.length() == 0) {
+            return;
+        }
+        textSelectionHelper.select(cell, 0, text.length());
     }
 
     /**
@@ -1383,6 +1466,15 @@ public class TopicFragment extends BaseFragment {
             }
             vote(message, poll, selection);
             return true;
+        }
+
+        /**
+         * Upstream asks the delegate for the selection helper on every touch a message receives;
+         * handing it over is what lets a post's text be selected at all.
+         */
+        @Override
+        public org.telegram.ui.Cells.TextSelectionHelper.ChatListTextSelectionHelper getTextSelectionHelper() {
+            return textSelectionHelper;
         }
 
         /**

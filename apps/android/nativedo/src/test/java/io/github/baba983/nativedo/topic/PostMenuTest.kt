@@ -92,11 +92,12 @@ internal class PostMenuTest {
         val rows = latestItemOptionsMenu(harness.activity)
         val items = menuItemLabels(rows)
         println("menu: items = $items")
-        assertEquals("the menu offers the four things a reader does", 4, items.size)
+        assertEquals("the menu offers the things a reader does", 5, items.size)
         assertTrue("with copy", items.any { it.contains("复制") })
         assertTrue("a link", items.any { it.contains("链接") })
         assertTrue("a bookmark", items.any { it.contains("书签") })
-        assertTrue("and reply", items.any { it.contains("回复") })
+        assertTrue("reply", items.any { it.contains("回复") })
+        assertTrue("and the post's text", items.any { it.contains("选择文本") })
 
         // The first entry copies the post's text, not its markup.
         clickMenuItem(rows, "复制")
@@ -107,6 +108,64 @@ internal class PostMenuTest {
         println("menu: clipboard after copy = $copied")
         assertEquals("the post's text is on the clipboard", "Hello from a linux.do post.", copied)
         harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * The selection the menu starts is upstream's own: the helper upstream's cells hand their
+     * touches to is in selection mode over this post, the whole body is picked, and the overlay it
+     * draws sits over the list without taking touches that are not its handles - a scroll that
+     * landed on the overlay has to reach the list, or a selected post would freeze the screen.
+     */
+    @Test
+    fun theMenuStartsATextSelectionOverThePostAndTheOverlayLeavesTheListItsScroll() {
+        harness.bootApp()
+        harness.await("the topic list to load") { rowCount() == 2 }
+        harness.present(TopicFragment.forTopic(TOPIC_ID, "Select"))
+        harness.await("the topic to load") { rowCount() == 1 }
+
+        val cell = laidOutCells().firstOrNull() ?: throw AssertionError("the topic drew no cell")
+        cell.delegate.didLongPress(cell, 0f, 0f)
+        harness.idle()
+        clickMenuItem(latestItemOptionsMenu(harness.activity), "选择文本")
+        harness.idle()
+
+        val selection = cell.delegate.textSelectionHelper
+            ?: throw AssertionError("the cell has no selection helper")
+        println("select: inSelection=" + selection.isInSelectionMode()
+            + " start=" + selection.selectionStart + " end=" + selection.selectionEnd)
+        assertTrue("the menu started a selection", selection.isInSelectionMode())
+        assertEquals("the whole post is picked", 0, selection.selectionStart)
+        assertEquals(
+            "up to its own text",
+            "Hello from a linux.do post.".length,
+            selection.selectionEnd,
+        )
+        assertEquals("over the bubble the menu was opened on", cell, selection.getSelectedCell())
+
+        val overlay = findOverlay(harness.activity.findViewById(android.R.id.content))
+        assertTrue("the overlay is where the fragment draws", overlay != null)
+        val away = android.view.MotionEvent.obtain(0, 0, android.view.MotionEvent.ACTION_DOWN, 4f, 4f, 0)
+        assertTrue("a touch away from the handles is not the overlay's",
+            !overlay!!.onTouchEvent(away))
+        away.recycle()
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * The selection overlay is an inner view of upstream's generic helper, so it is found by its
+     * own name rather than by a type this test cannot spell.
+     */
+    private fun findOverlay(view: android.view.View?): android.view.View? {
+        when (view) {
+            null -> return null
+            is android.view.ViewGroup -> for (index in 0 until view.childCount) {
+                findOverlay(view.getChildAt(index))?.let { return it }
+            }
+            else -> if (view.javaClass.simpleName == "TextSelectionOverlay") {
+                return view
+            }
+        }
+        return null
     }
 
     private fun rowCount(): Int = listView()?.adapter?.itemCount ?: 0
