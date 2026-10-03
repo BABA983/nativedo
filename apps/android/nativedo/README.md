@@ -34,12 +34,39 @@ live that keep tgnet and Telegram's database switched off.
 ## The upstream lines
 
 `git diff --stat <subtree-merge> -- apps/android/telegram/TMessagesProj apps/android/telegram/settings.gradle`
-reports 4 upstream files, 6 inserted lines: `ConnectionsManager.init` and `ConnectionsManager.isTestBackend`
-return early while the hooks are off, `MessagesStorage.openDatabase` does the same, `RichMessageLayout` asks
-whether a file this client fetches itself is still on its way (the media block's loading condition) and
-hands the block's own cancel button to it, and `settings.gradle` includes this module from outside the
-subtree. Every one of them is a one-line call into `NativeDoHooks`; nothing else upstream is touched —
-rendering, gestures, layout and animation are upstream's own code.
+reports 12 upstream files, 23 inserted lines (18 of them replace the upstream line they sit on):
+`ConnectionsManager.init` and `ConnectionsManager.isTestBackend` return early while the hooks are off,
+`MessagesStorage.openDatabase` does the same, `RichMessageLayout` asks whether a file this client
+fetches itself is still on its way (the media block's loading condition) and hands the block's own
+cancel button to it, `MessagesController.isWebBrowserOpenInApp` asks the hook before it reads Telegram's
+server setting, `LaunchActivity.getLastFragment` / `getSafeLastFragment` fall back to this client's
+shell where `LaunchActivity` itself would answer, `Browser.openInTelegramBrowser` takes the minimized
+browser tabs from the hook, `ActionBarLayout` hands a fresh `BottomSheetTabs` to the host's overlay,
+and `BottomSheetTabs`, `ArticleViewer` and `BottomSheetTabDialog` look the host up the same way for a
+sheet's dismiss, its navigation bar, its close button and the article lookup that is skipped while
+tgnet is off; `settings.gradle` includes this module from outside the subtree. Every one of them is a
+one-line call into `NativeDoHooks`; nothing else upstream is touched — rendering, gestures, layout and
+animation are upstream's own code.
+
+## The in-app browser
+
+A link in a post goes through upstream's `Browser.openUrl` and opens upstream's `ArticleViewer` sheet:
+the page's own action bar, its gestures, and the swipe that minimizes it into the `BottomSheetTabs`
+strip, from which a tap restores it. Upstream finds all of that through `LaunchActivity`
+(`instance.getBottomSheetTabs()`, `getSafeLastFragment()`, `getBottomSheetTabsOverlay()`), which this
+client does not have, so `NativeDoHooks.BrowserHost` is the one place those four answers come from:
+`NativeDoActivity` registers it, mirrors `LaunchActivity`'s host wiring (the `BottomSheetTabsOverlay`
+in the content view, a main `ActionBarLayout` that builds the tabs, back closing the open tabs view),
+and yields its own three-tab strip to the browser's while a page is minimized. The browser's own back
+and close go through the sheet stack of the layout's sheet fragment, upstream's normal path.
+
+Upstream decides in-app vs outside from `MessagesController.webBrowserSettings`, a Telegram account
+setting fetched from the server; with no account it never arrives, and upstream's default would send
+links to a custom tab or the system browser. This client's default is the in-app browser for every
+`http(s)` URL (`NativeDoHooks.isWebBrowserOpenInApp`), and it is imposed only while the shell hosts
+the app, so a real Telegram host keeps its own setting. One more Telegram-only step is skipped:
+`ArticleViewer`'s `messages.getWebPage` lookup, which cannot be answered without tgnet, so the page
+is loaded directly instead of waiting for it.
 
 ## How upstream's cells get our data
 
@@ -147,7 +174,7 @@ stands, and the upstream component each row is meant to use.
 | Start a topic (a title, a category, a body → `POST /posts.json`) | not built | done: the list's own floating button - upstream's, the one its chat list starts a new chat with - opens upstream's titled field, upstream's composer for the body, and the site's categories behind a dialog; the send button appears only when the form is complete | `FragmentFloatingButton`, `EditTextBoldCursor`, `ChatActivityEnterView`, `AlertDialog` of the site's items |
 | Topic detail, cooked HTML to native blocks | done, 41 ports | done | upstream `RichHtml.parse` into `ChatMessageCell` |
 | Post images and the lightbox | done | done | `PhotoViewer` |
-| Links in a post | done | routing wired; embedded browser not verified | `Browser.openUrl`; its embedded branch looks up the host through `LaunchActivity`, which this shell does not register as |
+| Links in a post | done | done: a tap opens upstream's in-app browser — the `ArticleViewer` sheet over the topic, the page minimizing into Telegram's `BottomSheetTabs` strip and restoring from it; the shell supplies the host upstream looks up through `LaunchActivity`, and this client's default is in-app for `http(s)` links | `Browser.openUrl` → `openInTelegramBrowser` → `ArticleViewer` / `BottomSheetTabs` |
 | Onebox link previews (`aside.onebox`) | done, cards | done | upstream's link preview (`TL_messageMediaWebPage`): one bubble per onebox, the bare link line gone from the text, and no bubble draws a forward arrow (`noforwards`) |
 | Video in a post (`<video>`) | partial, opened externally | done, to the clip's own size | upstream's video block (`pageBlockVideo` in `RichMessageLayout`'s media cell). Opening the topic fetches the cover only; the press on the block's own play button fetches the clip (up to 25 MB) while the block draws upstream's own loading state and progress, and the file opens in `PhotoViewer`. A clip over that, one the site refuses, and one the reader cancels - the block's own cancel button stops the transfer and drops the half-written file - is not played by upstream's viewer, which can only play a file this client holds: the first two are streamed by the device's own player, a cancel plays nothing and leaves the cover and the play button behind |
 | Avatars | done | done | the avatar receivers of `ChatMessageCell` / `DialogCell` |
@@ -182,6 +209,41 @@ stands, and the upstream component each row is meant to use.
 - 书签：长按菜单的收藏与取消收藏、资料页与设置页的书签列表，在一个已有书签的账号上验证置顶顺序、被删楼层的行、已关闭话题的行。
 - 设置页：外观 / 我的 / 账号三组的行高与间距是否符合上游观感；退出登录的确认框、清 cookie 后回到登录页、再登录回来后话题与通知是否正常。
 - 通知 tab：没有推送和未读计数时，列表的排序和徽章是否仍然清楚。
+
+### 帖子链接与内置浏览器（2026-10-04，`emulator-5554`，`nativedo-browser-wave2`）
+
+- 链接的 before/after。旧构建里帖子中的 https 链接走不到上游的内嵌分支（它的宿主是 `LaunchActivity`，这个壳不是），
+  落到 `CustomTabsIntent`/系统浏览器；本片在 `NativeDoHooks.BrowserHost` 里回答上游要找的四件事，`NativeDoActivity`
+  照 `LaunchActivity` 接好宿主（contentView 里的 `BottomSheetTabsOverlay`、main `ActionBarLayout` 建 tabs、
+  返回先关 tabs 面板、自家三格栏在页面最小化时让位），链接于是进入 Telegram 自己的 `ArticleViewer` 网页 sheet。
+- 设置默认值：上游的内嵌开关是 `MessagesController.webBrowserSettings`（服务器下发的 Telegram 账号设置），
+  没有账号它永远为空，上游默认会把 http(s) 链接放到 App 外（自定义标签页/系统浏览器）。本客户端明确改成
+  默认内嵌（仅 http(s)，且只在我们的宿主存在时生效）；`ArticleViewer` 的 `messages.getWebPage` 查询在
+  tgnet 关闭时直接跳过，页面立即加载而不是等一个不会来的回答。登录 WebView 的链接处理没有动：它只把
+  非 http(s) scheme 交给 `Browser.openUrl`，本片的默认只拦 http(s)，那类链接仍照旧外部打开。
+- 设备检查（覆盖安装 `-r -t`，未卸载未清数据，仍登录 @example_user）：
+  - 帖子里的 linux.do 链接（社区官方 iOS App 帖中的 `https://linux.do/t/topic/2974886`）：进入内置浏览器，
+    `X` + 标题/URL 两行 + 展开箭头 + 菜单的结构（不是 Chrome 自定义标签页），整页渲染。截图 `09-linuxdo-inapp`。
+  - 向下滑：页面最小化为底部标签条（X + favicon + 标题 + 展开箭头），底部的 话题/通知/设置 栏按设计让位；
+    点标签条恢复整页。截图 `10-minimize`、`11-restore`。
+  - 返回键关闭浏览器，回到话题。截图 `13-back`。
+  - 普通外链（帖子里的 App Store onebox → `apps.apple.com/us/app/linux-do-community`）同样进内置浏览器并加载整页。
+    截图 `14-appstore`、`15-back-external`。
+  - linux.do 深链仍走原生：显式给 `NativeDoActivity` 的 `VIEW` intent 原生打开该话题（`17/18`）；不带组件的
+    `am start` 被系统解析器交给 Chrome（`16`，`pm resolve-activity` 返回 ResolverActivity），这是设备的系统首选状态，
+    与本片改动无关。
+  - `logcat` 只有 `Browser.openInExternalApp` 探测失败的 `ActivityNotFoundException`（上游自己 catch，内嵌分支的前置探测，
+    属预期），crash buffer 为空，无 FATAL/ANR。摘录 `logcat-press-trace.txt`。
+- 两个观察，留在后续：内置浏览器里的 linux.do 页面是匿名态（页头「Log In」，`/boards/topic/1` 显示 Access Denied）——
+  打开浏览器前把 app 的 cookie store 同步进 WebView 还没接（截图为 `19-boards-link`）；浏览器菜单里的 历史/书签
+  指向上游 Telegram 的收藏列表（`MediaDataController` 的媒体查询），点它不会崩但我们这边没有数据，是已知的接触面。
+- 构建与测试：本 worktree 首次 `assembleDebug -Pandroid.injected.build.abi=arm64-v8a --quiet`（原生 `.so` 取自同 commit 的设备
+  worktree，Java/资源/dex/打包在本地跑），APK SHA-256 `192dc283cc83060169b52089a9336bb3b1f2a347d9155c399795d36743b21920`
+  与设备 `base.apk` 一致（验后为了给满盘腾空间删掉了构建产物，哈希留在 `VERIFICATION.txt`）。`:nativedo:testDebugUnitTest`
+  31 类 87 项全过（0 失败、0 error、0 skipped）；新增 `PostLinkBrowserTest` 固定失败模式：没有 `LaunchActivity` 时帖子
+  链接仍要到达 `ArticleViewer` sheet 且一次 tgnet 请求都不发。`scripts/vendor-guard.sh --compile` OK（它管旧
+  `apps/android/TMessagesProj` 骨架；本片的上游行在 `apps/android/telegram` 下，账记在「The upstream lines」一段）。
+- 证据在 `.amp/in/artifacts/browser-wave2/`。
 
 ### 本片验证（2026-10-03，`emulator-5556`）
 

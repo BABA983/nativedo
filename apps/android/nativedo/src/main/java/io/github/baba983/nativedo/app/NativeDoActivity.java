@@ -20,6 +20,8 @@ import org.telegram.messenger.LiteMode;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.ui.ActionBar.ActionBarLayout;
 import org.telegram.ui.ActionBar.BaseFragment;
+import org.telegram.ui.ActionBar.BottomSheetTabs;
+import org.telegram.ui.ActionBar.BottomSheetTabsOverlay;
 import org.telegram.ui.ActionBar.DrawerLayoutContainer;
 import org.telegram.ui.ActionBar.INavigationLayout;
 import org.telegram.ui.ActionBar.Theme;
@@ -40,6 +42,7 @@ import io.github.baba983.nativedo.auth.LoginWebViewFragment;
 import io.github.baba983.nativedo.auth.SessionStarter;
 import io.github.baba983.nativedo.core.di.AppContainer;
 import io.github.baba983.nativedo.core.session.AppSessionState;
+import io.github.baba983.nativedo.hooks.NativeDoHooks;
 import io.github.baba983.nativedo.topic.TopicListFragment;
 
 /**
@@ -53,6 +56,8 @@ import io.github.baba983.nativedo.topic.TopicListFragment;
 public class NativeDoActivity extends Activity implements NotificationCenter.NotificationCenterDelegate {
 
     private ActionBarLayout actionBarLayout;
+    /** Upstream's browser hands its minimized pages to its host's overlay; this is that view. */
+    private BottomSheetTabsOverlay browserTabsOverlay;
     private LineProgressView sessionProgress;
     private DrawerLayoutContainer drawerLayoutContainer;
     private FrameLayout contentView;
@@ -85,11 +90,60 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         Theme.createChatResources(this, false);
         Theme.createCommonMessageResources();
 
+        // Upstream's in-app browser finds its host through LaunchActivity: its static instance,
+        // its bottom-sheet tabs and the safe last fragment of its ActionBarLayout. This shell is
+        // not a LaunchActivity, so it answers those questions itself through the same single seam
+        // every other upstream edit uses. The overlay is created first because the layout asks for
+        // it while the tabs are built, exactly as LaunchActivity's does.
+        browserTabsOverlay = new BottomSheetTabsOverlay(this);
+        NativeDoHooks.setBrowserHost(new NativeDoHooks.BrowserHost() {
+            @Override
+            public BottomSheetTabs getBottomSheetTabs() {
+                return actionBarLayout == null ? null : actionBarLayout.getBottomSheetTabs();
+            }
+
+            @Override
+            public BottomSheetTabsOverlay getBottomSheetTabsOverlay() {
+                return browserTabsOverlay;
+            }
+
+            @Override
+            public BaseFragment getLastFragment() {
+                return actionBarLayout == null ? null : actionBarLayout.getLastFragment();
+            }
+
+            @Override
+            public BaseFragment getSafeLastFragment() {
+                return actionBarLayout == null ? null : actionBarLayout.getSafeLastFragment();
+            }
+
+            @Override
+            public void checkSystemBarColors() {
+                updateSystemBarColors();
+            }
+        });
+
         // The upstream layout owns system/IME insets; only our root-tab height is supplied here.
-        actionBarLayout = new ActionBarLayout(this, false) {
+        actionBarLayout = new ActionBarLayout(this, true) {
             @Override
             public int getBottomTabsHeight(boolean animated) {
+                // The browser's minimized tabs take the bottom bar when they are up; otherwise it
+                // is this shell's own strip that occupies it.
+                int browserHeight = super.getBottomTabsHeight(animated);
+                if (browserHeight > 0) {
+                    return browserHeight;
+                }
                 return tabsVisible ? AndroidUtilities.dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS) : 0;
+            }
+
+            @Override
+            public void relayout() {
+                super.relayout();
+                // Tabs appearing and disappearing is the browser telling the layout the bottom bar
+                // changes hands; the shell's own strip yields to it.
+                if (drawerLayoutContainer != null && contentView != null) {
+                    updateTabsVisibility();
+                }
             }
         };
         actionBarLayout.setFragmentStack(new ArrayList<>());
@@ -121,6 +175,8 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         contentView.addView(drawerLayoutContainer, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         drawerLayoutContainer.addView(actionBarLayout.getView(), new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        contentView.addView(browserTabsOverlay, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         setContentView(contentView);
         ViewCompat.setOnApplyWindowInsetsListener(contentView, (view, insets) -> {
@@ -237,11 +293,19 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
     /**
      * The tab strip belongs to the roots. A screen opened from one of them (a topic, a settings
      * page) takes the whole window, the way a chat does in Telegram: the strip slides away and the
-     * content keeps the height it frees.
+     * content keeps the height it frees. The browser's minimized pages take the bottom bar the
+     * same way, so this shell's strip steps aside while they are up.
      */
     private void updateTabsVisibility() {
-        showTabs(!signedOut && !keyboardVisible && actionBarLayout.getFragmentStack().size() <= 1, true);
+        showTabs(!signedOut && !keyboardVisible && !browserTabsExpanded()
+                && actionBarLayout.getFragmentStack().size() <= 1, true);
         updateSystemBarColors();
+    }
+
+    /** Whether upstream's browser has a minimized page; its strip occupies the bottom bar then. */
+    private boolean browserTabsExpanded() {
+        BottomSheetTabs browserTabs = actionBarLayout == null ? null : actionBarLayout.getBottomSheetTabs();
+        return browserTabs != null && !browserTabs.getTabs().isEmpty();
     }
 
     private void updateTabInsets() {
@@ -254,7 +318,18 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         BaseFragment fragment = actionBarLayout.getLastFragment();
         int navigationColor = fragment != null ? fragment.getNavigationBarColor()
                 : Theme.getColor(Theme.key_windowBackgroundGray);
+        // A sheet above the screen (the in-app browser is one) owns the bar color; upstream's own
+        // checkSystemBarColors carries the same rule.
+        navigationColor = sheetNavigationBarColor(fragment, navigationColor);
+        BaseFragment sheetFragment = actionBarLayout.getSheetFragment(false);
+        if (sheetFragment != null) {
+            navigationColor = sheetNavigationBarColor(sheetFragment, navigationColor);
+        }
         drawerLayoutContainer.setInternalNavigationBarColor(navigationColor);
+        BottomSheetTabs browserTabs = actionBarLayout.getBottomSheetTabs();
+        if (browserTabs != null) {
+            browserTabs.setNavigationBarColor(navigationColor);
+        }
         contentView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
         WindowInsetsControllerCompat controller = new WindowInsetsControllerCompat(getWindow(), contentView);
         controller.setAppearanceLightStatusBars(fragment != null ? fragment.isLightStatusBar() : !Theme.isCurrentThemeDark());
@@ -268,6 +343,18 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
                 ((GlassTabView) tabs.getChildAt(index)).updateColorsLottie();
             }
         }
+    }
+
+    private int sheetNavigationBarColor(BaseFragment fragment, int color) {
+        if (fragment == null || fragment.sheetsStack == null) {
+            return color;
+        }
+        for (BaseFragment.AttachedSheet sheet : fragment.sheetsStack) {
+            if (sheet.attachedToParent()) {
+                color = sheet.getNavigationBarColor(color);
+            }
+        }
+        return color;
     }
 
     private void showTabs(boolean visible, boolean animated) {
@@ -330,6 +417,7 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
     @Override
     protected void onDestroy() {
         NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.needSetDayNightTheme);
+        NativeDoHooks.setBrowserHost(null);
         super.onDestroy();
     }
 
@@ -487,6 +575,10 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
 
     @Override
     public void onBackPressed() {
+        if (browserTabsOverlay != null && browserTabsOverlay.isOpen) {
+            browserTabsOverlay.onBackPressed();
+            return;
+        }
         if (actionBarLayout != null && actionBarLayout.getFragmentStack().size() > 1) {
             actionBarLayout.onBackPressed();
             return;

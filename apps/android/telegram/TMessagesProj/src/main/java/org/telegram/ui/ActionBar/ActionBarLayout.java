@@ -735,9 +735,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, F
             layoutParams.gravity = Gravity.BOTTOM | Gravity.FILL_HORIZONTAL;
             addView(bottomSheetTabs, layoutParams);
 
-            if (LaunchActivity.instance.getBottomSheetTabsOverlay() != null) {
-                LaunchActivity.instance.getBottomSheetTabsOverlay().setTabsView(bottomSheetTabs);
-            }
+            io.github.baba983.nativedo.hooks.NativeDoHooks.onBottomSheetTabsCreated(bottomSheetTabs); // NativeDo: the host, not LaunchActivity, owns the tabs overlay
         }
 
         if (containerViewBack != null) {

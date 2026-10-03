@@ -132,6 +132,136 @@ public final class NativeDoHooks {
         return false;
     }
 
+    /**
+     * The shell that hosts upstream's screens, as far as upstream's browser is concerned.
+     *
+     * <p>Upstream's in-app browser ({@code Browser.openInTelegramBrowser}, {@code ArticleViewer},
+     * {@code BottomSheetTabs}, {@code BottomSheetTabsOverlay}) finds its host through
+     * {@code LaunchActivity}: the activity's static instance, its bottom-sheet tabs and the safe
+     * last fragment of its {@code ActionBarLayout}. This client is hosted by
+     * {@code NativeDoActivity}, so {@code LaunchActivity.instance} is null and every one of those
+     * lookups would find nothing (or crash). The hooks below hand upstream the same four answers
+     * from our own shell, and fall back to {@code LaunchActivity} when it exists, so the upstream
+     * lines that call them keep their meaning inside Telegram too.</p>
+     */
+    public interface BrowserHost {
+        org.telegram.ui.ActionBar.BottomSheetTabs getBottomSheetTabs();
+
+        org.telegram.ui.ActionBar.BottomSheetTabsOverlay getBottomSheetTabsOverlay();
+
+        org.telegram.ui.ActionBar.BaseFragment getLastFragment();
+
+        org.telegram.ui.ActionBar.BaseFragment getSafeLastFragment();
+
+        void checkSystemBarColors();
+    }
+
+    private static volatile BrowserHost browserHost;
+
+    public static void setBrowserHost(BrowserHost host) {
+        browserHost = host;
+    }
+
+    /**
+     * Whether this client's shell is hosting the browser. Upstream's article-webpage lookup goes
+     * through Telegram's server ({@code messages.getWebPage}); with tgnet off that answer never
+     * comes, so the browser loads the page directly instead of waiting for it.
+     */
+    public static boolean browserHostPresent() {
+        return browserHost != null;
+    }
+
+    public static org.telegram.ui.ActionBar.BottomSheetTabs getBottomSheetTabs() {
+        if (browserHost != null) {
+            org.telegram.ui.ActionBar.BottomSheetTabs tabs = browserHost.getBottomSheetTabs();
+            if (tabs != null) {
+                return tabs;
+            }
+        }
+        return org.telegram.ui.LaunchActivity.instance != null
+                ? org.telegram.ui.LaunchActivity.instance.getBottomSheetTabs() : null;
+    }
+
+    public static org.telegram.ui.ActionBar.BottomSheetTabsOverlay getBottomSheetTabsOverlay() {
+        if (browserHost != null) {
+            org.telegram.ui.ActionBar.BottomSheetTabsOverlay overlay = browserHost.getBottomSheetTabsOverlay();
+            if (overlay != null) {
+                return overlay;
+            }
+        }
+        return org.telegram.ui.LaunchActivity.instance != null
+                ? org.telegram.ui.LaunchActivity.instance.getBottomSheetTabsOverlay() : null;
+    }
+
+    public static org.telegram.ui.ActionBar.BaseFragment getLastFragment() {
+        if (browserHost != null) {
+            org.telegram.ui.ActionBar.BaseFragment fragment = browserHost.getLastFragment();
+            if (fragment != null) {
+                return fragment;
+            }
+        }
+        return null;
+    }
+
+    public static org.telegram.ui.ActionBar.BaseFragment getSafeLastFragment() {
+        if (browserHost != null) {
+            org.telegram.ui.ActionBar.BaseFragment fragment = browserHost.getSafeLastFragment();
+            if (fragment != null) {
+                return fragment;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Upstream's {@code ActionBarLayout} hands a freshly created {@code BottomSheetTabs} to the
+     * activity's overlay; this is the same hand-over for this client's shell.
+     */
+    public static void onBottomSheetTabsCreated(org.telegram.ui.ActionBar.BottomSheetTabs tabs) {
+        org.telegram.ui.ActionBar.BottomSheetTabsOverlay overlay = getBottomSheetTabsOverlay();
+        if (overlay != null) {
+            overlay.setTabsView(tabs);
+        }
+    }
+
+    /** A browser sheet being dismissed into the minimized-tabs strip. */
+    public static void dismissSheet(org.telegram.ui.ActionBar.BottomSheetTabsOverlay.Sheet sheet) {
+        org.telegram.ui.ActionBar.BottomSheetTabsOverlay overlay = getBottomSheetTabsOverlay();
+        if (overlay != null) {
+            overlay.dismissSheet(sheet);
+        }
+    }
+
+    /** The browser changing its navigation-bar color; the shell re-derives the system bars. */
+    public static void checkSystemBarColors() {
+        if (browserHost != null) {
+            browserHost.checkSystemBarColors();
+            return;
+        }
+        if (org.telegram.ui.LaunchActivity.instance != null) {
+            org.telegram.ui.LaunchActivity.instance.checkSystemBarColors(true, true, true);
+        }
+    }
+
+    /**
+     * Whether a URL opens in the in-app browser.
+     *
+     * <p>Upstream decides this from {@code MessagesController.webBrowserSettings}, a
+     * server-delivered Telegram account setting. This client has no Telegram account, so those
+     * settings never arrive and upstream's default would be "outside the app" (custom tabs or the
+     * system browser). The chosen default here is the opposite: while this client's shell is
+     * hosting the app, every {@code http(s)} URL opens in the in-app browser. The upstream value
+     * still wins when it is true, so a real Telegram host keeps its own behavior.</p>
+     */
+    public static boolean isWebBrowserOpenInApp(String url, boolean upstream) {
+        if (upstream || browserHost == null || url == null) {
+            return upstream;
+        }
+        android.net.Uri uri = android.net.Uri.parse(url);
+        String scheme = uri.getScheme();
+        return scheme == null || "http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme);
+    }
+
     private NativeDoHooks() {
     }
 }
