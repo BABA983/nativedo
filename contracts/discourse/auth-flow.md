@@ -29,7 +29,8 @@ linux.do username/password in native code.
 ## Visible session recovery
 
 The full-upstream `:nativedo` settings account section and topic recovery actions
-open the same login WebView in recovery mode. Keep the existing cookies, identity,
+open the same login WebView in recovery mode, initially at `/challenge`.
+Normal first login still starts at `/login`. Keep the existing cookies, identity,
 topic position and reply draft. Loading a page or pressing Back never completes
 recovery, even with authenticated cookies; Back cancels, including pending DOM
 callbacks. Recovery does not autofill credentials.

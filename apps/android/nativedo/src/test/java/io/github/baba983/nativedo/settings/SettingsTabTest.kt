@@ -260,7 +260,7 @@ internal class SettingsTabTest {
         harness.await("cookies before the first navigation") {
             org.robolectric.Shadows.shadowOf(web).lastLoadedUrl != null
         }
-        assertEquals("the verification entry uses a GET navigation", site.url("/login"),
+        assertEquals("recovery navigates to the site's challenge, not its login page", site.url("/challenge"),
             org.robolectric.Shadows.shadowOf(web).lastLoadedUrl)
         assertTrue("the browser keeps the existing auth", container.cookieSyncBridge.hasAuthenticatedCookiesInWebView())
         return shell

@@ -178,41 +178,25 @@ stands, and the upstream component each row is meant to use.
 
 ### 本片验证（2026-10-03，`emulator-5556`）
 
-- 设置账号区新增上游 `TextSettingsCell`「打开验证页」。恢复 WebView 不自动完成、不填凭据；
-  用户点「完成验证」才同步会话。登录有效不等于 Cloudflare 允许原生写入，不发验证 POST、不重放回复。
-- 先补失败路径测试；设置、登录、回复、阅读进度共 20 项通过，原正向恢复断言保留。
-  完整套件实际跑了 78 项，最后为 76 通过、2 失败：`ProfileScreenTest` 的头像像素等待、
-  `AvatarRenderTest.theTopicListRowsDrawTheAuthorAvatar` 的图片颜色断言。头像相关 4 项独跑、
-  与登录组合的 7 项均通过；全量原因未定，不能算全量绿灯或连续五次通过。
-- 回复入口测试另查到 `readableRefusal` 消耗了挑战 HTML；改为 peek，不改错误分类规则。
-  会话日志新增固定 `operation=posts/timings/other`，不记录正文、cookie、query 或身份。
-- arm64 `assembleDebug` 通过，`adb -s emulator-5556 install -r -t` 覆盖安装成功，版本 `0.1.0 (1)`。
-  APK SHA-256 为 `1cbcd8ff5ad5fa226572fc88911979ab97cbee27857f76e64ca74ded6da3fecf`，
-  已从安装包读回确认相同；保留首次安装数据与代理 `10.0.2.2:7890`。
-- 设备实测：设置入口、完整提示、已登录网页保持可见、系统返回取消并保留登录均通过。
-  系统返回原先绕过 fragment，已在自己的 Activity 注册新返回回调；没有修改上游。
-  窗口最终停在真实已登录站点的验证页，尚未点击「完成验证」。记录和脱敏截图在
-  `.amp/in/artifacts/session-verification/`；该进程的会话日志没有 posts/timings 响应或 login_committed。
-- 待用户完成网页验证并明确继续后，仅在 `/t/topic/2975944` 验证回复、上传、回应。
-  视频按需下载/取消、附件设备复验、同一 HEAD 连续五次全量验证仍未完成。
-
-### 继续验证（2026-10-03）
-
-- 用户已授权继续 2975944 内的回复、上传、回应。GET 重新确认它是仅当前用户的私信，
-  共 1 条帖子，无视频或附件。原生「完成验证」同步会话后，回复仍为 `403 Challenge`，
-  `operation=posts` 与阅读上报的 `operation=timings` 分开记录。完整帖子流读回测试标记 0 条；
-  未重发，未上传或回应。设备仍保留回复草稿与验证页。证据在 `.amp/in/artifacts/private-message-verification/`。
-- 头像复验先补延迟下载、资料头离屏后返回的 E2E。全量复现了磁盘有正确 PNG 但未画出的失败；
-  头像桥现将已下载文件的本地路径交给上游加载器，不再沿用合成 datacenter 的加载键。
-  列表测试等受检的第二行，而非任意一行有 bitmap；原像素阈值、资料页等待上限及恢复断言未放宽。
-  相关 6 项与一次完整 80 项通过。诊断 XML、日志、渲染保留在 `.amp/in/artifacts/avatar-recovery/`。
-- 最终 gate：同一 HEAD 串行五轮强制执行全量测试，失败即停，不累计不同 HEAD 的通过次数。
-  使用 `:nativedo:testDebugUnitTest --rerun --quiet`，避免 `UP-TO-DATE` 冒充一次执行；
-  受检 HEAD、每轮 XML 与命令结果记录在 `.amp/in/artifacts/final-five-pass/`。
-  arm64 构建与覆盖安装仍独立记录，构建或 JVM 通过不替代视频／附件的设备结果。
-- 宿主评估：上游 `LaunchActivity.onCreate` 同时负责多账号初始化、Telegram 激活判断和根页面，
-  恢复生命周期还操作 Telegram 连接状态。它不是可直接替换的通用宿主；本轮未更换架构或新增上游 hook。
-  图片 `PhotoViewer` 已接入；完整内置 Browser 的宿主与生命周期仍需单独接入验证。
+- 设置账号区的上游 `TextSettingsCell`「打开验证页」复用登录 WebView。恢复从 `/challenge`
+  开始，首次登录仍从 `/login` 开始。旧 cookie 不自动完成，返回取消；保留登录、楼层和草稿，
+  不填凭据、不发验证 POST、不重放回复。设置、登录、回复和阅读恢复的原断言均保留。
+- 设备已从设置打开 `/challenge`。WebView 到达源站后显示站点 404 和「返回首页」；
+  这不证明原生写入通过。设备点原生「完成验证」只同步会话，`/session/current.json` 返回 200，
+  回到设置，没有写请求。实际 HTTP 错误仍不能完成；网页文案不等于 HTTP 状态。
+  期间一次 `ERR_PROXY_CONNECTION_FAILED` 未计成功，原代理 `10.0.2.2:7890` 未改。
+- 头像修复后的 `6eaab3b` HEAD 已串行强制执行五轮全量测试，每轮 30 个测试类、80 个用例，
+  全部通过，记录在 `.amp/in/artifacts/final-five-pass/`。本次 `/challenge` 修正后又跑了完整
+  30 类 80 项、相关测试和 arm64 构建。最终提交的五轮命令与 XML 保留在
+  `.amp/in/artifacts/challenge-recovery/`，失败即停，不累计不同 HEAD 的通过次数。
+- 当前 APK 已用 `adb -s emulator-5556 install -r -t` 覆盖安装，版本 `0.1.0 (1)`，
+  SHA-256 为 `23f54b511101a89b7a65c6a6085133988dbc93a4b06cb7c9d2865744ef671700`。
+  保留首次安装数据；图片 `PhotoViewer` 已接入，完整内置 Browser、液态玻璃 tab 和宿主迁移待单独实现验证。
+- 仅获授权的私信 2975944 经完整 GET 确认为当前用户一人、1 条文本帖、无视频或附件。
+  上轮回复为 `403 Challenge`，完整帖子流读回测试标记 0 条；未重发、未上传、未回应。
+  `operation=posts/timings` 分开记录，不记录正文、cookie、query 或身份，不改变错误分类。
+  完成网站验证后可在该私信内上传测试素材，继续回复／回应、视频按需下载／取消和附件的设备复验。
+  构建、JVM 测试和网页 GET 都不替代这些设备结果。
 
 ### 设备验证结果（2026-10-01/02，AVD `nativedo-test`／android-35 google_apis_tablet arm64-v8a，`emulator-5556`）
 

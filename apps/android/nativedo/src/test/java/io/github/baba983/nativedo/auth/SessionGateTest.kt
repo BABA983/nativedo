@@ -123,6 +123,8 @@ internal class SessionGateTest {
         val web = LoginWebViewFragment::class.java.getDeclaredField("webView")
             .apply { isAccessible = true }.get(fragment) as android.webkit.WebView
         harness.await("login navigation") { org.robolectric.Shadows.shadowOf(web).lastLoadedUrl != null }
+        assertEquals("first login still opens the login form", baseUrl.trimEnd('/') + "/login",
+            org.robolectric.Shadows.shadowOf(web).lastLoadedUrl)
         android.webkit.CookieManager.getInstance().setCookie(baseUrl, "_t=new-login; Path=/")
         web.loadUrl(baseUrl)
         val shadow = org.robolectric.Shadows.shadowOf(web)

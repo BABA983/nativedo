@@ -115,7 +115,7 @@ class LoginWebViewFragment @JvmOverloads constructor(
         root.addView(lineProgressView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 2f))
 
         val loginWebView = createLoginWebView(context, root)
-        loadAfterCookieSync(loginWebView, loginUrl())
+        loadAfterCookieSync(loginWebView, initialUrl())
         return root
     }
 
@@ -346,7 +346,8 @@ class LoginWebViewFragment @JvmOverloads constructor(
         }
     }
 
-    private fun loginUrl(): String = appContainer.baseUrl.trimEnd('/') + "/login"
+    private fun initialUrl(): String = appContainer.baseUrl.trimEnd('/') +
+        if (recoveryMode) "/challenge" else "/login"
 
     private fun loadAfterCookieSync(view: WebView, url: String) {
         initialLoadJob?.cancel()
@@ -371,7 +372,7 @@ class LoginWebViewFragment @JvmOverloads constructor(
     ) {
         if (view !== webView) return
         failedNavigationGeneration = navigationGeneration
-        failedUrl = url.ifBlank { view.url.orEmpty().ifBlank(::loginUrl) }
+        failedUrl = url.ifBlank { view.url.orEmpty().ifBlank(::initialUrl) }
         progressJob?.cancel()
         progressView?.setProgress(0f, false)
         showErrorContainer(failedUrl, code, description)
@@ -395,7 +396,7 @@ class LoginWebViewFragment @JvmOverloads constructor(
 
     private fun retryFailedPage() {
         if (hasFinished) return
-        val targetUrl = failedUrl.orEmpty().ifBlank(::loginUrl)
+        val targetUrl = failedUrl.orEmpty().ifBlank(::initialUrl)
         failedNavigationGeneration = -1
         hideLoadError()
         val current = webView
@@ -415,7 +416,7 @@ class LoginWebViewFragment @JvmOverloads constructor(
             destroyPopupWebView(view)
             return
         }
-        val lastUrl = view.url.orEmpty().ifBlank(::loginUrl)
+        val lastUrl = view.url.orEmpty().ifBlank(::initialUrl)
         rendererGone = true
         failedUrl = lastUrl
         failedNavigationGeneration = navigationGeneration
