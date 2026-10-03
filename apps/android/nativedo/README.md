@@ -295,6 +295,13 @@ stands, and the upstream component each row is meant to use.
   状态栏融合、GPU 模糊合成、边缘到边缘的状态栏图标对比度仍未验证；这台 AVD 是否带 cutout 也没有
   验证过（`ProfileGooeyView` 的刘海分支与无刘海分支都只看过代码）。
 - 本片的命令、测试 XML 与设备证据保留在 `.amp/in/artifacts/profile-wave1/`。
+- **合并后补验（`86d12cbf`，`emulator-5556`，已登录 @example_user）**：合并 HEAD 上 `:nativedo:testDebugUnitTest`
+  30 类 86 项全过、arm64 `assembleDebug` 通过，`install -r -t` 覆盖安装（未卸载、未清数据）。从设置的
+  账号行进入自己的资料页，浅色主题下三帧：顶部（大圆头像居中、名字与 `@example_user` 在下）、中途（头像缩小
+  上收到操作栏那一行并开始模糊）、全折叠（头像消失，`example_user`／`@example_user` 两行标题停在返回箭头右侧，列表
+  从栏下滚过，栏内没有透出内容）。crash buffer 为空。截图在 `.amp/in/artifacts/merged-wave1/`
+  （`03-profile-top`、`04-profile-mid`、`05-profile-collapsed`）。仍未验：夜间主题、录屏下的连续水滴
+  形变（静帧看不出颈部）、刘海融合；列表底部没有为手势条留内边距，最后一行会滚到手势条下面。
 
 ### 设备验证结果（2026-10-01/02，AVD `nativedo-test`／android-35 google_apis_tablet arm64-v8a，`emulator-5556`）
 
