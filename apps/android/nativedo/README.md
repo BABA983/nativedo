@@ -79,15 +79,18 @@ rendering, gestures, layout and animation are upstream's own code.
   `/u/{username}.json` in a screen of our own. Upstream's `ProfileActivity` cannot be that screen:
   it is a Telegram account's profile, whose `onFragmentCreate` loads the full user through tgnet
   (`loadFullUser` sends `TL_users_getFullUser`, and the answer is written into Telegram's database)
-  and whose tabs are that account's own photos, stories, contacts and gifts. So the screen is built
-  from the cells upstream draws lists with: a `ProfileSearchCell` head carrying the reader's picture
-  and their handle (the cell its own search and contact lists draw a person with — a picture, a
-  name, one line under it, and no date), `HeaderCell` for the sections, `TextDetailCell` for the
-  fields — the site's answer in the cell's own large line and the field's name under it, which is
-  the way `ProfileActivity`'s info block writes a phone number above the word "Mobile" — and a
-  `TextInfoPrivacyCell` for the bio. Under all of it the reader's activity: `user_actions.json`
-  for the topics they started and for their replies, merged into one stream newest first, one
-  `DialogCell` row per action, and a tap opens that action's topic at the floor it happened on.
+  and whose tabs are that account's own photos, stories, contacts and gifts. So the screen keeps its
+  own `BaseFragment` and takes upstream's own collapsing header for its head: the avatar lives in a
+  `ProfileGooeyView`, and `ProfileActivity`'s `needLayout()` / `checkListViewScroll()` math moves and
+  scales it while the name and status lines migrate into the screen's own transparent action bar.
+  The sections below are the cells upstream draws lists with: `HeaderCell` for the sections,
+  `TextDetailCell` for the fields — the site's answer in the cell's own large line and the field's
+  name under it, which is the way `ProfileActivity`'s info block writes a phone number above the
+  word "Mobile" — and a `TextInfoPrivacyCell` for the bio. Under all of it the reader's activity:
+  `user_actions.json` for the topics they started and for their replies, merged into one stream
+  newest first, one `DialogCell` row per action, and a tap opens that action's topic at the floor it
+  happened on. Telegram-only parts of the header (stories ring, gift/emoji status, pull-down-to-open
+  gallery, shared media, call buttons) are left out.
 * **Search** — the topic list's action bar carries upstream's search item
   (`ActionBarMenuItem.setIsSearchField`), and the screen behind it is upstream's own expanding field
   over `/search.json`: the site's three kinds of hit, each drawn by the cell upstream draws that row
@@ -159,7 +162,7 @@ stands, and the upstream component each row is meant to use.
 | Bookmarks (`/bookmarks.json`, `DELETE /posts/{id}/bookmark`) | done | done: the post menu adds and takes back a bookmark, and the reader's own list (`/u/{username}/bookmarks.json`, a 书签 row under 我的 on their own profile) draws the site's entries, a tap opening the topic at the bookmarked floor. The site's own envelope has a trap: a page with rows arrives under `user_bookmark_list`, an empty one is a bare `{"bookmarks":[]}` | upstream's `DialogCell` rows and the settings-shaped row on the profile |
 | Read progress (`POST /topics/timings`) and restore | done | done, without upstream's unread divider: the floors the viewport reaches are reported as the reader moves (debounced) and at once when they leave, the dwell reported is the reader's real time - counted the way Discourse's own screen-track counts it, only while the screen is in front, a floor is on screen and the reader has scrolled within three minutes - a topic opens at the site's own `last_read_post_number` (or this device's further one), and the list's unread counts follow the site's answer - a topic read in full draws no badge even before the site has taken the report in | our own reporter over the site's endpoint; the list's rows are upstream's `DialogCell` |
 | Search: topics, posts, users, in-topic | done | done, the site's topics, posts and people from the action bar's own search field; a hit opens its topic at its floor, a person opens their profile; in-topic search missing | `ActionBarMenuItem.setIsSearchField` over `/search.json`, hits drawn by `DialogCell` / `ProfileSearchCell` |
-| User profile (`/u/{username}.json`, activity feed) | done | done, `/user_actions.json` for the topics created and the replies merged into one stream, one upstream `DialogCell` row per action, a tap opens the topic at that floor | our own `BaseFragment` over `ProfileSearchCell` / `HeaderCell` / `TextDetailCell` / `TextInfoPrivacyCell` / `DialogCell`; `ProfileActivity` is unusable here (it loads the full user through tgnet and is bound to a Telegram account) |
+| User profile (`/u/{username}.json`, activity feed) | done | done, `/user_actions.json` for the topics created and the replies merged into one stream, one upstream `DialogCell` row per action, a tap opens the topic at that floor; the head is upstream's own collapsing header (`ProfileGooeyView` + `ProfileActivity`'s `needLayout` math) | our own `BaseFragment` with `ProfileGooeyView` / `HeaderCell` / `TextDetailCell` / `TextInfoPrivacyCell` / `DialogCell`; `ProfileActivity` is unusable here (it loads the full user through tgnet and is bound to a Telegram account) |
 | Notifications | not built | done, the reader's own list from `/notifications.json`; nothing pushes, and there is no unread count on the tab | upstream's notification screens are Telegram-account bound, so our own screen over upstream's `DialogCell`; unread is the row's own badge |
 | Appearance and theme | done | done: the settings tab's 外观 row opens it | `ThemeActivity` (`THEME_TYPE_BASIC`) |
 | Account and session settings | done | done: the settings tab is our own screen over upstream's cells (`HeaderCell` / `TextSettingsCell`), with the appearance page, the bookmark list and the account - the current reader and a sign-out that clears the cookies and returns to the login page | upstream's settings cells, the way `SettingsActivity` draws its own list |
@@ -259,6 +262,39 @@ stands, and the upstream component each row is meant to use.
 - 决定与未验证：上游第二段长按（菜单打开后再长按正文）在本宿主不可能——`ItemOptions` 弹层持有窗口，
   第二下触摸到不了 cell，所以选择改从菜单进入；真站点投票（点选项）这轮没有单独执行，它要产生一次
   真实投票，回应 chip 已验证同一条触摸路径。
+
+### 资料页水滴头像与折叠栏（2026-10-03，`linuxdo-native-profile-wave1`，AVD `Medium_Phone_API_36.0`，`emulator-5554`）
+
+- 资料页的头部改成上游 `ProfileActivity` 自己的那套：头像放在 `ProfileGooeyView` 里，`needLayout()`
+  的高度/缩放/位移、`checkListViewScroll()` 的滚动高度、`needLayoutText()` 的标题宽度和
+  `updateGooey()` 的驱动都按上游常量和分支搬过来，name/online 两个 `SimpleTextView` 随折叠移进
+  操作栏；页面自带透明操作栏（`setAddToContainer(false)`），列表 `topMargin = 状态栏 + 栏高`、
+  首行从「资料」段开始、顶部留 `168dp` 头部高度，自绘的 `TopView` 盖住滚进来的行。每个搬来的块
+  都在注释里点了上游方法名；未搬：故事环、礼物/emoji 状态、下拉展开画廊（`ProfileGalleryView`）、
+  共享媒体、通话/写按钮、`TopView` 的 peer 颜色渐变。下拉展开是后续项，不是遗漏。
+- JVM gate：同一 HEAD 上 `:nativedo:testDebugUnitTest --quiet` 30 类 85 项全过（0 失败、0 error、
+  0 skipped）。新增 `ProfileScreenTest.theCollapsingHeaderKeepsTheProfileReadable`，先写失败模式
+  （头部把字段盖住、或列表在头部移动时不再绑行），断言折叠中途字段仍可读；原有两条资料断言和
+  `ProfileFeedTest`／`BookmarksTest` 的语义不变，只把「点第几行」的旧算法（首可见行 + 子序号）
+  改成按列表尾部/可见起点算 —— 头部那 168dp 内边距会让前几行落在内边距里，布局管理器不把它们
+  算作可见。
+- 构建：`lockf ... :nativedo:assembleDebug -Pandroid.injected.build.abi=arm64-v8a --quiet` 通过，
+  APK 63.4 MB（含 40 MB `libtmessages.49.so`）。
+- 设备：`adb -s emulator-5554 install -r -t` 覆盖安装成功（debug 包带 testOnly，与已有 APK 同签名），
+  版本 `0.1.0 (1)`，设备 SHA-256 与构建产物一致
+  （`2bbf4eb4b2e59171a6ff8ec1dc15c0adf97978cc85c9ebc3bed564b77e10775e`）；没有卸载、没有清数据、
+  没有 crash（crash buffer 为空）、app 数据里没有 `cache4.db`。
+- **设备上的折叠没有验到**：启动时站点侧会话已失效，`/session/current.json` 返回 404
+  （`NativeDoSession status=404 accepted=true evidence=LoggedOut`、`hasToken/hasForumSession/
+  hasClearance` 都为 true → `expired_ServerLoggedOut`），app 按自己的规则清掉会话与 cookie 并停在
+  登录页。没有凭据，不在设备上模拟登录，所以浅色/夜间、顶部/中途/全折叠的截图和录屏都没有拿到；
+  这一项是未验证，不是通过。logcat 摘录在 `.amp/in/artifacts/profile-wave1/`。
+- 中途与全折叠的布局目前只有渲染 harness 的图（生产代码路径）：
+  `.amp/in/artifacts/nativedo/profile-screen-mid.png`（头像缩小上收、名字与状态左移上移）和
+  `profile-feed.png`（名字/状态停在操作栏左侧的上游位置，列表行紧贴栏下）。真机上的水滴与刘海/
+  状态栏融合、GPU 模糊合成、边缘到边缘的状态栏图标对比度仍未验证；这台 AVD 是否带 cutout 也没有
+  验证过（`ProfileGooeyView` 的刘海分支与无刘海分支都只看过代码）。
+- 本片的命令、测试 XML 与设备证据保留在 `.amp/in/artifacts/profile-wave1/`。
 
 ### 设备验证结果（2026-10-01/02，AVD `nativedo-test`／android-35 google_apis_tablet arm64-v8a，`emulator-5556`）
 

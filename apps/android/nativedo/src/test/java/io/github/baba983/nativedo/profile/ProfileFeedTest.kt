@@ -125,8 +125,14 @@ internal class ProfileFeedTest {
         assertEquals("one row per action of both streams", 3, rows.size)
 
         val first = rows.first()
-        println("feed: clicking the row at position " + positionOf(first))
-        list.clickItem(first, positionOf(first))
+        // The activity stream is the list's tail: with one row per action laid out (asserted
+        // above), the stream's first row sits exactly rows.size rows before the end. Upstream's
+        // list answers no adapter position for a child under this harness, and the collapsing
+        // header's padding can leave a row inside the padding area, which the layout manager's
+        // own first-visible answer does not count.
+        val firstPosition = list.adapter!!.itemCount - rows.size
+        println("feed: clicking the row at position " + firstPosition)
+        list.clickItem(first, firstPosition)
         harness.await("the topic at that floor") { site.requestPaths.contains("t/$TOPIC_ID/$FLOOR.json") }
         harness.await("the floor to be drawn") { drawnPostIds().isNotEmpty() }
 
@@ -150,19 +156,6 @@ internal class ProfileFeedTest {
         return (section + 1 until list.childCount)
             .map { list.getChildAt(it) }
             .filterIsInstance<DialogCell>()
-    }
-
-    /**
-     * The row's position in the list. Upstream's list answers no adapter position for a child under
-     * this harness (its holders come back unpositioned), and a linear list's children sit
-     * consecutively from the first visible row, which its layout manager does report.
-     */
-    private fun positionOf(view: android.view.View): Int {
-        val list = listView() ?: return -1
-        val first = (list.layoutManager as? androidx.recyclerview.widget.LinearLayoutManager)
-            ?.findFirstVisibleItemPosition() ?: return -1
-        val index = (0 until list.childCount).firstOrNull { list.getChildAt(it) === view } ?: return -1
-        return first + index
     }
 
     /** What the topic screen drew, as the posts behind its bubbles. */
