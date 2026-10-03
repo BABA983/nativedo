@@ -93,9 +93,9 @@ object DiscourseAvatars {
         return listOf(attach, cache).distinct()
     }
 
-    /** The avatar image upstream asks for; null when the user has no photo. */
+    /** Use the HTTP download's path, not a pending Telegram datacenter load with the same id. */
     fun imageLocation(user: TLRPC.User): org.telegram.messenger.ImageLocation? =
-        org.telegram.messenger.ImageLocation.getForUser(0, user, org.telegram.messenger.ImageLocation.TYPE_SMALL)
+        localFile(user)?.let { org.telegram.messenger.ImageLocation.getForPath(it.absolutePath) }
 
     /** Whether an avatar is already on disk, checked the way the two readers would. */
     fun isCached(user: TLRPC.User?): Boolean =

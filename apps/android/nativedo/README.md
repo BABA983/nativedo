@@ -141,7 +141,7 @@ stands, and the upstream component each row is meant to use.
 | Start a topic (a title, a category, a body → `POST /posts.json`) | not built | done: the list's own floating button - upstream's, the one its chat list starts a new chat with - opens upstream's titled field, upstream's composer for the body, and the site's categories behind a dialog; the send button appears only when the form is complete | `FragmentFloatingButton`, `EditTextBoldCursor`, `ChatActivityEnterView`, `AlertDialog` of the site's items |
 | Topic detail, cooked HTML to native blocks | done, 41 ports | done | upstream `RichHtml.parse` into `ChatMessageCell` |
 | Post images and the lightbox | done | done | `PhotoViewer` |
-| Links in a post | done | done | `Browser` |
+| Links in a post | done | routing wired; embedded browser not verified | `Browser.openUrl`; its embedded branch looks up the host through `LaunchActivity`, which this shell does not register as |
 | Onebox link previews (`aside.onebox`) | done, cards | done | upstream's link preview (`TL_messageMediaWebPage`): one bubble per onebox, the bare link line gone from the text, and no bubble draws a forward arrow (`noforwards`) |
 | Video in a post (`<video>`) | partial, opened externally | done, to the clip's own size | upstream's video block (`pageBlockVideo` in `RichMessageLayout`'s media cell). Opening the topic fetches the cover only; the press on the block's own play button fetches the clip (up to 25 MB) while the block draws upstream's own loading state and progress, and the file opens in `PhotoViewer`. A clip over that, one the site refuses, and one the reader cancels - the block's own cancel button stops the transfer and drops the half-written file - is not played by upstream's viewer, which can only play a file this client holds: the first two are streamed by the device's own player, a cancel plays nothing and leaves the cover and the play button behind |
 | Avatars | done | done | the avatar receivers of `ChatMessageCell` / `DialogCell` |
@@ -195,6 +195,24 @@ stands, and the upstream component each row is meant to use.
   `.amp/in/artifacts/session-verification/`；该进程的会话日志没有 posts/timings 响应或 login_committed。
 - 待用户完成网页验证并明确继续后，仅在 `/t/topic/2975944` 验证回复、上传、回应。
   视频按需下载/取消、附件设备复验、同一 HEAD 连续五次全量验证仍未完成。
+
+### 继续验证（2026-10-03）
+
+- 用户已授权继续 2975944 内的回复、上传、回应。GET 重新确认它是仅当前用户的私信，
+  共 1 条帖子，无视频或附件。原生「完成验证」同步会话后，回复仍为 `403 Challenge`，
+  `operation=posts` 与阅读上报的 `operation=timings` 分开记录。完整帖子流读回测试标记 0 条；
+  未重发，未上传或回应。设备仍保留回复草稿与验证页。证据在 `.amp/in/artifacts/private-message-verification/`。
+- 头像复验先补延迟下载、资料头离屏后返回的 E2E。全量复现了磁盘有正确 PNG 但未画出的失败；
+  头像桥现将已下载文件的本地路径交给上游加载器，不再沿用合成 datacenter 的加载键。
+  列表测试等受检的第二行，而非任意一行有 bitmap；原像素阈值、资料页等待上限及恢复断言未放宽。
+  相关 6 项与一次完整 80 项通过。诊断 XML、日志、渲染保留在 `.amp/in/artifacts/avatar-recovery/`。
+- 最终 gate：同一 HEAD 串行五轮强制执行全量测试，失败即停，不累计不同 HEAD 的通过次数。
+  使用 `:nativedo:testDebugUnitTest --rerun --quiet`，避免 `UP-TO-DATE` 冒充一次执行；
+  受检 HEAD、每轮 XML 与命令结果记录在 `.amp/in/artifacts/final-five-pass/`。
+  arm64 构建与覆盖安装仍独立记录，构建或 JVM 通过不替代视频／附件的设备结果。
+- 宿主评估：上游 `LaunchActivity.onCreate` 同时负责多账号初始化、Telegram 激活判断和根页面，
+  恢复生命周期还操作 Telegram 连接状态。它不是可直接替换的通用宿主；本轮未更换架构或新增上游 hook。
+  图片 `PhotoViewer` 已接入；完整内置 Browser 的宿主与生命周期仍需单独接入验证。
 
 ### 设备验证结果（2026-10-01/02，AVD `nativedo-test`／android-35 google_apis_tablet arm64-v8a，`emulator-5556`）
 

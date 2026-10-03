@@ -33,6 +33,10 @@ import org.telegram.ui.Cells.DialogCell
 import org.telegram.ui.Components.RecyclerListView
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import okhttp3.mockwebserver.MockResponse
+import okio.Buffer
 
 /**
  * Avatars, end to end: fetched from a Discourse `avatar_template` and drawn by upstream's own cells.
@@ -163,15 +167,13 @@ internal class AvatarRenderTest {
         harness.await("a row avatar to be fetched") {
             site.requestPaths.any { it.startsWith("user_avatar/") && site.cookieHeaderFor(it) != null }
         }
-        // A row is handed its avatar while it is drawn, and the loader decodes it on a thread of its
-        // own: waiting a fixed number of drains is a bet on that thread's timing, which a run with
-        // other tests ahead of it loses. What the pixels are of is the row *holding* the picture, so
-        // that is what is waited for.
-        harness.await("the rows to hold the avatar they downloaded") {
+        // The first row uses the top-level user's default photo. Its bitmap does not prove that
+        // the second row's green photo has finished decoding.
+        harness.await("the second row to hold the avatar it downloaded") {
             harness.drawApp()
             laidOutChildren()
                 .filterIsInstance<DialogCell>()
-                .any { cell -> cell.avatarImage?.bitmap != null }
+                .getOrNull(1)?.avatarImage?.bitmap != null
         }
 
         val green = greenPixels(harness.renderApp("topic-list-avatars"))
@@ -181,6 +183,47 @@ internal class AvatarRenderTest {
         assertTrue("the list drew its rows", rows.size >= 2)
         println("avatar: row requests = " + site.requestPaths.filter { it.startsWith("user_avatar/") })
         harness.assertNoTelegramSideEffects()
+    }
+
+    @Test
+    fun aListAvatarArrivingAfterAnotherRowsPhotoIsDrawnStillAppears() {
+        // A decoded picture on the first row does not mean the second row's HTTP download has
+        // arrived. Keep that download pending until both rows have been drawn without it.
+        val path = "uploads/late-list-$runToken.png"
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val latest = org.json.JSONObject(harness.fixture("latest-topics.json"))
+        latest.getJSONObject("topic_list").getJSONArray("topics").getJSONObject(1)
+            .getJSONArray("posters").getJSONObject(0).getJSONObject("user")
+            .put("avatar_template", "/$path")
+        site.serveJson("latest.json", latest.toString())
+        val bytes = greenPng()
+        site.serveResponse(path) {
+            entered.countDown()
+            check(release.await(30, TimeUnit.SECONDS)) { "the test did not release the avatar" }
+            MockResponse().setHeader("Content-Type", "image/png")
+                .setBody(Buffer().write(bytes))
+        }
+        try {
+            harness.bootApp()
+            harness.await("both list rows before the delayed photo arrives") {
+                harness.drawApp()
+                entered.count == 0L && rowCount() == 2 &&
+                    laidOutChildren().filterIsInstance<DialogCell>().firstOrNull()
+                        ?.avatarImage?.bitmap != null
+            }
+            assertEquals("the second row's photo is still pending", 0,
+                greenPixels(harness.renderApp("list-avatar-pending")))
+            release.countDown()
+            val author = DiscourseAvatars.user("searcher", "searcher", "/$path", site.baseUrl)
+            harness.await("the delayed list avatar to land on disk") { DiscourseAvatars.isCached(author) }
+            harness.await("the second row to draw its delayed photo", iterations = 200) {
+                greenPixels(harness.renderApp("list-avatar-delayed")) > 1_000
+            }
+            harness.assertNoTelegramSideEffects()
+        } finally {
+            release.countDown()
+        }
     }
 
     private fun topicJsonWithAvatar(template: String = avatarTemplate): String {

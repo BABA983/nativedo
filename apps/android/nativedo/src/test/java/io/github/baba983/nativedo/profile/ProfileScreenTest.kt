@@ -38,6 +38,10 @@ import org.telegram.ui.Cells.TextDetailCell
 import org.telegram.ui.Components.RecyclerListView
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import okhttp3.mockwebserver.MockResponse
+import okio.Buffer
 
 /**
  * A post's author, tapped.
@@ -145,6 +149,58 @@ internal class ProfileScreenTest {
         }
         println("profile: magenta pixels in the render = $magenta")
         harness.assertNoTelegramSideEffects()
+    }
+
+    @Test
+    fun aProfileAvatarArrivingWhileItsHeaderIsOffscreenAppearsOnReturn() {
+        // A missing file must not leave an upstream datacenter load pending under the same key
+        // when the HTTP download arrives while the header is recycled below the fold.
+        val path = "uploads/late-profile-${System.nanoTime()}.png"
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val profile = org.json.JSONObject(harness.fixture("user-profile.json"))
+        profile.getJSONObject("user").put("avatar_template", "/$path")
+        site.serveJson("u/baba.json", profile.toString())
+        val bytes = magentaPng(96, 96)
+        site.serveResponse(path) {
+            entered.countDown()
+            check(release.await(30, TimeUnit.SECONDS)) { "the test did not release the avatar" }
+            MockResponse().setHeader("Content-Type", "image/png")
+                .setBody(Buffer().write(bytes))
+        }
+        try {
+            harness.bootApp()
+            harness.await("the topic list to load") { rowCount() == 2 }
+            harness.present(ProfileFragment.forUser("baba", "Baba"))
+            harness.await("the profile header before its photo arrives") {
+                harness.drawApp()
+                entered.count == 0L && detailValue("信任等级") == "3"
+            }
+            harness.idleUpstreamQueues()
+            harness.idle()
+            assertEquals("no photo was delivered yet", 0,
+                magentaPixels(harness.renderApp("profile-avatar-pending")))
+            listView()?.scrollToPosition(14)
+            harness.layoutApp()
+            assertEquals("the header is offscreen", "18", detailValue("被采纳回复"))
+            release.countDown()
+            val author = DiscourseAvatars.user("baba", "Baba", "/$path", site.baseUrl)
+            harness.await("the delayed avatar to land on disk") { DiscourseAvatars.isCached(author) }
+            listView()?.scrollToPosition(0)
+            harness.layoutApp()
+            harness.await("the already bound header to draw the delayed photo", iterations = 200) {
+                magentaPixels(harness.renderApp("profile-avatar-delayed")) > 0
+            }
+            // ImageReceiver advances its crossfade on draw, not just when the clock advances.
+            repeat(15) {
+                harness.idleClock(20)
+                harness.drawApp()
+            }
+            harness.renderApp("profile-avatar-delayed-settled")
+            harness.assertNoTelegramSideEffects()
+        } finally {
+            release.countDown()
+        }
     }
 
     /**
