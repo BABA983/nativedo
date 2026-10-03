@@ -13,6 +13,8 @@ import android.widget.FrameLayout;
 
 import androidx.annotation.NonNull;
 import androidx.core.math.MathUtils;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -101,6 +103,8 @@ public class ProfileFragment extends BaseFragment {
     private ProfileActivityFeed feed;
     private boolean loadingActions;
     private UserProfile profile;
+    /** The gesture bar the list has to clear; the shell forwards it, this screen pads its end. */
+    private int bottomInset;
     /** The site's bio with its cooked tags taken off, which both the head and the bio row draw. */
     private String bioText = "";
     private TLRPC.User avatarUser;
@@ -172,7 +176,7 @@ public class ProfileFragment extends BaseFragment {
         listView.setAdapter(new ProfileAdapter());
         listView.setVerticalScrollBarEnabled(false);
         listView.setClipToPadding(false);
-        listView.setPadding(0, getHeaderExtraHeight(), 0, AndroidUtilities.dp(4));
+        listView.setPadding(0, getHeaderExtraHeight(), 0, listBottomPadding());
         listView.setOnItemClickListener((view, position) -> {
             if (position == bookmarksRow) {
                 presentFragment(new io.github.baba983.nativedo.bookmarks.BookmarksFragment());
@@ -263,9 +267,24 @@ public class ProfileFragment extends BaseFragment {
                 LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.START));
         frameLayout.addView(actionBar);
 
+        // The shell's insets land on the fragment view the way NativeDoActivity's land on its
+        // content view; this screen keeps the last list row clear of the gesture bar. The bottom
+        // is read from the same helper the shell uses, so the list pads by exactly the bar.
+        ViewCompat.setOnApplyWindowInsetsListener(frameLayout, (view, insets) -> {
+            bottomInset = AndroidUtilities.getDefaultWindowInsets(insets, false).bottom;
+            listView.setPadding(0, listView.getPaddingTop(), 0, listBottomPadding());
+            return WindowInsetsCompat.CONSUMED;
+        });
+
         fragmentView = frameLayout;
         loadProfile();
+        ViewCompat.requestApplyInsets(frameLayout);
         return fragmentView;
+    }
+
+    /** The room the list keeps under its last row: the usual list end plus the gesture bar. */
+    private int listBottomPadding() {
+        return AndroidUtilities.dp(4) + bottomInset;
     }
 
     /**
