@@ -186,6 +186,7 @@ public class PostListView extends RecyclerListView {
         }
     }
 
+    /** The touch half of upstream's swipe: ChatActivity's chat list `processTouchEvent`. */
     private void processTouchEvent(MotionEvent e) {
         if (e != null && e.getAction() == MotionEvent.ACTION_DOWN && !startedTrackingSlidingView && !maybeStartTrackingSlidingView && slidingView == null) {
             View view = getPressedChildView();
@@ -299,6 +300,7 @@ public class PostListView extends RecyclerListView {
         invalidate();
     }
 
+    /** The release deceleration: ChatActivity's chat list `onDraw`. */
     @Override
     public void onDraw(Canvas c) {
         super.onDraw(c);
@@ -330,6 +332,7 @@ public class PostListView extends RecyclerListView {
         }
     }
 
+    /** The disc the drag paints: ChatActivity's chat list `drawReplyButton`. */
     private void drawReplyButton(Canvas canvas) {
         if (slidingView == null || Thread.currentThread() != Looper.getMainLooper().getThread()) {
             return;
