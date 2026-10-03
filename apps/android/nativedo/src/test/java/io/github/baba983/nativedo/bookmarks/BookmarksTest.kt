@@ -278,8 +278,14 @@ internal class BookmarksTest {
     private fun positionOf(view: View): Int {
         val list = contentListOf(harness.activity) ?: return -1
         val first = (list.layoutManager as? LinearLayoutManager)?.findFirstVisibleItemPosition() ?: return -1
+        // The list's children sit consecutively from the first attached one, and the collapsing
+        // header's padding can leave the first ones inside the padding area, which the layout
+        // manager does not count as visible; the attached window starts a few rows above its answer.
+        val visibleIndex = (0 until list.childCount).firstOrNull { index ->
+            list.getChildAt(index).bottom > list.paddingTop
+        } ?: return -1
         val index = (0 until list.childCount).firstOrNull { list.getChildAt(it) === view } ?: return -1
-        return first + index
+        return first + (index - visibleIndex)
     }
 
     private fun rowCount(): Int = contentListOf(harness.activity)?.adapter?.itemCount ?: 0
