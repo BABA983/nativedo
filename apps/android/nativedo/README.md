@@ -210,6 +210,41 @@ stands, and the upstream component each row is meant to use.
 - 设置页：外观 / 我的 / 账号三组的行高与间距是否符合上游观感；退出登录的确认框、清 cookie 后回到登录页、再登录回来后话题与通知是否正常。
 - 通知 tab：没有推送和未读计数时，列表的排序和徽章是否仍然清楚。
 
+### 帖子链接与内置浏览器（2026-10-04，`emulator-5554`，`nativedo-browser-wave2`）
+
+- 链接的 before/after。旧构建里帖子中的 https 链接走不到上游的内嵌分支（它的宿主是 `LaunchActivity`，这个壳不是），
+  落到 `CustomTabsIntent`/系统浏览器；本片在 `NativeDoHooks.BrowserHost` 里回答上游要找的四件事，`NativeDoActivity`
+  照 `LaunchActivity` 接好宿主（contentView 里的 `BottomSheetTabsOverlay`、main `ActionBarLayout` 建 tabs、
+  返回先关 tabs 面板、自家三格栏在页面最小化时让位），链接于是进入 Telegram 自己的 `ArticleViewer` 网页 sheet。
+- 设置默认值：上游的内嵌开关是 `MessagesController.webBrowserSettings`（服务器下发的 Telegram 账号设置），
+  没有账号它永远为空，上游默认会把 http(s) 链接放到 App 外（自定义标签页/系统浏览器）。本客户端明确改成
+  默认内嵌（仅 http(s)，且只在我们的宿主存在时生效）；`ArticleViewer` 的 `messages.getWebPage` 查询在
+  tgnet 关闭时直接跳过，页面立即加载而不是等一个不会来的回答。登录 WebView 的链接处理没有动：它只把
+  非 http(s) scheme 交给 `Browser.openUrl`，本片的默认只拦 http(s)，那类链接仍照旧外部打开。
+- 设备检查（覆盖安装 `-r -t`，未卸载未清数据，仍登录 @example_user）：
+  - 帖子里的 linux.do 链接（社区官方 iOS App 帖中的 `https://linux.do/t/topic/2974886`）：进入内置浏览器，
+    `X` + 标题/URL 两行 + 展开箭头 + 菜单的结构（不是 Chrome 自定义标签页），整页渲染。截图 `09-linuxdo-inapp`。
+  - 向下滑：页面最小化为底部标签条（X + favicon + 标题 + 展开箭头），底部的 话题/通知/设置 栏按设计让位；
+    点标签条恢复整页。截图 `10-minimize`、`11-restore`。
+  - 返回键关闭浏览器，回到话题。截图 `13-back`。
+  - 普通外链（帖子里的 App Store onebox → `apps.apple.com/us/app/linux-do-community`）同样进内置浏览器并加载整页。
+    截图 `14-appstore`、`15-back-external`。
+  - linux.do 深链仍走原生：显式给 `NativeDoActivity` 的 `VIEW` intent 原生打开该话题（`17/18`）；不带组件的
+    `am start` 被系统解析器交给 Chrome（`16`，`pm resolve-activity` 返回 ResolverActivity），这是设备的系统首选状态，
+    与本片改动无关。
+  - `logcat` 只有 `Browser.openInExternalApp` 探测失败的 `ActivityNotFoundException`（上游自己 catch，内嵌分支的前置探测，
+    属预期），crash buffer 为空，无 FATAL/ANR。摘录 `logcat-press-trace.txt`。
+- 两个观察，留在后续：内置浏览器里的 linux.do 页面是匿名态（页头「Log In」，`/boards/topic/1` 显示 Access Denied）——
+  打开浏览器前把 app 的 cookie store 同步进 WebView 还没接（截图为 `19-boards-link`）；浏览器菜单里的 历史/书签
+  指向上游 Telegram 的收藏列表（`MediaDataController` 的媒体查询），点它不会崩但我们这边没有数据，是已知的接触面。
+- 构建与测试：本 worktree 首次 `assembleDebug -Pandroid.injected.build.abi=arm64-v8a --quiet`（原生 `.so` 取自同 commit 的设备
+  worktree，Java/资源/dex/打包在本地跑），APK SHA-256 `192dc283cc83060169b52089a9336bb3b1f2a347d9155c399795d36743b21920`
+  与设备 `base.apk` 一致（验后为了给满盘腾空间删掉了构建产物，哈希留在 `VERIFICATION.txt`）。`:nativedo:testDebugUnitTest`
+  31 类 87 项全过（0 失败、0 error、0 skipped）；新增 `PostLinkBrowserTest` 固定失败模式：没有 `LaunchActivity` 时帖子
+  链接仍要到达 `ArticleViewer` sheet 且一次 tgnet 请求都不发。`scripts/vendor-guard.sh --compile` OK（它管旧
+  `apps/android/TMessagesProj` 骨架；本片的上游行在 `apps/android/telegram` 下，账记在「The upstream lines」一段）。
+- 证据在 `.amp/in/artifacts/browser-wave2/`。
+
 ### 本片验证（2026-10-03，`emulator-5556`）
 
 - 设置账号区的上游 `TextSettingsCell`「打开验证页」复用登录 WebView。恢复从 `/challenge`
