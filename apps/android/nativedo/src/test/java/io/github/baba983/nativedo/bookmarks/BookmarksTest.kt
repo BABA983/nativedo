@@ -169,6 +169,10 @@ internal class BookmarksTest {
         // to where they are - which is how a reader reaches them too.
         harness.await("the profile's own fields") { rowLabels().isNotEmpty() }
         val profileList = contentListOf(harness.activity) ?: throw AssertionError("no profile list")
+        // A drag, not one scroll event: the profile's first upward event on its collapsing header
+        // only disarms the pull-down and returns the list to rest (upstream's own clamp), so the
+        // reach for the bottom is the move after it.
+        profileList.scrollBy(0, 1)
         profileList.scrollBy(0, 20_000)
         harness.layoutApp()
         harness.idle()

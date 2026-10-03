@@ -221,8 +221,11 @@ internal class ProfileScreenTest {
         harness.present(ProfileFragment.forUser("baba", "Baba"))
         harness.await("the profile to load") { detailValue("信任等级") == "3" }
 
-        // Part of the way up: the header sits between its rest position and its collapsed one.
+        // Part of the way up: the header sits between its rest position and its collapsed one. It
+        // takes two events, because the first upward one only disarms the pull-down and returns the
+        // list to rest (the profile header's own clamp, upstream's).
         val list = listView()!!
+        list.scrollBy(0, 1)
         list.scrollBy(0, AndroidUtilities.dp(100f))
         harness.layoutApp()
         harness.idle()
