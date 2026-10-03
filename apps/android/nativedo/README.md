@@ -192,13 +192,23 @@ stands, and the upstream component each row is meant to use.
   生产 reporter 不改。诊断在 `.amp/in/artifacts/read-dwell-diagnostic/`；最终提交的五轮
   命令与 XML 保留在 `.amp/in/artifacts/challenge-recovery-final/`，失败即停。
 - 当前 APK 已用 `adb -s emulator-5556 install -r -t` 覆盖安装，版本 `0.1.0 (1)`，
-  SHA-256 为 `23f54b511101a89b7a65c6a6085133988dbc93a4b06cb7c9d2865744ef671700`。
+  SHA-256 为 `2911409bd23b474726f46546c7a1799b74ca080bf42a863d65ce5906d271bd17`。
   保留首次安装数据；图片 `PhotoViewer` 已接入，完整内置 Browser、液态玻璃 tab 和宿主迁移待单独实现验证。
-- 仅获授权的私信 2975944 经完整 GET 确认为当前用户一人、1 条文本帖、无视频或附件。
-  上轮回复为 `403 Challenge`，完整帖子流读回测试标记 0 条；未重发、未上传、未回应。
+- 验证页从另一页面返回曾重建 WebView、叠加完成按钮。新增导航回归测试先复现失败，
+  再按上游 `BaseFragment` 约定保存 `fragmentView`；相关设置、首次登录、回复和阅读进度测试通过。
+  覆盖安装后，从设置打开、打开私信再返回，设备保留原网页且只有一个完成按钮；返回取消不恢复。
+- 仅在获授权的单人私信 2975944 上传 PNG、PDF 并各发送一次：两次 uploads 和两次 posts 均 200。
+  完整 GET 读回 3 条帖子，图片标记仅第 2 楼、PDF 标记仅第 3 楼各一次。原生图片可见，
+  点 PDF 块打开系统阅读器并显示测试文字；下载缓存 7,270 字节，SHA-256 与上传源一致。
+  证据在 `.amp/in/artifacts/private-upload-verification/`。404 本身仍不证明 Cloudflare 写入放行。
+- 视频设备验证受站点限制：一次 MP4 上传返回 422，没有发帖；GET bootstrap 确认允许扩展名
+  不含 mp4/webm，附件上限 4,096 KB。未绕过限制、未重复上传。该私信仍无视频，按需下载／取消待验证。
+  3 楼均无回应，当前只支持点已有 chips 切换，新增回应入口缺失，真实回应操作待验证。
+- 最终导航修复后的五连使用串行 `:nativedo:testDebugUnitTest --rerun --quiet`，
+  同一 HEAD 的命令、XML 和结果保存在 `.amp/in/artifacts/private-upload-final/`，失败即停；
+  `:nativedo:assembleDebug -Pandroid.injected.build.abi=arm64-v8a --quiet` 是构建 gate。
   `operation=posts/timings` 分开记录，不记录正文、cookie、query 或身份，不改变错误分类。
-  完成网站验证后可在该私信内上传测试素材，继续回复／回应、视频按需下载／取消和附件的设备复验。
-  构建、JVM 测试和网页 GET 都不替代这些设备结果。
+  构建、JVM 测试和网页 GET 都不替代未完成的设备结果。
 
 ### 设备验证结果（2026-10-01/02，AVD `nativedo-test`／android-35 google_apis_tablet arm64-v8a，`emulator-5556`）
 

@@ -116,6 +116,7 @@ class LoginWebViewFragment @JvmOverloads constructor(
 
         val loginWebView = createLoginWebView(context, root)
         loadAfterCookieSync(loginWebView, initialUrl())
+        fragmentView = root
         return root
     }
 

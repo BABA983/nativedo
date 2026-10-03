@@ -156,6 +156,25 @@ internal class SettingsTabTest {
         harness.assertNoTelegramSideEffects()
     }
 
+    /** Returning from another screen must retain the verification page, not rebuild its menu and WebView. */
+    @Test
+    fun returningToVerificationRetainsItsPageAndSingleFinishButton() {
+        val shell = openVerificationFromSettings()
+        val fragment = currentFragment(shell) as org.telegram.ui.ActionBar.BaseFragment
+        val web = verificationWebView()
+        shell.present(io.github.baba983.nativedo.settings.SettingsFragment())
+        harness.await("settings above verification") { currentFragmentName(shell) == "SettingsFragment" }
+        back()
+        harness.await("return to verification") { currentFragment(shell) === fragment }
+        harness.layoutApp()
+        assertTrue("navigation retains the page and its history", web === verificationWebView())
+        assertEquals("the verification page has one explicit finish button", 1,
+            viewsUnder(fragment.actionBar).filterIsInstance<org.telegram.ui.ActionBar.ActionBarMenuItem>()
+                .count { "完成验证" in viewsUnder(it).filterIsInstance<TextView>().map { text -> text.text.toString() } })
+        assertNoWrites()
+        harness.assertNoTelegramSideEffects()
+    }
+
     /** Existing auth must not auto-close recovery or turn Back into a successful completion. */
     @Test
     fun verificationKeepsTheSessionAndCancelDoesNotCompleteItEvenWithHistory() {
