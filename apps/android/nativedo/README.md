@@ -187,8 +187,10 @@ stands, and the upstream component each row is meant to use.
   期间一次 `ERR_PROXY_CONNECTION_FAILED` 未计成功，原代理 `10.0.2.2:7890` 未改。
 - 头像修复后的 `6eaab3b` HEAD 已串行强制执行五轮全量测试，每轮 30 个测试类、80 个用例，
   全部通过，记录在 `.amp/in/artifacts/final-five-pass/`。本次 `/challenge` 修正后又跑了完整
-  30 类 80 项、相关测试和 arm64 构建。最终提交的五轮命令与 XML 保留在
-  `.amp/in/artifacts/challenge-recovery/`，失败即停，不累计不同 HEAD 的通过次数。
+  30 类 80 项、相关测试和 arm64 构建。五连随后复现开场上报已清空时间，但测量前暂停仍硬等
+  额外 POST 的测试竞态；现在暂停并等待在途上报结束后取基线，十秒前台／后台断言不变，
+  生产 reporter 不改。诊断在 `.amp/in/artifacts/read-dwell-diagnostic/`；最终提交的五轮
+  命令与 XML 保留在 `.amp/in/artifacts/challenge-recovery-final/`，失败即停。
 - 当前 APK 已用 `adb -s emulator-5556 install -r -t` 覆盖安装，版本 `0.1.0 (1)`，
   SHA-256 为 `23f54b511101a89b7a65c6a6085133988dbc93a4b06cb7c9d2865744ef671700`。
   保留首次安装数据；图片 `PhotoViewer` 已接入，完整内置 Browser、液态玻璃 tab 和宿主迁移待单独实现验证。
