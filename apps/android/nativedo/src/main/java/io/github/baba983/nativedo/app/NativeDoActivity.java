@@ -1,6 +1,7 @@
 package io.github.baba983.nativedo.app;
 
 import android.app.Activity;
+import android.graphics.Canvas;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.Gravity;
@@ -8,16 +9,30 @@ import android.view.ViewGroup;
 import android.view.Window;
 import android.window.OnBackInvokedDispatcher;
 import android.widget.FrameLayout;
-import android.widget.LinearLayout;
+
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.LiteMode;
+import org.telegram.messenger.NotificationCenter;
 import org.telegram.ui.ActionBar.ActionBarLayout;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.DrawerLayoutContainer;
+import org.telegram.ui.ActionBar.INavigationLayout;
 import org.telegram.ui.ActionBar.Theme;
-import org.telegram.ui.ThemeActivity;
-import org.telegram.ui.Components.FilledTabsView;
+import org.telegram.ui.DialogsActivity;
+import org.telegram.ui.MainTabsLayout;
 import org.telegram.ui.Components.LineProgressView;
+import org.telegram.ui.Components.blur3.BlurredBackgroundDrawableViewFactory;
+import org.telegram.ui.Components.blur3.drawable.BlurredBackgroundDrawable;
+import org.telegram.ui.Components.blur3.drawable.color.impl.BlurredBackgroundProviderImpl;
+import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceColor;
+import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceRenderNode;
+import org.telegram.ui.Components.chat.ViewPositionWatcher;
+import org.telegram.ui.Components.glass.GlassTabView;
 
 import java.util.ArrayList;
 
@@ -31,20 +46,23 @@ import io.github.baba983.nativedo.topic.TopicListFragment;
  * NativeDo's shell: it hosts upstream's {@link DrawerLayoutContainer} and {@link ActionBarLayout}
  * and pushes our fragments into them.
  *
- * <p>Upstream's own {@code LaunchActivity} cannot be reused. It is Telegram's onboarding flow, not a
- * shell: it calls {@code ApplicationLoader.postInitApplication()} (which builds a
- * {@code MessagesController} and a {@code MediaController} for every account, opening Telegram's
- * database), keys everything off {@code UserConfig.getInstance(...).isClientActivated()}, and
- * returns {@code new LoginActivity()} when no Telegram account exists. None of that applies to a
- * linux.do client, and the hooks that would disable it are the entire Telegram account model.</p>
+ * <p>{@code LaunchActivity.onCreate()} starts Telegram's account services and gates navigation on
+ * {@code UserConfig.isClientActivated()}. This host instead wires the public navigation, tabs,
+ * insets and theme APIs to the Discourse session.</p>
  */
-public class NativeDoActivity extends Activity {
+public class NativeDoActivity extends Activity implements NotificationCenter.NotificationCenterDelegate {
 
     private ActionBarLayout actionBarLayout;
     private LineProgressView sessionProgress;
     private DrawerLayoutContainer drawerLayoutContainer;
     private FrameLayout contentView;
-    private FilledTabsView tabs;
+    private MainTabsLayout tabs;
+    private BlurredBackgroundDrawable tabsBackground;
+    private final BlurredBackgroundSourceColor tabsColorSource = new BlurredBackgroundSourceColor();
+    private BlurredBackgroundSourceRenderNode tabsGlassSource;
+    private Insets systemInsets = Insets.NONE;
+    private boolean keyboardVisible;
+    private boolean tabsVisible;
     private int selectedTab = -1;
     /** Whether the reader is on the login page, which the roots and their strip stay away from. */
     private boolean signedOut;
@@ -60,16 +78,20 @@ public class NativeDoActivity extends Activity {
         setTheme(org.telegram.messenger.R.style.Theme_TMessages);
         super.onCreate(savedInstanceState);
 
+        AndroidUtilities.enableEdgeToEdge(getWindow());
         AndroidUtilities.checkDisplaySize(this, getResources().getConfiguration());
         Theme.createCommonResources(this);
         Theme.createDialogsResources(this);
         Theme.createChatResources(this, false);
         Theme.createCommonMessageResources();
 
-        // `main == false`: the main layout is Telegram's tabbed shell, and it dereferences
-        // LaunchActivity (which this client does not have) while creating its bottom-sheet tab bar.
-        // The two behaviours `main` controls are that bar and its height, neither of which applies here.
-        actionBarLayout = new ActionBarLayout(this, false);
+        // The upstream layout owns system/IME insets; only our root-tab height is supplied here.
+        actionBarLayout = new ActionBarLayout(this, false) {
+            @Override
+            public int getBottomTabsHeight(boolean animated) {
+                return tabsVisible ? AndroidUtilities.dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS) : 0;
+            }
+        };
         actionBarLayout.setFragmentStack(new ArrayList<>());
 
         drawerLayoutContainer = new DrawerLayoutContainer(this);
@@ -77,7 +99,23 @@ public class NativeDoActivity extends Activity {
         drawerLayoutContainer.setParentActionBarLayout(actionBarLayout);
         actionBarLayout.setDrawerLayoutContainer(drawerLayoutContainer);
 
-        contentView = new FrameLayout(this);
+        if (Build.VERSION.SDK_INT >= 31) {
+            tabsGlassSource = new BlurredBackgroundSourceRenderNode(tabsColorSource);
+            tabsGlassSource.setBlur(AndroidUtilities.dp(8));
+        }
+        contentView = new FrameLayout(this) {
+            @Override
+            protected void dispatchDraw(Canvas canvas) {
+                if (canvas.isHardwareAccelerated() && tabsVisible && tabsGlassSource != null) {
+                    Canvas recording = tabsGlassSource.beginRecording(getWidth(), getHeight());
+                    recording.drawColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                    drawerLayoutContainer.draw(recording);
+                    tabsGlassSource.endRecording();
+                    tabsGlassSource.invalidateDisplayListForDrawables();
+                }
+                super.dispatchDraw(canvas);
+            }
+        };
         contentView.setClipChildren(false);
         contentView.setClipToPadding(false);
         contentView.addView(drawerLayoutContainer, new FrameLayout.LayoutParams(
@@ -85,6 +123,17 @@ public class NativeDoActivity extends Activity {
         drawerLayoutContainer.addView(actionBarLayout.getView(), new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         setContentView(contentView);
+        ViewCompat.setOnApplyWindowInsetsListener(contentView, (view, insets) -> {
+            systemInsets = AndroidUtilities.getDefaultWindowInsets(insets, false);
+            keyboardVisible = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom > systemInsets.bottom;
+            updateTabsVisibility();
+            updateTabInsets();
+            ViewCompat.dispatchApplyWindowInsets(drawerLayoutContainer, insets);
+            return WindowInsetsCompat.CONSUMED;
+        });
+        updateSystemBarColors();
+        ViewCompat.requestApplyInsets(contentView);
+        NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.needSetDayNightTheme);
 
         if (Build.VERSION.SDK_INT >= 33) {
             getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
@@ -149,18 +198,38 @@ public class NativeDoActivity extends Activity {
      * settings must not leave the topic behind the back button.
      */
     private void addTabs() {
-        tabs = new FilledTabsView(this);
-        tabs.setTabs("话题", "通知", "设置");
-        tabs.setColors(
-                Theme.getColor(Theme.key_windowBackgroundWhite),
-                Theme.getColor(Theme.key_windowBackgroundGray),
-                Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2),
-                Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
-        tabs.onTabSelected(this::showTab);
+        tabs = new MainTabsLayout(this, null);
+        int padding = AndroidUtilities.dp(DialogsActivity.MAIN_TABS_MARGIN + 4);
+        tabs.setPadding(padding, padding, padding, padding);
+        tabs.setClipChildren(false);
+        tabs.setMaxWidth(AndroidUtilities.dp(328 + DialogsActivity.MAIN_TABS_MARGIN * 2));
+        GlassTabView.TabAnimation[] icons = {
+                GlassTabView.TabAnimation.CHATS, GlassTabView.TabAnimation.REPLIES, GlassTabView.TabAnimation.SETTINGS};
+        int[] labels = {org.telegram.messenger.R.string.MainTabsChats,
+                org.telegram.messenger.R.string.MainTabsContacts, org.telegram.messenger.R.string.Settings};
+        String[] descriptions = {"话题", "通知", "设置"};
+        for (int index = 0; index < labels.length; index++) {
+            final int tabIndex = index;
+            GlassTabView tab = GlassTabView.createMainTab(this, null, icons[index], labels[index]);
+            tab.setContentDescription(descriptions[index]);
+            tab.setOnClickListener(view -> showTab(tabIndex));
+            tabs.addView(tab);
+            tabs.setViewVisible(tab, true, false);
+        }
+        tabsColorSource.setColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        BlurredBackgroundDrawableViewFactory factory = new BlurredBackgroundDrawableViewFactory(
+                tabsGlassSource != null ? tabsGlassSource : tabsColorSource);
+        factory.setSourceRootView(new ViewPositionWatcher(contentView), contentView);
+        factory.setLiquidGlassEffectAllowed(LiteMode.isEnabled(LiteMode.FLAG_LIQUID_GLASS));
+        tabsBackground = factory.create(tabs, BlurredBackgroundProviderImpl.mainTabs(null));
+        tabsBackground.setRadius(AndroidUtilities.dp(DialogsActivity.MAIN_TABS_HEIGHT / 2f));
+        tabsBackground.setPadding(AndroidUtilities.dp(DialogsActivity.MAIN_TABS_MARGIN - 0.334f));
+        tabs.setBackground(tabsBackground);
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, AndroidUtilities.dp(48), Gravity.BOTTOM);
-        params.bottomMargin = AndroidUtilities.navigationBarHeight;
+                ViewGroup.LayoutParams.MATCH_PARENT, AndroidUtilities.dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS),
+                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
         contentView.addView(tabs, params);
+        updateTabInsets();
         actionBarLayout.setFragmentStackChangedListener(this::updateTabsVisibility);
         showTabs(true, false);
     }
@@ -171,14 +240,43 @@ public class NativeDoActivity extends Activity {
      * content keeps the height it frees.
      */
     private void updateTabsVisibility() {
-        showTabs(!signedOut && actionBarLayout.getFragmentStack().size() <= 1, true);
+        showTabs(!signedOut && !keyboardVisible && actionBarLayout.getFragmentStack().size() <= 1, true);
+        updateSystemBarColors();
+    }
+
+    private void updateTabInsets() {
+        if (tabs != null) {
+            AndroidUtilities.setViewLayoutMargins(tabs, systemInsets.left, 0, systemInsets.right, systemInsets.bottom);
+        }
+    }
+
+    private void updateSystemBarColors() {
+        BaseFragment fragment = actionBarLayout.getLastFragment();
+        int navigationColor = fragment != null ? fragment.getNavigationBarColor()
+                : Theme.getColor(Theme.key_windowBackgroundGray);
+        drawerLayoutContainer.setInternalNavigationBarColor(navigationColor);
+        contentView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        WindowInsetsControllerCompat controller = new WindowInsetsControllerCompat(getWindow(), contentView);
+        controller.setAppearanceLightStatusBars(fragment != null ? fragment.isLightStatusBar() : !Theme.isCurrentThemeDark());
+        controller.setAppearanceLightNavigationBars(AndroidUtilities.computePerceivedBrightness(navigationColor) >= 0.721f);
+        tabsColorSource.setColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        if (tabsBackground != null) {
+            tabsBackground.updateColors();
+        }
+        if (tabs != null) {
+            for (int index = 0; index < tabs.getChildCount(); index++) {
+                ((GlassTabView) tabs.getChildAt(index)).updateColorsLottie();
+            }
+        }
     }
 
     private void showTabs(boolean visible, boolean animated) {
         if (tabs == null) {
             return;
         }
-        int height = AndroidUtilities.dp(48) + AndroidUtilities.navigationBarHeight;
+        boolean changed = tabsVisible != visible;
+        tabsVisible = visible;
+        int height = AndroidUtilities.dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS) + systemInsets.bottom;
         tabs.animate().cancel();
         if (animated) {
             tabs.animate()
@@ -191,9 +289,48 @@ public class NativeDoActivity extends Activity {
             tabs.setAlpha(visible ? 1f : 0f);
             tabs.setTranslationY(visible ? 0f : (float) height);
         }
-        // The strip is an overlay, so the screens inside the layout are inset by it while it is
-        // there and use the whole window while it is away.
-        actionBarLayout.getView().setPadding(0, 0, 0, visible ? height : 0);
+        if (changed) {
+            ViewCompat.requestApplyInsets(actionBarLayout);
+        }
+    }
+
+    @Override
+    public void didReceivedNotification(int id, int account, Object... args) {
+        if (id == NotificationCenter.needSetDayNightTheme) {
+            Theme.ThemeInfo theme = (Theme.ThemeInfo) args[0];
+            boolean nightTheme = (Boolean) args[1];
+            int accentId = (Integer) args[3];
+            if (accentId != -1) {
+                theme.setCurrentAccentId(accentId);
+                Theme.saveThemeAccents(theme, true, false, true, false);
+            }
+            // Theme's save=true also saves to a Telegram account. Keep only the local preference
+            // read by its startup loader, and use its public local-only application path.
+            Theme.applyTheme(theme, false, nightTheme);
+            if (!nightTheme) {
+                getSharedPreferences("mainconfig", MODE_PRIVATE).edit().putString("theme", theme.getKey()).apply();
+            }
+            INavigationLayout.ThemeAnimationSettings settings = new INavigationLayout.ThemeAnimationSettings(
+                    theme, accentId, nightTheme, false);
+            settings.applyTheme = settings.applyTrulyTheme = false;
+            settings.animationProgress = progress -> updateSystemBarColors();
+            settings.afterAnimationRunnable = () -> {
+                DialogsActivity.switchingTheme = false;
+                updateSystemBarColors();
+            };
+            Runnable onApplied = args.length > 7 ? (Runnable) args[7] : null;
+            actionBarLayout.animateThemedValues(settings, null);
+            if (onApplied != null) {
+                onApplied.run();
+            }
+            updateSystemBarColors();
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.needSetDayNightTheme);
+        super.onDestroy();
     }
 
     /**
@@ -206,6 +343,7 @@ public class NativeDoActivity extends Activity {
         super.onResume();
         if (actionBarLayout != null) {
             actionBarLayout.onResume();
+            updateSystemBarColors();
         }
     }
 
@@ -230,14 +368,14 @@ public class NativeDoActivity extends Activity {
         }
     }
 
-    /** Shows one of the two roots; the tab strip can only ever hold one of them. */
+    /** Replaces the root with the selected tab's screen. */
     private void showTab(int index) {
         if (index == selectedTab || actionBarLayout == null) {
             return;
         }
         selectedTab = index;
         if (tabs != null) {
-            tabs.setSelected(index);
+            tabs.setTabSelected(tabs.getChildAt(index), true);
         }
         actionBarLayout.removeAllFragments();
         actionBarLayout.presentFragment(rootFor(index), false);
@@ -297,7 +435,7 @@ public class NativeDoActivity extends Activity {
         // animation and the topic is presented over it.
         selectedTab = 0;
         if (tabs != null) {
-            tabs.setSelected(0);
+            tabs.setTabSelected(tabs.getChildAt(0), false);
         }
         actionBarLayout.removeAllFragments();
         actionBarLayout.addFragmentToStack(rootFor(0));

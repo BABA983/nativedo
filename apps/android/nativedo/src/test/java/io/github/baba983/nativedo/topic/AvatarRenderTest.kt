@@ -308,9 +308,8 @@ internal class AvatarRenderTest {
     private fun currentFragmentName(): String? {
         val shell = harness.activity as io.github.baba983.nativedo.app.NativeDoActivity
         val layoutField = shell.javaClass.getDeclaredField("actionBarLayout").apply { isAccessible = true }
-        val layout = layoutField.get(shell)!!
-        val stackField = layout.javaClass.getDeclaredField("fragmentsStack").apply { isAccessible = true }
-        return (stackField.get(layout) as List<*>).lastOrNull()?.javaClass?.simpleName
+        val layout = layoutField.get(shell) as org.telegram.ui.ActionBar.ActionBarLayout
+        return layout.fragmentStack.lastOrNull()?.javaClass?.simpleName
     }
 
     private fun laidOutCells(): List<org.telegram.ui.Cells.ChatMessageCell> {

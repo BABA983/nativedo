@@ -155,10 +155,8 @@ internal class SessionGateTest {
     private fun currentFragment(): Any? {
         val shell = harness.activity as io.github.baba983.nativedo.app.NativeDoActivity
         val layoutField = shell.javaClass.getDeclaredField("actionBarLayout").apply { isAccessible = true }
-        val layout = layoutField.get(shell)!!
-        val stackField = layout.javaClass.getDeclaredField("fragmentsStack").apply { isAccessible = true }
-        val stack = stackField.get(layout) as List<*>
-        return stack.lastOrNull()
+        val layout = layoutField.get(shell) as org.telegram.ui.ActionBar.ActionBarLayout
+        return layout.fragmentStack.lastOrNull()
     }
 
     private fun currentFragmentName(): String? = currentFragment()?.javaClass?.simpleName

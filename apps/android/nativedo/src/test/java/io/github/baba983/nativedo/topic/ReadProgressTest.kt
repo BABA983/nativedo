@@ -374,9 +374,8 @@ internal class ReadProgressTest {
     private fun fragments(): List<Any> {
         val shell = harness.activity as io.github.baba983.nativedo.app.NativeDoActivity
         val layoutField = shell.javaClass.getDeclaredField("actionBarLayout").apply { isAccessible = true }
-        val layout = layoutField.get(shell)!!
-        val stackField = layout.javaClass.getDeclaredField("fragmentsStack").apply { isAccessible = true }
-        return (stackField.get(layout) as List<*>).filterNotNull()
+        val layout = layoutField.get(shell) as org.telegram.ui.ActionBar.ActionBarLayout
+        return layout.fragmentStack.toList()
     }
 
     /**

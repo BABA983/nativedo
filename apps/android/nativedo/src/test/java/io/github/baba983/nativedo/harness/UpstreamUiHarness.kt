@@ -65,7 +65,15 @@ internal class UpstreamUiHarness {
         resetImageLoader()
         resetPhotoViewer()
         resetReadMarks()
-        val app = Robolectric.buildActivity(NativeDoActivity::class.java).setup().get()
+        // setup().visible() drains without a budget. Glass backgrounds start upstream's permanent
+        // frame clock, so hold VSYNC until that drain ends, then use our bounded idle below.
+        val pausedFrames = org.robolectric.shadows.ShadowChoreographer.isPaused()
+        org.robolectric.shadows.ShadowChoreographer.setPaused(true)
+        val app = try {
+            Robolectric.buildActivity(NativeDoActivity::class.java).setup().get()
+        } finally {
+            org.robolectric.shadows.ShadowChoreographer.setPaused(pausedFrames)
+        }
         activity = app
         idle()
         reportBootRequests()

@@ -35,4 +35,7 @@
     <string name="ChatList">话题列表</string>
     <string name="TextSizeHeader">正文字号</string>
     <string name="ChangeChatBackground">更换背景</string>
+    <string name="MainTabsChats">话题</string>
+    <string name="MainTabsContacts">通知</string>
+    <string name="Settings">设置</string>
 </resources>

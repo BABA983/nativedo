@@ -33,7 +33,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
 import org.telegram.messenger.ApplicationLoader
 import org.telegram.ui.ActionBar.AlertDialog
-import org.telegram.ui.Components.FilledTabsView
+import org.telegram.ui.MainTabsLayout
 import org.telegram.ui.Components.RecyclerListView
 
 /**
@@ -317,10 +317,8 @@ internal class SettingsTabTest {
 
     private fun currentFragment(shell: NativeDoActivity): Any? {
         val layoutField = shell.javaClass.getDeclaredField("actionBarLayout").apply { isAccessible = true }
-        val layout = layoutField.get(shell)!!
-        val stackField = layout.javaClass.getDeclaredField("fragmentsStack").apply { isAccessible = true }
-        val stack = stackField.get(layout) as List<*>
-        return stack.lastOrNull()
+        val layout = layoutField.get(shell) as org.telegram.ui.ActionBar.ActionBarLayout
+        return layout.fragmentStack.lastOrNull()
     }
 
     private fun back() {
@@ -329,16 +327,13 @@ internal class SettingsTabTest {
     }
 
     private fun tapTab(index: Int) {
-        // The strip's touch targets are laid down while it draws, so it has to have drawn once.
         harness.drawApp()
         val tabs = viewsUnder(harness.activity.findViewById(android.R.id.content))
-            .filterIsInstance<FilledTabsView>().firstOrNull()
+            .filterIsInstance<MainTabsLayout>().firstOrNull()
             ?: throw AssertionError("the shell shows no tab strip")
-        val field = FilledTabsView::class.java.getDeclaredField("bounds").apply { isAccessible = true }
-        val bounds = field.get(tabs) as Array<*>
-        val rect = bounds[index] as android.graphics.RectF
-        val x = rect.centerX()
-        val y = rect.centerY()
+        val tab = tabs.getChildAt(index)
+        val x = tab.x + tab.width / 2f
+        val y = tab.y + tab.height / 2f
         for (action in intArrayOf(android.view.MotionEvent.ACTION_DOWN, android.view.MotionEvent.ACTION_UP)) {
             val event = android.view.MotionEvent.obtain(
                 android.os.SystemClock.uptimeMillis(), android.os.SystemClock.uptimeMillis(), action, x, y, 0)

@@ -103,8 +103,11 @@ rendering, gestures, layout and animation are upstream's own code.
   notification's own floor. The site's topic-less notifications (a badge, likes it consolidated)
   have no destination and their rows are not tappable.
 * **Theme and settings** — upstream's `ThemeActivity` (the appearance page) is the settings entry;
-  the tab strip is upstream's `FilledTabsView`, with the feeds, the notifications and the settings
-  page as its three entries.
+  `MainTabsLayout` and `GlassTabView` supply the three entries, their selection and gestures, with
+  upstream's blur3 glass background. The host uses `AndroidUtilities.enableEdgeToEdge` and forwards
+  system/IME insets through `DrawerLayoutContainer` and `ActionBarLayout`. Theme changes use the
+  existing local application API (`save=false`), with local preferences and upstream color updates;
+  they never save a theme to a Telegram account.
 
 ## Rendering without a device
 
@@ -191,9 +194,9 @@ stands, and the upstream component each row is meant to use.
   额外 POST 的测试竞态；现在暂停并等待在途上报结束后取基线，十秒前台／后台断言不变，
   生产 reporter 不改。诊断在 `.amp/in/artifacts/read-dwell-diagnostic/`；最终提交的五轮
   命令与 XML 保留在 `.amp/in/artifacts/challenge-recovery-final/`，失败即停。
-- 当前 APK 已用 `adb -s emulator-5556 install -r -t` 覆盖安装，版本 `0.1.0 (1)`，
+- 验证页修复阶段 APK 用 `adb -s emulator-5556 install -r -t` 覆盖安装，版本 `0.1.0 (1)`，
   SHA-256 为 `2911409bd23b474726f46546c7a1799b74ca080bf42a863d65ce5906d271bd17`。
-  保留首次安装数据；图片 `PhotoViewer` 已接入，完整内置 Browser、液态玻璃 tab 和宿主迁移待单独实现验证。
+  保留首次安装数据；图片 `PhotoViewer` 已接入，完整内置 Browser 和整屏宿主迁移仍待验证。
 - 验证页从另一页面返回曾重建 WebView、叠加完成按钮。新增导航回归测试先复现失败，
   再按上游 `BaseFragment` 约定保存 `fragmentView`；相关设置、首次登录、回复和阅读进度测试通过。
   覆盖安装后，从设置打开、打开私信再返回，设备保留原网页且只有一个完成按钮；返回取消不恢复。
@@ -209,6 +212,21 @@ stands, and the upstream component each row is meant to use.
   `:nativedo:assembleDebug -Pandroid.injected.build.abi=arm64-v8a --quiet` 是构建 gate。
   `operation=posts/timings` 分开记录，不记录正文、cookie、query 或身份，不改变错误分类。
   构建、JVM 测试和网页 GET 都不替代未完成的设备结果。
+
+### 上游玻璃 tabs 与 edge-to-edge（2026-10-03，`emulator-5556`）
+
+- 直接接入 `MainTabsLayout`／`GlassTabView`／blur3，没有改 subtree 或增加 hook。话题、通知、设置
+  的点击与选中态、子页隐藏／返回恢复、横屏、浅色／夜间模式均经设备检查，截图仅保留非敏感区域。
+- `HomeTabsTest` 先复现旧 tabs、黑色安全区和未处理主题事件的失败，再验证真实导航、Skia 渲染、
+  不对称 cutout、IME、无 Telegram 原生网络／数据库副作用；原登录、回复和阅读恢复断言保留。
+- 完整软键盘在私信 2975944 的顶边为 1517px，回复框底边为 1513px；收起后恢复 2333px，
+  tabs 隐藏，无回复／上传／回应请求。为检查完整键盘暂时关闭手写输入，结束时明确设回默认启用值 1。
+- 覆盖安装版本 `0.1.0 (1)`；APK 与设备 SHA-256 都为
+  `28d3912b954911eed5bfa0f67f840c28a7863dcd18f924bfa51749a27c7f523d`。登录和代理保留，无 crash，
+  未生成 `cache4.db`。设置验证页仍可见完成按钮，返回取消回到设置。
+- 最终 gate 是同一 HEAD 串行五次 `:nativedo:testDebugUnitTest --rerun --quiet`（30 类、84 项），
+  失败即停；命令、HEAD、逐轮 XML、APK hash 与检查过的截图保留在 `.amp/in/artifacts/main-glass-tabs/`。
+  arm64 `assembleDebug` 另行检查。视频下载／取消和新增回应仍受上一节的站点／入口限制，不能算设备通过。
 
 ### 设备验证结果（2026-10-01/02，AVD `nativedo-test`／android-35 google_apis_tablet arm64-v8a，`emulator-5556`）
 
