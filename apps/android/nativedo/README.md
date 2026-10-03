@@ -149,7 +149,8 @@ stands, and the upstream component each row is meant to use.
 | Video in a post (`<video>`) | partial, opened externally | done, to the clip's own size | upstream's video block (`pageBlockVideo` in `RichMessageLayout`'s media cell). Opening the topic fetches the cover only; the press on the block's own play button fetches the clip (up to 25 MB) while the block draws upstream's own loading state and progress, and the file opens in `PhotoViewer`. A clip over that, one the site refuses, and one the reader cancels - the block's own cancel button stops the transfer and drops the half-written file - is not played by upstream's viewer, which can only play a file this client holds: the first two are streamed by the device's own player, a cancel plays nothing and leaves the cover and the play button behind |
 | Avatars | done | done | the avatar receivers of `ChatMessageCell` / `DialogCell` |
 | Attachments: download, open with the system | done | done | upstream's document block |
-| Long press a post: copy, copy link, bookmark, reply | done | done | our delegate on `ChatMessageCell` |
+| Long press a post: copy, copy link, bookmark, reply | done | done | upstream's `ItemOptions` scrim menu anchored on the bubble; our delegate on `ChatMessageCell` supplies the choices |
+| Swipe left on a post to answer it | done | done | ChatActivity's chat-list sliding view (`slidingView`/`setSlidingOffset`, reply disc, 50dp completion) |
 | Reply (`POST /posts.json` with CSRF) | done, rich editor sheet | done, text and uploaded files | `ChatActivityEnterView` |
 | Reply with media (`POST /uploads.json`) | done | done, the composer's own paperclip and our attach strip upload the file and insert the site's markdown for it | the composer's own attach button plus our uploader (`ChatAttachAlert`'s modal is Telegram's own) |
 | Mentions and autocomplete (`/u/search/users`) | done | missing | the composer's mention panel |
@@ -164,7 +165,7 @@ stands, and the upstream component each row is meant to use.
 | Account and session settings | done | done: the settings tab is our own screen over upstream's cells (`HeaderCell` / `TextSettingsCell`), with the appearance page, the bookmark list and the account - the current reader and a sign-out that clears the cookies and returns to the login page | upstream's settings cells, the way `SettingsActivity` draws its own list |
 | linux.do emoji sprite in the composer | done | missing | upstream's emoji panel plus our sprite downloader |
 | Floating date and jump to the read position | done | missing | upstream's chat date overlay |
-| Text selection inside a post | done | missing | `ChatMessageCell`'s own selection |
+| Text selection inside a post | done | done: the post menu's 选择文本 picks the bubble's own text, and upstream's handles, extension, copy bar and clipboard take over from there | `ChatListTextSelectionHelper`, hosted the way `ChatActivity` hosts it |
 | Share and deep links into a topic | partial | missing | `ShareActivity` plus an intent filter |
 
 ## 真机验证清单
@@ -227,6 +228,37 @@ stands, and the upstream component each row is meant to use.
 - 最终 gate 是同一 HEAD 串行五次 `:nativedo:testDebugUnitTest --rerun --quiet`（30 类、84 项），
   失败即停；命令、HEAD、逐轮 XML、APK hash 与检查过的截图保留在 `.amp/in/artifacts/main-glass-tabs/`。
   arm64 `assembleDebug` 另行检查。视频下载／取消和新增回应仍受上一节的站点／入口限制，不能算设备通过。
+
+### 长按菜单、文本选择与左滑回复（2026-10-03/04，`emulator-5556`）
+
+- 长按帖子改成上游 `ItemOptions` 的 scrim 菜单：按下的气泡在暗幕之上保持高亮，菜单锚在它旁边。
+  四项原行为不变，设备上逐项点过：复制、复制链接（两者的结果都由系统剪贴板浮层确认，分别是正文
+  原文和 `https://linux.do/t/2977660/23284908`）、添加书签（真站点写入后菜单变为「取消书签」，再点
+  一次还原）、回复（回复框出现 `@JerryXu09`）。
+- 文本选择用上游 `ChatListTextSelectionHelper`，接线照 ChatActivity：overlay 挂在 content view、
+  parent view 是列表、cell 通过 delegate 把触摸交给它、滚动调 `onParentScrolled`／`stopScrolling`、
+  返回先清选择。它自己的发起方式要求气泡已经处于「菜单选中」状态，而我们的菜单是独占窗口的弹层，
+  长按到不了 cell，所以选择从菜单进入：文本气泡的菜单多一项「选择文本」，选中整段后，高亮、两端
+  手柄、拖动扩选、Copy 浮条、点空白／返回清除都是上游自己的。设备上扩选把选区缩到「已经用体验版
+  回」，Copy 之后系统剪贴板浮层和粘贴回输入框两处都显示这段选中文本（不是整楼、不是空）。非文本
+  气泡（投票）不提供这一项。
+- 左滑回复按 ChatActivity 的 chat list 移植（0.4cm 起点阈值、`|dx|/3 > dy`、-80dp 夹取、50dp 触感与
+  完成阈值、弹簧画的回复圆盘、松手减速、`setSlidingOffset`）：设备上拖动中气泡左移、圆盘出现并随
+  阈值填充，过阈值松手后回复框带 `@leo_summit` 打开，松手未过阈值则回位。
+- 不回归项（都经设备）：竖向滚动照常；选中状态下滚动列表，选区保留、浮条随滚动收起再出现（overlay
+  不吃非手柄的触摸）；图片点击照常打开 PhotoViewer（上传测试图）；回应 chip 点了 ❤ 6→7 再点回 6，
+  两次站点写都生效；正文链接照常进 `Browser.openUrl`（模拟器没有可处理 VIEW 的浏览器，是上一节就
+  存在的内嵌浏览器限制）。logcat 没有 FATAL／ANR，crash buffer 为空，应用 `databases/` 里没有
+  Telegram 的 `cache4.db`。
+- 构建与测试：`assembleDebug -Pandroid.injected.build.abi=arm64-v8a --quiet` 通过；APK 与设备
+  `base.apk` 的 SHA-256 都是 `d159ede950b68b0c0f4180d0f9ff4cd162607c62b1dbfa99c9de87eefcddc8ca`。
+  全量 `:nativedo:testDebugUnitTest` 30 类 85 例通过（0 失败、0 error、0 skipped）；`PostMenuTest`
+  新增两条：菜单起始的选择是 rich 选择且覆盖整楼文本；overlay 不吞列表滚动、点空白清除选择。截图与
+  设备 APK 留在 `.amp/in/artifacts/topic-wave1/`（`04-menu`、`08-copy`、`10-copy-link`、`16-swipe-reply`、
+  `24-selection`、`26-selection-after-drag`、`29-pasted`、`37-scroll-with-selection`、`43-photoviewer` 等）。
+- 决定与未验证：上游第二段长按（菜单打开后再长按正文）在本宿主不可能——`ItemOptions` 弹层持有窗口，
+  第二下触摸到不了 cell，所以选择改从菜单进入；真站点投票（点选项）这轮没有单独执行，它要产生一次
+  真实投票，回应 chip 已验证同一条触摸路径。
 
 ### 设备验证结果（2026-10-01/02，AVD `nativedo-test`／android-35 google_apis_tablet arm64-v8a，`emulator-5556`）
 
