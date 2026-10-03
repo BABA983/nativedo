@@ -99,6 +99,8 @@ dependencies {
     // ours even though upstream's public API (RecyclerListView, MessageObject) exposes their types.
     implementation 'androidx.core:core:1.16.0'
     implementation 'androidx.collection:collection:1.4.5'
+    // The swipe-to-reply port from ChatActivity animates with upstream's springs of this library.
+    implementation 'androidx.dynamicanimation:dynamicanimation:1.0.0'
 
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1'
     implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3'

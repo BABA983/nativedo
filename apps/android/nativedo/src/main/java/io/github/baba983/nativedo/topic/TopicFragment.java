@@ -195,8 +195,26 @@ public class TopicFragment extends BaseFragment {
                 org.telegram.ui.ActionBar.Theme.key_windowBackgroundWhite));
         listView = new PostListView(context);
         listView.setAvatarSource(senderId -> users.get(senderId));
-        listView.setLayoutManager(new LinearLayoutManager(context));
+        // Upstream's own chat-list manager: it is the one whose vertical scroll the swipe gesture
+        // switches off while a post is being dragged (the ported processTouchEvent).
+        androidx.recyclerview.widget.GridLayoutManagerFixed layoutManager =
+                new androidx.recyclerview.widget.GridLayoutManagerFixed(
+                        context, 1000, LinearLayoutManager.VERTICAL, false);
+        layoutManager.setSpanSizeLookup(new androidx.recyclerview.widget.GridLayoutManager.SpanSizeLookup() {
+            @Override
+            public int getSpanSize(int position) {
+                return 1000;
+            }
+        });
+        listView.setLayoutManager(layoutManager);
         listView.setAdapter(new PostAdapter());
+        // One leftward drag on a post is the menu's 回复: the composer opens on that floor.
+        listView.setSwipeReplyListener(cell -> {
+            int floor = floorOf(cell.getMessageObject());
+            if (floor >= 0) {
+                replyTo(floor);
+            }
+        });
         // Upstream's cell only arms its own long press when the touch landed on something it calls
         // pressable, which a rich message's text is not, so the row asks for the menu itself. Same
         // floor, same menu as a long press would open, anchored on the row that was pressed.
@@ -273,6 +291,11 @@ public class TopicFragment extends BaseFragment {
         textSelectionHelper.setCallback(new org.telegram.ui.Cells.TextSelectionHelper.Callback() {
             @Override
             public void onStateChanged(boolean isSelected) {
+                if (isSelected && listView != null) {
+                    // A selection that starts ends a sliding gesture, upstream's callback does the
+                    // same: the two touches can never belong to one drag.
+                    listView.cancelSlidingView();
+                }
             }
 
             @Override
@@ -282,6 +305,7 @@ public class TopicFragment extends BaseFragment {
         View selectionOverlay = textSelectionHelper.getOverlayView(context);
         contentView.addView(selectionOverlay);
         textSelectionHelper.setParentView(listView);
+        listView.setTextSelectionHelper(textSelectionHelper);
 
         fragmentView = contentView;
         loadTopic(topicId);
