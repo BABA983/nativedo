@@ -120,7 +120,8 @@ internal class PostMenuTest {
     fun theMenuStartsATextSelectionOverThePostAndTheOverlayLeavesTheListItsScroll() {
         harness.bootApp()
         harness.await("the topic list to load") { rowCount() == 2 }
-        harness.present(TopicFragment.forTopic(TOPIC_ID, "Select"))
+        val topic = TopicFragment.forTopic(TOPIC_ID, "Select")
+        harness.present(topic)
         harness.await("the topic to load") { rowCount() == 1 }
 
         val cell = laidOutCells().firstOrNull() ?: throw AssertionError("the topic drew no cell")
@@ -132,8 +133,10 @@ internal class PostMenuTest {
         val selection = cell.delegate.textSelectionHelper
             ?: throw AssertionError("the cell has no selection helper")
         println("select: inSelection=" + selection.isInSelectionMode()
+            + " rich=" + selection.isRich
             + " start=" + selection.selectionStart + " end=" + selection.selectionEnd)
         assertTrue("the menu started a selection", selection.isInSelectionMode())
+        assertTrue("over the bubble's rich text, or nothing would be drawn", selection.isRich)
         assertEquals("the whole post is picked", 0, selection.selectionStart)
         assertEquals(
             "up to its own text",
@@ -148,6 +151,15 @@ internal class PostMenuTest {
         assertTrue("a touch away from the handles is not the overlay's",
             !overlay!!.onTouchEvent(away))
         away.recycle()
+
+        // And a tap away from the handles ends the selection, the way ChatActivity's dispatch does,
+        // without the tap also reaching what it landed on.
+        val topicView = topic.fragmentView
+        topicView.dispatchTouchEvent(
+            android.view.MotionEvent.obtain(0, 0, android.view.MotionEvent.ACTION_DOWN, 8f, 8f, 0))
+        topicView.dispatchTouchEvent(
+            android.view.MotionEvent.obtain(0, 0, android.view.MotionEvent.ACTION_UP, 8f, 8f, 0))
+        assertTrue("a tap away ends the selection", !selection.isInSelectionMode())
         harness.assertNoTelegramSideEffects()
     }
 

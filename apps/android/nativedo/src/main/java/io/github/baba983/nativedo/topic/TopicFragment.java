@@ -4,6 +4,7 @@ import android.content.Context;
 import android.text.style.CharacterStyle;
 import android.text.style.URLSpan;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 
@@ -190,7 +191,21 @@ public class TopicFragment extends BaseFragment {
         });
 
         sharedResources = new org.telegram.messenger.ChatMessageSharedResources(context);
-        SizeNotifierFrameLayout contentView = new SizeNotifierFrameLayout(context);
+        SizeNotifierFrameLayout contentView = new SizeNotifierFrameLayout(context) {
+            @Override
+            public boolean dispatchTouchEvent(MotionEvent ev) {
+                // ChatActivity's own dispatch does this: a tap away from the selection's handles
+                // ends the selection and must not also reach what it landed on.
+                if (textSelectionHelper != null && textSelectionHelper.isInSelectionMode()) {
+                    org.telegram.ui.Cells.TextSelectionHelper.TextSelectionOverlay selectionOverlay =
+                            textSelectionHelper.getOverlayView(getContext());
+                    if (selectionOverlay.checkOnTap(ev)) {
+                        ev.setAction(MotionEvent.ACTION_CANCEL);
+                    }
+                }
+                return super.dispatchTouchEvent(ev);
+            }
+        };
         contentView.setBackgroundColor(org.telegram.ui.ActionBar.Theme.getColor(
                 org.telegram.ui.ActionBar.Theme.key_windowBackgroundWhite));
         listView = new PostListView(context);
@@ -948,6 +963,12 @@ public class TopicFragment extends BaseFragment {
      * message's text, and the message has to be in the state its menu put it in; our menu is a popup
      * that owns the screen while it is up, so the menu is where the selection starts: the whole text
      * is picked, and the handles are what narrows it. From there the overlay is upstream's own.
+     *
+     * <p>A post's body is a rich layout, and the helper draws a selection over one only while it is
+     * told so — a touch sets that flag on its way in, and a selection started from the menu has to
+     * set it itself, or there is no highlight and the handles are measured against the wrong
+     * layout. The cell is asked to draw again for the same reason: its draw pass is what hands the
+     * helper the text's position inside it.</p>
      */
     private void startTextSelection(ChatMessageCell cell) {
         if (textSelectionHelper == null || cell == null || cell.getMessageObject() == null
@@ -958,7 +979,9 @@ public class TopicFragment extends BaseFragment {
         if (text == null || text.length() == 0) {
             return;
         }
+        textSelectionHelper.isRich = true;
         textSelectionHelper.select(cell, 0, text.length());
+        cell.invalidate();
     }
 
     /**
