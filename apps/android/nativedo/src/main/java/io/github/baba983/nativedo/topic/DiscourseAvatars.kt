@@ -23,6 +23,12 @@ object DiscourseAvatars {
     /** Discourse's templates take a size; 96 px is what a 42 dp avatar needs at 2x. */
     const val DEFAULT_SIZE = 96
 
+    /**
+     * The expanded profile header draws the same picture across the screen; the template's size is
+     * filled with this where the small one would blur, and the site answers its own nearest size.
+     */
+    const val EXPANDED_SIZE = 720
+
 
     /**
      * `/user_avatar/<host>/<username>/{size}/<id>.png` -> an absolute URL at [size]. Discourse also
@@ -65,12 +71,19 @@ object DiscourseAvatars {
             dc_id = 0
         }
 
-    fun user(username: String, displayName: String, avatarTemplate: String, baseUrl: String): TLRPC.TL_user {
+    @JvmOverloads
+    fun user(
+        username: String,
+        displayName: String,
+        avatarTemplate: String,
+        baseUrl: String,
+        size: Int = DEFAULT_SIZE,
+    ): TLRPC.TL_user {
         val user = TLRPC.TL_user()
         user.id = DiscourseRows.userId(username)
         user.username = username
         user.first_name = displayName.ifEmpty { username }
-        val avatarUrl = url(avatarTemplate, baseUrl)
+        val avatarUrl = url(avatarTemplate, baseUrl, size)
         if (avatarUrl != null) {
             // Upstream builds an avatar location only for a peer with an access hash, and it never
             // fetches anything from a datacenter when the file is already where that location names.

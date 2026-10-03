@@ -341,6 +341,47 @@ stands, and the upstream component each row is meant to use.
   「添加选项」；`View Votes (N)` 点了没有反应（voter list 入口缺失，已知差距）；本机没有软键盘，
   多行 raw 是用 `input keyevent 66` 注入的（`send_by_enter=false`，回车只换行）。
 
+### 资料页下拉展开、手势条内边距与夜间主题（2026-10-04，`linuxdo-native-profile2-wave2`，AVD `Medium_Phone_API_36.0`，`emulator-5554`）
+
+- 底部内边距：资料页和壳一样接 insets（`ViewCompat.setOnApplyWindowInsetsListener`，读
+  `AndroidUtilities.getDefaultWindowInsets` 的 bottom，和 `NativeDoActivity` 给自己的 content view
+  用的同一套），列表底部 = 4dp + 手势条（本机 63px）。设备上滑到列表底：最后一行「后排参与」的文字
+  底边距手势横条约 86px，不再压在横条下面（`17-list-bottom-inset.png` 与其 2x 放大
+  `17-zoom-bottom.png`）。
+- 下拉展开按上游 `ProfileActivity` 搬，常量和分支不改：列表顶部 padding 是整宽、首行用
+  `scrollToPositionWithOffset(0, 168dp - 整宽)` 归位（3230-3245）；`scrollVerticallyBy` 的拖拽减半、
+  松手回位与 disarm（4283-4312）；松手时 1/3 阈值决定收回还是动画到整宽方形（4129-4235、8443-8537）；
+  方形、圆角与名字/`@` 的路径用 `setAvatarExpandProgress`（6254）和 `refreshNameAndOnlineY*`
+  （8884-8897）的原式。设备上：短拉 200px 松手回弹（`04-pull-short-snapback.png`）；慢拉 1100px 松手
+  后是整宽方形，白色 `example_user`／`@example_user` 压在照片左下角（`05-pull-mid.png`、`06-pull-expanded.png`）；上滑
+  约 2/3 行程后方块收回为小圆头像（`07-after-collapse-swipe.png`），再滑到顶时头像缩小上移、名字进操作
+  栏（`16-rest-check2.png`、暗色 `23-profile-collapsed-dark.png`）。
+- 展开用的照片：站点模板的 `{size}` 填 720 单独下一份（独立的 id，落盘为
+  `Telegram Images/0_1756365483.jpg`），linux.do 回的是自己的 288×288 上限；展开时经 `AvatarImageView`
+  的 foreground 层按展开分数渐入，站点给不出更大图时退回小图放大（本机没有出现这一支）。
+- 连续形变录屏（`collapse.mp4`，8s，慢速上下滑；`frames/` 逐帧、10fps/30fps 拼图
+  `gooey-sheet-collapse.png`、`gooey-sheet-reexpand.png`、`gooey-sheet-30fps.png`）：头像随折叠连续
+  缩小、上移并逐渐糊化，回程 30fps 逐帧平滑、没有单帧跳变。**但没出现 Telegram 那种明显的“颈部”**：
+  这台 AVD 是 1 核 2GB，`SharedConfig` 判 LOW，走的是上游 `ProfileGooeyView` 的 CPU 实现
+  （`stackBlurBitmap`），且屏幕没有刘海；CPU 实现把头像与屏幕上缘外的「黑条」合在一起模糊，在无刘海
+  屏幕上只表现为贴住上缘时的变宽/晕开（`09-neck-window.png`、`zoom-5.6s-neck.png`），不是水滴颈。
+  驱动代码与上游逐行一致（`updateGooey` 的 pullProgress/blur/gooeyEnabled/visibility、`needLayout` 的
+  `avatarY`/`avatarScale` 公式、`setScaleX`/`onMeasure` 两个驱动点），没有可“按上游改”的差异；带
+  RenderEffect 的 GPU 实现要求性能等级 ≥ AVERAGE，本机选不到。所以「水滴颈」在本机未证实，属设备
+  分级限制，不能算通过。
+- 夜间主题：设置 → 外观 → Switch to Night Mode 后，顶部（大圆头像、名字与 `@example_user`）、中途（糊化头像、
+  列表行）、全折叠（名字进栏、列表从栏下滚过）都正常，背景、分隔线、栏下遮罩与文字对比度没问题
+  （`21-profile-top-dark.png`、`22-profile-mid-dark.png`、`23-profile-collapsed-dark.png`）；切回日间
+  主题再确认一次（`27-back-to-day.png`）。没有发现需要修的暗色问题。
+- 两个入口都走过：设置 → 账号行（浅色 `03-profile-top-light.png`，暗色 `21`）；话题里点作者名
+  （`25-topic-dark.png` → `26-profile-from-topic-dark.png`，打开 `momo199412` 的资料页）。
+- 构建与测试：同一 HEAD `:nativedo:testDebugUnitTest` 30 类 86 例全过（0 失败、0 error、0 skipped）；
+  `assembleDebug -Pandroid.injected.build.abi=arm64-v8a --quiet` 通过，APK SHA-256
+  `bc743975370c35d5afdb24dd6ca9c43cfa8ae2b90d7e1d427d03cdd2c46d7c8c`，`install -r -t` 覆盖安装
+  （未卸载、未清数据）。harness 里资料页那两处滚动改成两次事件：第一次上滑只解除下拉武装并回到静止位，
+  是上游自己的钳位，一次事件不会移动列表。
+- 本片的命令、截图、录屏与拼图保留在 `.amp/in/artifacts/profile-wave2/`。
+
 ### 设备验证结果（2026-10-01/02，AVD `nativedo-test`／android-35 google_apis_tablet arm64-v8a，`emulator-5556`）
 
 环境：Apple Silicon Mac mini，模拟器内全局代理 `10.0.2.2:7890`（这台机器上跑着的 ClashX Meta）。
