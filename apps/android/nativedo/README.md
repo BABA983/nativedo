@@ -352,6 +352,50 @@ stands, and the upstream component each row is meant to use.
   崩溃与标题未进容器不会淡出），已修并复验，见 `bb77ac7a`。
 - 证据在 `.amp/in/artifacts/settings-tab/`。
 
+### 设备码登录：`/login/device` 与 User API Key 贯通（2026-10-04，`emulator-5554`，`nativedo-device-login`）
+
+- 协议：linux.do 的 `/login/device` 是 Discourse 核心的 User API Key 设备授权流（PR #40189）。
+  应用 `POST /user-api-key/device.json`（RSA 公钥 + nonce + `scopes=session_info` + 每次安装固定的
+  `client_id`）拿到 `user_code` / `verification_uri`（实测返回的核心路径是
+  `/user-api-key/activate`，不是 `/login/device`），在站内浏览器里以 @example_user 的会话批准，应用按
+  `interval=5s` 轮询 `POST /user-api-key/device/poll.json`，解密载荷、校验 nonce，得到的是
+  **User API Key**（`User-Api-Key` 头），不是 `_t` cookie 会话。入口在
+  设置 → 账号 →「设备码登录（实验）」（不动现有登录，密钥用 AndroidKeyStore 封存，可在此撤销）。
+- scope 探测（页面里的「探测可用 scope（调试）」，5 个未批准授权码，10 分钟自行失效）：
+  `read` → 403 `invalid_access`；`read,write` → 403 `invalid_access`；`notifications` → 200；
+  `session_info` → 200；`one_time_password` → 400 `invalid_parameters`（核心设备流禁用）。
+  所以登录默认 scope 取 `session_info`（`read`/`write` 在 linux.do 当前不在允许表里，
+  `notifications` 也过但本片只需要身份读取）。不注册 `client_id` 也能创建，批准页只多一条
+  「此应用程序未经本网站注册或验证」警告。
+- 端到端（真实登录）：站内浏览器打开 `/user-api-key/activate?request=…`，页头是 @example_user、应用名与
+  「读取用户会话信息」，输入 `user_code` 后点「授权」→「授权完成」；应用轮询得到 `authorized`，
+  载荷 350 字符 / 256 字节，**用 PKCS#1 v1.5 打开成功**（OAEP-SHA1/256/512 全部失败；请求里发的
+  `padding=oaep` 在 linux.do 侧没有生效，见 `contracts/discourse/device-authorization.md`），nonce
+  校验通过，密钥落库（`key_storage=keystore`）；随后拿这把密钥请求 `GET /session/current.json`
+  （`User-Api-Key` + `User-Api-Client-Id`）返回 **200，username=@example_user**（logcat
+  `probe_session status=200 username=example_user`）。当前 App 仍走 cookie 会话，本片没有切换网络层。
+- 密钥处置：全部撤销。应用内「撤销本机保存的设备密钥」调用 `POST /user-api-key/revoke`
+  返回 200 并清掉本地存储（`key_revoke status=200` + `key_cleared`）；站点
+  `u/example_user/preferences/security` 的「应用」区在授权后能看到这条（已批准 5 分钟、到期时间：永不），
+  撤销后该区只剩 `LINUX DO iOS`（`37-apps-clean.png`）。第一次解密失败（v1 密钥只授权了 OAEP）
+  产生的那把测试密钥也已在同一轮从站内页面清掉，账号上没有留下任何 NativeDo 密钥。
+- RSA 密钥：AndroidKeyStore（v2 别名）生成 2048 位并支持 OAEP 与 PKCS#1 两种 padding
+  （digest 授权 SHA1/256/512），生成时用真实加解密自检；Keystore 不可用时退回软件密钥，
+  私钥 PKCS#8 由同一把 AndroidKeyStore AES/GCM 凭据密钥封存。解密按
+  `oaep-sha1 → oaep-sha256 → oaep-sha512 → pkcs1` 依次尝试并记录生效的那一种。
+- 构建与测试：`assembleDebug -Pandroid.injected.build.abi=arm64-v8a` 通过（在途 worktree 缺的
+  `TMessagesProj_Modules/media`、`jlatexmath` 从同 commit 的 `linuxdo-native-device` 补齐，
+  arm64 `libtmessages.49.so` 同样取它的构建产物，`-x` 掉 configure/build CMake 两个任务）；
+  设备验证所用 APK SHA-256 `a823d3714b1618a0be7a4aeaa7321af04ee663b141cec11af8ea4fafc540dd3e`
+  （其后只改了注释与文档）。`:nativedo:testDebugUnitTest` 33 类 98 项全过（0 失败、0 error、
+  0 skipped；新增 `DeviceLoginControllerTest` 4 项，钉住异 nonce 载荷拒收不落盘、正确 nonce
+  存储并探测、denied/expired 终止且不再轮询）。全片未改 `apps/android/telegram` 子树，
+  vendor-guard 不涉及。
+- 证据在 `.amp/in/artifacts/device-login/`（`01`–`37` 截图：设置页新行、授权码、站内浏览器授权页、
+  授权完成、scope 探测结果、授权成功、撤销后站点应用区；`logcat-a-probe.txt` /
+  `logcat-b-first-approval.txt` / `logcat-c-full-flow.txt`，只含固定事件名、状态与 user_code，
+  不含密钥、device_code 或 cookie）。
+
 ### 本片验证（2026-10-03，`emulator-5556`）
 
 - 设置账号区的上游 `TextSettingsCell`「打开验证页」复用登录 WebView。恢复从 `/challenge`
