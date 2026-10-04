@@ -291,9 +291,13 @@ public class TopicListFragment extends BaseFragment implements FactorAnimator.Ta
 
             @Override
             public void onScrolled(RecyclerView recyclerView, int dx, int dy) {
-                // DialogsActivity's onScrolled (4522): the draw pass recomputes the top panel's
-                // offset from the list's own position.
+                // DialogsActivity's onScrolled (4522-4524): the draw pass recomputes the top
+                // panel's offset from the list's own position, and the frame is the view whose
+                // draw pass that is - a child's own scroll does not redraw it.
                 invalidateScrollY = true;
+                if (fragmentView != null) {
+                    fragmentView.invalidate();
+                }
                 int firstVisiblePosition = RecyclerView.NO_POSITION;
                 int firstViewTop = 0;
                 if (recyclerView.getChildCount() > 0) {
@@ -343,11 +347,13 @@ public class TopicListFragment extends BaseFragment implements FactorAnimator.Ta
         // The search pager's home, under the strip and the bar the way DialogsActivity adds it
         // under its own (4713: its own child index is below the filter strip's and the bar's).
         // It is built on the first search; until then it is the empty frame that holds its place
-        // in the draw order.
+        // in the draw order. Its own top is the bar's height: the pager's layout counts from the
+        // bar's lower edge, as the whole screen's did before the bar was this screen's own.
         searchContainer = new FrameLayout(context);
         searchContainer.setVisibility(View.GONE);
-        frame.addView(searchContainer, LayoutHelper.createFrame(
-                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        frame.addView(searchContainer, LayoutHelper.createFrameMarginPx(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP,
+                0, barHeight, 0, 0));
 
         tabsView = new FilterTabsView(context, resourceProvider);
         tabsView.setDelegate(new CategoryTabsDelegate());
@@ -504,21 +510,25 @@ public class TopicListFragment extends BaseFragment implements FactorAnimator.Ta
             // panel samples the rows behind it and never itself.
             glassHost.record();
             // DialogsActivity.ContentView.dispatchDraw (957-1006): the offset the top panel follows
-            // is recomputed from the list itself, once per draw after a scroll.
-            if (invalidateScrollY) {
+            // is recomputed from the list itself, once per draw after a scroll. The search takes
+            // the list's place, so the panel rests while it is up (onSearchExpand, 3343-3345).
+            if (invalidateScrollY && !searching) {
                 invalidateScrollY = false;
                 updateScrollYOffsetFromList();
             }
             // 1081-1087: the field follows the offset; checkUi_searchFieldVisibility (14036-14056)
-            // fades it out over the same distance and hands the bar its search icon.
+            // fades it out over the same distance and hands the bar its search icon. While the
+            // search is up the field and the strip rest where they are (its pager sits below
+            // them), so the offset they follow is lerped away by the search's own progress.
+            final float panelOffset = AndroidUtilities.lerp(scrollYOffset, 0f, searchAnimationProgress);
             updateSearchFieldVisibility();
             if (searchField != null) {
-                searchField.setTranslationY(scrollYOffset + getSearchFieldAdditionOffset());
+                searchField.setTranslationY(panelOffset + getSearchFieldAdditionOffset());
             }
             // updateContextViewPosition (6560-6596): the strip follows the same offset, lifted by
             // the field's own rest offset while the field is visible.
             if (tabsView != null) {
-                tabsView.setTranslationY(scrollYOffset - AndroidUtilities.dp(4) * searchFieldAlpha());
+                tabsView.setTranslationY(panelOffset - AndroidUtilities.dp(4) * searchFieldAlpha());
             }
             // 1012-1045: the frame paints the header's glass behind the bar and the field; the
             // rect shrinks to the bar alone - and the rows clipped below follow it - as the list
@@ -1145,6 +1155,9 @@ public class TopicListFragment extends BaseFragment implements FactorAnimator.Ta
         }
         // A new feed is a new list: the header's offset is read from what the list now holds.
         invalidateScrollY = true;
+        if (fragmentView != null) {
+            fragmentView.invalidate();
+        }
         fetchAvatars();
         feedLoaded = true;
         return kotlin.Unit.INSTANCE;
