@@ -16,8 +16,10 @@ import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.ImageLocation;
 import org.telegram.messenger.LiteMode;
 import org.telegram.messenger.NotificationCenter;
+import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBarLayout;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.BottomSheetTabs;
@@ -28,6 +30,8 @@ import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.DialogsActivity;
 import org.telegram.ui.MainTabsLayout;
 import org.telegram.ui.Components.LineProgressView;
+import org.telegram.ui.Components.AvatarDrawable;
+import org.telegram.ui.Components.BackupImageView;
 import org.telegram.ui.Components.blur3.BlurredBackgroundDrawableViewFactory;
 import org.telegram.ui.Components.blur3.drawable.BlurredBackgroundDrawable;
 import org.telegram.ui.Components.blur3.drawable.color.impl.BlurredBackgroundProviderImpl;
@@ -42,7 +46,10 @@ import io.github.baba983.nativedo.auth.LoginWebViewFragment;
 import io.github.baba983.nativedo.auth.SessionStarter;
 import io.github.baba983.nativedo.core.di.AppContainer;
 import io.github.baba983.nativedo.core.session.AppSessionState;
+import io.github.baba983.nativedo.core.session.SessionSnapshot;
 import io.github.baba983.nativedo.hooks.NativeDoHooks;
+import io.github.baba983.nativedo.topic.DiscourseAvatars;
+import io.github.baba983.nativedo.topic.DiscourseLoader;
 import io.github.baba983.nativedo.topic.TopicListFragment;
 
 /**
@@ -249,9 +256,10 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
     }
 
     /**
-     * Three entries, upstream's own tab strip: the feeds, the reader's notifications, and settings.
-     * The tabs replace the root screen instead of stacking on top of it: switching from a topic to
-     * settings must not leave the topic behind the back button.
+     * Four entries, upstream's own tab strip: the feeds, the reader's notifications, settings, and
+     * the reader's own profile drawn as upstream's avatar tab. The tabs replace the root screen
+     * instead of stacking on top of it: switching from a topic to settings must not leave the
+     * topic behind the back button.
      */
     private void addTabs() {
         tabs = new MainTabsLayout(this, null);
@@ -272,6 +280,11 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
             tabs.addView(tab);
             tabs.setViewVisible(tab, true, false);
         }
+        GlassTabView profileTab = createProfileTab();
+        profileTab.setContentDescription("我的");
+        profileTab.setOnClickListener(view -> showTab(3));
+        tabs.addView(profileTab);
+        tabs.setViewVisible(profileTab, true, false);
         tabsColorSource.setColor(Theme.getColor(Theme.key_windowBackgroundWhite));
         BlurredBackgroundDrawableViewFactory factory = new BlurredBackgroundDrawableViewFactory(
                 tabsGlassSource != null ? tabsGlassSource : tabsColorSource);
@@ -288,6 +301,49 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         updateTabInsets();
         actionBarLayout.setFragmentStackChangedListener(this::updateTabsVisibility);
         showTabs(true, false);
+    }
+
+    /**
+     * The fourth tab, upstream's avatar tab ({@code GlassTabView.createAvatar}): the label with a
+     * 22dp round picture at the 5dp the icon tabs put their lottie at, instead of an icon. Telegram
+     * builds it from the account's own user; this client has no Telegram account, so the picture is
+     * the session's site avatar - the same {@code DiscourseAvatars} user the profile screen draws.
+     */
+    private GlassTabView createProfileTab() {
+        GlassTabView tab = new GlassTabView(this);
+        tab.setText("我的");
+        BackupImageView avatar = new BackupImageView(this);
+        avatar.setRoundRadius(AndroidUtilities.dp(11));
+        FrameLayout.LayoutParams avatarParams = new FrameLayout.LayoutParams(
+                AndroidUtilities.dp(22), AndroidUtilities.dp(22), Gravity.CENTER_HORIZONTAL | Gravity.TOP);
+        avatarParams.topMargin = AndroidUtilities.dp(5);
+        tab.addView(avatar, avatarParams);
+        tab.updateColorsLottie();
+
+        AppContainer container = NativeDo.container(this);
+        SessionSnapshot snapshot = container.getSessionStore().snapshot();
+        String username = snapshot != null && snapshot.getUsername() != null ? snapshot.getUsername() : "";
+        String displayName = snapshot != null && snapshot.getDisplayName() != null ? snapshot.getDisplayName() : "";
+        String avatarTemplate = snapshot != null && snapshot.getAvatarTemplate() != null ? snapshot.getAvatarTemplate() : "";
+        TLRPC.User user = DiscourseAvatars.INSTANCE.user(username, displayName, avatarTemplate, container.getBaseUrl());
+        AvatarDrawable avatarDrawable = new AvatarDrawable();
+        avatarDrawable.setInfo(user);
+        Runnable bind = () -> {
+            ImageLocation location = DiscourseAvatars.INSTANCE.imageLocation(user);
+            if (location != null) {
+                avatar.setImage(location, "50_50", avatarDrawable, user);
+            }
+        };
+        String url = DiscourseAvatars.INSTANCE.url(avatarTemplate, container.getBaseUrl(), DiscourseAvatars.DEFAULT_SIZE);
+        if (DiscourseAvatars.INSTANCE.isCached(user)) {
+            bind.run();
+        } else if (url != null) {
+            DiscourseLoader.INSTANCE.cacheAvatar(container, url, user, () -> {
+                bind.run();
+                return kotlin.Unit.INSTANCE;
+            });
+        }
+        return tab;
     }
 
     /**
@@ -477,6 +533,14 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
             // Our own settings, built from upstream's cells; the appearance page itself is still
             // upstream's, one row in.
             return new io.github.baba983.nativedo.settings.SettingsFragment();
+        }
+        if (index == 3) {
+            // The reader's own profile, hosted here instead of behind a settings row: the same
+            // screen a post's author opens, but as a root, so it draws no back button.
+            SessionSnapshot snapshot = NativeDo.container(this).getSessionStore().snapshot();
+            String username = snapshot != null && snapshot.getUsername() != null ? snapshot.getUsername() : "";
+            String displayName = snapshot != null && snapshot.getDisplayName() != null ? snapshot.getDisplayName() : "";
+            return io.github.baba983.nativedo.profile.ProfileFragment.forRoot(username, displayName);
         }
         return new TopicListFragment();
     }

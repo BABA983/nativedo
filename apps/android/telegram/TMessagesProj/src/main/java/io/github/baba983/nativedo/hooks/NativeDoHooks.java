@@ -244,18 +244,39 @@ public final class NativeDoHooks {
     }
 
     /**
+     * The reader's choice for {@link #isWebBrowserOpenInApp}: whether an {@code http(s)} link opens
+     * in the in-app browser. Default true, which is the behavior this shell has always had; the
+     * reader's settings screen writes it through {@code setWebBrowserOpenInAppEnabled} and persists
+     * it, and the app reads it back at startup before any link can be pressed.
+     */
+    private static volatile boolean webBrowserOpenInApp = true;
+
+    public static boolean isWebBrowserOpenInAppEnabled() {
+        return webBrowserOpenInApp;
+    }
+
+    public static void setWebBrowserOpenInAppEnabled(boolean value) {
+        webBrowserOpenInApp = value;
+    }
+
+    /**
      * Whether a URL opens in the in-app browser.
      *
      * <p>Upstream decides this from {@code MessagesController.webBrowserSettings}, a
      * server-delivered Telegram account setting. This client has no Telegram account, so those
      * settings never arrive and upstream's default would be "outside the app" (custom tabs or the
      * system browser). The chosen default here is the opposite: while this client's shell is
-     * hosting the app, every {@code http(s)} URL opens in the in-app browser. The upstream value
-     * still wins when it is true, so a real Telegram host keeps its own behavior.</p>
+     * hosting the app, every {@code http(s)} URL opens in the in-app browser unless the reader
+     * turned that off in the settings screen ({@link #setWebBrowserOpenInAppEnabled}); when it is
+     * off, upstream's custom-tabs branch takes the link instead. The upstream value still wins when
+     * it is true, so a real Telegram host keeps its own behavior.</p>
      */
     public static boolean isWebBrowserOpenInApp(String url, boolean upstream) {
-        if (upstream || browserHost == null || url == null) {
-            return upstream;
+        if (upstream) {
+            return true;
+        }
+        if (!webBrowserOpenInApp || browserHost == null || url == null) {
+            return false;
         }
         android.net.Uri uri = android.net.Uri.parse(url);
         String scheme = uri.getScheme();

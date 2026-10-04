@@ -3,6 +3,7 @@ package io.github.baba983.nativedo.app;
 import org.telegram.messenger.ApplicationLoader;
 
 import io.github.baba983.nativedo.BuildConfig;
+import io.github.baba983.nativedo.settings.LinkOpenSettings;
 
 /**
  * The app's Application.
@@ -15,7 +16,16 @@ import io.github.baba983.nativedo.BuildConfig;
 public class NativeDoApplication extends ApplicationLoader {
 
     @Override
+    public void onCreate() {
+        super.onCreate();
+        // The reader's link choice is process-wide and the browser hook is static: it is read back
+        // here, before any screen can hand a pressed link to the browser.
+        LinkOpenSettings.INSTANCE.load(this);
+    }
+
+    @Override
     protected String onGetApplicationId() {
         return BuildConfig.APPLICATION_ID;
     }
 }
+
