@@ -160,6 +160,9 @@ public class TopicListFragment extends BaseFragment {
         listView.setPadding(0,
                 AndroidUtilities.dp(4) + AndroidUtilities.dp(STRIP_TOP_DP + TAB_STRIP_HEIGHT_DP - 5),
                 0, AndroidUtilities.dp(4));
+        // DialogsActivity:4070 - the padding only makes room for the field and the strip; rows
+        // scroll through it, so a row is never cut off in a line at the strip's lower edge.
+        listView.setClipToPadding(false);
         listView.setOnItemClickListener((view, position) -> {
             TopicSummary topic = topics.get(position);
             presentTopic(topic);

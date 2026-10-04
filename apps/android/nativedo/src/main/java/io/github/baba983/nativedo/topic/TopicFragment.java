@@ -327,6 +327,10 @@ public class TopicFragment extends BaseFragment {
         // 7797).
         contentView.setClipChildren(false);
         listView = new PostListView(context);
+        // ChatActivity:6421 - the list's top padding is the floating bar's own, and a post scrolled
+        // up is drawn through it to the frame's top edge (under the capsules and the status bar)
+        // instead of being cut off in a line at the bar's bottom edge.
+        listView.setClipToPadding(false);
         listView.setAvatarSource(senderId -> users.get(senderId));
         // Upstream's own chat-list manager: it is the one whose vertical scroll the swipe gesture
         // switches off while a post is being dragged (the ported processTouchEvent).
