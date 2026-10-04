@@ -106,10 +106,12 @@ public class SettingsFragment extends BaseFragment {
         }
 
         // Upstream's settings action bar floats over the list and its title only appears once the
-        // header scrolls under it (SettingsActivity.updateActionBarVisible).
-        actionBar.setTitle("设置");
+        // header scrolls under it (SettingsActivity.updateActionBarVisible). The title view is
+        // created inside the titles container only if the container exists first, so it is asked
+        // for before the title is set, exactly as SettingsActivity's createView orders it.
         actionBar.setAllowOverlayTitle(true);
         actionBar.setUseContainerForTitles();
+        actionBar.setTitle("设置");
         actionBar.setAddToContainer(false);
         actionBar.setOccupyStatusBar(true);
         actionBar.setBackgroundColor(Color.TRANSPARENT);
