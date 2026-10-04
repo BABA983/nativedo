@@ -154,6 +154,21 @@ needs authentication checks the jar before sending: with no `_t` it reports
 `CookieMissing`, requests login and throws `LoginRequiredException` instead of
 going out anonymous. Public reads may still succeed anonymously until then.
 
+## Device authorization (experimental)
+
+Settings -> 账号 -> 设备码登录（实验） runs Discourse's User API Key device flow against
+linux.do: the app POSTs `/user-api-key/device.json` with a device-generated RSA public key and a
+nonce, shows the returned `user_code`, opens `verification_uri_with_request` in the in-app
+browser (which already carries the jar's signed-in session), polls
+`/user-api-key/device/poll.json`, decrypts the authorized payload with the device key, verifies
+the nonce, and stores the resulting **User API Key** sealed by AndroidKeyStore.
+
+This credential is a `User-Api-Key` header, not the `_t` cookie the app's session is made of.
+This round does not switch the app to it: the cookie session and WebView login are unchanged,
+and the key is only probed with one authenticated `GET /session/current.json`. The full contract
+(and the linux.do scope probe results) is in `contracts/discourse/device-authorization.md`;
+wire shapes are in `fixtures/discourse/user-api-key-device.json`.
+
 ## Diagnostics
 
 `adb logcat -s NativeDoSession` reports fixed event names, the jar write

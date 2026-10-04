@@ -63,7 +63,8 @@ public class SettingsFragment extends BaseFragment {
     private static final int ROW_OPEN_IN_APP = 2;
     private static final int ROW_BOOKMARKS = 3;
     private static final int ROW_VERIFY = 4;
-    private static final int ROW_SIGN_OUT = 5;
+    private static final int ROW_DEVICE_LOGIN = 5;
+    private static final int ROW_SIGN_OUT = 6;
 
     /** Upstream's header block: a 120dp avatar container and the two titles, 200dp minus the 12dp
      * the list adds above it ({@code SettingsActivity.fillItems}'s {@code asCustomShadow(topView,
@@ -289,6 +290,9 @@ public class SettingsFragment extends BaseFragment {
         items.add(SettingCell.Factory.of(ROW_VERIFY,
                 IconBackgroundColors.GREEN.top, IconBackgroundColors.GREEN.bottom,
                 org.telegram.messenger.R.drawable.settings_privacy, "打开验证页", "重新通过站点的验证"));
+        items.add(SettingCell.Factory.of(ROW_DEVICE_LOGIN,
+                IconBackgroundColors.PURPLE.top, IconBackgroundColors.PURPLE.bottom,
+                org.telegram.messenger.R.drawable.settings_devices, "设备码登录（实验）", "在站内浏览器里确认授权码"));
         items.add(UItem.asButton(ROW_SIGN_OUT, "退出登录").red());
         items.add(UItem.asShadow(null));
     }
@@ -304,6 +308,8 @@ public class SettingsFragment extends BaseFragment {
             presentFragment(new BookmarksFragment());
         } else if (item.id == ROW_VERIFY) {
             presentFragment(new LoginWebViewFragment(null, true));
+        } else if (item.id == ROW_DEVICE_LOGIN) {
+            presentFragment(new io.github.baba983.nativedo.auth.device.DeviceLoginFragment());
         } else if (item.id == ROW_SIGN_OUT) {
             confirmSignOut();
         }
