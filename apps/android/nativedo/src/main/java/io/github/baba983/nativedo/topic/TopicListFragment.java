@@ -226,13 +226,22 @@ public class TopicListFragment extends BaseFragment {
         searchField.setPivotY(0);
         searchField.setupBlurredBackground(glassHost.createPanel(
                 searchField, BlurredBackgroundProviderImpl.topPanel(resourceProvider)));
-        searchField.setHintText(context.getString(R.string.search_hint), false);
+        searchField.setHintText("", false);
+        // The hint is the TextView's own, which is what DialogsActivity's field carries
+        // (checkUi_searchFieldHint, 14055-14062): the animated hint drawable that
+        // FragmentSearchField.setHintText feeds does not paint on this screen at rest.
+        searchField.editText.setHint(context.getString(R.string.search_hint));
+        searchField.editText.setContentDescription(context.getString(R.string.search_hint));
         searchField.setCloseButtonOnClickListener(this::closeSearch);
-        // Opening on a tap rather than on focus: the field is the first focusable view of the
-        // screen, and the window hands it focus on its own the moment the screen appears, which
-        // would open the search on launch. DialogsActivity's field has the listener this one
-        // deliberately does not (3311-3315); the tap and the first keystroke are the two gestures
-        // that open it here, and both are the reader asking for it.
+        // Opening on the field's own focus, the way upstream's chat list opens its search
+        // (DialogsActivity's field focus listener at 3311-3315): a tap hands the field focus and
+        // the keyboard, and that focus is the same gesture. The first keystroke opens it too, for
+        // a field that somehow has focus without the search being up.
+        searchField.editText.setOnFocusChangeListener((view, hasFocus) -> {
+            if (hasFocus) {
+                openSearch();
+            }
+        });
         searchField.editText.setOnClickListener(view -> openSearch());
         searchField.editText.addTextChangedListener(new android.text.TextWatcher() {
             @Override
@@ -510,7 +519,9 @@ public class TopicListFragment extends BaseFragment {
         public void filterByCategory(CategorySummary category) {
             selectedTabId = category.getId();
             closeSearch();
-            tabsView.selectTabWithId(category.getId(), 0);
+            // The strip's own selection, completed: selecting the tab and loading its feed are one
+            // step, and the strip must not be left showing the tab the reader was on.
+            tabsView.selectTabWithId(category.getId(), 1f);
             loadFeed();
         }
 
