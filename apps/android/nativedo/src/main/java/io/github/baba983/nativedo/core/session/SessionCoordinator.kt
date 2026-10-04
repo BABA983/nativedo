@@ -466,7 +466,7 @@ class SessionCoordinator(
      * up yet, or a conflicting pair the import refuses to choose between), or a login/logout moved
      * the generation while this was running - none of which is a deletion signal.
      */
-    private suspend fun adoptBrowserSessionIfCurrent(generation: Int): Boolean =
+    internal suspend fun adoptBrowserSessionIfCurrent(generation: Int): Boolean =
         cookieOperationMutex.withLock {
             val bridge = cookieSyncBridge ?: return@withLock false
             if (generation != currentOperationGeneration()) return@withLock false

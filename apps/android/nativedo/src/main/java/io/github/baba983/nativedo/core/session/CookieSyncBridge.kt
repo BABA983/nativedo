@@ -14,6 +14,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Cookie
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 class CookieSyncBridge(
     private val baseUrl: String,
@@ -38,6 +39,27 @@ class CookieSyncBridge(
     },
 ) {
     fun revision(): Long = cookieStore.revision()
+
+    /**
+     * Whether [url] is the site's own host (or one of its subdomains). The WebView jar is written
+     * only for those hosts: a linux.do cookie must never be seeded under another domain.
+     */
+    fun isSessionHost(url: String): Boolean {
+        val parsed = url.toHttpUrlOrNull() ?: return false
+        val base = baseUrl.toHttpUrlOrNull() ?: return false
+        return parsed.host == base.host || parsed.host.endsWith("." + base.host)
+    }
+
+    /**
+     * The `_t` the browser jar presents for [url], or null when it has none. Throws when the
+     * browser's own header carries a conflicting auth pair: which of the two the server last
+     * handed out cannot be told from here, so the caller must not write over either.
+     */
+    suspend fun authTokenInWebView(url: String = baseUrl): String? = operationMutex.withLock {
+        parseCookieHeader(url.toHttpUrl(), readCookieHeader(url))
+            .firstOrNull { it.name == "_t" && it.value.isNotBlank() }
+            ?.value
+    }
 
     suspend fun syncFromWebViewIfCurrent(expectedRevision: Long): Boolean = operationMutex.withLock {
         awaitPendingClear()
@@ -109,6 +131,7 @@ class CookieSyncBridge(
     }
 
     private fun syncToWebViewNow(url: String) {
+        if (!isSessionHost(url)) return
         val cookies = cookiesToExport(url)
         if (cookies.isEmpty()) return
         cookies.forEach { cookie -> writeCookieToWebView(url, cookie.toString()) }
@@ -119,10 +142,42 @@ class CookieSyncBridge(
         url: String = baseUrl,
         timeoutMillis: Long = DEFAULT_ASYNC_COOKIE_TIMEOUT_MILLIS,
     ): Boolean = operationMutex.withLock {
+        if (!isSessionHost(url)) return@withLock true
         awaitPendingClear()
-        val cookies = cookiesToExport(url)
-        if (cookies.isEmpty()) return@withLock true
-        withTimeoutOrNull(timeoutMillis) {
+        writeCookiesAsync(url, cookiesToExport(url), timeoutMillis)
+    }
+
+    /**
+     * Seed the browser jar for a linux.do page from the native jar.
+     *
+     * A cookie the browser already presents is left alone: its copy may be the newer one, and
+     * `getCookie` cannot carry the attributes a rewrite would need. The exception is
+     * [overwriteNames]: the caller may name the cookies whose native values a server answer has
+     * just accepted ([AUTH_COOKIE_NAMES] for a session seed), and only those are replaced.
+     *
+     * Returns false when a write did not confirm before [timeoutMillis]; the page still opens,
+     * without the guarantee that a named cookie landed.
+     */
+    suspend fun seedBrowserFromNative(
+        url: String = baseUrl,
+        overwriteNames: Set<String> = emptySet(),
+        timeoutMillis: Long = DEFAULT_ASYNC_COOKIE_TIMEOUT_MILLIS,
+    ): Boolean = operationMutex.withLock {
+        if (!isSessionHost(url)) return@withLock true
+        awaitPendingClear()
+        val presentedNames = readCookieHeader(url).orEmpty()
+            .split(';')
+            .map { entry -> entry.substringBefore('=').trim() }
+            .filter(String::isNotEmpty)
+            .toSet()
+        val cookies = cookieStore.load(url.toHttpUrl())
+            .filter { cookie -> cookie.name !in presentedNames || cookie.name in overwriteNames }
+        writeCookiesAsync(url, cookies, timeoutMillis)
+    }
+
+    private suspend fun writeCookiesAsync(url: String, cookies: List<Cookie>, timeoutMillis: Long): Boolean {
+        if (cookies.isEmpty()) return true
+        return withTimeoutOrNull(timeoutMillis) {
             suspendCancellableCoroutine { continuation ->
                 var remaining = cookies.size
                 var allSucceeded = true

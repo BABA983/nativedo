@@ -10,7 +10,9 @@ import io.github.baba983.nativedo.core.network.SessionCookieInterceptor
 import io.github.baba983.nativedo.core.network.RequestHeadersInterceptor
 import io.github.baba983.nativedo.core.network.resolveNativeDoUserAgent
 import io.github.baba983.nativedo.core.session.CookieSyncBridge
+import io.github.baba983.nativedo.core.session.InAppBrowserSession
 import io.github.baba983.nativedo.core.session.SessionCoordinator
+import io.github.baba983.nativedo.core.session.SessionProbeResult
 import io.github.baba983.nativedo.core.session.CredentialStore
 import io.github.baba983.nativedo.core.session.CompleteLoginUseCase
 import io.github.baba983.nativedo.core.storage.CategoryStore
@@ -157,6 +159,15 @@ class AppContainer(
         cookieSyncBridge = cookieSyncBridge,
         baseUrl = baseUrl,
     )
+    /**
+     * The one entry point for opening a linux.do page in upstream's in-app browser: the session is
+     * seeded into the WebView jar first, so the page is the reader's own.
+     */
+    val inAppBrowserSession: InAppBrowserSession = InAppBrowserSession(
+        cookieStore = cookieStore,
+        bridge = cookieSyncBridge,
+        probeSession = discourseApiClient::probeSession,
+    )
 
     init {
         discourseApiClient.setSessionBoundary(
@@ -164,6 +175,21 @@ class AppContainer(
             onSessionInvalidated = sessionCoordinator::markExpiredIfCurrent,
             onLoginRequired = sessionCoordinator::requestLogin,
         )
+        // A rejected native token is not a logout until the browser jar has been asked: it may
+        // hold the rotation this request missed. Adopt it, and keep it unless the server answers
+        // with explicit logout evidence - an unanswered check (challenge, outage) must not
+        // destroy the only candidate rotation.
+        discourseApiClient.setLoggedOutReconciler { generation ->
+            if (!sessionCoordinator.adoptBrowserSessionIfCurrent(generation)) {
+                false
+            } else {
+                when (discourseApiClient.probeSession()) {
+                    SessionProbeResult.Accepted -> true
+                    SessionProbeResult.Rejected -> false
+                    SessionProbeResult.Unavailable -> true
+                }
+            }
+        }
     }
 
     private companion object {

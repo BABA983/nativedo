@@ -143,6 +143,59 @@ cookies use a host-only root scope; expiry cannot be inferred. Conflicting
 same-name auth values require recovery rather than choosing an arbitrary token.
 Full browser attribute fidelity remains limited by the Android CookieManager API.
 
+## The in-app browser
+
+A linux.do link in a post opens upstream's in-app browser (the `ArticleViewer`
+sheet, minimized into Telegram's `BottomSheetTabs` strip). Its WebView and the
+login WebView share the process-wide `CookieManager`, but the native jar stays the
+single source of truth and the WebView jar is derived from it:
+
+1. Before a linux.do URL is handed to `Browser.openUrl`, the native cookies that
+   match it are seeded into the WebView jar (`InAppBrowserSession`). Only the
+   site's own hosts (`linux.do` and its subdomains) are written; any other URL
+   opens with the jar untouched, so a linux.do cookie can never land under
+   another domain. The cookie's own `domain`/`path`/`secure`/`httpOnly`/expiry
+   attributes ride along in the written value.
+2. A cookie the browser already presents is left as it is: its value may be the
+   newer rotation, and `getCookie` cannot reproduce the attributes a rewrite
+   would need. Only names whose native values the server has just accepted are
+   replaced: `_t` and `_forum_session` for a session seed.
+3. Two jars that disagree on `_t` cannot be ordered locally - either side may be
+   the rotation the other missed - so the seed asks the server first
+   (`DiscourseApiClient.probeSession`, which never reports a session transition):
+   `Accepted` means the native values replace the browser's; `Rejected` means the
+   browser holds the rotation, so it is imported into the native jar
+   (`syncFromWebViewByName`) and the browser keeps its own values; an
+   `Unavailable` answer (challenge, network, fence) writes nothing. An unanswered
+   question is not a licence to overwrite the possibly only live token.
+4. The other direction is deliberately not copied back after every visit. A
+   browser jar that is merely older must not replace a rotation the native jar
+   already holds, so the two jars are only reconciled through the rejection path
+   below. A rotation or a `cf_clearance` renewal made in the browser is adopted on
+   the first native request whose token fails; a logout made in the browser removes
+   `_t` from the browser jar, the rejection finds nothing to adopt, and the session
+   expires normally. A blank or absent browser read is never treated as a deletion
+   signal.
+5. Logout clears both jars: `SessionCoordinator.onLogout` empties the native
+   store and removes the WebView's cookies (`removeAllCookies`, awaited) before
+   the next login may import anything, so a signed-in WebView cannot outlive it.
+
+Because the in-app browser and the native client now carry the same `_t`, each
+rotates the token for the other and one of the two eventually asks with a value
+that has fallen out of the `{auth_token, prev_auth_token}` window (the device pass
+hit this within two minutes of browsing). No logout-shaped answer may clear
+anything before that reconcile: every authenticated request that gets one first
+goes through the client's reconcile hook, which adopts the browser jar and asks
+the server about the adopted token (`probeSession`). `Accepted` or an unanswered
+check (`Unavailable` - a challenge or an outage is not a logout) keeps the
+session and fails only that request with a retryable `IOException`; an explicit
+`Rejected` answer is a real logout and expires as before. The same evidence on a
+verification that started while the coordinator is `Restoring` is kept for the
+restore itself, which does the adoption and one more verify before it expires -
+the client must not clear the browser jar, the one place the rotation still
+exists, before that adoption can read it. A rotation therefore costs one failed
+read, never the session.
+
 ## Diagnostics
 
 `adb logcat -s NativeDoSession` reports fixed event names, cookie revision,
@@ -158,7 +211,12 @@ were taken for a rejected native token), `webview_session_unavailable` (the
 browser jar could not be read), `webview_login_unreadable` (a login the
 native jar could not read, kept for recovery instead of verified) and
 `fenced_read_returned` (a successful read whose cookie write was dropped
-because a parallel response advanced the revision).
+because a parallel response advanced the revision). The in-app browser seed adds
+`browser_bridge_seed` (native values written into the WebView jar; `accepted`
+false when a write did not confirm), `browser_bridge_adopt` (the probe rejected
+the native token and the browser's rotation was imported) and
+`browser_bridge_unavailable` (divergent jars, unanswered probe, nothing
+written).
 
 ## 403 classification
 

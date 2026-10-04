@@ -37,9 +37,17 @@ class CookieStore(
     fun advanceRevision() { revision += 1 }
 
     @Synchronized
-    fun hasAuthenticatedCookies(): Boolean = allCookies()
+    fun hasAuthenticatedCookies(): Boolean = authenticatedToken() != null
+
+    /**
+     * The `_t` value the native jar holds, or null. The in-app browser's copy is compared against
+     * this before the native jar is allowed to write over it.
+     */
+    @Synchronized
+    fun authenticatedToken(): String? = allCookies()
         .filterNotExpired()
-        .any { it.name == "_t" && it.value.isNotBlank() }
+        .firstOrNull { it.name == "_t" && it.value.isNotBlank() }
+        ?.value
 
     @Synchronized
     fun load(url: HttpUrl): List<Cookie> {

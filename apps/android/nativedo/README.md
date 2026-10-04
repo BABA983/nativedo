@@ -68,6 +68,19 @@ the app, so a real Telegram host keeps its own setting. One more Telegram-only s
 `ArticleViewer`'s `messages.getWebPage` lookup, which cannot be answered without tgnet, so the page
 is loaded directly instead of waiting for it.
 
+The browser and the login WebView share one `CookieManager`, but the session lives in the native
+store, and a WebView jar goes stale the moment the native client rotates `_t`. So a linux.do link is
+seeded before it opens: `InAppBrowserSession` writes the native jar's cookies into the browser jar
+first - only for `linux.do` and its subdomains - and when the two jars disagree on `_t` it asks the
+server which value it still accepts before replacing anything (an accepted native token wins, a
+rejected one makes the native jar adopt the browser's rotation, an unanswered probe writes
+nothing). The other direction keeps the rejection-driven adoption described in
+`contracts/discourse/auth-flow.md`: a rotation made while browsing is adopted on the first native
+request whose token fails - every logout-shaped answer is reconciled against the browser jar before
+anything is cleared, so sharing `_t` costs an occasional failed read, not the session - rather than
+copied back on every visit, because an unconditional import could replace a rotation the native jar
+already holds with an older browser one. Signing out clears both jars.
+
 ## How upstream's cells get our data
 
 * **Topic list** — `/latest.json` → `DialogCell.CustomDialog`, upstream's own row type for
@@ -174,7 +187,7 @@ stands, and the upstream component each row is meant to use.
 | Start a topic (a title, a category, a body → `POST /posts.json`) | not built | done: the list's own floating button - upstream's, the one its chat list starts a new chat with - opens upstream's titled field, upstream's composer for the body, and the site's categories behind a dialog; the send button appears only when the form is complete | `FragmentFloatingButton`, `EditTextBoldCursor`, `ChatActivityEnterView`, `AlertDialog` of the site's items |
 | Topic detail, cooked HTML to native blocks | done, 41 ports | done | upstream `RichHtml.parse` into `ChatMessageCell` |
 | Post images and the lightbox | done | done | `PhotoViewer` |
-| Links in a post | done | done: a tap opens upstream's in-app browser — the `ArticleViewer` sheet over the topic, the page minimizing into Telegram's `BottomSheetTabs` strip and restoring from it; the shell supplies the host upstream looks up through `LaunchActivity`, and this client's default is in-app for `http(s)` links | `Browser.openUrl` → `openInTelegramBrowser` → `ArticleViewer` / `BottomSheetTabs` |
+| Links in a post | done | done: a tap opens upstream's in-app browser — the `ArticleViewer` sheet over the topic, the page minimizing into Telegram's `BottomSheetTabs` strip and restoring from it; the shell supplies the host upstream looks up through `LaunchActivity`, this client's default is in-app for `http(s)` links, and a linux.do page is seeded with the app's session first (and only ever on linux.do's own hosts) | `Browser.openUrl` → `openInTelegramBrowser` → `ArticleViewer` / `BottomSheetTabs` |
 | Onebox link previews (`aside.onebox`) | done, cards | done | upstream's link preview (`TL_messageMediaWebPage`): one bubble per onebox, the bare link line gone from the text, and no bubble draws a forward arrow (`noforwards`) |
 | Video in a post (`<video>`) | partial, opened externally | done, to the clip's own size | upstream's video block (`pageBlockVideo` in `RichMessageLayout`'s media cell). Opening the topic fetches the cover only; the press on the block's own play button fetches the clip (up to 25 MB) while the block draws upstream's own loading state and progress, and the file opens in `PhotoViewer`. A clip over that, one the site refuses, and one the reader cancels - the block's own cancel button stops the transfer and drops the half-written file - is not played by upstream's viewer, which can only play a file this client holds: the first two are streamed by the device's own player, a cancel plays nothing and leaves the cover and the play button behind |
 | Avatars | done | done | the avatar receivers of `ChatMessageCell` / `DialogCell` |
@@ -209,6 +222,31 @@ stands, and the upstream component each row is meant to use.
 - 书签：长按菜单的收藏与取消收藏、资料页与设置页的书签列表，在一个已有书签的账号上验证置顶顺序、被删楼层的行、已关闭话题的行。
 - 设置页：外观 / 我的 / 账号三组的行高与间距是否符合上游观感；退出登录的确认框、清 cookie 后回到登录页、再登录回来后话题与通知是否正常。
 - 通知 tab：没有推送和未读计数时，列表的排序和徽章是否仍然清楚。
+
+### 内置浏览器里的会话（2026-10-04，`emulator-5554`，`nativedo-cookie-sync`）
+
+- 目标前一半在设备上成立：iOS App 帖一楼里的 `https://linux.do/t/topic/2974886` 进入内置浏览器后整页渲染，
+  站点页头是头像、没有「登录」按钮；logcat 里先有 `route=session status=200`，随后 `browser_bridge_seed
+  accepted=true`（probe 确认原生 token 后把会话种进 WebView jar），截图 `03`/`04`。覆盖安装后再开一次，
+  两个 jar 的 `_t` 相同，走静默路径不 probe，页面同样是登录态（截图 `13`）。
+- 外站隔离：同一页面里的 TestFlight 链接经站点自己的「打开外部链接」确认后，在内置浏览器里加载
+  `testflight.apple.com/join/UH7yJbk4`（截图 `16`/`17`）；linux.do 的 `_t`/`_forum_session` 只落在
+  linux.do 主机下（写入端 `isSessionHost` 门 + CookieManager 域匹配，`InAppBrowserSessionTest` 固定；
+  改动前 12:18 的 WebView cookie 库元数据也只见 linux.do 主机）。
+- 后半程是本片最重的发现：两个 jar 共享同一个 `_t` 后各自替对方轮换。12:47:29 原生 csrf 把 `_t` 轮换走，
+  浏览器页面随后自己再轮换，12:49:37 原生请求带着已滑出 `{current, prev}` 窗口的 token 被站点判为
+  `evidence=LoggedOut`；当时的客户端只在 `Restoring` 校验里才对账，普通请求的这条证据直接把两边的 jar 清掉，
+  应用被登出。现在每条已登录请求的登出形证据都先走 reconcile：adopt 浏览器 jar，再用 `probeSession` 复验；
+  `Accepted`/`Unavailable` 只让这一条请求以可重试的 `IOException` 失败，`Rejected` 才是真登出。
+  两个失败模式由 `BrowserRotationAdoptionTest` 固定（关掉 reconcile 钩子时中段拒绝一例变红，接回即绿）。
+- 代价与未完成项：轮换竞争发生在验证过程中，把设备上唯一的登录消耗掉了（cookie store 与 session store 均被清空，
+  没有可用凭据再登录），所以修复后的构建没有在真机上复验——本片设备证据覆盖的是修复前的种子行为与失败复现。
+  下次有已登录设备时按两步重跑：打开 linux.do 链接是登录态；在内置浏览器里浏览数分钟后，原生请求只丢一条、会话仍在。
+- 构建与测试：`:nativedo:testDebugUnitTest` 33 类 95 项全过（0 失败、0 error、0 skipped；新增
+  `InAppBrowserSessionTest` 6 项、`BrowserRotationAdoptionTest` 2 项）；`assembleDebug -Pandroid.injected.build.abi=arm64-v8a
+  --quiet` 通过，最终 APK SHA-256 `814696398f3902f9b3f7ad3a05a55e7dd321faaa78cf91960fb374de52b0b1f4`
+  （设备上最后装的是修复中段、还没有 reconcile 钩子的 `976a88ab2fbe12e3501e921a437dca16b2151c3ae7cb9c71a31103bec265dbb2`）。
+  本片没有改 `apps/android/telegram` 子树，vendor-guard 不涉及。证据在 `.amp/in/artifacts/cookie-sync/`。
 
 ### 帖子链接与内置浏览器（2026-10-04，`emulator-5554`，`nativedo-browser-wave2`）
 

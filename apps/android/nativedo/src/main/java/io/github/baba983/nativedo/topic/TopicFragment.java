@@ -1569,7 +1569,30 @@ public class TopicFragment extends BaseFragment {
             if (longPress || !(url instanceof URLSpan)) {
                 return;
             }
-            Browser.openUrl(getParentActivity(), ((URLSpan) url).getURL());
+            String target = ((URLSpan) url).getURL();
+            if (container != null) {
+                // The one path a linux.do link takes into upstream's in-app browser: the session is
+                // seeded into the WebView jar first, so the page opens as the signed-in reader.
+                container.getInAppBrowserSession().open(getParentActivity(), target);
+            } else {
+                Browser.openUrl(getParentActivity(), target);
+            }
+        }
+
+        /**
+         * A tap on a link preview (an onebox): upstream's own delegate default would call
+         * {@code Browser.openUrl} directly, which skips the session seed a linux.do page needs.
+         */
+        @Override
+        public void didPressWebPage(ChatMessageCell cell, TLRPC.WebPage webpage, String url, boolean safe) {
+            if (url == null || url.isEmpty()) {
+                return;
+            }
+            if (container != null) {
+                container.getInAppBrowserSession().open(getParentActivity(), url);
+            } else {
+                Browser.openUrl(getParentActivity(), url);
+            }
         }
 
         /**
