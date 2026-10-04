@@ -485,48 +485,39 @@ public class SearchPanel extends FrameLayout {
             showIdle();
         }
 
-        int rowCount() {
-            return adapter.getItemCount();
-        }
-
         void notifyRows() {
             adapter.notifyDataSetChanged();
         }
 
-        /** Nothing asked yet: the empty view says how to start. */
-        void showIdle() {
-            emptyView.title.setText(getContext().getString(R.string.search_idle));
-            showEmptyView(false);
-        }
-
-        /** The site is being asked: upstream's flicker skeleton runs while the answer is on its way. */
-        void showLoading() {
-            emptyView.title.setText(getContext().getString(R.string.search_idle));
-            showEmptyView(true);
-        }
-
-        /** An answer arrived; the empty view only remains if it has nothing for this page. */
-        void showResults() {
-            if (adapter.getItemCount() > 0) {
-                emptyView.setVisibility(View.GONE);
-                return;
-            }
-            emptyView.title.setText(getContext().getString(R.string.search_no_results));
-            showEmptyView(false);
-        }
-
-        void showFailure() {
-            emptyView.title.setText(getContext().getString(R.string.search_failed));
-            showEmptyView(false);
-        }
-
-        private void showEmptyView(boolean loading) {
+        /** The rows changed: the list is told, and the empty view follows what is there now. */
+        private void refresh(boolean loading, int emptyTitle) {
+            adapter.notifyDataSetChanged();
+            emptyView.title.setText(getContext().getString(emptyTitle));
             if (!loading && adapter.getItemCount() > 0) {
                 emptyView.setVisibility(View.GONE);
                 return;
             }
             emptyView.setVisibility(View.VISIBLE);
             emptyView.showProgress(loading, false);
+        }
+
+        /** Nothing asked yet: the empty view says how to start. */
+        void showIdle() {
+            refresh(false, R.string.search_idle);
+        }
+
+        /** The site is being asked: upstream's flicker skeleton runs while the answer is on its way. */
+        void showLoading() {
+            refresh(true, R.string.search_idle);
+        }
+
+        /** An answer arrived; the empty view only remains if it has nothing for this page. */
+        void showResults() {
+            refresh(false, R.string.search_no_results);
+        }
+
+        void showFailure() {
+            refresh(false, R.string.search_failed);
         }
     }
 

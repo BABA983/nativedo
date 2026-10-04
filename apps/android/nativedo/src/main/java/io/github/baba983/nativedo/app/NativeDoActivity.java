@@ -627,6 +627,12 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
             actionBarLayout.onBackPressed();
             return;
         }
+        // The root screen can take the back before the app leaves: the home screen's search is
+        // closed by it (BaseFragment.onBackPressed answers false when it has taken it).
+        BaseFragment last = actionBarLayout == null ? null : actionBarLayout.getLastFragment();
+        if (last != null && !last.onBackPressed(true)) {
+            return;
+        }
         super.onBackPressed();
     }
 }

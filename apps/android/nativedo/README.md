@@ -217,6 +217,17 @@ stands, and the upstream component each row is meant to use.
 - 设置页：外观 / 我的 / 账号三组的行高与间距是否符合上游观感；退出登录的确认框、清 cookie 后回到登录页、再登录回来后话题与通知是否正常。
 - 通知 tab：没有推送和未读计数时，列表的排序和徽章是否仍然清楚。
 
+### 主页玻璃分类条与搜索页（2026-10-04，`emulator-5554`，`nativedo-home-search`）
+
+- 分类条改成 12.10.5 自己的浮动玻璃胶囊：`FilterTabsView` 以 `BlurredBackgroundProviderImpl.topPanel` 的模糊背景、圆角 18、内边距 6.666、两边 4dp 边距浮在列表上；列表把搜索框（48dp）加胶囊（50dp）的高度留成 padding，所以首行在胶囊下方、滚动时行从胶囊下穿过。上游 12.10.5 不把分类条随滚动收起（列表滚动监听里 `applyScrollY = false`），这一版也保持固定。模糊源是 `GlassPanelHost`：`DialogsActivity` 自己的 source render node + `BlurredBackgroundDrawableViewFactory` 收到我们这边一处，话题页以后的 action-bar 胶囊复用同一个类。
+- 搜索改成 12.10.5 主列表的形态：顶部是上游的 `FragmentSearchField`（提示「搜索 linux.do」，`setHint` 而不是动画 hint drawable），点它按 `DialogsActivity` 的动画打开 - 列表 alpha→0（低性能档不做 0.95 缩放）、搜索页从 1.05 收到 1、进度值驱动分类条 `1 - searchVisible` 淡出与搜索胶囊从 0.98 出现，200ms EASE_OUT 开、180ms + 20ms 关；底部的 话题/通知/设置 栏同时按 `MainTabsActivity` 自己的方式（380ms EASE_OUT_QUINT、下移 40dp、alpha 与 0.85 缩放）让位与返回。设备录屏 `home-search-open-close.mp4`，逐帧拼图 `open-animation-frames.png` / `close-animation-frames.png`：打开时标题、分类条与列表一起让位、底部栏消失；关闭后列表、分类条与底部栏都回来。
+- 搜索页是 `ViewPagerFixed` + 药丸 `TabsView`（装在 `SearchTabsAndFiltersLayout` 玻璃胶囊里）：话题/帖子/用户来自一次 `/search.json`（300ms 防抖，只显示输入框里那个查询的答案），分类/标签来自 `/categories.json` 与 `/tags.json`，按查询在客户端过滤。真实站点：`telegram` 的话题页命中话题行（`08-search-topics`）、帖子页显示带楼层摘要的帖子行（`09-search-posts`）、标签页显示 `#Telegram`（`10-search-tags`）；`claude` 的话题页同样有结果（暗色 `06-search-dark`）。空/加载状态是上游的 `StickerEmptyView` + `FlickerLoadingView`：没输入时「输入关键词开始搜索」（`12-search-idle`），没有命中时「没有找到相关内容」与鸭子贴纸（`11-search-empty`）。
+- 关闭：字段的 × 一步关搜索，主页立即恢复（`13-close-button-home`）；返回键同样先关搜索（搜索打开时第一次返回收键盘，第二次返回关搜索且应用不退出）。返回关搜索要壳先把根屏幕问一遍，`NativeDoActivity.onBackPressed` 的单 fragment 分支现在先问 `getLastFragment()`。
+- 主题：设置 → 外观 → Switch to Night Mode 后主页与搜索页（字段、药丸条、行、底部栏）对比度正常（`05-home-dark`、`06-search-dark`），切回白天后主页恢复（`07-home-light-restored`）。
+- 未验到：`用户` 页的有行状态 - 真站点对 `telegram`/`baba`/`neo`/`daud`/`linux` 都回了空 `users`，这一页在这几个查询下只有空状态；行与「点开资料页」由渲染 harness 的 `SearchTest` 覆盖（`ProfileSearchCell`）。`分类` 页同理只有空状态：linux.do 的分类名都是中文，而 `adb shell input text` 不能输入中文，没有 ASCII 命中查询；分类行与标签行是同一个 cell（`HashtagSearchCell` + `CategoryLabels` 的彩色圆点）。
+- 设备上左缘那条系统浮条（麦克风/收键盘/搜索/表情/菜单）随输入法出现，不是本应用的 UI。
+- 构建与测试：同一 HEAD `:nativedo:testDebugUnitTest` 31 类 87 项全过（0 失败 0 error 0 skipped）；一次全量命中既有的 `ReadProgressTest` 竞态（`the topic the reader finished is not unread any more`），单独重跑该 10 项连过 3/3，判为既有 flaky。`assembleDebug -Pandroid.injected.build.abi=arm64-v8a` 通过，APK SHA-256 `c7e6a916757d30a78fc0ab6c2b81a4de7cc22163314aae30c7496de7d6c21e5d`，`install -r -t` 覆盖安装（未卸载未清数据）。设备期间另一 agent 清掉了会话，等 cookie-sync 恢复（@example_user）后继续；未登录阶段只到登录页。证据在 `.amp/in/artifacts/home-search/`。
+
 ### 帖子链接与内置浏览器（2026-10-04，`emulator-5554`，`nativedo-browser-wave2`）
 
 - 链接的 before/after。旧构建里帖子中的 https 链接走不到上游的内嵌分支（它的宿主是 `LaunchActivity`，这个壳不是），
