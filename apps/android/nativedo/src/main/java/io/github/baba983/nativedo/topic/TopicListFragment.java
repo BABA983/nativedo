@@ -1,9 +1,11 @@
 package io.github.baba983.nativedo.topic;
 
 import android.content.Context;
+import android.graphics.Canvas;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.LinearLayout;
+import android.widget.FrameLayout;
 
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -18,6 +20,8 @@ import org.telegram.ui.Components.FilterTabsView;
 import org.telegram.ui.Components.FragmentFloatingButton;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.RecyclerListView;
+import org.telegram.ui.Components.blur3.drawable.BlurredBackgroundDrawable;
+import org.telegram.ui.Components.blur3.drawable.color.impl.BlurredBackgroundProviderImpl;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -65,8 +69,26 @@ public class TopicListFragment extends BaseFragment {
     /** The strip's own height, as upstream's chat list gives it (36 + 7 + 7). */
     private static final int TAB_STRIP_HEIGHT_DP = 50;
 
-    private LinearLayout contentView;
+    /** The strip's side margin, as upstream's floating panel has it. */
+    private static final int TAB_STRIP_MARGIN_DP = 4;
+
+    private FrameLayout contentStack;
     private FilterTabsView tabsView;
+    /** The strip's blur source; the recorded content is the list it floats over. */
+    private io.github.baba983.nativedo.app.GlassPanelHost glassHost;
+    /** The day/night switch rebuilds the strip's own colours and the blur source's. */
+    private final org.telegram.messenger.NotificationCenter.NotificationCenterDelegate themeObserver =
+            (id, account, args) -> {
+                if (id != org.telegram.messenger.NotificationCenter.needSetDayNightTheme) {
+                    return;
+                }
+                if (glassHost != null) {
+                    glassHost.updateColors();
+                }
+                if (tabsView != null) {
+                    tabsView.updateColors();
+                }
+            };
     private FragmentFloatingButton startTopicButton;
     private org.telegram.ui.ActionBar.ActionBarMenuItem clearTagItem;
     private RecyclerListView listView;
@@ -114,11 +136,36 @@ public class TopicListFragment extends BaseFragment {
         listView.setLayoutManager(new LinearLayoutManager(context));
         listView.setAdapter(new TopicListAdapter());
         listView.setVerticalScrollBarEnabled(false);
-        listView.setPadding(0, AndroidUtilities.dp(4), 0, AndroidUtilities.dp(4));
+        // The strip floats over the rows: the list keeps the strip's height as padding, so its
+        // first row starts under the strip and the rows scroll beneath it (DialogsActivity's own
+        // list padding carries the strip's height the same way, 2065-2095).
+        listView.setPadding(0,
+                AndroidUtilities.dp(TAB_STRIP_HEIGHT_DP + TAB_STRIP_MARGIN_DP),
+                0, AndroidUtilities.dp(4));
         listView.setOnItemClickListener((view, position) -> {
             TopicSummary topic = topics.get(position);
             presentTopic(topic);
         });
+
+        // Upstream's own floating button, the one its chat list starts a new chat with: this list's
+        // one action is to start a topic, so it is the same button in the same place.
+        android.widget.FrameLayout frame = new android.widget.FrameLayout(context) {
+            @Override
+            protected void dispatchDraw(Canvas canvas) {
+                // The strip's blur source is recorded before the frame draws its children, so the
+                // strip samples the rows behind it and never itself.
+                glassHost.record();
+                super.dispatchDraw(canvas);
+            }
+        };
+
+        // The list side, on its own: it is what leaves while search is open (showSearch's
+        // viewPages[0] animators), and it is what the strip's blur source records.
+        contentStack = new FrameLayout(context);
+        contentStack.addView(listView, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        frame.addView(contentStack, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
 
         tabsView = new FilterTabsView(context, resourceProvider);
         tabsView.setDelegate(new CategoryTabsDelegate());
@@ -127,18 +174,22 @@ public class TopicListFragment extends BaseFragment {
         // the whole screen rather than an empty row above it.
         tabsView.setVisibility(View.GONE);
 
-        contentView = new LinearLayout(context);
-        contentView.setOrientation(LinearLayout.VERTICAL);
-        contentView.addView(tabsView, LayoutHelper.createLinear(
-                LayoutHelper.MATCH_PARENT, TAB_STRIP_HEIGHT_DP));
-        contentView.addView(listView, LayoutHelper.createLinear(
-                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, 1f));
+        // The strip is the floating glass capsule 12.10.5 presents its own filter tabs as:
+        // DialogsActivity gives it the top panel's blur background, radius 18, padding 6.666, a
+        // 7dp inner padding and 4dp side margins (5151-5155), over a list that scrolls under it.
+        glassHost = new io.github.baba983.nativedo.app.GlassPanelHost(listView, frame);
+        tabsView.setPadding(0, AndroidUtilities.dp(7), 0, AndroidUtilities.dp(7));
+        BlurredBackgroundDrawable stripBackground = glassHost.createPanel(
+                tabsView, BlurredBackgroundProviderImpl.topPanel(resourceProvider));
+        stripBackground.setRadius(AndroidUtilities.dp(18));
+        stripBackground.setPadding(AndroidUtilities.dp(6.666f));
+        tabsView.setBlurredBackground(stripBackground);
 
-        // Upstream's own floating button, the one its chat list starts a new chat with: this list's
-        // one action is to start a topic, so it is the same button in the same place.
-        android.widget.FrameLayout frame = new android.widget.FrameLayout(context);
-        frame.addView(contentView, LayoutHelper.createFrame(
-                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        // The strip sits in the frame rather than in the list side: it fades on its own while
+        // search opens, it does not scale or move with the list.
+        frame.addView(tabsView, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT, TAB_STRIP_HEIGHT_DP, Gravity.TOP,
+                TAB_STRIP_MARGIN_DP, 0, TAB_STRIP_MARGIN_DP, 0));
         // A fetch that failed leaves the list empty, which reads the same as a site with nothing to
         // show. This says which it was, and a tap on it asks the site again.
         emptyView = new org.telegram.ui.Components.EmptyTextProgressView(context);
@@ -161,11 +212,22 @@ public class TopicListFragment extends BaseFragment {
         });
         frame.addView(startTopicButton, FragmentFloatingButton.createDefaultLayoutParams());
         fragmentView = frame;
+        // The strip's glass and the strip itself capture theme colours; the day/night switch tells
+        // this screen the same way it tells the shell's own strip.
+        org.telegram.messenger.NotificationCenter.getGlobalInstance().addObserver(
+                themeObserver, org.telegram.messenger.NotificationCenter.needSetDayNightTheme);
         updateTagActions();
         loadFeed();
         loadCategories();
         loadTags();
         return fragmentView;
+    }
+
+    @Override
+    public void onFragmentDestroy() {
+        super.onFragmentDestroy();
+        org.telegram.messenger.NotificationCenter.getGlobalInstance().removeObserver(
+                themeObserver, org.telegram.messenger.NotificationCenter.needSetDayNightTheme);
     }
 
     /**
