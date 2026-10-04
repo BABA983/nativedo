@@ -41,6 +41,7 @@ import org.telegram.ui.Cells.HeaderCell;
 import org.telegram.ui.Cells.TextDetailCell;
 import org.telegram.ui.Cells.TextInfoPrivacyCell;
 import org.telegram.ui.Components.CubicBezierInterpolator;
+import org.telegram.ui.Components.FlickerLoadingView;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.LinkSpanDrawable;
 import org.telegram.ui.Components.ProfileGooeyView;
@@ -107,6 +108,12 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
 
     private FrameLayout frameLayout;
     private RecyclerListView listView;
+    /**
+     * DialogsActivity's own shimmer (4059-4064): the row this list draws - the reader's activity
+     * rows are {@link DialogCell}s, the same as the topic list's - while the profile has drawn
+     * none yet. It is the list's empty view, so it stands only until the first answer.
+     */
+    private FlickerLoadingView progressView;
     private final List<Row> rows = new ArrayList<>();
     /** The row of the reader's own bookmarks, or -1 when this is not their own profile. */
     private int bookmarksRow = -1;
@@ -177,6 +184,10 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                 }
                 if (listView != null && listView.getAdapter() != null) {
                     listView.getAdapter().notifyDataSetChanged();
+                }
+                if (progressView != null) {
+                    // The shimmer reads the theme colours at draw time; a redraw is its recolour.
+                    progressView.invalidate();
                 }
                 if (topView != null) {
                     topView.invalidate();
@@ -361,6 +372,16 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         });
         frameLayout.addView(listView, LayoutHelper.createFrame(
                 LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.LEFT));
+        // DialogsActivity's own first-load view (4059-4062): the row this list is about to draw,
+        // standing in for it while the profile has not answered. It rides behind the header, so
+        // the screen still shows what it already knows.
+        progressView = new FlickerLoadingView(context);
+        progressView.setViewType(FlickerLoadingView.DIALOG_CELL_TYPE);
+        progressView.setVisibility(View.GONE);
+        listView.setEmptyView(progressView);
+        listView.setAnimateEmptyView(true, RecyclerListView.EMPTY_VIEW_ANIMATION_TYPE_ALPHA);
+        frameLayout.addView(progressView, LayoutHelper.createFrame(
+                LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER));
 
         // The header's backdrop: the rows that scroll under the avatar and the name stay behind it.
         topView = new TopView(context);
@@ -535,6 +556,14 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             return kotlin.Unit.INSTANCE;
         }, error -> {
             FileLog.e("profile failed", error);
+            // The profile never arrived: the shimmer ends with the read rather than turning over
+            // an empty screen, and the list stays as empty as it was.
+            if (listView != null) {
+                listView.setEmptyView(null);
+            }
+            if (progressView != null) {
+                progressView.setVisibility(View.GONE);
+            }
             return kotlin.Unit.INSTANCE;
         });
     }
@@ -741,6 +770,11 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         final int paddingTop = listView.getMeasuredWidth() + getActionsExtraHeight();
         if (listView.getPaddingTop() != paddingTop) {
             listView.setPadding(0, paddingTop, 0, listBottomPadding());
+        }
+        // The shimmer draws its rows from below the header too, the way DialogsActivity keeps its
+        // progress view under its own top panel (2093-2095).
+        if (progressView != null) {
+            progressView.setPaddingTop(paddingTop);
         }
         if ((!headerSeeded || seededWidth != listView.getMeasuredWidth())
                 && listView.getAdapter() != null && listView.getAdapter().getItemCount() > 0) {

@@ -33,6 +33,7 @@ import org.telegram.ui.Cells.ChatMessageCell
 import org.telegram.tgnet.tl.TL_iv
 import org.telegram.ui.Cells.DialogCell
 import org.telegram.ui.Components.RecyclerListView
+import okhttp3.mockwebserver.MockResponse
 
 /**
  * The two screens of the thin slice, driven end to end: `fixtures/discourse` is served over a
@@ -144,8 +145,57 @@ internal class TopicScreensTest {
 
     // ------------------------------------------------------------------ view traversal helpers
 
+    /**
+     * A chat does not show the chat list's shimmer while its first page of messages is on its
+     * way: ChatActivity shows a centred ring on the service background (6984-7016, shown for
+     * {@code loading && messages.isEmpty()}, 9197). This screen does the same, and the ring is
+     * gone with the first answer.
+     */
+    @Test
+    fun theTopicsFirstPageShowsTheChatsOwnLoadingRing() {
+        // Hold the answer, so the ring can be looked at while the topic really is loading.
+        val answer = java.util.concurrent.CountDownLatch(1)
+        site.serveResponse("t/$TOPIC_ID.json") {
+            answer.await(10, java.util.concurrent.TimeUnit.SECONDS)
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(harness.fixture("topic-detail.json"))
+        }
+
+        harness.bootApp()
+        harness.await("the topic list to load") { rowCount() == 2 }
+        harness.present(TopicFragment.forTopic(TOPIC_ID, "Welcome to NativeDo Android"))
+        harness.await("the ring while the first page is on its way") {
+            progressView()?.visibility == View.VISIBLE
+        }
+        // The ring's own arc is animated off the clock and only exists after an onDraw
+        // (RadialProgressView.updateAnimation runs at the end of it), so draw, step the clock and
+        // draw again: the captured frame is the arc, not the bare service circle.
+        harness.drawApp()
+        harness.idleClock(150)
+        harness.drawApp()
+        harness.idleClock(150)
+        harness.renderApp("topic-first-load-ring")
+
+        answer.countDown()
+        harness.await("the topic's posts") { rowCount() == 1 }
+        harness.await("the ring to go with the answer") {
+            harness.idleClock(120)
+            progressView()?.visibility != View.VISIBLE
+        }
+        harness.assertNoTelegramSideEffects()
+    }
+
     private fun listView(): RecyclerListView? =
         contentListOf(harness.activity)
+
+    /** The topic's own first-load view, where ChatActivity's ring is ported. */
+    private fun progressView(): View? {
+        val fragment = harness.visibleFragment() as? TopicFragment ?: return null
+        val field = TopicFragment::class.java.getDeclaredField("progressView").apply { isAccessible = true }
+        return field.get(fragment) as? View
+    }
 
     /** What the adapter holds, which is what the fetch produced. */
     private fun rowCount(): Int = listView()?.adapter?.itemCount ?: 0

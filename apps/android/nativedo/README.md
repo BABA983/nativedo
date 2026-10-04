@@ -244,6 +244,42 @@ stands, and the upstream component each row is meant to use.
 - 我的 tab：头像 tab 的图标是否认得出来（会话头像、22dp 圆角方形）、四个 tab 的宽度分配是否匀称；自己的资料页作为根没有返回箭头、下拉展开与折叠的手感是否与从帖子打开的作者资料页一致。
 - 通知 tab：没有推送和未读计数时，列表的排序和徽章是否仍然清楚。
 
+### 主页「N 个新话题」胶囊与列表加载骨架（2026-10-05，`emulator-5554`，`spike/full-telegram-subtree`，**已登出，仅 harness**）
+
+- 胶囊从 `ButtonWithCounterView` 换成聊天的浮动日期视图：`ChatActionCell` + `setCustomText`，画法与
+  ChatActivity:7043-7100 的 `floatingDateView` 相同（服务消息背景 `key_paint_chatActionBackground`、文本
+  `key_paint_chatActionText`、`isFloating()` 的 0.75 系数；没有聊天壁纸时上游就用这套纯色，白天是深灰底白字、
+  夜间是深色底白字，harness 两张图都验过可读）。显示/隐藏照 ChatActivity:13600-13660：150ms alpha、tag 守卫；
+  上游 hide 里的 `hideDateDelay` 是滚动日期逻辑，这里没有滚动日期，胶囊不延迟。位置照上游 11968 抵消 cell
+  自带的 4dp 顶内边距，停在分类条下缘 8dp；它漂浮在第一行之上，`checkUi_listPadding` 不再为它留槽位
+  （出现/消失不移动第一行），搜索页打开时隐藏，点按仍是刷新当前分类页并回顶。
+- 主页分类页首载骨架按 DialogsActivity:4059-4064：每页 `FlickerLoadingView(DIALOG_CELL_TYPE)` 作列表的
+  empty view（4695、9300-9306），骨架只在页没有 feed 时出现——切回已缓存的分类、搜索返回都不会再出现；
+  读取失败时骨架让位给原来的失败文案。搜索页的五个 tab 各按上游自己搜索的 shimmer 类型
+  （DialogsSearchAdapter:1628-1629 的 `DIALOG_TYPE`；用户页 SearchAdapter:375-377 的 `PROFILE_SEARCH_CELL`；
+  分类/标签是上游全局搜索列表里的 hashtag 行，同一列表用 `DIALOG_TYPE`）。通知列表与「我的」动态列表的行
+  都是 `DialogCell`，用 `DIALOG_CELL_TYPE`，只在第一页到达前显示。话题页首载不是骨架，按
+  ChatActivity:6984-7016 居中画服务底色圆 + `RadialProgressView`（32dp、size 28dp、`key_chat_serviceText`），
+  出现/消失用 ChatActivity:11866-11904 的 150ms alpha/scale。
+- 主题：胶囊、骨架、话题页的圆/环都在原地重画（共享服务画笔与 `FlickerLoadingView` 的 onDraw 读色），
+  主题用例额外钉了「切换前后是同一个 pill / 同一个 shimmer 实例」。
+- 构建与测试：同一 HEAD `:nativedo:testDebugUnitTest` 全量 **40 类 136 项 0 失败 0 error 0 skipped**（新增
+  `MessageBusUiTest.thePillFloatsOverTheFirstRowAndTheThemeSwitchKeepsIt`、
+  `HomeCategoryPagerTest.theFirstLoadShimmerOnlyStandsInForAPageWithNoFeedYet`、
+  `SearchTest.theSearchPagesShimmerWhileTheSiteIsAsked`、`TopicScreensTest.theTopicsFirstPageShowsTheChatsOwnLoadingRing`；
+  切 tab 中帧的「两页在屏」改按页框计数——无 feed 的页列表被自己的骨架临时隐藏，是上游 empty view 的原样）。
+  arm64 `:nativedo:assembleDebug -Pandroid.injected.build.abi=arm64-v8a` 通过（`.so` 取同上游 commit 的
+  设备 worktree 产物，排除 `configureCMakeDebug[arm64-v8a]` 与 `buildCMakeDebug[arm64-v8a][tmessages.49]`，
+  并清掉 worktree 里残留的旧 CMake 输出以免打包出两份 `.so`），APK SHA-256
+  `fcd006b6b341ba0f453daa3c78938a33b0a97cfac29d4af606605dab70840bc3`（63.5 MB，一份 `libmessages.49.so`）。
+  没有改 `apps/android/telegram` 子树，vendor-guard 不涉及。
+- 设备：冷启动一次就停在登录页（`device-cold-start-check2.png`，logcat `auth_cookie_missing accepted=false`），
+  按约定没有登录/绕过，所以本片是 **harness-only**。证据在 `.amp/in/artifacts/pill-skeleton/`：
+  `pill-light` / `pill-dark`（胶囊在分类条下、第一行之上，第一行位置未被推动；dark 图顶部的白条是揭示快照，
+  和既有的 `home-category-theme-dark` 渲染一致）、`home-first-load-skeleton`（DIALOG_CELL 骨架行从分类条下开始）、
+  `search-topics-loading` / `search-users-loading`、`topic-first-load-ring`（服务圆 + 白色弧）。
+  未验证：真机颜色与模糊（本机 LOW 档）、点按胶囊的真机触感、骨架期间列表的滚动手感。
+
 ### 主页随滚动收起：搜索框滑进动作栏、分类条顶上（2026-10-04，`emulator-5554`，`nativedo-home-scroll`，已登录 @example_user）
 
 - 上游 12.10.5 的手感是：动作栏不动，搜索框（48dp）随滚动上移并在同一距离里淡出，分类条跟着滑到

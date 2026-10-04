@@ -29,8 +29,10 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.telegram.messenger.ApplicationLoader
 import org.telegram.ui.Cells.ChatMessageCell
+import org.telegram.ui.Components.FlickerLoadingView
 import org.telegram.ui.Components.FragmentSearchField
 import org.telegram.ui.Components.RecyclerListView
+import okhttp3.mockwebserver.MockResponse
 
 /**
  * Search, the field on the home screen and the pages behind it, end to end.
@@ -144,6 +146,64 @@ internal class SearchTest {
         println("search: the person hit is a " + person.javaClass.simpleName)
         list.clickItem(person, 0)
         harness.await("the person's profile") { site.requestPaths.contains("u/baba.json") }
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * The pages shimmer while the site is being asked, each with the view type upstream's own
+     * search uses for that kind of row (message search: the dialog row; people: the profile
+     * search cell). The failure modes: no skeleton while the answer is on its way, and one type
+     * for every tab regardless of what the rows are.
+     */
+    @Test
+    fun theSearchPagesShimmerWhileTheSiteIsAsked() {
+        // Hold the answer, so the shimmer is looked at while the search really is pending.
+        val answer = java.util.concurrent.CountDownLatch(1)
+        site.serveResponse("search.json") {
+            answer.await(10, java.util.concurrent.TimeUnit.SECONDS)
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(harness.fixture("search.json"))
+        }
+
+        harness.bootApp()
+        harness.await("the topic list to load") { rowCount() == 2 }
+        openSearch()
+        harness.await("the search panel to be built") { searchPanel() != null }
+        type(QUERY)
+        harness.await("the site to be asked") { site.requestPaths.contains("search.json") }
+
+        val panel = searchPanel()!!
+        harness.await("the topics page to shimmer") {
+            panel.pageLoadingView(SearchPanel.PAGE_TOPICS).visibility == View.VISIBLE
+        }
+        assertEquals(
+            "the message search row is the topics shimmer",
+            FlickerLoadingView.DIALOG_TYPE,
+            panel.pageLoadingView(SearchPanel.PAGE_TOPICS).viewType,
+        )
+        harness.renderApp("search-topics-loading")
+
+        harness.await("the people page to shimmer") {
+            panel.pageLoadingView(SearchPanel.PAGE_USERS).visibility == View.VISIBLE
+        }
+        assertEquals(
+            "the people page uses the user-search row",
+            FlickerLoadingView.PROFILE_SEARCH_CELL,
+            panel.pageLoadingView(SearchPanel.PAGE_USERS).viewType,
+        )
+        selectPage(SearchPanel.PAGE_USERS)
+        harness.renderApp("search-users-loading")
+
+        answer.countDown()
+        harness.await("the hits") {
+            panel.pageList(SearchPanel.PAGE_POSTS).adapter?.itemCount == 1
+        }
+        harness.await("the shimmer to go with the answer") {
+            harness.idleClock(120)
+            panel.pageLoadingView(SearchPanel.PAGE_TOPICS).visibility != View.VISIBLE
+        }
         harness.assertNoTelegramSideEffects()
     }
 

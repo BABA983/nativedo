@@ -109,6 +109,9 @@ public class SearchPanel extends FrameLayout {
     private Runnable pendingSearch;
     private boolean categoriesRequested;
     private boolean tagsRequested;
+    /** Whether the site's own list (categories, tags) has been read; drives that page's state. */
+    private boolean categoriesLoaded;
+    private boolean tagsLoaded;
 
     /** The site's answer, one list per page. */
     private final List<TopicSummary> topicHits = new ArrayList<>();
@@ -241,12 +244,20 @@ public class SearchPanel extends FrameLayout {
             if (page.listView != null) {
                 page.listView.invalidate();
             }
+            // The pages are not rebuilt on the switch, so the empty view's text takes the new
+            // colours the way upstream's own search re-applies them (FilteredSearchView:1965-1966).
+            page.updateEmptyViewColors();
         }
     }
 
     /** One page's list, for the render harness and the screen's own checks. */
     RecyclerListView pageList(int page) {
         return pages.get(page).listView;
+    }
+
+    /** One page's shimmer view, for the render harness and the screen's own checks. */
+    FlickerLoadingView pageLoadingView(int page) {
+        return (FlickerLoadingView) pages.get(page).emptyView.progressView;
     }
 
     /** Moves to a page the way a tap on a pill does; upstream's own pager API. */
@@ -261,6 +272,14 @@ public class SearchPanel extends FrameLayout {
         final String asked = query;
         for (int page = PAGE_TOPICS; page <= PAGE_USERS; page++) {
             pages.get(page).showLoading();
+        }
+        // The site's own lists are read once; until that read has answered their pages shimmer
+        // too, with the row type upstream's own search list uses for its hashtag rows.
+        if (!categoriesLoaded) {
+            pages.get(PAGE_CATEGORIES).showLoading();
+        }
+        if (!tagsLoaded) {
+            pages.get(PAGE_TAGS).showLoading();
         }
         DiscourseLoader.INSTANCE.search(container, asked, result -> {
             if (asked.equals(query)) {
@@ -323,12 +342,16 @@ public class SearchPanel extends FrameLayout {
                                 allCategories.add(category);
                             }
                         }
+                        categoriesLoaded = true;
                         applySiteLists();
                         return kotlin.Unit.INSTANCE;
                     },
                     error -> {
                         categoriesRequested = false;
                         FileLog.e("search categories failed", error);
+                        if (!query.isEmpty() && !categoriesLoaded) {
+                            pages.get(PAGE_CATEGORIES).showFailure();
+                        }
                         return kotlin.Unit.INSTANCE;
                     });
         }
@@ -338,12 +361,16 @@ public class SearchPanel extends FrameLayout {
                     loaded -> {
                         allTags.clear();
                         allTags.addAll(loaded);
+                        tagsLoaded = true;
                         applySiteLists();
                         return kotlin.Unit.INSTANCE;
                     },
                     error -> {
                         tagsRequested = false;
                         FileLog.e("search tags failed", error);
+                        if (!query.isEmpty() && !tagsLoaded) {
+                            pages.get(PAGE_TAGS).showFailure();
+                        }
                         return kotlin.Unit.INSTANCE;
                     });
         }
@@ -364,8 +391,16 @@ public class SearchPanel extends FrameLayout {
                 tagHits.add(tag);
             }
         }
-        for (int page = PAGE_CATEGORIES; page <= PAGE_TAGS; page++) {
-            pages.get(page).showResults();
+        // Each page reports for itself: one list answering does not end the other's shimmer.
+        if (categoriesLoaded) {
+            pages.get(PAGE_CATEGORIES).showResults();
+        } else if (query.isEmpty()) {
+            pages.get(PAGE_CATEGORIES).showIdle();
+        }
+        if (tagsLoaded) {
+            pages.get(PAGE_TAGS).showResults();
+        } else if (query.isEmpty()) {
+            pages.get(PAGE_TAGS).showIdle();
         }
     }
 
@@ -405,6 +440,19 @@ public class SearchPanel extends FrameLayout {
             }
             return kotlin.Unit.INSTANCE;
         });
+    }
+
+    /**
+     * Upstream's own shimmer rows per kind of result: the message/dialog search list loads with
+     * the dialog row (DialogsSearchAdapter:1628-1629), the people list with the profile search
+     * cell (SearchAdapter:375-377), and the site's category/tag lists are the rows of upstream's
+     * global search list, whose loading row is the same dialog row.
+     */
+    private static int upstreamLoadingViewType(int kind) {
+        if (kind == PAGE_USERS) {
+            return FlickerLoadingView.PROFILE_SEARCH_CELL;
+        }
+        return FlickerLoadingView.DIALOG_TYPE;
     }
 
     /** The pager's own pages: five of them, one kind of hit each. */
@@ -471,7 +519,7 @@ public class SearchPanel extends FrameLayout {
             listView.setOnItemClickListener((view, position) -> adapter.open(position));
 
             FlickerLoadingView loadingView = new FlickerLoadingView(context);
-            loadingView.setViewType(FlickerLoadingView.DIALOG_TYPE);
+            loadingView.setViewType(upstreamLoadingViewType(kind));
             emptyView = new StickerEmptyView(
                     context, loadingView, StickerEmptyView.STICKER_TYPE_SEARCH, resourcesProvider);
             emptyView.subtitle.setVisibility(View.GONE);
@@ -518,6 +566,15 @@ public class SearchPanel extends FrameLayout {
 
         void showFailure() {
             refresh(false, R.string.search_failed);
+        }
+
+        /** The day/night switch keeps these pages; their colours are re-applied in place. */
+        void updateEmptyViewColors() {
+            emptyView.title.setTextColor(
+                    Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
+            emptyView.subtitle.setTextColor(
+                    Theme.getColor(Theme.key_windowBackgroundWhiteGrayText, resourcesProvider));
+            emptyView.invalidate();
         }
     }
 

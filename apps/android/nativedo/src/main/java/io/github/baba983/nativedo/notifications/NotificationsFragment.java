@@ -19,6 +19,7 @@ import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.Cells.DialogCell;
 import org.telegram.ui.Cells.TextInfoPrivacyCell;
+import org.telegram.ui.Components.FlickerLoadingView;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.DialogsActivity;
@@ -54,6 +55,12 @@ public class NotificationsFragment extends BaseFragment implements NativeDoMainT
     private static final int LOAD_MORE_THRESHOLD = 3;
 
     private RecyclerListView listView;
+    /**
+     * DialogsActivity's own shimmer (4059-4064): the row the chat list draws, while it has no
+     * row. A notification is a {@link DialogCell}, so that is the matching skeleton; it stands
+     * until the first page of notifications has been answered, and a failed answer ends it too.
+     */
+    private FlickerLoadingView progressView;
     private final List<NotificationItem> items = new ArrayList<>();
     /**
      * One actor per row, so the avatar a row draws is fetched once and the row it belongs to can be
@@ -84,6 +91,10 @@ public class NotificationsFragment extends BaseFragment implements NativeDoMainT
                     return;
                 }
                 notifyRowsChanged();
+                if (progressView != null) {
+                    // The shimmer reads the theme colours at draw time; a redraw is its recolour.
+                    progressView.invalidate();
+                }
                 if (actionBar != null) {
                     actionBar.updateColors();
                     actionBar.invalidate();
@@ -115,6 +126,14 @@ public class NotificationsFragment extends BaseFragment implements NativeDoMainT
         listView = new RecyclerListView(context);
         listView.setLayoutManager(new LinearLayoutManager(context));
         listView.setAdapter(new NotificationAdapter());
+        // The rows are DialogCells, so the chat list's own shimmer is the matching one
+        // (DialogsActivity:4059-4064, 4695): it is the list's empty view, and only until the
+        // first answer lands.
+        progressView = new FlickerLoadingView(context);
+        progressView.setViewType(FlickerLoadingView.DIALOG_CELL_TYPE);
+        progressView.setVisibility(View.GONE);
+        listView.setEmptyView(progressView);
+        listView.setAnimateEmptyView(true, RecyclerListView.EMPTY_VIEW_ANIMATION_TYPE_ALPHA);
         listView.setVerticalScrollBarEnabled(false);
         // The list reaches the bottom of the window and its rows scroll behind the glass strip;
         // the last row stays reachable above it through the padding below.
@@ -135,6 +154,10 @@ public class NotificationsFragment extends BaseFragment implements NativeDoMainT
         FrameLayout frame = new FrameLayout(context);
         frame.addView(listView, LayoutHelper.createFrame(
                 LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP));
+        // DialogsActivity's own layout (4062): the shimmer is centred over the list, its rows
+        // pushed below the bar by checkUi_contentTop.
+        frame.addView(progressView, LayoutHelper.createFrame(
+                LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER));
         // The page's own action bar sits above the content; checkUi_contentTop() moves the content
         // below it once it has been measured.
         frame.addView(actionBar, LayoutHelper.createFrame(
@@ -180,6 +203,11 @@ public class NotificationsFragment extends BaseFragment implements NativeDoMainT
         if (params != null && params.topMargin != top) {
             params.topMargin = top;
             listView.setLayoutParams(params);
+        }
+        // The shimmer's own rows start below the bar too, the way DialogsActivity keeps its
+        // progress view under its top panel (2093-2095).
+        if (progressView != null) {
+            progressView.setPaddingTop(top);
         }
     }
 
@@ -234,6 +262,14 @@ public class NotificationsFragment extends BaseFragment implements NativeDoMainT
             return kotlin.Unit.INSTANCE;
         }, error -> {
             loading = false;
+            // A page that never arrived still ends the shimmer: a skeleton that turns forever
+            // reads as "loading", and the read is over. The list stays as empty as it was.
+            if (listView != null) {
+                listView.setEmptyView(null);
+            }
+            if (progressView != null) {
+                progressView.setVisibility(View.GONE);
+            }
             FileLog.e("notifications failed", error);
             return kotlin.Unit.INSTANCE;
         });

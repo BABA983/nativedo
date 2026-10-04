@@ -2,12 +2,14 @@ package io.github.baba983.nativedo.topic;
 
 import android.content.Context;
 import android.graphics.Canvas;
+import android.graphics.RectF;
 import android.text.style.CharacterStyle;
 import android.text.style.URLSpan;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.FrameLayout;
 
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -21,8 +23,10 @@ import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.BaseFragment;
+import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.ChatMessageCell;
 import org.telegram.ui.Components.ChatActivityEnterView;
+import org.telegram.ui.Components.RadialProgressView;
 import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.Components.SizeNotifierFrameLayout;
 
@@ -115,6 +119,16 @@ public class TopicFragment extends BaseFragment {
     /** The overflow item's 书签 row, whose label and icon follow [topicBookmarked]. */
     private org.telegram.ui.ActionBar.ActionBarMenuSubItem bookmarkMenuItem;
     /**
+     * ChatActivity's own first-load view (6984-7016): chats do not show the chat list's shimmer;
+     * they show a centred ring on the service background while the first page of messages is on
+     * its way, and this screen does the same.
+     */
+    private FrameLayout progressView;
+    private View progressView2;
+    private RadialProgressView progressBar;
+    /** ChatActivity's animateProgressViewTo (11865): the state the ring is animating towards. */
+    private boolean animateProgressViewTo;
+    /**
      * The day/night switch updates the capsules' glass and the center capsule's own text colours;
      * a chat activity is rebuilt on a theme change, this screen is not.
      */
@@ -123,12 +137,25 @@ public class TopicFragment extends BaseFragment {
                 if (id == NotificationCenter.didSetNewWallpapper) {
                     // ChatActivity:23988 - a new wallpaper replaces the one the screen draws.
                     updateBackground();
+                    if (progressView2 != null) {
+                        progressView2.invalidate();
+                    }
                     return;
                 }
                 if (id != NotificationCenter.needSetDayNightTheme) {
                     return;
                 }
                 updateBackground();
+                if (progressBar != null) {
+                    // Upstream's own description for the ring (ChatActivity:42981, key_chat_serviceText);
+                    // this screen is not rebuilt on the switch, so the colour is re-set in place.
+                    progressBar.setProgressColor(
+                            getThemedColor(Theme.key_chat_serviceText));
+                    progressBar.invalidate();
+                }
+                if (progressView2 != null) {
+                    progressView2.invalidate();
+                }
                 if (glassHost != null) {
                     glassHost.updateColors();
                 }
@@ -413,6 +440,47 @@ public class TopicFragment extends BaseFragment {
                 org.telegram.ui.Components.LayoutHelper.MATCH_PARENT,
                 org.telegram.ui.Components.LayoutHelper.WRAP_CONTENT, Gravity.BOTTOM));
 
+        // ChatActivity's own first-load view (6984-7016): a 36dp round rect on the service
+        // background with a 32dp progress ring (its size 28dp) on it, centred. Shown and hidden
+        // by showProgressView with upstream's 150ms alpha/scale animation; a chat does not show
+        // the list shimmer, and neither does this screen.
+        progressView = new FrameLayout(context);
+        progressView.setVisibility(View.INVISIBLE);
+        contentView.addView(progressView, org.telegram.ui.Components.LayoutHelper.createFrame(
+                org.telegram.ui.Components.LayoutHelper.MATCH_PARENT,
+                org.telegram.ui.Components.LayoutHelper.MATCH_PARENT,
+                Gravity.TOP | Gravity.LEFT));
+        progressView2 = new View(context) {
+            private final RectF rect = new RectF();
+
+            @Override
+            protected void dispatchDraw(Canvas canvas) {
+                rect.set(0, 0, getWidth(), getHeight());
+                applyServiceShaderMatrix();
+                canvas.drawRoundRect(rect, AndroidUtilities.dp(18), AndroidUtilities.dp(18),
+                        getThemedPaint(Theme.key_paint_chatActionBackground));
+                if (resourceProvider != null ? resourceProvider.hasGradientService()
+                        : Theme.hasGradientService()) {
+                    canvas.drawRoundRect(rect, AndroidUtilities.dp(18), AndroidUtilities.dp(18),
+                            getThemedPaint(Theme.key_paint_chatActionBackgroundDarken));
+                }
+                super.dispatchDraw(canvas);
+            }
+
+            /** ChatActivity:7001-7006 - the rect is read through the chat's own service shader. */
+            private void applyServiceShaderMatrix() {
+                Theme.applyServiceShaderMatrix(getMeasuredWidth(),
+                        contentView.getMeasuredHeight(), getX(), getY());
+            }
+        };
+        progressView.addView(progressView2, org.telegram.ui.Components.LayoutHelper.createFrame(
+                36, 36, Gravity.CENTER));
+        progressBar = new RadialProgressView(context, resourceProvider);
+        progressBar.setSize(AndroidUtilities.dp(28));
+        progressBar.setProgressColor(getThemedColor(Theme.key_chat_serviceText));
+        progressView.addView(progressBar, org.telegram.ui.Components.LayoutHelper.createFrame(
+                32, 32, Gravity.CENTER));
+
         // A read that failed left the list empty, which reads the same as a topic with no posts.
         // This says which it was, and a tap on it either retries the read or opens the login WebView
         // when the session is what is wrong.
@@ -649,8 +717,51 @@ public class TopicFragment extends BaseFragment {
         attachStripLabel.setText(uploading ? "上传中…" : "添加图片或附件");
     }
 
+    /**
+     * ChatActivity.showProgressView (11866-11904): the first-load ring arrives by alpha and scale
+     * - 0.3 to 1 over 150 ms - and leaves the same way; without animations it is simply shown or
+     * hidden. Upstream shows it for {@code loading && messages.isEmpty()}, which is the same
+     * condition here: a reload of a topic that already has posts shows nothing.
+     */
+    private void showProgressView(boolean show) {
+        if (progressView == null) {
+            return;
+        }
+        if (fragmentView != null && org.telegram.messenger.SharedConfig.animationsEnabled()) {
+            if (show == animateProgressViewTo) {
+                return;
+            }
+            animateProgressViewTo = show;
+            if (show) {
+                if (progressView.getVisibility() != View.VISIBLE) {
+                    progressView.setVisibility(View.VISIBLE);
+                    progressView.setAlpha(0f);
+                    progressView.setScaleX(0.3f);
+                    progressView.setScaleY(0.3f);
+                }
+                progressView.animate().setListener(null).cancel();
+                progressView.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(150).start();
+            } else {
+                progressView.animate().setListener(null).cancel();
+                progressView.animate().alpha(0).scaleX(0.3f).scaleY(0.3f).setDuration(150)
+                        .setListener(new android.animation.AnimatorListenerAdapter() {
+                            @Override
+                            public void onAnimationEnd(android.animation.Animator animation) {
+                                progressView.setVisibility(View.INVISIBLE);
+                            }
+                        }).start();
+            }
+        } else {
+            animateProgressViewTo = show;
+            progressView.setVisibility(show ? View.VISIBLE : View.INVISIBLE);
+        }
+    }
+
     private void loadTopic(long topicId) {
         this.topicId = topicId;
+        // The first page is on its way: a chat shows its ring while it has no messages, and this
+        // is the same moment (ChatActivity:9197).
+        showProgressView(bubbles.isEmpty());
         container = NativeDo.container(getParentActivity());
         reporter = DiscourseLoader.INSTANCE.readReporter(container, topicId);
         int floor = getArguments() == null ? 0 : getArguments().getInt(ARG_FLOOR, 0);
@@ -692,6 +803,9 @@ public class TopicFragment extends BaseFragment {
 
     /** What has arrived: the topic's stream, its floors, and where in it the reader is standing. */
     private kotlin.Unit show(TopicDetail detail, int scrollTo) {
+        // The page is here: ChatActivity turns its ring off with the same call it turned it on
+        // (9197 -> showProgressView(false)).
+        showProgressView(false);
         if (failureView != null) {
             failureView.setVisibility(View.GONE);
         }
@@ -1563,6 +1677,8 @@ public class TopicFragment extends BaseFragment {
      * rows the reader has are still good.
      */
     private void showTopicFailure(Throwable error) {
+        // The read is over, so the ring goes with it (ChatActivity:20606 shows the same).
+        showProgressView(false);
         lastFailure = TopicLoadFailure.of(error);
         org.telegram.messenger.FileLog.e("topic failed", error);
         if (!bubbles.isEmpty()) {
