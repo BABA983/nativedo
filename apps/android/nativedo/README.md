@@ -57,16 +57,19 @@ strip, from which a tap restores it. Upstream finds all of that through `LaunchA
 client does not have, so `NativeDoHooks.BrowserHost` is the one place those four answers come from:
 `NativeDoActivity` registers it, mirrors `LaunchActivity`'s host wiring (the `BottomSheetTabsOverlay`
 in the content view, a main `ActionBarLayout` that builds the tabs, back closing the open tabs view),
-and yields its own three-tab strip to the browser's while a page is minimized. The browser's own back
+and yields its own four-tab strip to the browser's while a page is minimized. The browser's own back
 and close go through the sheet stack of the layout's sheet fragment, upstream's normal path.
 
 Upstream decides in-app vs outside from `MessagesController.webBrowserSettings`, a Telegram account
 setting fetched from the server; with no account it never arrives, and upstream's default would send
 links to a custom tab or the system browser. This client's default is the in-app browser for every
-`http(s)` URL (`NativeDoHooks.isWebBrowserOpenInApp`), and it is imposed only while the shell hosts
-the app, so a real Telegram host keeps its own setting. One more Telegram-only step is skipped:
-`ArticleViewer`'s `messages.getWebPage` lookup, which cannot be answered without tgnet, so the page
-is loaded directly instead of waiting for it.
+`http(s)` URL (`NativeDoHooks.isWebBrowserOpenInApp`), and the reader can turn it off with 设置 ->
+在应用内打开链接: the choice is stored by `LinkOpenSettings` and handed to the same hook, after which
+upstream's custom-tabs branch takes the link. The choice is imposed only while the shell hosts the
+app, so a real Telegram host keeps its own setting. A link a post points at this site's own topic is
+not a browser matter in either state: `TopicFragment` presents the topic itself. One more
+Telegram-only step is skipped: `ArticleViewer`'s `messages.getWebPage` lookup, which cannot be
+answered without tgnet, so the page is loaded directly instead of waiting for it.
 
 ## How upstream's cells get our data
 
@@ -132,12 +135,22 @@ is loaded directly instead of waiting for it.
   notification was addressed to), the topic in the title, and a tap opens that topic at the
   notification's own floor. The site's topic-less notifications (a badge, likes it consolidated)
   have no destination and their rows are not tappable.
-* **Theme and settings** — upstream's `ThemeActivity` (the appearance page) is the settings entry;
-  `MainTabsLayout` and `GlassTabView` supply the three entries, their selection and gestures, with
-  upstream's blur3 glass background. The host uses `AndroidUtilities.enableEdgeToEdge` and forwards
-  system/IME insets through `DrawerLayoutContainer` and `ActionBarLayout`. Theme changes use the
-  existing local application API (`save=false`), with local preferences and upstream color updates;
-  they never save a theme to a Telegram account.
+* **Theme and settings** — `MainTabsLayout` and `GlassTabView` supply the four entries, their
+  selection and gestures, with upstream's blur3 glass background. The host uses
+  `AndroidUtilities.enableEdgeToEdge` and forwards system/IME insets through `DrawerLayoutContainer`
+  and `ActionBarLayout`. The settings tab itself is upstream's `SettingsActivity` skeleton with our
+  rows: a `UniversalRecyclerView` whose first item is a custom avatar header (`asCustomShadow(topView,
+  200 - 12)`: a 90dp round avatar, the 22sp name and the 13sp `@username`, upstream's own constants),
+  a title that fades in as the header scrolls away, section headers, `SettingCell` rows wearing the
+  `IconBackgroundColors` gradient squares, and a `WebBrowserSettings`-style check row for
+  在应用内打开链接. Upstream's appearance page (`ThemeActivity`) stays the way in to the themes, and
+  theme changes use the existing local application API (`save=false`), with local preferences and
+  upstream color updates; they never save a theme to a Telegram account.
+* **The reader's own tab** — the fourth tab is upstream's avatar tab (`GlassTabView.createAvatar`):
+  the label plus a 22dp round picture where the icon tabs draw their lottie. Telegram builds it from
+  the account's own user; here the picture is the session's `DiscourseAvatars` user (downloaded with
+  the session's cookies, like every other avatar). It hosts `ProfileFragment.forRoot` - the same
+  screen a post's author opens, without the back button, because a root has nothing behind it.
 
 ## Rendering without a device
 
@@ -207,7 +220,8 @@ stands, and the upstream component each row is meant to use.
 - 发新帖：手机键盘压在标题行和输入框上时是否可用，标题的 IME「下一项」是否落到正文，发送箭头的出现是否清楚，以及真站点对过短标题的原文拒绝是否显示出来。
 - 阅读进度与真实站点：读完话题返回后 `/latest.json` 的 `unread_posts` 是否按实际读到的楼层下降，重开话题是否停在离开的楼层；真实停留时间的上报是前台、楼层在视口内、三分钟内有滚动才计时，读完一篇长帖后站点的阅读时长是否与体感一致。
 - 书签：长按菜单的收藏与取消收藏、资料页与设置页的书签列表，在一个已有书签的账号上验证置顶顺序、被删楼层的行、已关闭话题的行。
-- 设置页：外观 / 我的 / 账号三组的行高与间距是否符合上游观感；退出登录的确认框、清 cookie 后回到登录页、再登录回来后话题与通知是否正常。
+- 设置页：外观 / 链接 / 我的 / 账号四组的行高、间距与图标底色是否符合上游观感，滚动后标题淡入是否自然；「在应用内打开链接」打开与关闭两种状态下的行外观；退出登录的确认框、清 cookie 后回到登录页、再登录回来后话题与通知是否正常。
+- 我的 tab：头像 tab 的图标是否认得出来（会话头像、22dp 圆角方形）、四个 tab 的宽度分配是否匀称；自己的资料页作为根没有返回箭头、下拉展开与折叠的手感是否与从帖子打开的作者资料页一致。
 - 通知 tab：没有推送和未读计数时，列表的排序和徽章是否仍然清楚。
 
 ### 帖子链接与内置浏览器（2026-10-04，`emulator-5554`，`nativedo-browser-wave2`）
@@ -244,6 +258,40 @@ stands, and the upstream component each row is meant to use.
   链接仍要到达 `ArticleViewer` sheet 且一次 tgnet 请求都不发。`scripts/vendor-guard.sh --compile` OK（它管旧
   `apps/android/TMessagesProj` 骨架；本片的上游行在 `apps/android/telegram` 下，账记在「The upstream lines」一段）。
 - 证据在 `.amp/in/artifacts/browser-wave2/`。
+
+### 设置页重绘、我的 tab 与「在应用内打开链接」（2026-10-04，`emulator-5554`，`nativedo-settings-tab`）
+
+- 设置页照上游 `SettingsActivity` 的骨架重画：`UniversalRecyclerView` + `UItem.asCustomShadow/Header/Shadow`
+  + `SettingCell`（`SettingCell.Factory`）与 `IconBackgroundColors` 渐变图标格；头部是上游自己的一组常量
+  （120dp 容器、90dp 圆头像、22sp 名称、13sp `@用户名`，`asCustomShadow(topView, 200 - 12)`），
+  列表滚过头像后标题按上游的 `updateActionBarVisible` 淡入。行组改成 外观（主题）→ 链接（在应用内打开链接 + 说明）
+  → 我的（书签）→ 账号（打开验证页、退出登录）。旧「账号」行删除：自己的资料页现在是第四个 tab，设置页头部本身
+  就是账号（决定见报告）。
+- 第四个 tab「我的」= 上游的 avatar tab 形状（`GlassTabView.createAvatar`）：22dp 圆头像画在图标 tab 的 5dp 处，
+  文字「我的」；头像来自 `DiscourseAvatars` 的会话用户，缺缓存时用会话 cookie 下载后回填。点按替换根页面而不是压栈，
+  返回键不会回到设置页；自己的资料页作为根不画返回箭头（`ProfileFragment.forRoot`），帖子作者入口仍以压栈方式打开
+  他人资料页（有返回箭头）。
+- 「在应用内打开链接」= `LinkOpenSettings`（`nativedo_settings` 里的 `open_links_in_app`，默认开）+ 上游已存在的
+  `MessagesController.isWebBrowserOpenInApp` 那一行 `// NativeDo:` 调用（本次没有改签名或调用点）。
+  开：普通外链进 Telegram 内置浏览器；关：同一链接交系统 Chrome 自定义标签页。本站话题链接两种状态下都由
+  `TopicFragment.didPressUrl` 自己打开话题（新行为，替换之前统一交给浏览器）。
+- 设备检查（覆盖安装 `-r -t`，未卸载未清数据，仍登录 @example_user；设置页浅色与夜间都过了）：
+  - 设置页浅色：头像头（example_user/@example_user）、四组行、渐变图标、蓝色勾选行、红色退出登录、底部四格栏（`01-settings-light`、`13-settings-light-restored`）。
+  - 设置页夜间：同一页全部颜色跟随主题，勾选行保持蓝色选中态（`02-settings-dark`、`08-link-off-settings`、`11-link-on`）。
+  - 我的 tab（夜间）：顶部/折叠/下拉（`03`、`04`、`05`）——折叠后名称与 @用户名移进透明动作栏，下拉后头像铺满整宽
+    （站点 720px 头像）、名称画在图片下缘；浅色下的头像 tab 图标与四格栏宽见 `13`。验证后段设备侧会话被并行的
+    cookie 改造置为登出（登录页），浅色的我的 tab 三态没取到，属未验证（会话恢复后补 `14`-`16`）。
+  - 他人资料页：从帖子作者名打开 `momo199412` 的资料页，带返回箭头（`06`）。
+  - 话题链接：内置浏览器开着和关着两种状态，点帖子里的 `https://linux.do/t/topic/2974886` 都原生打开话题
+    「Version 1.0.0 Build 11」（`07`、`09`）。
+  - 普通外链：App Store onebox 在关闭时进系统 Chrome 的自定义标签页（`10`，`ResumedActivity` 为 `com.android.chrome`），
+    打开时进 Telegram 内置浏览器、下滑最小化成底部标签条（`12`）；结束时设置恢复为「开」，主题恢复为浅色。
+- 构建与测试：`:nativedo:assembleDebug -Pandroid.injected.build.abi=arm64-v8a` 通过（本 worktree 缺的原生依赖树
+  按 pin 重新 fetch；arm64 `libtmessages.49.so` 取自同 commit 的 `linuxdo-native-device` worktree 的构建产物，
+  Java/资源/dex/打包本地跑）。`:nativedo:testDebugUnitTest` 31 类 87 项全过（0 失败、0 error、0 skipped）。
+  `scripts/vendor-guard.sh --compile` OK。第一版 APK 有两处设备上才发现的问题（`getTitlesContainer()` 为 null 的
+  崩溃与标题未进容器不会淡出），已修并复验，见 `bb77ac7a`。
+- 证据在 `.amp/in/artifacts/settings-tab/`。
 
 ### 本片验证（2026-10-03，`emulator-5556`）
 
