@@ -327,6 +327,16 @@ internal class UpstreamUiHarness {
     }
 
     /**
+     * The same draw with a bounded drain. A queued frame callback keeps re-posting itself, so
+     * [renderApp]'s unbounded drain runs an animation to its end before drawing; a frame in the
+     * middle of one needs the drain to stop after [maxTasks].
+     */
+    fun renderAppFrame(name: String, maxTasks: Int = 6): File {
+        val contentView = activity.findViewById<ViewGroup>(android.R.id.content)
+        return renderView(contentView, name, maxTasks)
+    }
+
+    /**
      * Lays the activity's content out without drawing it. A list that was handed a new adapter only
      * binds its rows during a layout pass, so waiting for a row to change means laying it out.
      */
@@ -355,7 +365,7 @@ internal class UpstreamUiHarness {
         idle()
     }
 
-    private fun renderView(view: View, name: String): File {
+    private fun renderView(view: View, name: String, maxTasks: Int = 1_000): File {
         val widthSpec = View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY)
         val heightSpec = View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.AT_MOST)
         // Two passes: binding a cell attaches its rich layout, which asks for another measure, and
@@ -363,7 +373,7 @@ internal class UpstreamUiHarness {
         repeat(2) {
             view.measure(widthSpec, heightSpec)
             view.layout(0, 0, view.measuredWidth, view.measuredHeight)
-            idle()
+            idle(maxTasks)
         }
 
         val bitmap = Bitmap.createBitmap(

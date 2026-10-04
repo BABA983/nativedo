@@ -885,11 +885,14 @@ stands, and the upstream component each row is meant to use.
   再做 `createCircularReveal`（400 ms、`Easings.easeInOutQuad`、`（h − pos[1]）/ dp(2.25)` 后放开
   系统栏颜色），`switchingTheme` 在动画结束复位；没有位置的切换（外观页）仍走原来的颜色动画。
 - 上游的动画只清「最后一片之下」的 fragment；首页只有一个 tab 宿主时它什么都不清，页面的视图
-  会把旧主题的颜色留住（设置行、分类条、胶囊都是构造时取色的）。现在宿主单独在栈上时主动
-  `rebuildFragments(REBUILD_FLAG_REBUILD_LAST)`，在揭示下面把整套视图按新色重建。重建不销毁
-  fragment，所以页面与宿主的 message-bus 监听在 `createView` 里先关旧的再挂新的：不这样每次
-  切换会各泄漏一个 collector，`HomeMenuTest` 的第二条用例就是钉这个（去掉注销后它在
-  「旧监听注销」处失败）。
+  会把旧主题的颜色留住（设置行、分类条、胶囊都是构造时取色的）。当时宿主单独在栈上时主动
+  `rebuildFragments(REBUILD_FLAG_REBUILD_LAST)`，在揭示下面把整套视图按新色重建。
+  **2026-10-05 更新**：这次重建已删除——它让分类条消失再出现、feed 重读、选中与滚动位置归零；
+  现在按上游 `getThemeDescriptions()`/`updateColors()` 的路子原地换色（见「分类条：夜间切换不眨眼
+  与切 tab 滑动」一节）。
+  重建不销毁 fragment，所以当时页面与宿主的 message-bus 监听在 `createView` 里先关旧的再挂新的：
+  不这样每次切换会各泄漏一个 collector，`HomeMenuTest` 的第二条用例就是钉这个（去掉注销后它在
+  「旧监听注销」处失败；该用例现在钉「切换不重建视图、也不多发监听」）。
 - 模拟器逐项（截图在 `.amp/in/artifacts/home-menu/`）：`20` 最终包冷启动的栏（搜索、标签、三点
   在最右）；`21` 弹窗三条目与分隔；`25` 最终包的夜间揭示中间帧（黑圆从三点图标处扩起）、`05`／`07`
   两个方向的揭示中间帧与两段录屏；`04`／`22` 夜间主题；`09`／`10-*`／`23` 话题／通知／设置／我的
@@ -938,6 +941,54 @@ stands, and the upstream component each row is meant to use.
 - 待 owner 登录后续做（本轮未验证）：四个 tab 与左右滑动、分类条与搜索框收起／回顶、搜索 pill pager、
   FAB 隐藏、pill 出现／点按、选项菜单日夜切换（结束时回到日间）、话题三玻璃胶囊与壁纸、链接进内置
   浏览器与 BottomSheetTabs、设置页、我的 tab、通知 badge。截图留在 `.amp/in/artifacts/merge-device/`。
+
+### 分类条：夜间切换不眨眼与切 tab 滑动（2026-10-05，`emulator-5554`，`nativedo-strip-anim`，未登录）
+
+- 两个症状、两个根因：
+  1. **夜间切换时分类条消失再出现**：主题处理在「栈上只有 tab 宿主」时主动
+     `rebuildFragments(REBUILD_FLAG_REBUILD_LAST)`（原 `NativeDoActivity.java:426-429`）→
+     `ActionBarLayout.rebuildAllFragmentViews`（3122-3146）`clearViews()` ＋ `showLastFragment()`，
+     宿主连同四个页面整棵重建；`TopicListFragment` 新建时分类条是 `GONE`（`createView` 里
+     `tabsView.setVisibility(GONE)`），要等 `/categories.json` 再答一次、`buildTabs()` 之后才
+     `VISIBLE`（`updateStripVisibility`，1254-1258），同时 feed 重新读、滚动位置归零——这就是
+     「消失再出现」。上游不是这样：`DialogsActivity` 的 `getThemeDescriptions()` 委托里
+     `filterTabsView.updateColors()`（12064），`ActionBarLayout.animateThemedValues` 把这些描述
+     在 reveal 的 instant 分支一次应用，视图原地换色。
+     修复：删掉那次 rebuild。宿主 `NativeDoMainTabsActivity.getThemeDescriptions()`
+     （580-587，仿 `MainTabsActivity:1096-1104` 的 delegate）在 `updateColors()` 里给页面上色；
+     `TopicListFragment` 的全局观察者原地 `updateColors` 分类条/玻璃源/搜索框/搜索页/pill，并像
+     `DialogsActivity` 的 cell delegate（12022-12033）一样重绑当前页挂着的 `DialogCell`
+     （`refreshPageRows` / `bindRow`）；设置、通知、我的三个 root 页各加同类观察者（设置页
+     `listView.adapter.update(false)`，通知与我的 `notifyDataSetChanged`）。全部在揭示快照之下
+     换色，不重建视图，选中 tab 与滚动位置保留。
+  2. **点分类 tab 没有动画**：原来直接 `loadFeed()` 换掉同一份列表。按 `DialogsActivity` 的
+     `viewPages[]` 对重建：`TopicListFragment.ViewPage`（← `DialogsActivity.ViewPage`:360）两页
+     各带自己的 `RecyclerListView`/adapter/scroller/空状态，`CategoryFeed`（items＋authors＋载入
+     状态＋滚动位置）按 tab 缓存；tap 走 `onPageSelected`（上游 3614-3634）→ `selectCategoryTab`
+     把目标页摆到边外，`FilterTabsView` 的 320ms 指示器动画经 `onPageScrolled`（上游 3641-3667）
+     驱动两页平移、到 1 交换；进度公式原样。列表区横滑按 `ContentView` 的触摸处理移植（上游
+     1308-1355、1380-1583）：0.3cm slop、3000 起滑速度、1500 定方向、3500 忽略、1/3 宽回退、
+     150-600ms 时长、五次方缓出插值（730-733），`startedTracking`/`maybeStartTracking`/
+     `animatingForward`/`backAnimation`/`additionalOffset` 同名。`canParentTabsSlide` 按上游
+     13601-13629：条上还有可滑的分类时列表自己处理；首 tab 只把后退、末 tab 只把前进交给 root
+     pager；action bar 上的触摸总是 pager 的。本客户端没有 Telegram 账号、没有 chat swipe 设置
+     可读，横滑分类固定开启（等价于上游 SWIPE_GESTURE_FOLDERS 那一支）。换页时收起数学读
+     `viewPages[0].listView`；每页各自 320ms 的滚动吸附、FAB 隐藏与阴影监听照旧，只是按页持有。
+- 证明：`HomeCategoryPagerTest` 三项钉住「主题切换不重建：同一 fragmentView/strip 实例、选中
+  tab、滚动位置，且不发第二次请求」「切 tab 中两页同时在屏，结束后是新分类的 feed，切回第一页
+  仍是原来的 items 和第一可见行」「首/末 tab 的 root pager 裁决」；`HomeMenuTest` 的原重建断言
+  改成钉「不重建、不重启 message bus、不泄漏监听」。四张 harness 渲染图（浅色、切换后夜间、
+  切 tab 中帧、切完）在 `.amp/in/artifacts/strip-anim/`。
+- 构建与测试：`:nativedo:testDebugUnitTest --quiet` 全量 40 类 131 项 0 失败 0 error 0 skipped
+  （XML 在 `apps/android/nativedo/build/test-results/testDebugUnitTest`）；arm64
+  `:nativedo:assembleDebug -Pandroid.injected.build.abi=arm64-v8a --quiet` 通过，APK SHA-256
+  `029d71874a3ea2996f6e48dbdcc9d2f21c0b5bfc2bee828389acd76cab0ed7bb`，`install -r -t`
+  覆盖安装（未卸载、未清数据），设备拉回的 `base.apk` 与构建产物同 hash，版本 `0.1.0`。
+- **本片设备未验证（harness-only）**：冷启动一次（覆盖安装后）停在「登录 linux.do」的 Cloudflare
+  验证页（`NativeDoSession event=auth_cookie_missing accepted=false`，截图
+  `strip-anim/device/01-cold-start.png`），站点侧会话已登出；按约定没有登录。所以真机上的横滑
+  跟手、圆形揭示下的原地换色、玻璃在滑动中的样子都只有 harness 证据，设备侧没有通过。
+  没有改 `apps/android/telegram` 子树，vendor-guard 不涉及。
 
 ## Switch plan
 

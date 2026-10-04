@@ -156,6 +156,35 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
     private ValueAnimator expandAnimator;
     private final float[] expandAnimatorValues = new float[]{0f, 1f};
     private float currentExpanAnimatorFracture;
+
+    /**
+     * The day/night switch recolours the profile in place (its views are not rebuilt when the tab
+     * host is the only fragment on the stack; see NativeDoActivity's theme handler): the rows are
+     * bound again, and the header's own colours are re-applied at the expansion the reader had.
+     */
+    private final org.telegram.messenger.NotificationCenter.NotificationCenterDelegate themeObserver =
+            (id, account, args) -> {
+                if (id != org.telegram.messenger.NotificationCenter.needSetDayNightTheme) {
+                    return;
+                }
+                if (actionBar != null) {
+                    actionBar.setItemsBackgroundColor(getThemedColor(Theme.key_avatar_actionBarSelectorBlue), false);
+                    actionBar.updateColors();
+                    actionBar.invalidate();
+                }
+                if (avatarContainer != null && listView != null) {
+                    setAvatarExpandProgress(currentExpanAnimatorFracture);
+                }
+                if (listView != null && listView.getAdapter() != null) {
+                    listView.getAdapter().notifyDataSetChanged();
+                }
+                if (topView != null) {
+                    topView.invalidate();
+                }
+                if (frameLayout != null) {
+                    frameLayout.invalidate();
+                }
+            };
     private float currentExpandAnimatorValue;
     private float expandNameYStartedFrom;
     private float expandOnlineYStartedFrom;
@@ -421,7 +450,16 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         fragmentView = frameLayout;
         loadProfile();
         ViewCompat.requestApplyInsets(frameLayout);
+        org.telegram.messenger.NotificationCenter.getGlobalInstance().addObserver(
+                themeObserver, org.telegram.messenger.NotificationCenter.needSetDayNightTheme);
         return fragmentView;
+    }
+
+    @Override
+    public void onFragmentDestroy() {
+        org.telegram.messenger.NotificationCenter.getGlobalInstance().removeObserver(
+                themeObserver, org.telegram.messenger.NotificationCenter.needSetDayNightTheme);
+        super.onFragmentDestroy();
     }
 
     /** The room the list keeps under its last row: the usual list end plus the gesture bar and

@@ -419,14 +419,13 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
             calcInBackgroundEnd.run();
         }
         updateSystemBarColors();
-        // Upstream's animation clears only the fragments below the last, so with just the tab host
-        // on the stack no view is cleared and its pages keep views built with the old theme's
-        // colours. Rebuild the stack here - the same rebuild that already happens when a screen
-        // pushed over the host makes the stack deeper than one - under the reveal.
-        if (actionBarLayout.getFragmentStack().size() == 1
-                && actionBarLayout.getFragmentStack().get(0) instanceof NativeDoMainTabsActivity) {
-            actionBarLayout.rebuildFragments(INavigationLayout.REBUILD_FLAG_REBUILD_LAST);
-        }
+        // Upstream's own theme path recolours in place: the host fragment returns theme
+        // descriptions that reach its pages (ViewPagerActivity.getThemeDescriptions, 241-250),
+        // and each mounted page repaints itself. No view is rebuilt, so the strip, the feed and
+        // the reader's place in it survive the switch - only their colours change under the
+        // reveal. The fragments below a pushed screen are still cleared by upstream's own
+        // animation (ActionBarLayout.animateThemedValues), which is what makes a screen pushed
+        // from the home come back in the new theme.
     }
 
     /**

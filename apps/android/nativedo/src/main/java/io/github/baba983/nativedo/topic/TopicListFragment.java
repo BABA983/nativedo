@@ -10,6 +10,7 @@ import android.graphics.Rect;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
@@ -28,6 +29,7 @@ import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.DialogCell;
 import org.telegram.ui.Components.CubicBezierInterpolator;
+import org.telegram.ui.Components.EmptyTextProgressView;
 import org.telegram.ui.Components.FilterTabsView;
 import org.telegram.ui.Components.FragmentFloatingButton;
 import org.telegram.ui.Components.LayoutHelper;
@@ -109,13 +111,39 @@ public class TopicListFragment extends BaseFragment
     private static final int ANIMATOR_ID_SEARCH_BUTTON_VISIBLE = 5;
 
     private FrameLayout contentStack;
+    /**
+     * DialogsActivity's own pair of pages (500, 4052-4110): the page in front and the one that
+     * slides in. Only these two views move; the feed itself lives in {@link #feedCache}, so a
+     * category that comes back finds its items and the reader's place in them.
+     */
+    private ViewPage[] viewPages;
+    /** DialogsActivity's own tab-slide state and constants (722-737). */
+    private AnimatorSet tabsAnimation;
+    private boolean tabsAnimationInProgress;
+    private boolean animatingForward;
+    private float additionalOffset;
+    private boolean backAnimation;
+    private int maximumVelocity;
+    private boolean startedTracking;
+    private boolean maybeStartTracking;
+    private android.view.VelocityTracker swipeVelocityTracker;
+    /**
+     * DialogsActivity's own page-settle interpolator (730-733): the quintic ease-out the chat
+     * list's filter pages come to rest on.
+     */
+    private static final android.view.animation.Interpolator PAGES_INTERPOLATOR = t -> {
+        --t;
+        return t * t * t * t * t + 1.0F;
+    };
+    /** One feed per category tab, as the reader left it: its items, its place, its state. */
+    private final android.util.SparseArray<CategoryFeed> feedCache = new android.util.SparseArray<>();
     private FilterTabsView tabsView;
     /** The strip's blur source; the recorded content is the list it floats over. */
     private io.github.baba983.nativedo.app.GlassPanelHost glassHost;
     /** DialogsActivity.ContentView's own blurBounds (888) and actionBarDefaultPaint (566). */
     private final Rect blurBounds = new Rect();
     private final Paint actionBarDefaultPaint = new Paint();
-    /** The day/night switch rebuilds the strip's own colours and the blur source's. */
+    /** The day/night switch recolours the strip, the blur source and the rows in place. */
     private final org.telegram.messenger.NotificationCenter.NotificationCenterDelegate themeObserver =
             (id, account, args) -> {
                 if (id != org.telegram.messenger.NotificationCenter.needSetDayNightTheme) {
@@ -133,6 +161,16 @@ public class TopicListFragment extends BaseFragment
                 if (this.searchPanel != null) {
                     this.searchPanel.updateColors();
                 }
+                if (this.newTopicsPill != null) {
+                    this.newTopicsPill.updateColors();
+                }
+                // DialogsActivity's theme delegate rebinds its attached DialogCells
+                // (12022-12033); the same rows live here, so the same rebind.
+                if (viewPages != null) {
+                    for (ViewPage page : viewPages) {
+                        refreshPageRows(page);
+                    }
+                }
                 actionBarDefaultPaint.setColor(getThemedColor(Theme.key_windowBackgroundWhite));
                 if (this.actionBar != null) {
                     this.actionBar.updateColors();
@@ -149,6 +187,7 @@ public class TopicListFragment extends BaseFragment
     private org.telegram.ui.ActionBar.ActionBarMenuItem optionsItem;
     /** The bar's search icon, shown while the field is collapsed (checkUi_itemSearchVisibility, 14119). */
     private org.telegram.ui.ActionBar.ActionBarMenuItem searchBarItem;
+    /** The page in front's list; the working alias of {@code viewPages[0].listView}. */
     private RecyclerListView listView;
     /**
      * The "N new topics" pill: upstream's own rounded action control
@@ -163,11 +202,6 @@ public class TopicListFragment extends BaseFragment
     /** Whether the pill is on screen, so the list can start below it instead of under it. */
     private boolean newTopicsPillShown;
     /**
-     * DialogsActivity's own list scroller (4066): the snap of a half-collapsed panel on scroll
-     * stop rides the list with it (checkAutoscrollToStories, 5760-5808).
-     */
-    private RecyclerListViewScroller scroller;
-    /**
      * DialogsActivity's scrollYOffset (345): how far the top panel is collapsed, in [-48dp, 0].
      * The list's own position is what sets it (ContentView.dispatchDraw, 957-1006).
      */
@@ -180,8 +214,6 @@ public class TopicListFragment extends BaseFragment
     /** DialogsActivity's animatorSearchButtonVisible (317, 14054): the bar's search icon's factor. */
     private final BoolAnimator animatorSearchButtonVisible = new BoolAnimator(ANIMATOR_ID_SEARCH_BUTTON_VISIBLE,
             this, CubicBezierInterpolator.EASE_OUT_QUINT, 350);
-    /** What is shown instead of the list when the feed could not be read. */
-    private org.telegram.ui.Components.EmptyTextProgressView emptyView;
     /** Upstream's own search field, the one 12.10.5's chat list shows instead of a bar icon. */
     private org.telegram.ui.Components.FragmentSearchField searchField;
     /** The search pager's home; the pager itself is built on the first search. */
@@ -194,9 +226,6 @@ public class TopicListFragment extends BaseFragment
     private android.animation.AnimatorSet searchAnimator;
     /** Whether the site answered any categories, so the strip has tabs to show. */
     private boolean stripHasTabs;
-    private final List<TopicSummary> topics = new ArrayList<>();
-    /** One author per row, kept so the avatar download can refresh the row it belongs to. */
-    private final List<TLRPC.User> authors = new ArrayList<>();
     /** The site's top-level categories, in its own order; a subcategory is not a tab of its own. */
     private final List<CategorySummary> categories = new ArrayList<>();
     /** The site's tags, in its own order, read once for the tag dialog. */
@@ -204,10 +233,8 @@ public class TopicListFragment extends BaseFragment
     /** The tag the list is filtered by, or null while it is not filtered by one. */
     private Tag selectedTag;
     private AppContainer container;
-    /** The tab whose feed the list currently shows, so a re-selection is not a reload. */
+    /** The tab whose feed the page in front shows, so a re-selection is not a reload. */
     private int selectedTabId = ALL_TAB_ID;
-    /** Set once a feed has arrived, so coming back to the screen reloads rather than double-loads. */
-    private boolean feedLoaded;
 
     /** Whether the screen is a page of the tab host, which adds the strip's height to the insets. */
     private boolean hasMainTabs;
@@ -277,124 +304,27 @@ public class TopicListFragment extends BaseFragment
         // there (DialogsActivity lays its children against actionBar.getMeasuredHeight(), 1148).
         final int barHeight = ActionBar.getCurrentActionBarHeight() + AndroidUtilities.statusBarHeight;
         final int searchFieldHeight = AndroidUtilities.dp(org.telegram.ui.DialogsActivity.SEARCH_FIELD_HEIGHT);
+        // DialogsActivity reads its fling ceiling off the ViewConfiguration (3208); the settle of
+        // a category swipe does the same.
+        maximumVelocity = android.view.ViewConfiguration.get(context).getScaledMaximumFlingVelocity();
 
-        listView = new RecyclerListView(context);
-        listView.setLayoutManager(new LinearLayoutManager(context) {
-            private boolean lastDragging;
+        // The two pages the list slides between (DialogsActivity's own pair, 4052-4110): each
+        // carries its own list, its own adapter and its own empty state; the feed cache behind
+        // them keeps every category's items and the reader's place in them.
+        contentStack = new FrameLayout(context);
+        viewPages = new ViewPage[2];
+        for (int index = 0; index < viewPages.length; index++) {
+            viewPages[index] = createViewPage(context);
+            contentStack.addView(viewPages[index], LayoutHelper.createFrame(
+                    LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+            viewPages[index].setVisibility(index == 0 ? View.VISIBLE : View.GONE);
+        }
+        selectCurrentPage(viewPages[0]);
+        viewPages[1].selectedType = viewPages[0].selectedType;
 
-            /**
-             * DialogsActivity's own layout manager (4149-4160): when the finger comes up, a
-             * partly collapsed panel either snaps open or away, or the fling is let through.
-             */
-            @Override
-            public int scrollVerticallyBy(int dy, RecyclerView.Recycler recycler, RecyclerView.State state) {
-                boolean isDragging = listView.getScrollState() == RecyclerView.SCROLL_STATE_DRAGGING;
-                if (isDragging != lastDragging) {
-                    lastDragging = isDragging;
-                    if (!isDragging) {
-                        if (checkAutoscrollToStories()) {
-                            return 0;
-                        }
-                    }
-                }
-                return super.scrollVerticallyBy(dy, recycler, state);
-            }
-        });
-        listView.setAdapter(new TopicListAdapter());
-        listView.setVerticalScrollBarEnabled(false);
-        // The list keeps the bar, the field and the strip as padding, the way DialogsActivity's
-        // own list does (2065-2095): the first row starts under the strip and the rows scroll
-        // beneath it. checkUi_listPadding() owns the whole padding - it adds the pill's own slot
-        // while the pill is up and the navigation-bar/strip space at the bottom, so the last row
-        // stays reachable above the glass tabs.
-        listView.setClipToPadding(false);
-        checkUi_listPadding();
-        listView.setOnItemClickListener((view, position) -> {
-            TopicSummary topic = topics.get(position);
-            presentTopic(topic);
-        });
-        // DialogsActivity's own scroller (4066), which the snap rides the list with.
-        scroller = new RecyclerListViewScroller(listView);
-        // DialogsActivity's list listener (4470-4610): the floating button leaves while the reader
-        // scrolls down and comes back when they scroll up, the top panel follows the same scroll,
-        // and a stopped scroll snaps a half-collapsed panel.
-        listView.addOnScrollListener(new RecyclerView.OnScrollListener() {
-            private int prevPosition;
-            private int prevTop;
-            private boolean scrollUpdated;
-            private boolean scrollingManually;
-
-            @Override
-            public void onScrollStateChanged(RecyclerView recyclerView, int newState) {
-                scrollingManually = newState == RecyclerView.SCROLL_STATE_DRAGGING;
-                if (newState == RecyclerView.SCROLL_STATE_DRAGGING) {
-                    // DialogsActivity's own listener (4475-4479): a drag takes the keyboard away
-                    // from an empty field, so it cannot sit over the list it is scrolling.
-                    if (searchField != null && searchField.editText.getText().length() == 0
-                            && searchField.editText.hasFocus()) {
-                        AndroidUtilities.hideKeyboard(searchField.editText);
-                        searchField.editText.clearFocus();
-                    }
-                }
-                if (newState == RecyclerView.SCROLL_STATE_IDLE) {
-                    // DialogsActivity's list listener (4505-4506): the snap of the panel's own
-                    // half-open state.
-                    checkAutoscrollToStories();
-                }
-            }
-
-            @Override
-            public void onScrolled(RecyclerView recyclerView, int dx, int dy) {
-                // DialogsActivity's onScrolled (4522-4524): the draw pass recomputes the top
-                // panel's offset from the list's own position, and the frame is the view whose
-                // draw pass that is - a child's own scroll does not redraw it.
-                invalidateScrollY = true;
-                if (fragmentView != null) {
-                    fragmentView.invalidate();
-                }
-                int firstVisiblePosition = RecyclerView.NO_POSITION;
-                int firstViewTop = 0;
-                if (recyclerView.getChildCount() > 0) {
-                    firstVisiblePosition = ((LinearLayoutManager) recyclerView.getLayoutManager())
-                            .findFirstVisibleItemPosition();
-                    if (firstVisiblePosition != RecyclerView.NO_POSITION) {
-                        RecyclerView.ViewHolder holder =
-                                recyclerView.findViewHolderForAdapterPosition(firstVisiblePosition);
-                        firstViewTop = holder != null ? holder.itemView.getTop() : 0;
-                    }
-                }
-                if (firstVisiblePosition != RecyclerView.NO_POSITION && startTopicButton != null) {
-                    boolean goingDown;
-                    boolean changed = true;
-                    if (prevPosition == firstVisiblePosition) {
-                        final int topDelta = prevTop - firstViewTop;
-                        goingDown = firstViewTop < prevTop;
-                        changed = Math.abs(topDelta) > 1;
-                    } else {
-                        goingDown = firstVisiblePosition > prevPosition;
-                    }
-                    if (changed && scrollUpdated && (goingDown || scrollingManually)) {
-                        startTopicButton.setButtonVisible(!goingDown, true);
-                    }
-                    prevPosition = firstVisiblePosition;
-                    prevTop = firstViewTop;
-                    scrollUpdated = true;
-                    // DialogsActivity's onScrolled (4605-4606): the header's shadow is up while a
-                    // row has gone under the header's lower edge.
-                    final boolean shadowVisible = !(firstVisiblePosition <= 0
-                            && (firstViewTop - scrollYOffset + AndroidUtilities.dp(5)) >= listView.getPaddingTop());
-                    animatorShadowVisible.setValue(shadowVisible, true);
-                }
-            }
-        });
-
-        // The frame, and the list side on its own: the list is what leaves while search is open
+        // The frame, and the pages on their own: the pair is what leaves while search is open
         // (showSearch's viewPages[0] animators) and it is what the panels' blur source records.
         ContentView frame = new ContentView(context);
-
-        contentStack = new FrameLayout(context);
-        contentStack.addView(listView, LayoutHelper.createFrame(
-                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
         frame.addView(contentStack, LayoutHelper.createFrame(
                 LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
 
@@ -419,7 +349,8 @@ public class TopicListFragment extends BaseFragment
         // The strip is the floating glass capsule 12.10.5 presents its own filter tabs as:
         // DialogsActivity gives it the top panel's blur background, radius 18, padding 6.666, a
         // 7dp inner padding and 4dp side margins (5151-5155), over a list that scrolls under it.
-        glassHost = new io.github.baba983.nativedo.app.GlassPanelHost(listView, frame);
+        // The source records the page pair, so a slide between categories is under the glass too.
+        glassHost = new io.github.baba983.nativedo.app.GlassPanelHost(contentStack, frame);
         tabsView.setPadding(0, AndroidUtilities.dp(7), 0, AndroidUtilities.dp(7));
         BlurredBackgroundDrawable stripBackground = glassHost.createPanel(
                 tabsView, BlurredBackgroundProviderImpl.topPanel(resourceProvider));
@@ -499,17 +430,9 @@ public class TopicListFragment extends BaseFragment
                 LayoutHelper.MATCH_PARENT, org.telegram.ui.DialogsActivity.SEARCH_FIELD_HEIGHT,
                 Gravity.TOP, AndroidUtilities.dp(7), barHeight + AndroidUtilities.dp(2),
                 AndroidUtilities.dp(7), 0));
-        // A fetch that failed leaves the list empty, which reads the same as a site with nothing to
-        // show. This says which it was, and a tap on it asks the site again.
-        emptyView = new org.telegram.ui.Components.EmptyTextProgressView(context);
-        emptyView.setText(context.getString(R.string.topic_list_failed));
-        emptyView.showTextView();
-        emptyView.setVisibility(View.GONE);
-        // The view consumes touches in its own constructor; the tap that retries has to get through.
-        emptyView.setOnTouchListener(null);
-        emptyView.setOnClickListener(view -> loadFeed());
-        frame.addView(emptyView, LayoutHelper.createFrame(
-                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP));
+        // A fetch that failed leaves a page's list empty, which reads the same as a site with
+        // nothing to show. Each page carries its own state view (EmptyTextProgressView, built
+        // with the page) that says which it is, and a tap on it asks the site again.
         startTopicButton = new FragmentFloatingButton(context, resourceProvider);
         startTopicButton.setImageResource(org.telegram.messenger.R.drawable.filled_fab_compose_32);
         startTopicButton.setContentDescription("发新帖");
@@ -530,10 +453,9 @@ public class TopicListFragment extends BaseFragment
         ViewCompat.setOnApplyWindowInsetsListener(fragmentView, this::onInsetsInternal);
         actionBar.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> checkUi_contentTop());
         container = NativeDo.container(getParentActivity());
-        // A theme switch rebuilds the page's views without destroying the fragment (upstream's
-        // animation clears the views of the fragments below the last), so a second createView has
-        // to let go of the previous view's listener: otherwise every switch leaves a collector
-        // holding a dead view.
+        // A theme switch that happens while a screen is pushed over this one clears the views
+        // below (upstream's own animation), so a second createView has to let go of the previous
+        // view's listener: otherwise every switch leaves a collector holding a dead view.
         if (incomingTopicsObserver != null) {
             incomingTopicsObserver.close();
             incomingTopicsObserver = null;
@@ -552,10 +474,427 @@ public class TopicListFragment extends BaseFragment
         checkUi_contentTop();
         checkUi_floatingButton();
         updateTagActions();
-        loadFeed();
+        // The page in front reads its category; the pair starts on the all-topics tab.
+        preparePage(viewPages[0], viewPages[0].selectedType, false);
         loadCategories();
         loadTags();
         return fragmentView;
+    }
+
+    /**
+     * One of the pair of pages the category list slides between, shaped after upstream's
+     * {@code DialogsActivity.ViewPage} (360): its own list, its own scroller, its own state.
+     */
+    public class ViewPage extends FrameLayout {
+
+        public RecyclerListView listView;
+        public LinearLayoutManager layoutManager;
+        public RecyclerListViewScroller scroller;
+        public EmptyTextProgressView emptyView;
+        public TopicListAdapter adapter;
+        /** The tab whose feed this page shows (DialogsActivity's own selectedType). */
+        public int selectedType = ALL_TAB_ID;
+        /** The feed in front of this page, out of {@link #feedCache}. */
+        public CategoryFeed feed;
+
+        public ViewPage(Context context) {
+            super(context);
+        }
+    }
+
+    /** One category's feed as the reader left it: its items, its place, its loading state. */
+    private static class CategoryFeed {
+
+        final int tabId;
+        final List<TopicSummary> topics = new ArrayList<>();
+        /** One author per row, kept so the avatar download can refresh the row it belongs to. */
+        final List<TLRPC.User> authors = new ArrayList<>();
+        boolean loaded;
+        boolean loading;
+        boolean failed;
+        /** Where the reader was: the first visible row and its offset under the list's top. */
+        int scrollPosition;
+        int scrollOffset;
+        /** Bumped by every read, so an answer for a feed that moved on is dropped. */
+        int generation;
+
+        CategoryFeed(int tabId) {
+            this.tabId = tabId;
+        }
+    }
+
+    /**
+     * One page and everything it owns, built the way upstream builds each {@code ViewPage}
+     * (4052-4110, its list listener at 4470-4610): list, layout manager, scroller, row adapter,
+     * and the state view that stands in while its feed is being read or could not be read.
+     */
+    private ViewPage createViewPage(Context context) {
+        final ViewPage page = new ViewPage(context);
+        page.adapter = new TopicListAdapter(page);
+        page.listView = new RecyclerListView(context);
+        page.listView.setLayoutManager(page.layoutManager = new LinearLayoutManager(context) {
+            private boolean lastDragging;
+
+            /**
+             * DialogsActivity's own layout manager (4149-4160): when the finger comes up, a
+             * partly collapsed panel either snaps open or away, or the fling is let through.
+             */
+            @Override
+            public int scrollVerticallyBy(int dy, RecyclerView.Recycler recycler, RecyclerView.State state) {
+                boolean isDragging = page.listView.getScrollState() == RecyclerView.SCROLL_STATE_DRAGGING;
+                if (isDragging != lastDragging) {
+                    lastDragging = isDragging;
+                    if (!isDragging) {
+                        if (checkAutoscrollToStories(page)) {
+                            return 0;
+                        }
+                    }
+                }
+                return super.scrollVerticallyBy(dy, recycler, state);
+            }
+        });
+        page.listView.setAdapter(page.adapter);
+        page.listView.setVerticalScrollBarEnabled(false);
+        // The list keeps the bar, the field and the strip as padding, the way DialogsActivity's
+        // own list does (2065-2095): the first row starts under the strip and the rows scroll
+        // beneath it. checkUi_listPadding(page) owns the whole padding - it adds the pill's own
+        // slot while the pill is up and the navigation-bar/strip space at the bottom, so the last
+        // row stays reachable above the glass tabs.
+        page.listView.setClipToPadding(false);
+        checkUi_listPadding(page);
+        page.listView.setOnItemClickListener((view, position) -> {
+            if (page.feed != null && position >= 0 && position < page.feed.topics.size()) {
+                presentTopic(page.feed.topics.get(position));
+            }
+        });
+        // DialogsActivity's own scroller (4066), which the snap rides the list with.
+        page.scroller = new RecyclerListViewScroller(page.listView);
+        // DialogsActivity's list listener (4470-4610): the floating button leaves while the reader
+        // scrolls down and comes back when they scroll up, the top panel follows the same scroll,
+        // and a stopped scroll snaps a half-collapsed panel.
+        page.listView.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            private int prevPosition;
+            private int prevTop;
+            private boolean scrollUpdated;
+            private boolean scrollingManually;
+
+            @Override
+            public void onScrollStateChanged(RecyclerView recyclerView, int newState) {
+                if (page != currentPage()) {
+                    // The incoming page is only moving because the finger is; the snap and the
+                    // floating button belong to the page the reader is leaving.
+                    return;
+                }
+                scrollingManually = newState == RecyclerView.SCROLL_STATE_DRAGGING;
+                if (newState == RecyclerView.SCROLL_STATE_DRAGGING) {
+                    // DialogsActivity's own listener (4475-4479): a drag takes the keyboard away
+                    // from an empty field, so it cannot sit over the list it is scrolling.
+                    if (searchField != null && searchField.editText.getText().length() == 0
+                            && searchField.editText.hasFocus()) {
+                        AndroidUtilities.hideKeyboard(searchField.editText);
+                        searchField.editText.clearFocus();
+                    }
+                }
+                if (newState == RecyclerView.SCROLL_STATE_IDLE) {
+                    // DialogsActivity's list listener (4505-4506): the snap of the panel's own
+                    // half-open state.
+                    checkAutoscrollToStories(page);
+                }
+            }
+
+            @Override
+            public void onScrolled(RecyclerView recyclerView, int dx, int dy) {
+                // DialogsActivity's onScrolled (4522-4524): the draw pass recomputes the top
+                // panel's offset from the list's own position, and the frame is the view whose
+                // draw pass that is - a child's own scroll does not redraw it.
+                invalidateScrollY = true;
+                if (fragmentView != null) {
+                    fragmentView.invalidate();
+                }
+                int firstVisiblePosition = RecyclerView.NO_POSITION;
+                int firstViewTop = 0;
+                if (recyclerView.getChildCount() > 0) {
+                    firstVisiblePosition = ((LinearLayoutManager) recyclerView.getLayoutManager())
+                            .findFirstVisibleItemPosition();
+                    if (firstVisiblePosition != RecyclerView.NO_POSITION) {
+                        RecyclerView.ViewHolder holder =
+                                recyclerView.findViewHolderForAdapterPosition(firstVisiblePosition);
+                        firstViewTop = holder != null ? holder.itemView.getTop() : 0;
+                    }
+                }
+                if (firstVisiblePosition != RecyclerView.NO_POSITION && startTopicButton != null) {
+                    boolean goingDown;
+                    boolean changed = true;
+                    if (prevPosition == firstVisiblePosition) {
+                        final int topDelta = prevTop - firstViewTop;
+                        goingDown = firstViewTop < prevTop;
+                        changed = Math.abs(topDelta) > 1;
+                    } else {
+                        goingDown = firstVisiblePosition > prevPosition;
+                    }
+                    if (changed && scrollUpdated && (goingDown || scrollingManually)) {
+                        startTopicButton.setButtonVisible(!goingDown, true);
+                    }
+                    prevPosition = firstVisiblePosition;
+                    prevTop = firstViewTop;
+                    scrollUpdated = true;
+                    // DialogsActivity's onScrolled (4605-4606): the header's shadow is up while a
+                    // row has gone under the header's lower edge.
+                    final boolean shadowVisible = !(firstVisiblePosition <= 0
+                            && (firstViewTop - scrollYOffset + AndroidUtilities.dp(5)) >= page.listView.getPaddingTop());
+                    animatorShadowVisible.setValue(shadowVisible, true);
+                }
+            }
+        });
+        // The page's own state: the spinner while its feed is being read, the failure text with a
+        // tap that asks the site again.
+        page.emptyView = new EmptyTextProgressView(context);
+        page.emptyView.setVisibility(View.GONE);
+        // The view consumes touches in its own constructor; the tap that retries has to get through.
+        page.emptyView.setOnTouchListener(null);
+        page.emptyView.setOnClickListener(view -> {
+            if (page.feed != null) {
+                page.feed.failed = false;
+                requestFeed(page, page.feed, false);
+            }
+        });
+        page.addView(page.listView, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        page.addView(page.emptyView, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP));
+        return page;
+    }
+
+    /** The page in front; the pair's other page is the one a slide is bringing in. */
+    private ViewPage currentPage() {
+        return viewPages == null || viewPages.length == 0 ? null : viewPages[0];
+    }
+
+    /** The front page changed: the alias the rest of the screen reads and the tab follow it. */
+    private void selectCurrentPage(ViewPage page) {
+        viewPages[0] = page;
+        listView = page.listView;
+        selectedTabId = page.selectedType;
+    }
+
+    private CategoryFeed feedFor(int tabId) {
+        CategoryFeed feed = feedCache.get(tabId);
+        if (feed == null) {
+            feed = new CategoryFeed(tabId);
+            feedCache.put(tabId, feed);
+        }
+        return feed;
+    }
+
+    /**
+     * Binds {@code page} to the tab's feed - its items and its state - and starts the read when
+     * the feed has none yet. {@code restoreScroll} is for a page that is arriving: it goes back
+     * to where the reader was in that category, which is what coming back means.
+     */
+    private void preparePage(ViewPage page, int tabId, boolean restoreScroll) {
+        final CategoryFeed feed = feedFor(tabId);
+        page.selectedType = tabId;
+        page.feed = feed;
+        page.adapter.notifyDataSetChanged();
+        if (restoreScroll) {
+            page.layoutManager.scrollToPositionWithOffset(feed.scrollPosition, feed.scrollOffset);
+        }
+        updatePageState(page);
+        if (!feed.loaded && !feed.loading && !feed.failed) {
+            requestFeed(page, feed, false);
+        }
+    }
+
+    /**
+     * Reads {@code feed} from the site. The page that asked may not be the one showing the feed
+     * when the site answers - a slide can move on first - so the answer is written into the feed
+     * and the page is bound again only if it still shows that feed.
+     */
+    private void requestFeed(ViewPage page, CategoryFeed feed, boolean clearIncomingWhenLoaded) {
+        final int generation = ++feed.generation;
+        feed.loading = true;
+        feed.failed = false;
+        updatePageState(page);
+        container = NativeDo.container(getParentActivity());
+        DiscourseLoader.INSTANCE.feed(container, categoryOf(feed.tabId), selectedTag,
+                loaded -> {
+                    if (feed.generation != generation) {
+                        return kotlin.Unit.INSTANCE;
+                    }
+                    feed.loading = false;
+                    feed.loaded = true;
+                    feed.failed = false;
+                    feed.topics.clear();
+                    feed.topics.addAll(loaded);
+                    feed.authors.clear();
+                    for (TopicSummary topic : loaded) {
+                        // The site has caught up with a topic this device had only reported: the
+                        // feed is the only thing the row is drawn from again.
+                        TopicReadMarks.INSTANCE.siteAgrees(topic.getId(), topic.getUnreadCount());
+                    }
+                    for (TopicSummary topic : loaded) {
+                        feed.authors.add(DiscourseRows.topicAuthor(topic, container.getBaseUrl()));
+                    }
+                    if (page.feed == feed) {
+                        page.adapter.notifyDataSetChanged();
+                        updatePageState(page);
+                    }
+                    // A new feed is a new list: the header's offset is read from what the list
+                    // now holds.
+                    invalidateScrollY = true;
+                    if (fragmentView != null) {
+                        fragmentView.invalidate();
+                    }
+                    fetchAvatars(feed);
+                    // A refresh the reader asked for (the screen came back to the front) makes
+                    // the listed topics the new baseline: what the pill counted has been shown.
+                    // A filter change does not.
+                    if (clearIncomingWhenLoaded && container != null) {
+                        container.getMessageBusSession().clearIncomingTopics();
+                    }
+                    return kotlin.Unit.INSTANCE;
+                },
+                error -> {
+                    if (feed.generation != generation) {
+                        return kotlin.Unit.INSTANCE;
+                    }
+                    feed.loading = false;
+                    feed.failed = true;
+                    FileLog.e("topic list failed", error);
+                    if (page.feed == feed) {
+                        updatePageState(page);
+                    }
+                    return kotlin.Unit.INSTANCE;
+                });
+    }
+
+    /** Re-reads the page in front's feed, the way {@code onParentBecameVisible} asks. */
+    private void refreshCurrentFeed(boolean clearIncomingWhenLoaded) {
+        final ViewPage page = currentPage();
+        if (page == null || page.feed == null) {
+            return;
+        }
+        requestFeed(page, page.feed, clearIncomingWhenLoaded);
+    }
+
+    /** Keeps where the reader is in the page's feed, so coming back finds them there. */
+    private void savePageScroll(ViewPage page) {
+        if (page == null || page.feed == null || page.listView == null || page.layoutManager == null) {
+            return;
+        }
+        final int position = page.layoutManager.findFirstVisibleItemPosition();
+        if (position == RecyclerView.NO_POSITION) {
+            return;
+        }
+        page.feed.scrollPosition = position;
+        final View first = page.layoutManager.findViewByPosition(position);
+        page.feed.scrollOffset = first == null ? 0 : first.getTop() - page.listView.getPaddingTop();
+    }
+
+    /** The state a page draws while its feed is not in: the spinner, the failure, or nothing. */
+    private void updatePageState(ViewPage page) {
+        if (page == null || page.emptyView == null || page.feed == null) {
+            return;
+        }
+        final CategoryFeed feed = page.feed;
+        if (feed.loaded) {
+            page.emptyView.setVisibility(View.GONE);
+            return;
+        }
+        page.emptyView.setVisibility(View.VISIBLE);
+        if (feed.failed) {
+            page.emptyView.setText(org.telegram.messenger.ApplicationLoader.applicationContext.getString(
+                    R.string.topic_list_failed));
+            page.emptyView.showTextView();
+        } else {
+            page.emptyView.showProgress();
+        }
+    }
+
+    /**
+     * Re-binds a page's attached rows, the way DialogsActivity's theme delegate does with its
+     * own {@code DialogCell}s (12022-12033): the day/night switch recolours rows in place
+     * instead of the views being built again.
+     */
+    private void refreshPageRows(ViewPage page) {
+        if (page == null || page.listView == null) {
+            return;
+        }
+        for (int index = 0; index < page.listView.getChildCount(); index++) {
+            final View child = page.listView.getChildAt(index);
+            if (child instanceof DialogCell) {
+                final int position = page.listView.getChildAdapterPosition(child);
+                if (position != RecyclerView.NO_POSITION) {
+                    bindRow((DialogCell) child, page, position);
+                }
+            }
+        }
+    }
+
+    /** One row of a page, bound from that page's feed: what the adapter and the theme both use. */
+    private void bindRow(DialogCell cell, ViewPage page, int position) {
+        if (page.feed == null || position < 0 || position >= page.feed.topics.size()) {
+            return;
+        }
+        final TopicSummary topic = page.feed.topics.get(position);
+        cell.setDialog(DiscourseRows.topicRow(topic, TopicReadMarks.INSTANCE.isReadInFull(topic.getId())));
+        // `setDialog` clears the row's avatar receiver, so the author's photo goes in after it.
+        // The initials stay as the placeholder until the photo is on disk.
+        final ImageLocation avatar = position < page.feed.authors.size()
+                ? DiscourseAvatars.INSTANCE.imageLocation(page.feed.authors.get(position))
+                : null;
+        if (avatar != null) {
+            // The row's own drawable (the initials) stays as the placeholder: `setDialog` put it
+            // there, and passing it back is what upstream does when it sets a real avatar.
+            cell.avatarImage.setImage(
+                    avatar, "50_50", cell.avatarImage.getDrawable(), null,
+                    page.feed.authors.get(position), 0);
+        }
+    }
+
+    /** The tag filter moved: every cached feed is a different list now. */
+    private void invalidateFeeds() {
+        for (int index = 0; index < feedCache.size(); index++) {
+            final CategoryFeed feed = feedCache.valueAt(index);
+            feed.generation++;
+            feed.loaded = false;
+            feed.loading = false;
+            feed.failed = false;
+            feed.topics.clear();
+            feed.authors.clear();
+            feed.scrollPosition = 0;
+            feed.scrollOffset = 0;
+        }
+    }
+
+    /** The rows of the page in front; the render harness reads what a row would draw from them. */
+    java.util.List<TopicSummary> rows() {
+        final ViewPage page = currentPage();
+        return page == null || page.feed == null ? java.util.Collections.emptyList() : page.feed.topics;
+    }
+
+    /** The rows draw the author's initials until the avatar lands, then ask to be re-bound. */
+    private void fetchAvatars(CategoryFeed feed) {
+        for (int index = 0; index < feed.authors.size(); index++) {
+            final TLRPC.User author = feed.authors.get(index);
+            final int row = index;
+            String template = index < feed.topics.size() ? feed.topics.get(index).getAuthorAvatarTemplate() : null;
+            String url = template == null ? null : DiscourseAvatars.INSTANCE.url(
+                    template, container.getBaseUrl(), DiscourseAvatars.DEFAULT_SIZE);
+            if (url == null || DiscourseAvatars.INSTANCE.isCached(author)) {
+                continue;
+            }
+            DiscourseLoader.INSTANCE.cacheAvatar(container, url, author, () -> {
+                if (viewPages != null) {
+                    for (ViewPage bound : viewPages) {
+                        if (bound.feed == feed && bound.adapter != null) {
+                            bound.adapter.notifyItemChanged(row);
+                        }
+                    }
+                }
+                return kotlin.Unit.INSTANCE;
+            });
+        }
     }
 
     /**
@@ -579,6 +918,295 @@ public class TopicListFragment extends BaseFragment
         /** DialogsActivity.ContentView.getActionBarTop (879-886): the header's own top edge. */
         public int getActionBarTop() {
             return (int) (scrollYOffset * (1f - searchAnimationProgress));
+        }
+
+        /* DialogsActivity.ContentView's own tab swipe (1308-1355, 1380-1580): a horizontal drag
+         * on the list side moves between the category pages, the strip's indicator following the
+         * finger, and the pair settling on the page the gesture pointed at. */
+
+        private int startedTrackingPointerId;
+        private int startedTrackingX;
+        private int startedTrackingY;
+        private android.view.VelocityTracker velocityTracker;
+
+        /**
+         * DialogsActivity.ContentView.prepareForMoving (797-825): the incoming page is pointed at
+         * the neighbour in that direction and put off the edge the drag is coming from.
+         */
+        private boolean prepareForMoving(MotionEvent ev, boolean forward) {
+            int id = tabsView.getNextPageId(forward);
+            if (id < 0) {
+                return false;
+            }
+            getParent().requestDisallowInterceptTouchEvent(true);
+            maybeStartTracking = false;
+            startedTracking = true;
+            startedTrackingX = (int) (ev.getX() + additionalOffset);
+            actionBar.setEnabled(false);
+            tabsView.setEnabled(false);
+            viewPages[1].selectedType = id;
+            preparePage(viewPages[1], id, true);
+            viewPages[1].setVisibility(View.VISIBLE);
+            animatingForward = forward;
+            if (forward) {
+                viewPages[1].setTranslationX(viewPages[0].getMeasuredWidth());
+            } else {
+                viewPages[1].setTranslationX(-viewPages[0].getMeasuredWidth());
+            }
+            return true;
+        }
+
+        /** DialogsActivity.ContentView.checkTabsAnimationInProgress (827-856), scrollbars aside. */
+        public boolean checkTabsAnimationInProgress() {
+            if (tabsAnimationInProgress) {
+                boolean cancel = false;
+                if (backAnimation) {
+                    if (Math.abs(viewPages[0].getTranslationX()) < 1) {
+                        viewPages[0].setTranslationX(0);
+                        viewPages[1].setTranslationX(viewPages[0].getMeasuredWidth() * (animatingForward ? 1 : -1));
+                        cancel = true;
+                    }
+                } else if (Math.abs(viewPages[1].getTranslationX()) < 1) {
+                    viewPages[0].setTranslationX(viewPages[0].getMeasuredWidth() * (animatingForward ? -1 : 1));
+                    viewPages[1].setTranslationX(0);
+                    cancel = true;
+                }
+                if (cancel) {
+                    if (tabsAnimation != null) {
+                        tabsAnimation.cancel();
+                        tabsAnimation = null;
+                    }
+                    tabsAnimationInProgress = false;
+                }
+                return tabsAnimationInProgress;
+            }
+            return false;
+        }
+
+        @Override
+        public boolean onInterceptTouchEvent(MotionEvent ev) {
+            return checkTabsAnimationInProgress()
+                    || tabsView != null && tabsView.isAnimatingIndicator()
+                    || onTouchEvent(ev);
+        }
+
+        @Override
+        public void requestDisallowInterceptTouchEvent(boolean disallowIntercept) {
+            if (maybeStartTracking && !startedTracking) {
+                onTouchEvent(null);
+            }
+            super.requestDisallowInterceptTouchEvent(disallowIntercept);
+        }
+
+        /**
+         * DialogsActivity.ContentView.onTouchEvent (1363-1583): the drag itself, with upstream's
+         * own slop (0.3 cm), pointing (the list's own width), velocity thresholds (3000 to start
+         * a fling, 1500 to decide its direction, 3500 to ignore it), the third-of-a-width
+         * back-swipe rule and the 150-600 ms settle.
+         */
+        @Override
+        public boolean onTouchEvent(MotionEvent ev) {
+            if (getParentLayout() != null
+                    && tabsView != null && !tabsView.isEditing()
+                    && !searching
+                    && !getParentLayout().checkTransitionAnimation()
+                    && !getParentLayout().isInPreviewMode()
+                    && !getParentLayout().isPreviewOpenAnimationInProgress()
+                    && (ev == null || startedTracking
+                            || ev.getY() > getActionBarTop() + getActionBarFullHeight())
+                    // This client has no Telegram account, so there is no chat-swipe setting to
+                    // read: the category pages are always the list's own horizontal gesture, the
+                    // half upstream's "swipe to folders" option is set to.
+                    && stripHasTabs) {
+                if (ev != null) {
+                    if (velocityTracker == null) {
+                        velocityTracker = android.view.VelocityTracker.obtain();
+                    }
+                    velocityTracker.addMovement(ev);
+                }
+                if (ev != null && ev.getAction() == MotionEvent.ACTION_DOWN && checkTabsAnimationInProgress()) {
+                    startedTracking = true;
+                    startedTrackingPointerId = ev.getPointerId(0);
+                    startedTrackingX = (int) ev.getX();
+                    if (animatingForward) {
+                        if (startedTrackingX < viewPages[0].getMeasuredWidth() + viewPages[0].getTranslationX()) {
+                            additionalOffset = viewPages[0].getTranslationX();
+                        } else {
+                            ViewPage page = viewPages[0];
+                            viewPages[0] = viewPages[1];
+                            viewPages[1] = page;
+                            animatingForward = false;
+                            additionalOffset = viewPages[0].getTranslationX();
+                            tabsView.selectTabWithId(viewPages[0].selectedType, 1f);
+                            tabsView.selectTabWithId(viewPages[1].selectedType, additionalOffset / viewPages[0].getMeasuredWidth());
+                            preparePage(viewPages[1], viewPages[1].selectedType, true);
+                        }
+                    } else {
+                        if (startedTrackingX < viewPages[1].getMeasuredWidth() + viewPages[1].getTranslationX()) {
+                            ViewPage page = viewPages[0];
+                            viewPages[0] = viewPages[1];
+                            viewPages[1] = page;
+                            animatingForward = true;
+                            additionalOffset = viewPages[0].getTranslationX();
+                            tabsView.selectTabWithId(viewPages[0].selectedType, 1f);
+                            tabsView.selectTabWithId(viewPages[1].selectedType, -additionalOffset / viewPages[0].getMeasuredWidth());
+                            preparePage(viewPages[1], viewPages[1].selectedType, true);
+                        } else {
+                            additionalOffset = viewPages[0].getTranslationX();
+                        }
+                    }
+                    tabsAnimation.removeAllListeners();
+                    tabsAnimation.cancel();
+                    tabsAnimationInProgress = false;
+                } else if (ev != null && ev.getAction() == MotionEvent.ACTION_DOWN) {
+                    additionalOffset = 0;
+                }
+                if (ev != null && ev.getAction() == MotionEvent.ACTION_DOWN && !startedTracking && !maybeStartTracking && tabsView.getVisibility() == View.VISIBLE) {
+                    startedTrackingPointerId = ev.getPointerId(0);
+                    maybeStartTracking = true;
+                    startedTrackingX = (int) ev.getX();
+                    startedTrackingY = (int) ev.getY();
+                    velocityTracker.clear();
+                } else if (ev != null && ev.getAction() == MotionEvent.ACTION_MOVE && ev.getPointerId(0) == startedTrackingPointerId) {
+                    int dx = (int) (ev.getX() - startedTrackingX + additionalOffset);
+                    int dy = Math.abs((int) ev.getY() - startedTrackingY);
+                    if (startedTracking && (animatingForward && dx > 0 || !animatingForward && dx < 0)) {
+                        if (!prepareForMoving(ev, dx < 0)) {
+                            maybeStartTracking = true;
+                            startedTracking = false;
+                            viewPages[0].setTranslationX(0);
+                            viewPages[1].setTranslationX(animatingForward ? viewPages[0].getMeasuredWidth() : -viewPages[0].getMeasuredWidth());
+                            tabsView.selectTabWithId(viewPages[1].selectedType, 0);
+                        }
+                    }
+                    if (maybeStartTracking && !startedTracking) {
+                        float touchSlop = AndroidUtilities.getPixelsInCM(0.3f, true);
+                        int dxLocal = (int) (ev.getX() - startedTrackingX);
+                        if (Math.abs(dxLocal) >= touchSlop && Math.abs(dxLocal) > dy) {
+                            prepareForMoving(ev, dx < 0);
+                        }
+                    } else if (startedTracking) {
+                        viewPages[0].setTranslationX(dx);
+                        if (animatingForward) {
+                            viewPages[1].setTranslationX(viewPages[0].getMeasuredWidth() + dx);
+                        } else {
+                            viewPages[1].setTranslationX(dx - viewPages[0].getMeasuredWidth());
+                        }
+                        float scrollProgress = Math.abs(dx) / (float) viewPages[0].getMeasuredWidth();
+                        tabsView.selectTabWithId(viewPages[1].selectedType, scrollProgress);
+                    }
+                } else if (ev == null || ev.getPointerId(0) == startedTrackingPointerId
+                        && (ev.getAction() == MotionEvent.ACTION_CANCEL || ev.getAction() == MotionEvent.ACTION_UP || ev.getAction() == MotionEvent.ACTION_POINTER_UP)) {
+                    velocityTracker.computeCurrentVelocity(1000, maximumVelocity);
+                    float velX;
+                    float velY;
+                    if (ev != null && ev.getAction() != MotionEvent.ACTION_CANCEL) {
+                        velX = velocityTracker.getXVelocity();
+                        velY = velocityTracker.getYVelocity();
+                        if (!startedTracking) {
+                            if (Math.abs(velX) >= 3000 && Math.abs(velX) > Math.abs(velY)) {
+                                prepareForMoving(ev, velX < 0);
+                            }
+                        }
+                    } else {
+                        velX = 0;
+                        velY = 0;
+                    }
+                    if (startedTracking) {
+                        float x = viewPages[0].getX();
+                        tabsAnimation = new AnimatorSet();
+                        if (additionalOffset != 0) {
+                            if (Math.abs(velX) > 1500) {
+                                backAnimation = animatingForward ? velX > 0 : velX < 0;
+                            } else {
+                                if (animatingForward) {
+                                    backAnimation = (viewPages[1].getX() > (viewPages[0].getMeasuredWidth() >> 1));
+                                } else {
+                                    backAnimation = (viewPages[0].getX() < (viewPages[0].getMeasuredWidth() >> 1));
+                                }
+                            }
+                        } else {
+                            backAnimation = Math.abs(x) < viewPages[0].getMeasuredWidth() / 3.0f
+                                    && (Math.abs(velX) < 3500 || Math.abs(velX) < Math.abs(velY));
+                        }
+                        float dx;
+                        if (backAnimation) {
+                            dx = Math.abs(x);
+                            if (animatingForward) {
+                                tabsAnimation.playTogether(
+                                        ObjectAnimator.ofFloat(viewPages[0], View.TRANSLATION_X, 0),
+                                        ObjectAnimator.ofFloat(viewPages[1], View.TRANSLATION_X, viewPages[1].getMeasuredWidth())
+                                );
+                            } else {
+                                tabsAnimation.playTogether(
+                                        ObjectAnimator.ofFloat(viewPages[0], View.TRANSLATION_X, 0),
+                                        ObjectAnimator.ofFloat(viewPages[1], View.TRANSLATION_X, -viewPages[1].getMeasuredWidth())
+                                );
+                            }
+                        } else {
+                            dx = viewPages[0].getMeasuredWidth() - Math.abs(x);
+                            if (animatingForward) {
+                                tabsAnimation.playTogether(
+                                        ObjectAnimator.ofFloat(viewPages[0], View.TRANSLATION_X, -viewPages[0].getMeasuredWidth()),
+                                        ObjectAnimator.ofFloat(viewPages[1], View.TRANSLATION_X, 0)
+                                );
+                            } else {
+                                tabsAnimation.playTogether(
+                                        ObjectAnimator.ofFloat(viewPages[0], View.TRANSLATION_X, viewPages[0].getMeasuredWidth()),
+                                        ObjectAnimator.ofFloat(viewPages[1], View.TRANSLATION_X, 0)
+                                );
+                            }
+                        }
+                        tabsAnimation.setInterpolator(PAGES_INTERPOLATOR);
+
+                        int width = getMeasuredWidth();
+                        int halfWidth = width / 2;
+                        float distanceRatio = Math.min(1.0f, 1.0f * dx / (float) width);
+                        float distance = (float) halfWidth + (float) halfWidth * AndroidUtilities.distanceInfluenceForSnapDuration(distanceRatio);
+                        velX = Math.abs(velX);
+                        int duration;
+                        if (velX > 0) {
+                            duration = 4 * Math.round(1000.0f * Math.abs(distance / velX));
+                        } else {
+                            float pageDelta = dx / getMeasuredWidth();
+                            duration = (int) ((pageDelta + 1.0f) * 100.0f);
+                        }
+                        duration = Math.max(150, Math.min(duration, 600));
+
+                        tabsAnimation.setDuration(duration);
+                        tabsAnimation.addListener(new android.animation.AnimatorListenerAdapter() {
+                            @Override
+                            public void onAnimationEnd(android.animation.Animator animator) {
+                                tabsAnimation = null;
+                                if (!backAnimation) {
+                                    swapPagesAtRest();
+                                    if (tabsView != null) {
+                                        tabsView.selectTabWithId(viewPages[0].selectedType, 1.0f);
+                                    }
+                                }
+                                viewPages[1].setVisibility(View.GONE);
+                                tabsAnimationInProgress = false;
+                                maybeStartTracking = false;
+                                actionBar.setEnabled(true);
+                                tabsView.setEnabled(true);
+                            }
+                        });
+                        tabsAnimation.start();
+                        tabsAnimationInProgress = true;
+                        startedTracking = false;
+                    } else {
+                        maybeStartTracking = false;
+                        actionBar.setEnabled(true);
+                        tabsView.setEnabled(true);
+                    }
+                    if (velocityTracker != null) {
+                        velocityTracker.recycle();
+                        velocityTracker = null;
+                    }
+                }
+                return startedTracking;
+            }
+            return false;
         }
 
         @Override
@@ -761,21 +1389,22 @@ public class TopicListFragment extends BaseFragment
     /**
      * DialogsActivity.checkAutoscrollToStories (5760-5808), the no-stories half: a scroll that
      * stopped with the panel partly collapsed is snapped to fully shown or fully hidden, at half
-     * the field's height.
+     * the field's height. The page is the one that scrolled (upstream passes its ViewPage too).
      */
-    private boolean checkAutoscrollToStories() {
+    private boolean checkAutoscrollToStories(ViewPage page) {
         final int scrollY = (int) -scrollYOffset;
         final int actionBarHeight = AndroidUtilities.dp(org.telegram.ui.DialogsActivity.SEARCH_FIELD_HEIGHT);
         if (scrollY != 0 && scrollY != actionBarHeight) {
-            if (listView == null || scroller == null || !listView.canScrollVertically(-1)) {
+            if (page == null || page.listView == null || page.scroller == null
+                    || !page.listView.canScrollVertically(-1)) {
                 return false;
             }
             final int h = AndroidUtilities.dp(org.telegram.ui.DialogsActivity.SEARCH_FIELD_HEIGHT);
             final int s = scrollY;
             if (s < h / 2) {
-                scroller.smoothScrollBy(-s);
+                page.scroller.smoothScrollBy(-s);
             } else {
-                scroller.smoothScrollBy(h - s);
+                page.scroller.smoothScrollBy(h - s);
             }
             return true;
         }
@@ -833,7 +1462,15 @@ public class TopicListFragment extends BaseFragment
     }
 
     private void checkUi_listPadding() {
-        if (listView != null) {
+        if (viewPages != null) {
+            for (ViewPage page : viewPages) {
+                checkUi_listPadding(page);
+            }
+        }
+    }
+
+    private void checkUi_listPadding(ViewPage page) {
+        if (page != null && page.listView != null) {
             // The list's bottom padding keeps the last row reachable above the navigation bar and
             // the glass tabs; the top keeps the bar, the field and the strip as the header's own
             // resting height (the same numbers DialogsActivity's list pads with), plus the pill's
@@ -841,7 +1478,7 @@ public class TopicListFragment extends BaseFragment
             // rather than under it.
             final int barHeight = ActionBar.getCurrentActionBarHeight() + AndroidUtilities.statusBarHeight;
             int pillOffset = newTopicsPillShown ? AndroidUtilities.dp(50) : 0;
-            listView.setPadding(0,
+            page.listView.setPadding(0,
                     barHeight + AndroidUtilities.dp(
                             org.telegram.ui.DialogsActivity.SEARCH_FIELD_HEIGHT
                                     + TAB_STRIP_HEIGHT_DP - 5) + pillOffset,
@@ -862,7 +1499,11 @@ public class TopicListFragment extends BaseFragment
         if (top <= 0) {
             return;
         }
-        applyTopMargin(emptyView, top);
+        if (viewPages != null) {
+            for (ViewPage page : viewPages) {
+                applyTopMargin(page != null ? page.emptyView : null, top);
+            }
+        }
         checkUi_pillTop();
     }
 
@@ -934,7 +1575,7 @@ public class TopicListFragment extends BaseFragment
         if (listView != null) {
             listView.scrollToPosition(0);
         }
-        loadFeed();
+        refreshCurrentFeed(false);
     }
 
     /**
@@ -1052,14 +1693,15 @@ public class TopicListFragment extends BaseFragment
      * closed, or the app came back to the front) - a tab switch does not reload anything.
      *
      * <p>This is the reader saying "show me what is there now", so the topics the refresh answers
-     * with stop being news. A filter change ({@link #loadFeed()} without the flag) is not a refresh:
+     * with stop being news. A filter change (a page prepared for another tab) is not a refresh:
      * it is the same site state through a narrower window, so the counts the reader has not seen do
      * not vanish.</p>
      */
     @Override
     public void onParentBecameVisible() {
-        if (feedLoaded) {
-            loadFeed(true);
+        final ViewPage page = currentPage();
+        if (page != null && page.feed != null && page.feed.loaded) {
+            refreshCurrentFeed(true);
         }
     }
 
@@ -1069,6 +1711,30 @@ public class TopicListFragment extends BaseFragment
         if (listView != null) {
             listView.smoothScrollToPosition(0);
         }
+    }
+
+    /**
+     * DialogsActivity.canParentTabsSlide (13601-13629): while the strip has a category to slide
+     * to in that direction, a horizontal swipe on the list belongs to the list; the first tab's
+     * backward swipe and the last tab's forward swipe are what the root pager takes. A touch on
+     * the action bar is always the pager's, upstream says so too.
+     */
+    @Override
+    public boolean canParentTabsSlide(MotionEvent ev, boolean forward) {
+        if (searching || tabsView != null && tabsView.isEditing()) {
+            return false;
+        }
+        if (ev.getY() < actionBar.getMeasuredHeight()) {
+            return true;
+        }
+        final boolean isFirstTab = tabsView == null || tabsView.getTabsCount() < 2
+                || tabsView.getCurrentTabId() == tabsView.getFirstTabId();
+        final boolean isLastTab = tabsView == null || tabsView.getTabsCount() < 2
+                || tabsView.getCurrentTabId() == tabsView.getLastTabId();
+        if (forward) {
+            return isLastTab && !isFirstTab;
+        }
+        return isFirstTab;
     }
 
     /** The page reaches the bottom of the window itself; the shell must not reserve the bar. */
@@ -1300,12 +1966,18 @@ public class TopicListFragment extends BaseFragment
 
         @Override
         public void filterByCategory(CategorySummary category) {
-            selectedTabId = category.getId();
             closeSearch();
-            // The strip's own selection, completed: selecting the tab and loading its feed are one
-            // step, and the strip must not be left showing the tab the reader was on.
-            tabsView.selectTabWithId(category.getId(), 1f);
-            loadFeed();
+            // The strip's own selection, completed: this is the same step the reader's tap makes,
+            // so the indicator and the page pair animate the same way. A category already in
+            // front is read again - the search asked for it, which is a statement of its own.
+            if (viewPages[0].selectedType == category.getId()) {
+                refreshCurrentFeed(false);
+                return;
+            }
+            final int position = categoryTabPosition(category.getId());
+            if (position >= 0 && tabsView != null && tabsView.getTab(position) != null) {
+                tabsView.scrollToTab(tabsView.getTab(position), position);
+            }
         }
 
         @Override
@@ -1362,39 +2034,10 @@ public class TopicListFragment extends BaseFragment
     }
 
     /**
-     * The feed for what the reader has chosen: the site's latest list, one category, one tag, or the
-     * two of them together. The title says which, because a filtered list is a different list.
+     * The title for the feed the page in front is showing: the site's latest list, one category,
+     * one tag, or the two of them together. The title says which, because a filtered list is a
+     * different list.
      */
-    private void loadFeed() {
-        loadFeed(false);
-    }
-
-    /**
-     * @param clearIncomingWhenLoaded whether a successful load is a refresh the new-topics count
-     *                               answers to (see {@link #onParentBecameVisible()}).
-     */
-    private void loadFeed(boolean clearIncomingWhenLoaded) {
-        container = NativeDo.container(getParentActivity());
-        updateTitle();
-        DiscourseLoader.INSTANCE.feed(container, categoryOf(selectedTabId), selectedTag,
-                loaded -> showTopics(loaded, clearIncomingWhenLoaded), error -> {
-                    FileLog.e("topic list failed", error);
-                    showFailure();
-                    return kotlin.Unit.INSTANCE;
-                });
-    }
-
-    /** The feed could not be read: the list stays as it is, and the failure is said out loud. */
-    private void showFailure() {
-        if (emptyView == null) {
-            return;
-        }
-        emptyView.setText(org.telegram.messenger.ApplicationLoader.applicationContext.getString(
-                R.string.topic_list_failed));
-        emptyView.showTextView();
-        emptyView.setVisibility(View.VISIBLE);
-    }
-
     private void updateTitle() {
         // While the search is open the bar carries nothing: the field is the title.
         if (searching) {
@@ -1467,7 +2110,13 @@ public class TopicListFragment extends BaseFragment
     private void selectTag(Tag tag) {
         selectedTag = tag;
         updateTagActions();
-        loadFeed();
+        // Every cached category is a different list now; the page in front reads its own again,
+        // and the rest read theirs when they are visited again.
+        invalidateFeeds();
+        final ViewPage page = currentPage();
+        if (page != null) {
+            preparePage(page, page.selectedType, false);
+        }
     }
 
     /** What the tag filter looks like: the tag in the title, and the way out of it in the bar. */
@@ -1487,37 +2136,51 @@ public class TopicListFragment extends BaseFragment
         return null;
     }
 
-    private kotlin.Unit showTopics(List<TopicSummary> loaded, boolean clearIncoming) {
-        if (emptyView != null) {
-            emptyView.setVisibility(View.GONE);
+    /** The strip's own position of a tab: the all-topics tab is first, then the site's order. */
+    private int categoryTabPosition(int tabId) {
+        if (tabId == ALL_TAB_ID) {
+            return 0;
         }
-        topics.clear();
-        authors.clear();
-        topics.addAll(loaded);
-        for (TopicSummary topic : loaded) {
-            // The site has caught up with a topic this device had only reported: the feed is the
-            // only thing the row is drawn from again.
-            TopicReadMarks.INSTANCE.siteAgrees(topic.getId(), topic.getUnreadCount());
+        for (int index = 0; index < categories.size(); index++) {
+            if (categories.get(index).getId() == tabId) {
+                return index + 1;
+            }
         }
-        for (TopicSummary topic : loaded) {
-            authors.add(DiscourseRows.topicAuthor(topic, container.getBaseUrl()));
+        return -1;
+    }
+
+    private class TopicListAdapter extends RecyclerListView.SelectionAdapter {
+
+        /** The page this adapter binds rows for; its feed is the data. */
+        private final ViewPage page;
+
+        TopicListAdapter(ViewPage page) {
+            this.page = page;
         }
-        if (listView != null && listView.getAdapter() != null) {
-            listView.getAdapter().notifyDataSetChanged();
+
+        @NonNull
+        @Override
+        public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+            DialogCell cell = new DialogCell(null, parent.getContext(), false, false, currentAccount, resourceProvider);
+            cell.setLayoutParams(new RecyclerView.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, AndroidUtilities.dp(72)));
+            return new RecyclerListView.Holder(cell);
         }
-        // A new feed is a new list: the header's offset is read from what the list now holds.
-        invalidateScrollY = true;
-        if (fragmentView != null) {
-            fragmentView.invalidate();
+
+        @Override
+        public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
+            bindRow((DialogCell) holder.itemView, page, position);
         }
-        fetchAvatars();
-        feedLoaded = true;
-        // A refresh the reader asked for (the screen came back to the front) makes the listed
-        // topics the new baseline: what the pill counted has been shown. A filter change does not.
-        if (clearIncoming && container != null) {
-            container.getMessageBusSession().clearIncomingTopics();
+
+        @Override
+        public int getItemCount() {
+            return page.feed == null ? 0 : page.feed.topics.size();
         }
-        return kotlin.Unit.INSTANCE;
+
+        @Override
+        public boolean isEnabled(RecyclerView.ViewHolder holder) {
+            return true;
+        }
     }
 
     /**
@@ -1529,13 +2192,13 @@ public class TopicListFragment extends BaseFragment
 
         @Override
         public void onPageSelected(FilterTabsView.Tab tab, boolean forward) {
-            if (tab == null || tab.id == selectedTabId) {
+            if (tab == null || viewPages == null || viewPages[0].selectedType == tab.id) {
                 return;
             }
-            selectedTabId = tab.id;
-            // The count in front of the reader changes with the filter, before the new feed lands.
-            updateNewTopicsPill();
-            loadFeed();
+            // DialogsActivity's own tap path (3614-3634): the incoming page is pointed at the
+            // tab's feed and put just off the edge; the strip's indicator animation then drives
+            // onPageScrolled until the pair swaps.
+            selectCategoryTab(tab.id, forward);
         }
 
         /** A second tap on the tab in front of the reader: the list goes back to its top. */
@@ -1563,11 +2226,27 @@ public class TopicListFragment extends BaseFragment
 
         @Override
         public boolean canPerformActions() {
-            return true;
+            // Upstream's own answer (3636-3639): the strip is inert while the search is up.
+            return !searching;
         }
 
         @Override
         public void onPageScrolled(float progress) {
+            // DialogsActivity's own slide (3641-3667): the strip's indicator progress moves both
+            // pages; at its end the incoming page takes the front.
+            if (progress == 1f && viewPages[1].getVisibility() != View.VISIBLE && !searching) {
+                return;
+            }
+            if (animatingForward) {
+                viewPages[0].setTranslationX(-progress * viewPages[0].getMeasuredWidth());
+                viewPages[1].setTranslationX(viewPages[0].getMeasuredWidth() - progress * viewPages[0].getMeasuredWidth());
+            } else {
+                viewPages[0].setTranslationX(progress * viewPages[0].getMeasuredWidth());
+                viewPages[1].setTranslationX(progress * viewPages[0].getMeasuredWidth() - viewPages[0].getMeasuredWidth());
+            }
+            if (progress == 1f) {
+                swapPagesAtRest();
+            }
         }
 
         @Override
@@ -1584,70 +2263,49 @@ public class TopicListFragment extends BaseFragment
         }
     }
 
-    /** The rows the list is showing; the render harness reads what a row would draw from them. */
-    java.util.List<TopicSummary> rows() {
-        return topics;
+    /**
+     * DialogsActivity's own tab tap (3614-3634): the incoming page is pointed at the tab's feed,
+     * put off the edge the slide comes from, and the strip's indicator animation runs (started by
+     * the strip itself when the tab was tapped) with each of its frames landing in
+     * {@link CategoryTabsDelegate#onPageScrolled}.
+     */
+    private void selectCategoryTab(int tabId, boolean forward) {
+        if (viewPages == null || viewPages[0].selectedType == tabId) {
+            return;
+        }
+        final ViewPage incoming = viewPages[1];
+        incoming.selectedType = tabId;
+        preparePage(incoming, tabId, true);
+        incoming.setVisibility(View.VISIBLE);
+        incoming.setTranslationX(viewPages[0].getMeasuredWidth());
+        animatingForward = forward;
+        // The tab and the count in front of the reader change with the tap, before the new feed
+        // lands; the slide's end re-says them from the page that took the front.
+        selectedTabId = tabId;
+        updateTitle();
+        updateNewTopicsPill();
     }
 
-    /** The rows draw the author's initials until the avatar lands, then ask to be re-bound. */
-    private void fetchAvatars() {
-        for (int index = 0; index < authors.size(); index++) {
-            TLRPC.User author = authors.get(index);
-            final int row = index;
-            String template = index < topics.size() ? topics.get(index).getAuthorAvatarTemplate() : null;
-            String url = template == null ? null : DiscourseAvatars.INSTANCE.url(
-                    template, container.getBaseUrl(), DiscourseAvatars.DEFAULT_SIZE);
-            if (url == null || DiscourseAvatars.INSTANCE.isCached(author)) {
-                continue;
-            }
-            DiscourseLoader.INSTANCE.cacheAvatar(container, url, author, () -> {
-                if (listView != null && listView.getAdapter() != null) {
-                    listView.getAdapter().notifyItemChanged(row);
-                }
-                return kotlin.Unit.INSTANCE;
-            });
+    /** The slide landed: the incoming page takes the front, the outgoing one goes back to GONE. */
+    private void swapPagesAtRest() {
+        savePageScroll(viewPages[0]);
+        final ViewPage temp = viewPages[0];
+        viewPages[0] = viewPages[1];
+        viewPages[1] = temp;
+        viewPages[1].setVisibility(View.GONE);
+        viewPages[1].setTranslationX(0);
+        if (tabsView != null) {
+            tabsView.stopAnimatingIndicator();
         }
+        selectCurrentPage(viewPages[0]);
+        animatingForward = true;
+        // The header reads its offset from the page in front, and that page just changed.
+        invalidateScrollY = true;
+        if (fragmentView != null) {
+            fragmentView.invalidate();
+        }
+        updateTitle();
+        updateNewTopicsPill();
     }
 
-    private class TopicListAdapter extends RecyclerListView.SelectionAdapter {
-
-        @NonNull
-        @Override
-        public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-            DialogCell cell = new DialogCell(null, parent.getContext(), false, false, currentAccount, resourceProvider);
-            cell.setLayoutParams(new RecyclerView.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, AndroidUtilities.dp(72)));
-            return new RecyclerListView.Holder(cell);
-        }
-
-        @Override
-        public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
-            DialogCell cell = (DialogCell) holder.itemView;
-            TopicSummary topic = topics.get(position);
-            cell.setDialog(DiscourseRows.topicRow(
-                    topic, TopicReadMarks.INSTANCE.isReadInFull(topic.getId())));
-            // `setDialog` clears the row's avatar receiver, so the author's photo goes in after it.
-            // The initials stay as the placeholder until the photo is on disk.
-            ImageLocation avatar = position < authors.size()
-                    ? DiscourseAvatars.INSTANCE.imageLocation(authors.get(position))
-                    : null;
-            if (avatar != null) {
-                // The row's own drawable (the initials) stays as the placeholder: `setDialog` put it
-                // there, and passing it back is what upstream does when it sets a real avatar.
-                cell.avatarImage.setImage(
-                        avatar, "50_50", cell.avatarImage.getDrawable(), null,
-                        authors.get(position), 0);
-            }
-        }
-
-        @Override
-        public int getItemCount() {
-            return topics.size();
-        }
-
-        @Override
-        public boolean isEnabled(RecyclerView.ViewHolder holder) {
-            return true;
-        }
-    }
 }

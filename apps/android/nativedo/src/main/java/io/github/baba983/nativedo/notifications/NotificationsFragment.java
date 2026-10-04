@@ -73,6 +73,26 @@ public class NotificationsFragment extends BaseFragment implements NativeDoMainT
     private int additionNavigationBarHeight;
     private int navigationBarHeight;
 
+    /**
+     * The day/night switch recolours the rows and the bar in place: this page is a page of the
+     * tab host, whose views are not rebuilt by the switch (the home's strip and this list keep
+     * their views; see NativeDoActivity's theme handler).
+     */
+    private final org.telegram.messenger.NotificationCenter.NotificationCenterDelegate themeObserver =
+            (id, account, args) -> {
+                if (id != org.telegram.messenger.NotificationCenter.needSetDayNightTheme) {
+                    return;
+                }
+                notifyRowsChanged();
+                if (actionBar != null) {
+                    actionBar.updateColors();
+                    actionBar.invalidate();
+                }
+                if (fragmentView != null) {
+                    fragmentView.invalidate();
+                }
+            };
+
     /** The tab host builds its pages with the bundle that says a strip is under them. */
     public NotificationsFragment(Bundle args) {
         super(args);
@@ -124,8 +144,17 @@ public class NotificationsFragment extends BaseFragment implements NativeDoMainT
         actionBar.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> checkUi_contentTop());
         checkUi_contentTop();
         container = NativeDo.container(getParentActivity());
+        org.telegram.messenger.NotificationCenter.getGlobalInstance().addObserver(
+                themeObserver, org.telegram.messenger.NotificationCenter.needSetDayNightTheme);
         loadPage();
         return fragmentView;
+    }
+
+    @Override
+    public void onFragmentDestroy() {
+        org.telegram.messenger.NotificationCenter.getGlobalInstance().removeObserver(
+                themeObserver, org.telegram.messenger.NotificationCenter.needSetDayNightTheme);
+        super.onFragmentDestroy();
     }
 
     @Override

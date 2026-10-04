@@ -23,6 +23,7 @@ import kotlinx.coroutines.SupervisorJob
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -113,13 +114,13 @@ internal class HomeMenuTest {
     /**
      * The menu's theme switch, driven through the notification the item posts (the item's own click
      * carries the icon-centre position, which the host turns into a circular reveal and the device
-     * pass checks; this test posts it without a position so the rebuild and the listener bookkeeping
-     * are what is exercised). The failures: a switch that does not build the host's pages again
-     * (they would keep the old theme's colours), one that restarts the message-bus session, and one
-     * that leaves the previous views' listeners attached.
+     * pass checks; this test posts it without a position so the recolour path is what is exercised).
+     * The failures: a switch that rebuilds the host's pages - the strip and the feed would vanish
+     * and come back, and the reader's tab and place would be lost (upstream recolours in place) -
+     * one that restarts the message-bus session, and one that leaves an extra bus listener behind.
      */
     @Test
-    fun theMenuThemeSwitchRebuildsTheHostWithoutLeavingItsListenersBehind() {
+    fun theMenuThemeSwitchRecoloursTheHomeWithoutRebuildingIt() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         val container = site.authenticatedContainer(harness.context, scope)
         NativeDo.setContainerFactory { container }
@@ -133,7 +134,8 @@ internal class HomeMenuTest {
         val listenersBefore = settleListenerCount(scope)
         assertTrue("the host and the page are listening to the bus", listenersBefore >= 2)
         val clientId = container.messageBusSession.clientId
-        val pageView = harness.visibleFragment()!!.fragmentView
+        val fragment = harness.visibleFragment()!!
+        val pageView = fragment.fragmentView
 
         val toDark = !Theme.isCurrentThemeDark()
         org.telegram.messenger.NotificationCenter.getGlobalInstance().postNotificationName(
@@ -149,20 +151,21 @@ internal class HomeMenuTest {
             assertFalse("the switch is not left half-done", DialogsActivity.switchingTheme)
 
             harness.layoutApp()
-            harness.await("the page's views to be built again") {
-                harness.layoutApp()
-                harness.visibleFragmentName() == "TopicListFragment" &&
-                    harness.visibleFragment()!!.fragmentView !== pageView
-            }
+            assertSame(
+                "the switch keeps the page's own view instead of building it again",
+                pageView,
+                harness.visibleFragment()!!.fragmentView,
+            )
             assertEquals(
                 "the switch does not restart the message-bus session",
                 clientId,
                 container.messageBusSession.clientId,
             )
-            harness.await("the old views' listeners to let go") {
-                listenerCount(scope) <= listenersBefore
-            }
-            assertEquals("the rebuilt views attach one listener instead of two", listenersBefore, listenerCount(scope))
+            assertEquals(
+                "no listener is left behind by the switch",
+                listenersBefore,
+                listenerCount(scope),
+            )
             harness.assertNoTelegramSideEffects()
         } finally {
             Theme.applyTheme(Theme.getTheme("Blue"), false, false)

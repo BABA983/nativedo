@@ -93,6 +93,35 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
     private ValueAnimator actionBarVisibleAnimator;
     private boolean actionBarVisible;
 
+    /**
+     * The day/night switch recolours this page in place (its views are not rebuilt when the tab
+     * host is the only fragment on the stack; see NativeDoActivity's theme handler): the rows are
+     * built again the way {@code SettingsActivity} builds them, and the bar and its background
+     * repaint.
+     */
+    private final org.telegram.messenger.NotificationCenter.NotificationCenterDelegate themeObserver =
+            (id, account, args) -> {
+                if (id != org.telegram.messenger.NotificationCenter.needSetDayNightTheme) {
+                    return;
+                }
+                if (contentView != null) {
+                    contentView.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundWhite));
+                }
+                if (listView != null && listView.adapter != null) {
+                    listView.adapter.update(false);
+                }
+                if (actionBarBackground != null) {
+                    actionBarBackground.invalidate();
+                }
+                if (actionBar != null) {
+                    actionBar.updateColors();
+                    actionBar.invalidate();
+                }
+                if (fragmentView != null) {
+                    fragmentView.invalidate();
+                }
+            };
+
     /** The tab host's strip height, added to the navigation bar's own so the last row clears both. */
     private int additionNavigationBarHeight;
 
@@ -205,6 +234,8 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
         fragmentView = contentView;
         updateActionBarVisible(true, false);
         ViewCompat.requestApplyInsets(contentView);
+        org.telegram.messenger.NotificationCenter.getGlobalInstance().addObserver(
+                themeObserver, org.telegram.messenger.NotificationCenter.needSetDayNightTheme);
         return contentView;
     }
 
@@ -433,6 +464,8 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
             actionBarVisibleAnimator.cancel();
             actionBarVisibleAnimator = null;
         }
+        org.telegram.messenger.NotificationCenter.getGlobalInstance().removeObserver(
+                themeObserver, org.telegram.messenger.NotificationCenter.needSetDayNightTheme);
         super.onFragmentDestroy();
     }
 }
