@@ -15,10 +15,10 @@ import io.github.baba983.nativedo.core.model.CategorySummary;
  * category looks the same wherever this client offers one: on the topic list's filter strip and on
  * the row a new topic's category is chosen on.</p>
  */
-final class CategoryLabels {
+public final class CategoryLabels {
 
     /** The category's name, with its site color as the dot in front of it. */
-    static CharSequence of(CategorySummary category) {
+    public static CharSequence of(CategorySummary category) {
         SpannableString label = new SpannableString("● " + category.getName());
         Integer color = color(category);
         if (color != null) {
@@ -28,7 +28,7 @@ final class CategoryLabels {
     }
 
     /** The category's color as the site sends it: hex, with or without the leading '#'. */
-    static Integer color(CategorySummary category) {
+    public static Integer color(CategorySummary category) {
         String hex = category.getColorHex();
         if (hex == null || hex.isEmpty()) {
             return null;

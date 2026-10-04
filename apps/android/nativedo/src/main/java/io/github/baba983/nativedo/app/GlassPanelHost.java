@@ -38,8 +38,8 @@ import java.util.List;
  */
 public final class GlassPanelHost {
 
-    /** What the source records: the content the panel floats over. */
-    private final View recordedContent;
+    /** What the source records: the content the panels float over. */
+    private View recordedContent;
     private final BlurredBackgroundSourceColor colorSource = new BlurredBackgroundSourceColor();
     /** The blur source; null while the platform cannot render one. */
     private final @Nullable BlurredBackgroundSourceRenderNode renderNode;
@@ -50,7 +50,7 @@ public final class GlassPanelHost {
     private boolean recordingEnabled = true;
 
     /**
-     * @param recordedContent the content the panel floats over; the source records this view's own
+     * @param recordedContent the content the panels float over; the source records this view's own
      *                        drawing each frame, so the content must sit at the position root's
      *                        origin (a full-size child of it) for the sample offsets to line up.
      * @param positionRoot    the view whose coordinate space the panels' positions are measured in.
@@ -69,6 +69,11 @@ public final class GlassPanelHost {
         factory = new BlurredBackgroundDrawableViewFactory(renderNode != null ? renderNode : colorSource);
         factory.setSourceRootView(positionWatcher, positionRoot);
         factory.setLiquidGlassEffectAllowed(LiteMode.isEnabled(LiteMode.FLAG_LIQUID_GLASS));
+    }
+
+    /** Swaps what is recorded, when the panel that is up changes with the screen's state. */
+    public void setRecordedContent(View content) {
+        recordedContent = content;
     }
 
     /**
