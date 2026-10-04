@@ -2,6 +2,7 @@ package io.github.baba983.nativedo.core.di
 
 import android.content.Context
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
+import io.github.baba983.nativedo.core.messagebus.MessageBusSession
 import io.github.baba983.nativedo.core.network.DiscourseApiClient
 import io.github.baba983.nativedo.core.network.DiscourseApiService
 import io.github.baba983.nativedo.core.network.ImageRequestHeadersInterceptor
@@ -32,7 +33,10 @@ import io.github.baba983.nativedo.feature.profile.data.ProfileFeedRepository
 import io.github.baba983.nativedo.feature.bookmarks.data.BookmarkRepository
 import io.github.baba983.nativedo.feature.profile.data.ProfileRepository
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.serialization.json.Json
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
@@ -99,7 +103,12 @@ class AppContainer(
         )
     }
 
-    private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
+    /**
+     * The app's own HTTP stack: session cookies, the site's request headers and the user agent are
+     * its interceptors, so a caller that needs the same session (the message bus) shares it instead
+     * of building a second jar.
+     */
+    val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .addNetworkInterceptor(SessionCookieInterceptor(cookieStore))
         .addInterceptor(
             RequestHeadersInterceptor(
@@ -156,6 +165,19 @@ class AppContainer(
         sessionCoordinator = sessionCoordinator,
         cookieSyncBridge = cookieSyncBridge,
         baseUrl = baseUrl,
+    )
+
+    /**
+     * One message-bus session per reader, owned here rather than by a screen: it follows
+     * [SessionCoordinator.sessionState] and the host's foreground/background calls, and the screens
+     * only observe its flows.
+     */
+    val messageBusSession: MessageBusSession = MessageBusSession(
+        httpClient = okHttpClient,
+        baseUrl = baseUrl.toHttpUrl(),
+        sessionState = sessionCoordinator.sessionState,
+        fetchBootstrapHtml = { discourseApiClient.fetchBootstrapHtml() },
+        scope = applicationScope ?: CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
     )
 
     init {

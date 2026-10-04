@@ -1,10 +1,14 @@
 package io.github.baba983.nativedo.notifications;
 
 import android.content.Context;
+import android.os.Bundle;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.FrameLayout;
 
 import androidx.annotation.NonNull;
+import androidx.core.view.ViewCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -15,12 +19,15 @@ import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.Cells.DialogCell;
 import org.telegram.ui.Cells.TextInfoPrivacyCell;
+import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.RecyclerListView;
+import org.telegram.ui.DialogsActivity;
 
 import java.util.ArrayList;
 import java.util.List;
 
 import io.github.baba983.nativedo.app.NativeDo;
+import io.github.baba983.nativedo.app.NativeDoMainTabsActivity;
 import io.github.baba983.nativedo.core.di.AppContainer;
 import io.github.baba983.nativedo.core.model.NotificationItem;
 import io.github.baba983.nativedo.core.model.NotificationPage;
@@ -38,7 +45,7 @@ import io.github.baba983.nativedo.topic.TopicFragment;
  * {@link DialogCell} already draws - a title, a line under it and a date - so the site's fields go
  * in there and a tap opens the topic at the floor the notification is about.</p>
  */
-public class NotificationsFragment extends BaseFragment {
+public class NotificationsFragment extends BaseFragment implements NativeDoMainTabsActivity.TabPage {
 
     private static final int TYPE_NOTIFICATION = 0;
     private static final int TYPE_NOTE = 1;
@@ -61,15 +68,38 @@ public class NotificationsFragment extends BaseFragment {
     /** How many notifications the site has in total; every page moves [offset] towards it. */
     private int total = Integer.MAX_VALUE;
 
+    /** Whether the screen is a page of the tab host, which adds the strip's height to the insets. */
+    private boolean hasMainTabs;
+    private int additionNavigationBarHeight;
+    private int navigationBarHeight;
+
+    /** The tab host builds its pages with the bundle that says a strip is under them. */
+    public NotificationsFragment(Bundle args) {
+        super(args);
+    }
+
+    public NotificationsFragment() {
+        super();
+    }
+
     @Override
     protected View createView(Context context) {
+        hasMainTabs = arguments != null && arguments.getBoolean("hasMainTabs", false);
+        additionNavigationBarHeight = hasMainTabs ? AndroidUtilities.dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS) : 0;
+
         actionBar.setTitle("通知");
+        // The page carries its own bar: inside the tab host the bar belongs to the page's screen,
+        // and the strip (a sibling of the pager) draws over the pages, never under them.
+        actionBar.setAddToContainer(false);
 
         listView = new RecyclerListView(context);
         listView.setLayoutManager(new LinearLayoutManager(context));
         listView.setAdapter(new NotificationAdapter());
         listView.setVerticalScrollBarEnabled(false);
-        listView.setPadding(0, AndroidUtilities.dp(4), 0, AndroidUtilities.dp(4));
+        // The list reaches the bottom of the window and its rows scroll behind the glass strip;
+        // the last row stays reachable above it through the padding below.
+        listView.setClipToPadding(false);
+        checkUi_listPadding();
         listView.setOnItemClickListener((view, position) -> {
             if (position >= 0 && position < items.size()) {
                 open(items.get(position));
@@ -82,10 +112,65 @@ public class NotificationsFragment extends BaseFragment {
             }
         });
 
-        fragmentView = listView;
+        FrameLayout frame = new FrameLayout(context);
+        frame.addView(listView, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP));
+        // The page's own action bar sits above the content; checkUi_contentTop() moves the content
+        // below it once it has been measured.
+        frame.addView(actionBar, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP));
+        fragmentView = frame;
+        ViewCompat.setOnApplyWindowInsetsListener(fragmentView, this::onInsetsInternal);
+        actionBar.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> checkUi_contentTop());
+        checkUi_contentTop();
         container = NativeDo.container(getParentActivity());
         loadPage();
         return fragmentView;
+    }
+
+    @Override
+    public void onInsets(int left, int top, int right, int bottom) {
+        navigationBarHeight = bottom;
+        checkUi_listPadding();
+    }
+
+    private void checkUi_listPadding() {
+        if (listView != null) {
+            listView.setPadding(0, AndroidUtilities.dp(4), 0,
+                    AndroidUtilities.dp(4) + navigationBarHeight + additionNavigationBarHeight);
+        }
+    }
+
+    /** Keeps the page's content below its own action bar, including after a status bar change. */
+    private void checkUi_contentTop() {
+        final int top = actionBar != null ? actionBar.getMeasuredHeight() : 0;
+        if (top <= 0 || listView == null) {
+            return;
+        }
+        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) listView.getLayoutParams();
+        if (params != null && params.topMargin != top) {
+            params.topMargin = top;
+            listView.setLayoutParams(params);
+        }
+    }
+
+    /** A second tap on the reader's tab: the list goes back to its top. */
+    @Override
+    public void onParentScrollToTop() {
+        if (listView != null) {
+            listView.smoothScrollToPosition(0);
+        }
+    }
+
+    /** The page reaches the bottom of the window itself; the shell must not reserve the bar. */
+    @Override
+    public boolean isSupportEdgeToEdge() {
+        return true;
+    }
+
+    @Override
+    public boolean drawEdgeNavigationBar() {
+        return false;
     }
 
     /**

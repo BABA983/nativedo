@@ -103,11 +103,11 @@ rendering, gestures, layout and animation are upstream's own code.
   notification's own floor. The site's topic-less notifications (a badge, likes it consolidated)
   have no destination and their rows are not tappable.
 * **Theme and settings** — upstream's `ThemeActivity` (the appearance page) is the settings entry;
-  `MainTabsLayout` and `GlassTabView` supply the three entries, their selection and gestures, with
-  upstream's blur3 glass background. The host uses `AndroidUtilities.enableEdgeToEdge` and forwards
-  system/IME insets through `DrawerLayoutContainer` and `ActionBarLayout`. Theme changes use the
-  existing local application API (`save=false`), with local preferences and upstream color updates;
-  they never save a theme to a Telegram account.
+  `MainTabsLayout` and `GlassTabView` supply the four entries (话题／通知／设置 and the reader's
+  avatar tab), their selection and gestures, with upstream's blur3 glass background. The host uses
+  `AndroidUtilities.enableEdgeToEdge` and forwards system/IME insets through `DrawerLayoutContainer`
+  and `ActionBarLayout`. Theme changes use the existing local application API (`save=false`), with
+  local preferences and upstream color updates; they never save a theme to a Telegram account.
 
 ## Rendering without a device
 
@@ -138,6 +138,7 @@ stands, and the upstream component each row is meant to use.
 | --- | --- | --- | --- |
 | Sign-in and session restore (WebView `/login`, `_t` / `_forum_session` / `cf_clearance`, `/session/csrf`) | done | done | our own (moved from the old app's `ui/auth`) |
 | Latest topic feed with paging | done | done | `DialogCell.CustomDialog` + `RecyclerListView` |
+| A "N 个新话题" pill when the site publishes new or bumped topics | not built | done: `/latest` and `/new` through the message bus count one incoming topic per id (the category the message named), the count follows the category tab in front of the reader (全部 counts all), and the pill refreshes the list, scrolls to top and clears on tap; a screen refresh clears it too; the list starts below the pill while it is shown | `ButtonWithCounterView` (upstream's rounded control) over `AndroidUtilities.updateViewVisibilityAnimated`'s upstream constants |
 | New / top feeds | done | missing | the same rows, driven by our own feed calls |
 | A category filter over the topic list (`/categories.json`, `/c/{slug}/{id}/l/latest.json`) | done | done: upstream's `FilterTabsView` strip above the list, one tab per top-level category in the site's own order, the site's color as the dot in front of the name, and a tab loads that category's own feed; the strip appears when the categories arrive so a site that answers none leaves the list the whole screen | `FilterTabsView`, upstream's own list-filter control (the one its chat list filters chat folders with) |
 | A tag filter over the topic list (`/tags.json`, `/tag/{slug}/l/latest.json`, `/tags/c/.../{tag}/{id}`) | not built | done: one item in the action bar (not a second strip, which would take the list's height) opens the site's tags in a dialog, the chosen tag shows in the title and clears in one tap, and it combines with the category tab over the site's own combined route | the action bar's own icon-and-dialog pattern, `ActionBarMenuItem` |
@@ -159,8 +160,8 @@ stands, and the upstream component each row is meant to use.
 | Read progress (`POST /topics/timings`) and restore | done | done, without upstream's unread divider: the floors the viewport reaches are reported as the reader moves (debounced) and at once when they leave, the dwell reported is the reader's real time - counted the way Discourse's own screen-track counts it, only while the screen is in front, a floor is on screen and the reader has scrolled within three minutes - a topic opens at the site's own `last_read_post_number` (or this device's further one), and the list's unread counts follow the site's answer - a topic read in full draws no badge even before the site has taken the report in | our own reporter over the site's endpoint; the list's rows are upstream's `DialogCell` |
 | Search: topics, posts, users, in-topic | done | done, the site's topics, posts and people from the action bar's own search field; a hit opens its topic at its floor, a person opens their profile; in-topic search missing | `ActionBarMenuItem.setIsSearchField` over `/search.json`, hits drawn by `DialogCell` / `ProfileSearchCell` |
 | User profile (`/u/{username}.json`, activity feed) | done | done, `/user_actions.json` for the topics created and the replies merged into one stream, one upstream `DialogCell` row per action, a tap opens the topic at that floor | our own `BaseFragment` over `ProfileSearchCell` / `HeaderCell` / `TextDetailCell` / `TextInfoPrivacyCell` / `DialogCell`; `ProfileActivity` is unusable here (it loads the full user through tgnet and is bound to a Telegram account) |
-| Notifications | not built | done, the reader's own list from `/notifications.json`; nothing pushes, and there is no unread count on the tab | upstream's notification screens are Telegram-account bound, so our own screen over upstream's `DialogCell`; unread is the row's own badge |
-| Appearance and theme | done | done: the settings tab's 外观 row opens it | `ThemeActivity` (`THEME_TYPE_BASIC`) |
+| Notifications | not built | done, the reader's own list from `/notifications.json`, and the 通知 tab's own counter is the site's unread count: seeded from the bootstrap page and then fed by the message bus `/notification/{userId}` channel (the server publishes a new count after notifications are read); opening the list does not mark anything read | upstream's notification screens are Telegram-account bound, so our own screen over upstream's `DialogCell`; the tab counter is upstream's `GlassTabView.setCounter`, the same mechanism `MainTabsActivity` puts on its chats tab |
+| Appearance and theme | done | done: the settings tab's 外观 row opens it, and the home action bar's options menu switches night/day in place (upstream's own entries, with the circular reveal out of the menu icon) | `ThemeActivity` (`THEME_TYPE_BASIC`); `DialogsActivity`'s options item / `ItemOptions` / `showItemOptions()` / `switchTheme()` |
 | Account and session settings | done | done: the settings tab is our own screen over upstream's cells (`HeaderCell` / `TextSettingsCell`), with the appearance page, the bookmark list and the account - the current reader and a sign-out that clears the cookies and returns to the login page | upstream's settings cells, the way `SettingsActivity` draws its own list |
 | linux.do emoji sprite in the composer | done | missing | upstream's emoji panel plus our sprite downloader |
 | Floating date and jump to the read position | done | missing | upstream's chat date overlay |
@@ -227,6 +228,75 @@ stands, and the upstream component each row is meant to use.
 - 最终 gate 是同一 HEAD 串行五次 `:nativedo:testDebugUnitTest --rerun --quiet`（30 类、84 项），
   失败即停；命令、HEAD、逐轮 XML、APK hash 与检查过的截图保留在 `.amp/in/artifacts/main-glass-tabs/`。
   arm64 `assembleDebug` 另行检查。视频下载／取消和新增回应仍受上一节的站点／入口限制，不能算设备通过。
+
+### tabs 宿主与底部灰带（2026-10-04，`emulator-5554`）
+
+- tab 代码从 `NativeDoActivity` 移入新的 `NativeDoMainTabsActivity`（`ViewPagerActivity` ＋
+  `MainTabsLayout`／`GlassTabView`／blur3）：话题／通知／设置／我的 四个 root 是 pager 的四个页面，
+  点 tab 切换、点当前 tab 回顶部、左右滑动切换；被推入的话题／搜索等页面整个盖住 tabs，返回后
+  回到原来那一页。我的 tab 是 `GlassTabView` 的 avatar 画法（`ProfileFragment.forRoot`，root 不画
+  返回键）；退出登录时宿主不在栈上，所以没有 tabs（JVM 断言）。玻璃沿用旧宿主的做法：把 pager
+  录进 source render node 并 `setBlur(dp(8))`，`BlurredBackgroundProviderImpl.mainTabs` 出胶囊；
+  浅色主题下胶囊接近不透明，内容只在边缘透出（截图看不出强模糊，配置与旧设备的玻璃一致）。
+- 灰带修复：删掉 `NativeDoActivity.getBottomTabsHeight` 覆盖后 `ActionBarLayout` 不再预留 tabs
+  高度；四个 root 都 edge-to-edge（`isSupportEdgeToEdge()`＝true、`drawEdgeNavigationBar()`＝false），
+  列表自身 padding bottom ＝ 导航栏 inset ＋ dp(MAIN_TABS_HEIGHT_WITH_MARGINS)、`clipToPadding＝false`，
+  FAB 上移同样高度。设备上首页列表一直画到屏幕底部、从玻璃 tabs 后面滚过，无灰带；列表滚到底时
+  最后一行完整停在 tabs 上方（`11-home-bottom.png`）。
+- 截图在 `.amp/in/artifacts/tabs-host/`：`01-home.png`（无灰带、内容在玻璃后）、`02`/`03`/`04`
+  （通知／设置／我的 的选中态与页面）、`05`/`06`（右滑到设置、左滑回我的）、`07`/`08`（话题整屏
+  盖住 tabs、返回后 tabs 回来）、`09`/`10`（列表滚动、点当前 tab 回顶部）、`11`（滚到底后最后
+  一行在 tabs 上方）。对照修复前的 `.amp/in/artifacts/home-now.png`；`00-before-live.png` 是安装
+  新包前的运行中截图。
+- 覆盖安装版本 `0.1.0 (1)`；APK 与设备 SHA-256 都为
+  `7191645ad45467cdfc0cb1037e7632b1cd8f2465ac37483c57988c154aba3e33`。登录和代理保留，无
+  crash／ANR，未生成 `cache4.db`。
+- JVM gate：`:nativedo:testDebugUnitTest --quiet` 全量 30 类、102 项、0 失败；arm64
+  `:nativedo:assembleDebug -Pandroid.injected.build.abi=arm64-v8a` 通过。`HomeTabsTest` 断言跨 tab
+  保留同一个页面实例、不重读 feed、列表 padding 与底部无预留带、话题盖住宿主、第四个 avatar tab
+  打开自己的 profile；`SettingsTabTest` 断言退出登录后窗口里没有 tab 宿主。
+- 本片未复测：横屏、夜间模式切换后的宿主重建、深链冷启动（JVM 侧有主题事件与 insets 断言；
+  深链结构沿用原来的「宿主先在栈、话题再压上」）。视频下载／取消、新增回应仍受站点限制，未动。
+
+### 消息总线接入 UI（2026-10-05，`emulator-5554` 与真机 `449dd25d`）
+
+- 数据层：`MessageBusSession`（`core/messagebus`）归 `AppContainer` 所有，一个登录会话一个
+  `MessageBusClient`；`NativeDoActivity.onStart/onStop` 转发前台／后台，session 状态自己跟随
+  登录／退出／失效——退出时停轮询、清两类状态并在下一个读者登录时重建 client（新的 client id）。
+  话题列表订阅 `/latest`、`/new`，通知 badge 订阅 `/notification/{userId}`；起点是页面
+  `script#data-preloaded` 里的 `topicTrackingStateMeta` 与 `currentUser.notification_channel_position`，
+  badge 初始值取 `currentUser.all_unread_notifications_count`。轮询走 `AppContainer` 的 OkHttp
+  （cookie、UA、请求头拦截器原样），不经过 session boundary，所以轮询的 404/挑战只会退避，不会触发登录。
+- 真站点观察（`NativeDoMessageBus` 日志）：linux.do 首页的 preload 是 **JSON `script#data-preloaded`**
+  （文本是对象、每个值是字符串包裹的 JSON），不是旧的 div attribute；`topicTrackingStateMeta` 有 7 个
+  频道；`currentUser` 带 `id`、`notification_channel_position`、`unread_notifications`、
+  `unread_high_priority_notifications`、`all_unread_notifications_count`。站点自己的 origin 上
+  `POST /message-bus/.../poll` 被 Cloudflare 直接 404（`server: cloudflare`、10 字节 `Not Found.`）；
+  页面的 `siteSettings.long_polling_base_url` 指向另一个 origin，用 `meta[name=shared_session_key]`
+  作 `X-Shared-Session-Key` 轮询那里返回 200，body 是单个 JSON 数组（`Dont-Chunk: true`；响应上没有
+  `Content-Length`/`Transfer-Encoding`）。节奏由消息驱动：linux.do 忙时完成一轮 0.2–9 秒，客户端
+  delivery 后最小间隔 100 ms，全程无 403/429、无紧凑循环；配置错 base 的那段时间每次 poll 404，
+  退避 3/6/9 秒（无风暴），改对 base 后恢复。
+- 设备：模拟器 `emu-05-pill-final.png`（"9 个新话题" pill 在分类条下方、第一行完整可见）、
+  `emu-09-final-run.png`（最终包冷启动 40 秒后的真实计数 "2 个新话题"，同样不压第一行）、
+  `emu-06-after-tap.png`（点按后发了一次 `latest.json`、计数清零；随后到达的新消息又计成 "1 个新话题"，
+  是实时行为）、`emu-07-cleared.png`（清零且列表已刷新的状态）、`emu-08-notifications.png`（通知列表；
+  该读者的三个计数都是 0，所以 tab 上没有 badge——badge 的种子与更新由 JVM 测试覆盖）。真机
+  `phone-01-pill.png` 同样画出 "3 个新话题" 且列表在 pill 下方完整显示。
+- 真机 HyperOS 拒绝 `adb shell input tap`（`INJECT_EVENTS` 权限），所以点按的 E2E 只在模拟器执行；
+  真机验证限于安装、冷启动、真实轮询与 pill 渲染。
+- 覆盖安装版本 `0.1.0 (1)`，没有卸载（登录与代理保留），无签名冲突、无 crash／ANR，未生成 `cache4.db`；
+  两台设备 `pm path` 拉回的 base.apk SHA-256 都是构建产物
+  `fe6f5412d16f12c414f4bef1eacf8c18d249da8b059073df3f5b1022ca5f5ff0`（真机原来的
+  `0.1.0-debug-20260929-203040` 被直接覆盖）。
+- JVM gate：`:nativedo:testDebugUnitTest --rerun --quiet` 连续 5 轮全量，35 类、112 项、0 失败；
+  arm64 `assembleDebug` 通过。测试期间发现并修掉一个真 bug：前台回调与 session 状态收集器并发进入
+  `ensureStarted` 时会各建一个 client（其中一个在 session 之外永久轮询），现在启动在同一把锁下，
+  `repeatedForegroundCallsDuringAStartBuildOneClient` 钉住它；`MessageBusBootstrapTest` 补了
+  linux.do 的 script preload 形状与 `long_polling_base_url` 读取。
+- 未验证：`/notification/{userId}` 的实时计数变化（该账号计数为 0、期间没有服务端计数更新），
+  所以 通知 tab 的 badge 只在 JVM（bootstrap 种子 + `/notification` 消息）验证过；真机上只验证了
+  通知列表与「0 计数不画 badge」。截图与设备 APK 拉回件在 `.amp/in/artifacts/messagebus-ui/`。
 
 ### 设备验证结果（2026-10-01/02，AVD `nativedo-test`／android-35 google_apis_tablet arm64-v8a，`emulator-5556`）
 
@@ -334,6 +404,43 @@ stands, and the upstream component each row is meant to use.
    封面／附件／图片四个调用点还是同一个形状（`DiscourseReactionEmoji` 里新写的那个已经按线程分了名字）。
 
 已知且预期内的差异：分类和标签之外没有更多筛选；新话题要回列表重新读才出现；收藏没有 bulletin 提示；不支持站内私信（没有收件箱，也没有深链，界面上走不到一个私信话题）。
+
+### 首页选项菜单与夜间切换（2026-10-05，`emulator-5554`）
+
+- 首页动作栏的最右加上上游自己的三点项（`ActionBarMenuItem`，id 4、`ic_ab_other`，与
+  `DialogsActivity.optionsItem` 同 id 同图标）；点开是上游的 `ItemOptions`
+  （`setColors(key_actionBarDefaultTitle)`、`setDimAlpha(0x08)`、`show()` 后 `-dp(64)`），
+  条目按上游顺序：夜间／日间模式、`addGap()`、发新帖、书签。上游那些没有 linux.do 含义的条目
+  （联系人、隐私、社区、归档、Telegram 设置等）没有加入；发新帖与书签分别走悬浮按钮和设置页
+  已在用的同一个 `NewTopicFragment`／`BookmarksFragment`。
+- 主题切换照上游 `DialogsActivity.showItemOptions()` + `switchTheme()` 移植：按 `themeconfig`
+  的 `lastDayTheme`／`lastDarkTheme` 选目标主题，把选项图标的中心 post 给
+  `needSetDayNightTheme`；`NativeDoActivity` 多出上游 `LaunchActivity` 的那一支——先快照窗口，
+  再做 `createCircularReveal`（400 ms、`Easings.easeInOutQuad`、`（h − pos[1]）/ dp(2.25)` 后放开
+  系统栏颜色），`switchingTheme` 在动画结束复位；没有位置的切换（外观页）仍走原来的颜色动画。
+- 上游的动画只清「最后一片之下」的 fragment；首页只有一个 tab 宿主时它什么都不清，页面的视图
+  会把旧主题的颜色留住（设置行、分类条、胶囊都是构造时取色的）。现在宿主单独在栈上时主动
+  `rebuildFragments(REBUILD_FLAG_REBUILD_LAST)`，在揭示下面把整套视图按新色重建。重建不销毁
+  fragment，所以页面与宿主的 message-bus 监听在 `createView` 里先关旧的再挂新的：不这样每次
+  切换会各泄漏一个 collector，`HomeMenuTest` 的第二条用例就是钉这个（去掉注销后它在
+  「旧监听注销」处失败）。
+- 模拟器逐项（截图在 `.amp/in/artifacts/home-menu/`）：`20` 最终包冷启动的栏（搜索、标签、三点
+  在最右）；`21` 弹窗三条目与分隔；`25` 最终包的夜间揭示中间帧（黑圆从三点图标处扩起）、`05`／`07`
+  两个方向的揭示中间帧与两段录屏；`04`／`22` 夜间主题；`09`／`10-*`／`23` 话题／通知／设置／我的
+  四个 tab 全部换色；`11` 夜间下条目翻成「日间模式」（太阳图标）；`12`／`24`／`26` 回到日间无残留；
+  `13` 书签页与 `15` 发新帖页由菜单打开、`14` 返回后首页栏完好；`16` 搜索页打开、`17` 返回首页、
+  `18` 搜索返回后菜单仍能打开（新首页的搜索是整屏推入，不是 DialogActivity 那种栏内展开，所以
+  没有 `checkUi_itemOptionsVisibility` 的对应物，只验证了开关前后不挡不吞）。
+- 覆盖安装 `0.1.0 (1)`，未卸载；模拟器 `pm path` 拉回的 base.apk SHA-256 与构建产物都是
+  `3c58da7a11c09bb5ca67a94254ace79e9ff149faae8ebd7a555a452a2a9c1b46`。无 crash／ANR，未生成
+  `cache4.db`，登录和代理保留。
+- JVM gate：清空 XML 后 `:nativedo:testDebugUnitTest --quiet` 全量 36 类、114 项、0 失败；新增
+  `HomeMenuTest` 两条：真实弹窗打开书签与发新帖两屏；主题通知后宿主重建、message-bus client 不
+  重启、旧视图监听注销。arm64 `assembleDebug` 通过。
+- 真机 `449dd25d` 本轮未验证：会话中途它从 adb／USB 消失（`adb devices`、`adb reconnect`、重启
+  adb server 都没有回来），所以没有做覆盖安装、冷启动和真机栏上三点的截图。没有卸载动作，机器
+  回到 adb 后要补：`install -r -t`、冷启动、首页栏截图、`pm path` 拉回件与构建产物比对；真机
+  HyperOS 仍拒绝 `input tap`，点按部分只留在模拟器。
 
 ## Switch plan
 

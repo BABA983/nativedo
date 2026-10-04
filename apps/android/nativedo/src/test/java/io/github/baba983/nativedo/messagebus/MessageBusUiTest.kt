@@ -1,0 +1,275 @@
+package io.github.baba983.nativedo.messagebus
+
+import android.view.View
+import io.github.baba983.nativedo.app.NativeDo
+import io.github.baba983.nativedo.app.NativeDoMainTabsActivity
+import io.github.baba983.nativedo.harness.FakeDiscourseSite
+import io.github.baba983.nativedo.harness.UpstreamUiHarness
+import io.github.baba983.nativedo.harness.contentListOf
+import io.github.baba983.nativedo.harness.shadows.ShadowAnimatedFileNative
+import io.github.baba983.nativedo.harness.shadows.ShadowConnectionsManager
+import io.github.baba983.nativedo.harness.shadows.ShadowIntro
+import io.github.baba983.nativedo.harness.shadows.ShadowMediaController
+import io.github.baba983.nativedo.harness.shadows.ShadowMrzRecognizer
+import io.github.baba983.nativedo.harness.shadows.ShadowNativeByteBuffer
+import io.github.baba983.nativedo.harness.shadows.ShadowRLottieNative
+import io.github.baba983.nativedo.harness.shadows.ShadowSQLiteCursor
+import io.github.baba983.nativedo.harness.shadows.ShadowSQLiteDatabase
+import io.github.baba983.nativedo.harness.shadows.ShadowSQLitePreparedStatement
+import io.github.baba983.nativedo.harness.shadows.ShadowUtilities
+import java.util.concurrent.atomic.AtomicInteger
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import org.telegram.messenger.ApplicationLoader
+import org.telegram.ui.Components.FilterTabsView
+import org.telegram.ui.Components.glass.GlassTabView
+import org.telegram.ui.Stories.recorder.ButtonWithCounterView
+
+/**
+ * The message-bus wiring a reader can see: the topic list's "N new topics" pill and the
+ * notifications tab's unread badge.
+ *
+ * <p>Failure modes pinned here: a badge that only moves when a message happens to arrive (the
+ * page's own counts are the seed); a pill whose number does not match the category tab in front of
+ * the reader; a pill that survives the refresh it just asked for; and a pill that blocks the FAB or
+ * the glass tabs instead of sitting under the filter strip.</p>
+ */
+@RunWith(RobolectricTestRunner::class)
+@Config(
+    application = ApplicationLoader::class,
+    instrumentedPackages = ["org.telegram"],
+    qualifiers = "w411dp-h914dp-xxhdpi",
+    shadows = [
+        ShadowConnectionsManager::class,
+        ShadowNativeByteBuffer::class,
+        ShadowUtilities::class,
+        ShadowMediaController::class,
+        ShadowIntro::class,
+        ShadowMrzRecognizer::class,
+        ShadowRLottieNative::class,
+        ShadowAnimatedFileNative::class,
+        ShadowSQLiteDatabase::class,
+        ShadowSQLiteCursor::class,
+        ShadowSQLitePreparedStatement::class,
+    ],
+)
+internal class MessageBusUiTest {
+
+    private val harness = UpstreamUiHarness()
+    private val site = FakeDiscourseSite()
+
+    @Before
+    fun setUp() {
+        site.start()
+        site.serveBootstrap()
+        site.serveFixture("categories.json", "categories.json")
+        site.serveFixture("c/feedback/2/l/latest.json", "category-latest.json")
+        site.serveFixture("c/develop/4/l/latest.json", "category-latest.json")
+        NativeDo.setContainerFactory { context -> site.authenticatedContainer(context) }
+    }
+
+    @After
+    fun tearDown() {
+        // The session belongs to the container, not to the test: letting go of it here is the same
+        // call the app's own host makes when it goes to the back.
+        NativeDo.container(harness.context).messageBusSession.onBackground()
+        site.stop()
+        NativeDo.setContainerFactory { context -> site.authenticatedContainer(context) }
+    }
+
+    /**
+     * The pill counts what the site published for the tab in front of the reader, and acting on it
+     * refreshes the list, takes the list to its top and clears the count.
+     */
+    @Test
+    fun theNewTopicsPillFollowsTheCategoryFilterAndClearsWhenTapped() {
+        servePollResponses(
+            batch(
+                latest(topicId = 900, categoryId = 4),
+                newTopic(topicId = 901, categoryId = 2),
+                newTopic(topicId = 902, categoryId = 4),
+            ),
+        )
+
+        harness.bootApp()
+        harness.await("the topic list to load") { rowCount() == 2 }
+        harness.await("the bus to count three new topics") { pillText() == "3 个新话题" }
+        assertEquals(View.VISIBLE, pill().visibility)
+
+        // The pill hangs under the category strip, not over the list's own controls.
+        harness.layoutApp()
+        val pillLocation = IntArray(2)
+        pill().getLocationInWindow(pillLocation)
+        val strip = strip() ?: throw AssertionError("the topic list carries no category strip")
+        val stripLocation = IntArray(2)
+        strip.getLocationInWindow(stripLocation)
+        assertTrue(
+            "the pill starts below the category strip",
+            pillLocation[1] >= stripLocation[1] + strip.height - 1,
+        )
+
+        tapCategoryTab(2)
+        harness.await("the count of that category") { pillText() == "1 个新话题" }
+        tapCategoryTab(4)
+        harness.await("the count of the other category") { pillText() == "2 个新话题" }
+        tapCategoryTab(0)
+        harness.await("all categories again") { pillText() == "3 个新话题" }
+
+        val feedReads = site.requestPaths.count { it == "latest.json" }
+        pill().performClick()
+        harness.await("the pill's own refresh") {
+            site.requestPaths.count { it == "latest.json" } > feedReads
+        }
+        harness.await("the pill to go away") {
+            harness.idleClock(120)
+            pill().visibility != View.VISIBLE
+        }
+        assertTrue(
+            "the count the reader acted on is gone",
+            NativeDo.container(harness.context).messageBusSession.incomingTopics.value.isEmpty,
+        )
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /** A screen refresh (coming back to the list) is the reader asking for what is there now. */
+    @Test
+    fun aScreenRefreshClearsTheCount() {
+        servePollResponses(batch(newTopic(topicId = 901, categoryId = 2)))
+
+        harness.bootApp()
+        harness.await("the topic list to load") { rowCount() == 2 }
+        harness.await("the bus to count a new topic") { pillText() == "1 个新话题" }
+
+        val feedReads = site.requestPaths.count { it == "latest.json" }
+        val page = harness.visibleFragment() as NativeDoMainTabsActivity.TabPage
+        page.onParentBecameVisible()
+        harness.await("the refresh's feed") {
+            site.requestPaths.count { it == "latest.json" } > feedReads
+        }
+        harness.await("the pill to clear") {
+            harness.idleClock(120)
+            pill().visibility != View.VISIBLE
+        }
+        assertTrue(
+            "a refresh resets the tracking state",
+            NativeDo.container(harness.context).messageBusSession.incomingTopics.value.isEmpty,
+        )
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * The notifications badge is right before the bus says anything (the page's own counts are the
+     * seed) and then follows the server, which is the only thing that knows what has been read.
+     */
+    @Test
+    fun theNotificationBadgeIsSeededFromTheBootstrapAndFollowsTheBus() {
+        // The first poll waits until the test has seen the page's own count, so the seed and the
+        // live message are not asked to be visible in the same instant.
+        val gate = java.util.concurrent.CountDownLatch(1)
+        site.serveMessageBusPoll {
+            gate.await(5, java.util.concurrent.TimeUnit.SECONDS)
+            batch(notification(allUnread = 3))
+        }
+
+        harness.bootApp()
+        harness.await("the tab host") { harness.topFragment() is NativeDoMainTabsActivity }
+        harness.await("the badge seeded by the page") { badgeText() == "5" }
+        gate.countDown()
+        harness.await("the badge from the notification channel") { badgeText() == "3" }
+
+        val pollPath = site.requestPaths.firstOrNull { it.startsWith("message-bus/") }
+            ?: throw AssertionError("the bus never polled")
+        assertTrue(
+            "the first poll subscribed the reader's own notification channel",
+            site.requestBodyFor(pollPath).orEmpty().contains("%2Fnotification%2F7"),
+        )
+        harness.assertNoTelegramSideEffects()
+    }
+
+    // ------------------------------------------------------------------------------------------
+
+    /** Queues one answer per poll; later polls get an empty batch. */
+    private fun servePollResponses(vararg answers: String) {
+        val index = AtomicInteger(0)
+        site.serveMessageBusPoll {
+            val next = index.getAndIncrement()
+            if (next < answers.size) answers[next] else "[]"
+        }
+    }
+
+    private fun latest(topicId: Long, categoryId: Int): String = message(
+        channel = "/latest",
+        messageId = 9000L + topicId,
+        data = """{"topic_id":$topicId,"message_type":"latest","payload":{"category_id":$categoryId}}""",
+    )
+
+    private fun newTopic(topicId: Long, categoryId: Int): String = message(
+        channel = "/new",
+        messageId = 9100L + topicId,
+        data = """{"topic_id":$topicId,"message_type":"new_topic","payload":{"category_id":$categoryId}}""",
+    )
+
+    private fun notification(allUnread: Int): String = message(
+        channel = "/notification/7",
+        messageId = 9200L,
+        data = """{"unread_notifications":$allUnread,"unread_high_priority_notifications":0,"all_unread_notifications_count":$allUnread}""",
+    )
+
+    private fun message(channel: String, messageId: Long, data: String): String =
+        """{"global_id":$messageId,"message_id":$messageId,"channel":"$channel","data":$data}"""
+
+    private fun batch(vararg messages: String): String =
+        messages.joinToString(",", prefix = "[", postfix = "]")
+
+    private fun fragment(): io.github.baba983.nativedo.topic.TopicListFragment =
+        harness.visibleFragment() as io.github.baba983.nativedo.topic.TopicListFragment
+
+    private fun pill(): ButtonWithCounterView =
+        fragmentField("newTopicsPill") as ButtonWithCounterView
+
+    private fun pillText(): CharSequence? = pill().text.text
+
+    private fun strip(): FilterTabsView? = fragmentField("tabsView") as FilterTabsView?
+
+    private fun fragmentField(name: String): Any? {
+        val field = io.github.baba983.nativedo.topic.TopicListFragment::class.java
+            .getDeclaredField(name)
+            .apply { isAccessible = true }
+        return field.get(fragment())
+    }
+
+    private fun badgeText(): CharSequence? {
+        val host = harness.topFragment() as? NativeDoMainTabsActivity ?: return null
+        val tabsField = NativeDoMainTabsActivity::class.java.getDeclaredField("tabs").apply { isAccessible = true }
+        val tabs = tabsField.get(host) as Array<*>
+        val tab = tabs[1] as GlassTabView
+        val counterField = GlassTabView::class.java.getDeclaredField("counter").apply { isAccessible = true }
+        val counter = counterField.get(tab) as org.telegram.ui.Components.AnimatedTextView.AnimatedTextDrawable
+        return counter.text
+    }
+
+    private fun rowCount(): Int = contentListOf(harness.activity)?.adapter?.itemCount ?: 0
+
+    /** A tap on a category tab, the way the strip's own list hands one over. */
+    private fun tapCategoryTab(id: Int) {
+        val strip = strip() ?: throw AssertionError("the topic list carries no category strip")
+        harness.layoutApp()
+        val position = (0 until strip.tabsCount)
+            .map { index -> strip.getTab(index)!!.id }
+            .indexOf(id)
+        if (position < 0) throw AssertionError("the strip has no tab $id")
+        val container = strip.tabsContainer
+        val tab = (0 until container.childCount)
+            .map { index -> container.getChildAt(index) }
+            .firstOrNull { it.id == id }
+            ?: throw AssertionError("the strip drew no view for tab $id")
+        container.clickItem(tab, position)
+        harness.idle()
+    }
+}

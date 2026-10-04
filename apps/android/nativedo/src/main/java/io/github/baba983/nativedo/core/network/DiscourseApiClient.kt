@@ -71,11 +71,19 @@ class DiscourseApiClient(
 
     override suspend fun fetchBootstrap(): ParsedBootstrap =
         runWithSessionBoundary {
-            service.bootstrap().use { responseBody ->
-                val html = responseBody.string()
-                BootstrapHtmlParser.parse(html)
-            }
+            BootstrapHtmlParser.parse(fetchBootstrapHtmlUnbidden())
         }
+
+    /**
+     * The same homepage `fetchBootstrap` reads, returned whole: the message bus' own positions
+     * (`topicTrackingStateMeta`, `currentUser.notification_channel_position`) live in the page's
+     * `#data-preloaded`, so a caller that wants to subscribe where Discourse's web client does
+     * needs the HTML, not just the username.
+     */
+    suspend fun fetchBootstrapHtml(): String = runWithSessionBoundary { fetchBootstrapHtmlUnbidden() }
+
+    private suspend fun fetchBootstrapHtmlUnbidden(): String =
+        service.bootstrap().use { responseBody -> responseBody.string() }
 
     override suspend fun fetchCurrentUser(): SessionUserSummary? =
         runWithSessionBoundary {

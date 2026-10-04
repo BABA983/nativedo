@@ -1,10 +1,14 @@
 package io.github.baba983.nativedo.settings;
 
 import android.content.Context;
+import android.os.Bundle;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.FrameLayout;
 
 import androidx.annotation.NonNull;
+import androidx.core.view.ViewCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -14,11 +18,14 @@ import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.HeaderCell;
 import org.telegram.ui.Cells.TextSettingsCell;
+import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.RecyclerListView;
+import org.telegram.ui.DialogsActivity;
 import org.telegram.ui.ThemeActivity;
 
 import io.github.baba983.nativedo.app.NativeDo;
 import io.github.baba983.nativedo.app.NativeDoActivity;
+import io.github.baba983.nativedo.app.NativeDoMainTabsActivity;
 import io.github.baba983.nativedo.auth.LoginWebViewFragment;
 import io.github.baba983.nativedo.bookmarks.BookmarksFragment;
 import io.github.baba983.nativedo.core.di.AppContainer;
@@ -34,7 +41,7 @@ import io.github.baba983.nativedo.profile.ProfileFragment;
  * so a list of settings looks like upstream's list of settings without upstream's Telegram account
  * model underneath it.</p>
  */
-public class SettingsFragment extends BaseFragment {
+public class SettingsFragment extends BaseFragment implements NativeDoMainTabsActivity.TabPage {
 
     private static final int ROW_APPEARANCE_HEADER = 0;
     private static final int ROW_THEME = 1;
@@ -50,10 +57,29 @@ public class SettingsFragment extends BaseFragment {
     private String username = "";
     private String displayName = "";
 
+    private RecyclerListView listView;
+    private int navigationBarHeight;
+    private int additionNavigationBarHeight;
+
+    /** The tab host builds its pages with the bundle that says a strip is under them. */
+    public SettingsFragment(Bundle args) {
+        super(args);
+    }
+
+    public SettingsFragment() {
+        super();
+    }
+
     @Override
     protected View createView(Context context) {
+        final boolean hasMainTabs = arguments != null && arguments.getBoolean("hasMainTabs", false);
+        additionNavigationBarHeight = hasMainTabs ? AndroidUtilities.dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS) : 0;
+
         actionBar.setTitle("设置");
         actionBar.setAllowOverlayTitle(true);
+        // The page carries its own bar: inside the tab host the bar belongs to the page's screen,
+        // and the strip (a sibling of the pager) draws over the pages, never under them.
+        actionBar.setAddToContainer(false);
 
         container = NativeDo.container(getParentActivity());
         SessionSnapshot snapshot = container.getSessionStore().snapshot();
@@ -64,11 +90,15 @@ public class SettingsFragment extends BaseFragment {
             displayName = snapshot.getDisplayName();
         }
 
-        RecyclerListView list = new RecyclerListView(context);
-        list.setLayoutManager(new LinearLayoutManager(context));
-        list.setAdapter(new SettingsAdapter());
-        list.setVerticalScrollBarEnabled(false);
-        list.setOnItemClickListener((view, position) -> {
+        listView = new RecyclerListView(context);
+        listView.setLayoutManager(new LinearLayoutManager(context));
+        listView.setAdapter(new SettingsAdapter());
+        listView.setVerticalScrollBarEnabled(false);
+        // The list reaches the bottom of the window and its rows scroll behind the glass strip;
+        // the last row stays reachable above it through the padding below.
+        listView.setClipToPadding(false);
+        checkUi_listPadding();
+        listView.setOnItemClickListener((view, position) -> {
             if (position == ROW_THEME) {
                 presentFragment(new ThemeActivity(ThemeActivity.THEME_TYPE_BASIC));
             } else if (position == ROW_BOOKMARKS) {
@@ -81,8 +111,63 @@ public class SettingsFragment extends BaseFragment {
                 confirmSignOut();
             }
         });
-        fragmentView = list;
-        return list;
+
+        FrameLayout frame = new FrameLayout(context);
+        frame.addView(listView, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP));
+        // The page's own action bar sits above the content; checkUi_contentTop() moves the content
+        // below it once it has been measured.
+        frame.addView(actionBar, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP));
+        fragmentView = frame;
+        ViewCompat.setOnApplyWindowInsetsListener(fragmentView, this::onInsetsInternal);
+        actionBar.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> checkUi_contentTop());
+        checkUi_contentTop();
+        return fragmentView;
+    }
+
+    @Override
+    public void onInsets(int left, int top, int right, int bottom) {
+        navigationBarHeight = bottom;
+        checkUi_listPadding();
+    }
+
+    private void checkUi_listPadding() {
+        if (listView != null) {
+            listView.setPadding(0, 0, 0, navigationBarHeight + additionNavigationBarHeight);
+        }
+    }
+
+    /** Keeps the page's content below its own action bar, including after a status bar change. */
+    private void checkUi_contentTop() {
+        final int top = actionBar != null ? actionBar.getMeasuredHeight() : 0;
+        if (top <= 0 || listView == null) {
+            return;
+        }
+        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) listView.getLayoutParams();
+        if (params != null && params.topMargin != top) {
+            params.topMargin = top;
+            listView.setLayoutParams(params);
+        }
+    }
+
+    /** A second tap on the reader's tab: the list goes back to its top. */
+    @Override
+    public void onParentScrollToTop() {
+        if (listView != null) {
+            listView.smoothScrollToPosition(0);
+        }
+    }
+
+    /** The page reaches the bottom of the window itself; the shell must not reserve the bar. */
+    @Override
+    public boolean isSupportEdgeToEdge() {
+        return true;
+    }
+
+    @Override
+    public boolean drawEdgeNavigationBar() {
+        return false;
     }
 
     /**

@@ -38,4 +38,11 @@
     <string name="MainTabsChats">话题</string>
     <string name="MainTabsContacts">通知</string>
     <string name="Settings">设置</string>
+    <!--
+      The home options menu's day/night entry. Upstream's own string and icon, labelled with the
+      mode the tap takes the reader to (upstream shows "Day Mode" while the app is dark and
+      "Night Mode" while it is light).
+    -->
+    <string name="SwitchThemeToDay">日间模式</string>
+    <string name="SwitchThemeToNight">夜间模式</string>
 </resources>

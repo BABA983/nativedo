@@ -1,15 +1,13 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
-    <meta name="csrf-token" content="csrf-token-demo" />
+    <meta name="shared_session_key" content="shared-session-key-demo" />
     <title>linux.do</title>
   </head>
   <body>
-    <div
-      class="hidden"
-      id="data-preloaded"
-      data-preloaded='{"site":"{\"title\":\"linux.do\"}","currentUser":"{\"id\":1,\"username\":\"baba\",\"name\":\"Baba\"}"}'
-    ></div>
+    <!-- What linux.do actually renders: the preload is a JSON script, and each value is a
+         JSON string containing the object. -->
+    <script id="data-preloaded" type="application/json">{"topicTrackingStateMeta":"{\"/latest\":4106,\"/new\":4107}","currentUser":"{\"id\":7,\"username\":\"baba\",\"name\":\"Baba\",\"notification_channel_position\":4108,\"unread_notifications\":4,\"unread_high_priority_notifications\":2,\"all_unread_notifications_count\":5}"}</script>
   </body>
 </html>

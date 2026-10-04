@@ -152,6 +152,10 @@ internal class SettingsTabTest {
             container.sessionStore.snapshot(),
         )
         harness.layoutApp()
+        assertTrue(
+            "the tab shell left with the session",
+            viewsUnder(harness.activity.findViewById(android.R.id.content)).none { it is MainTabsLayout },
+        )
         harness.renderApp("settings-signed-out")
         harness.assertNoTelegramSideEffects()
     }
@@ -312,14 +316,9 @@ internal class SettingsTabTest {
 
     // ------------------------------------------------------------------ shell traversal
 
-    private fun currentFragmentName(shell: NativeDoActivity): String? = currentFragment(shell)
-        ?.javaClass?.simpleName
+    private fun currentFragmentName(shell: NativeDoActivity): String? = harness.visibleFragmentName()
 
-    private fun currentFragment(shell: NativeDoActivity): Any? {
-        val layoutField = shell.javaClass.getDeclaredField("actionBarLayout").apply { isAccessible = true }
-        val layout = layoutField.get(shell) as org.telegram.ui.ActionBar.ActionBarLayout
-        return layout.fragmentStack.lastOrNull()
-    }
+    private fun currentFragment(shell: NativeDoActivity): Any? = harness.visibleFragment()
 
     private fun back() {
         (harness.activity as NativeDoActivity).onBackPressed()

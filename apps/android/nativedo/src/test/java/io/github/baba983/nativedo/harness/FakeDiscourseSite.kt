@@ -162,6 +162,16 @@ internal class FakeDiscourseSite {
         return bytes.toByteArray()
     }
 
+    /** Serves every `message-bus/{clientId}/poll` with [build]'s answer. */
+    fun serveMessageBusPoll(build: (String) -> String) {
+        messageBusPoll = build
+    }
+
+    /** Serves the homepage bootstrap HTML (what the message-bus positions are read from) at `/`. */
+    fun serveBootstrap(fixture: String = "home-bootstrap.html") {
+        serveFixture("", fixture)
+    }
+
     fun start(): String {
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
@@ -180,6 +190,14 @@ internal class FakeDiscourseSite {
                     lastCookieHeader = request.getHeader("Cookie")
                     request.getHeader("Cookie")?.let { cookieHeaders[path] = it }
                     queries.getOrPut(path) { mutableListOf() } += request.path.orEmpty().substringAfter('?')
+                }
+                messageBusPoll?.let { build ->
+                    if (path.startsWith("message-bus/")) {
+                        return MockResponse()
+                            .setResponseCode(200)
+                            .setHeader("Content-Type", "application/json")
+                            .setBody(build(request.path.orEmpty()))
+                    }
                 }
                 if (path.startsWith("user_avatar/")) {
                     return MockResponse()
@@ -238,10 +256,14 @@ internal class FakeDiscourseSite {
      * A container pointing at this site with a usable session already in it.
      *
      * Every screen sits behind the session gate, so a screen test needs a session for the same
-     * reason the app does; seeding it here keeps that out of each test.
+     * reason the app does; seeding it here keeps that out of each test. A test that needs to watch
+     * the container's coroutines hands in its own [applicationScope].
      */
-    fun authenticatedContainer(context: Context): AppContainer {
-        val container = AppContainer(context, baseUrl, null, null)
+    fun authenticatedContainer(
+        context: Context,
+        applicationScope: kotlinx.coroutines.CoroutineScope? = null,
+    ): AppContainer {
+        val container = AppContainer(context, baseUrl, null, applicationScope)
         val url = baseUrl.toHttpUrl()
         container.cookieStore.save(
             url,
@@ -298,6 +320,8 @@ internal class FakeDiscourseSite {
     private val images = mutableMapOf<String, Pair<ByteArray, String>>()
     private val responses = mutableMapOf<String, () -> MockResponse>()
     private var lastCookieHeader: String? = null
+    /** The answer to every `message-bus/{clientId}/poll`; null means the route is not served. */
+    private var messageBusPoll: ((String) -> String)? = null
 
     private fun fixtureBodyFor(path: String): String? {
         bodies[path]?.let { return it }

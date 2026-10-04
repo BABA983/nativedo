@@ -1,0 +1,86 @@
+[
+  {
+    "global_id": 4106,
+    "message_id": 4106,
+    "channel": "/latest",
+    "data": {
+      "topic_id": 4002,
+      "message_type": "latest",
+      "payload": {
+        "bumped_at": "2024-06-03T09:20:00.000Z",
+        "category_id": 4,
+        "archetype": "regular"
+      }
+    }
+  },
+  {
+    "global_id": 4107,
+    "message_id": 4107,
+    "channel": "/new",
+    "data": {
+      "topic_id": 4010,
+      "message_type": "new_topic",
+      "payload": {
+        "last_read_post_number": null,
+        "highest_post_number": 1,
+        "created_at": "2024-06-03T09:21:00.000Z",
+        "category_id": 4,
+        "archetype": "regular",
+        "created_in_new_period": true
+      }
+    }
+  },
+  {
+    "global_id": 4108,
+    "message_id": 4108,
+    "channel": "/notification/7",
+    "data": {
+      "unread_notifications": 2,
+      "unread_high_priority_notifications": 1,
+      "read_first_notification": false,
+      "last_notification": {
+        "notification": {
+          "id": 4104,
+          "user_id": 7,
+          "notification_type": 2,
+          "read": false,
+          "high_priority": false,
+          "created_at": "2024-06-03T09:20:00.000Z",
+          "post_number": 7,
+          "topic_id": 4002,
+          "slug": "build-fails-on-a-fresh-checkout",
+          "fancy_title": "构建一直失败，有人遇到过吗",
+          "data": {
+            "topic_title": "构建一直失败，有人遇到过吗",
+            "display_username": "searcher",
+            "display_name": "Searcher",
+            "original_username": "searcher",
+            "original_post_id": 88012,
+            "original_post_type": 1,
+            "revision_number": null,
+            "reply_to_post_number": 4
+          },
+          "acting_user_avatar_template": "/user_avatar/linux.do/searcher/{size}/3.png",
+          "acting_user_name": "Searcher"
+        }
+      },
+      "recent": [
+        [4104, false],
+        [4101, true]
+      ],
+      "seen_notification_id": 4100,
+      "all_unread_notifications_count": 3,
+      "new_personal_messages_notifications_count": 0
+    }
+  },
+  {
+    "global_id": -1,
+    "message_id": -1,
+    "channel": "/__status",
+    "data": {
+      "/latest": 4106,
+      "/new": 4107,
+      "/notification/7": 4108
+    }
+  }
+]

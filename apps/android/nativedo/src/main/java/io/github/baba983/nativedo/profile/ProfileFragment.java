@@ -2,10 +2,13 @@ package io.github.baba983.nativedo.profile;
 
 import android.content.Context;
 import android.os.Bundle;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.FrameLayout;
 
 import androidx.annotation.NonNull;
+import androidx.core.view.ViewCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -21,7 +24,9 @@ import org.telegram.ui.Cells.HeaderCell;
 import org.telegram.ui.Cells.ProfileSearchCell;
 import org.telegram.ui.Cells.TextDetailCell;
 import org.telegram.ui.Cells.TextInfoPrivacyCell;
+import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.RecyclerListView;
+import org.telegram.ui.DialogsActivity;
 
 import java.time.Instant;
 import java.time.ZoneId;
@@ -30,6 +35,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import io.github.baba983.nativedo.app.NativeDo;
+import io.github.baba983.nativedo.app.NativeDoMainTabsActivity;
 import io.github.baba983.nativedo.core.di.AppContainer;
 import io.github.baba983.nativedo.core.model.TopicSummary;
 import io.github.baba983.nativedo.feature.topic.data.TopicReadMarks;
@@ -52,10 +58,12 @@ import io.github.baba983.nativedo.topic.TopicFragment;
  * {@link TextDetailCell} and the bio is a {@link TextInfoPrivacyCell}. Every one of those cells is
  * upstream's, drawn the way upstream draws a list row.</p>
  */
-public class ProfileFragment extends BaseFragment {
+public class ProfileFragment extends BaseFragment implements NativeDoMainTabsActivity.TabPage {
 
     private static final String ARG_USERNAME = "username";
     private static final String ARG_DISPLAY_NAME = "displayName";
+    /** Whether the screen is a shell tab root, which has nothing behind it to go back to. */
+    private static final String ARG_ROOT = "root";
 
     private static final int TYPE_HEADER = 0;
     private static final int TYPE_SECTION = 1;
@@ -85,11 +93,28 @@ public class ProfileFragment extends BaseFragment {
     private TLRPC.User avatarUser;
     private AppContainer container;
 
+    /** Whether the screen is a page of the tab host, which adds the strip's height to the insets. */
+    private int navigationBarHeight;
+    private int additionNavigationBarHeight;
+
     public static ProfileFragment forUser(String username, String displayName) {
         Bundle args = new Bundle();
         args.putString(ARG_USERNAME, username == null ? "" : username);
         args.putString(ARG_DISPLAY_NAME, displayName == null ? "" : displayName);
         return new ProfileFragment(args);
+    }
+
+    /**
+     * The reader's own profile as a shell tab: the same screen a post's author opens, but with
+     * nothing behind it to go back to, so it draws no back button - upstream's own profile tab does
+     * the same ({@code ProfileActivity}'s {@code hasMainTabs} draws the back button only when the
+     * profile is a step).
+     */
+    public static ProfileFragment forRoot(String username, String displayName) {
+        ProfileFragment fragment = forUser(username, displayName);
+        fragment.getArguments().putBoolean(ARG_ROOT, true);
+        fragment.getArguments().putBoolean("hasMainTabs", true);
+        return fragment;
     }
 
     public ProfileFragment(Bundle args) {
@@ -98,8 +123,19 @@ public class ProfileFragment extends BaseFragment {
 
     @Override
     protected View createView(Context context) {
+        final boolean root = getArguments() != null && getArguments().getBoolean(ARG_ROOT, false);
+        final boolean hasMainTabs = getArguments() != null && getArguments().getBoolean("hasMainTabs", false);
+        additionNavigationBarHeight = hasMainTabs ? AndroidUtilities.dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS) : 0;
+        if (hasMainTabs) {
+            // The page carries its own bar: inside the tab host the bar belongs to the page's
+            // screen, and the strip (a sibling of the pager) draws over the pages.
+            actionBar.setAddToContainer(false);
+        }
+
         actionBar.setTitle(displayName());
-        actionBar.setBackButtonImage(R.drawable.ic_ab_back);
+        if (!root) {
+            actionBar.setBackButtonImage(R.drawable.ic_ab_back);
+        }
         actionBar.setAllowOverlayTitle(true);
         actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
             @Override
@@ -114,7 +150,13 @@ public class ProfileFragment extends BaseFragment {
         listView.setLayoutManager(new LinearLayoutManager(context));
         listView.setAdapter(new ProfileAdapter());
         listView.setVerticalScrollBarEnabled(false);
-        listView.setPadding(0, AndroidUtilities.dp(4), 0, AndroidUtilities.dp(4));
+        if (hasMainTabs) {
+            // The list reaches the bottom of the window and its rows scroll behind the glass strip;
+            // the last row stays reachable above it through the padding below. A pushed profile is
+            // laid out by the shell as before, so it keeps its own bottom clip.
+            listView.setClipToPadding(false);
+            checkUi_listPadding();
+        }
         listView.setOnItemClickListener((view, position) -> {
             if (position == bookmarksRow) {
                 presentFragment(new io.github.baba983.nativedo.bookmarks.BookmarksFragment());
@@ -132,9 +174,68 @@ public class ProfileFragment extends BaseFragment {
             }
         });
 
-        fragmentView = listView;
+        if (hasMainTabs) {
+            FrameLayout frame = new FrameLayout(context);
+            frame.addView(listView, LayoutHelper.createFrame(
+                    LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP));
+            // The page's own action bar sits above the content; checkUi_contentTop() moves the
+            // content below it once it has been measured.
+            frame.addView(actionBar, LayoutHelper.createFrame(
+                    LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP));
+            fragmentView = frame;
+            ViewCompat.setOnApplyWindowInsetsListener(fragmentView, this::onInsetsInternal);
+            actionBar.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> checkUi_contentTop());
+            checkUi_contentTop();
+        } else {
+            fragmentView = listView;
+        }
         loadProfile();
         return fragmentView;
+    }
+
+    @Override
+    public void onInsets(int left, int top, int right, int bottom) {
+        navigationBarHeight = bottom;
+        checkUi_listPadding();
+    }
+
+    private void checkUi_listPadding() {
+        if (listView != null) {
+            listView.setPadding(0, AndroidUtilities.dp(4), 0,
+                    AndroidUtilities.dp(4) + navigationBarHeight + additionNavigationBarHeight);
+        }
+    }
+
+    /** Keeps the page's content below its own action bar, including after a status bar change. */
+    private void checkUi_contentTop() {
+        final int top = actionBar != null ? actionBar.getMeasuredHeight() : 0;
+        if (top <= 0 || listView == null) {
+            return;
+        }
+        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) listView.getLayoutParams();
+        if (params != null && params.topMargin != top) {
+            params.topMargin = top;
+            listView.setLayoutParams(params);
+        }
+    }
+
+    /** A second tap on the reader's tab: the list goes back to its top. */
+    @Override
+    public void onParentScrollToTop() {
+        if (listView != null) {
+            listView.smoothScrollToPosition(0);
+        }
+    }
+
+    /** The page reaches the bottom of the window itself; a pushed profile is laid out as before. */
+    @Override
+    public boolean isSupportEdgeToEdge() {
+        return getArguments() != null && getArguments().getBoolean("hasMainTabs", false);
+    }
+
+    @Override
+    public boolean drawEdgeNavigationBar() {
+        return false;
     }
 
     /**

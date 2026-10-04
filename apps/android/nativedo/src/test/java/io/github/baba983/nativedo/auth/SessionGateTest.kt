@@ -152,14 +152,9 @@ internal class SessionGateTest {
 
     // ------------------------------------------------------------------ shell traversal
 
-    private fun currentFragment(): Any? {
-        val shell = harness.activity as io.github.baba983.nativedo.app.NativeDoActivity
-        val layoutField = shell.javaClass.getDeclaredField("actionBarLayout").apply { isAccessible = true }
-        val layout = layoutField.get(shell) as org.telegram.ui.ActionBar.ActionBarLayout
-        return layout.fragmentStack.lastOrNull()
-    }
+    private fun currentFragment(): Any? = harness.visibleFragment()
 
-    private fun currentFragmentName(): String? = currentFragment()?.javaClass?.simpleName
+    private fun currentFragmentName(): String? = harness.visibleFragmentName()
 
     private fun rowCount(): Int =
         contentListOf(harness.activity)?.adapter?.itemCount ?: 0

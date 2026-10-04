@@ -305,12 +305,7 @@ internal class AvatarRenderTest {
         return pixels.count { Color.green(it) > 200 && Color.red(it) < 80 && Color.blue(it) < 80 }
     }
 
-    private fun currentFragmentName(): String? {
-        val shell = harness.activity as io.github.baba983.nativedo.app.NativeDoActivity
-        val layoutField = shell.javaClass.getDeclaredField("actionBarLayout").apply { isAccessible = true }
-        val layout = layoutField.get(shell) as org.telegram.ui.ActionBar.ActionBarLayout
-        return layout.fragmentStack.lastOrNull()?.javaClass?.simpleName
-    }
+    private fun currentFragmentName(): String? = harness.visibleFragmentName()
 
     private fun laidOutCells(): List<org.telegram.ui.Cells.ChatMessageCell> {
         val list = listView() ?: return emptyList()

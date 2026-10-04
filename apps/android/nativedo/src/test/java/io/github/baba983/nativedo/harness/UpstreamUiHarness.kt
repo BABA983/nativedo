@@ -177,6 +177,30 @@ internal class UpstreamUiHarness {
     }
 
     /**
+     * The fragment the shell is presenting on top. The tab host counts through to the page it is
+     * showing: that is the screen the reader is actually looking at when no fragment is pushed.
+     */
+    fun visibleFragment(): BaseFragment? {
+        val top = topFragment()
+        return (top as? org.telegram.ui.ViewPagerActivity)?.currentVisibleFragment ?: top
+    }
+
+    fun visibleFragmentName(): String? = visibleFragment()?.javaClass?.simpleName
+
+    /** The fragment on top of the shell's stack, tab host included. */
+    fun topFragment(): BaseFragment? {
+        val layoutField = NativeDoActivity::class.java.getDeclaredField("actionBarLayout").apply { isAccessible = true }
+        val layout = layoutField.get(activity) as org.telegram.ui.ActionBar.ActionBarLayout
+        return layout.fragmentStack.lastOrNull()
+    }
+
+    fun fragmentStack(): List<BaseFragment> {
+        val layoutField = NativeDoActivity::class.java.getDeclaredField("actionBarLayout").apply { isAccessible = true }
+        val layout = layoutField.get(activity) as org.telegram.ui.ActionBar.ActionBarLayout
+        return layout.fragmentStack.toList()
+    }
+
+    /**
      * Drains the main looper, but never for longer than [maxTasks] tasks.
      *
      * <p>Upstream animates rich media off `Choreographer.postFrameCallback`, and Robolectric's

@@ -368,8 +368,8 @@ internal class ReadProgressTest {
         return first + index
     }
 
-    /** The shell's own topic list, whichever fragment in the stack it is. */
-    private fun topicList(): TopicListFragment? = fragments().filterIsInstance<TopicListFragment>().firstOrNull()
+    /** The tab host's topic list, which is the page the shell is showing while no topic is open. */
+    private fun topicList(): TopicListFragment? = harness.visibleFragment() as? TopicListFragment
 
     private fun fragments(): List<Any> {
         val shell = harness.activity as io.github.baba983.nativedo.app.NativeDoActivity

@@ -1,11 +1,15 @@
 package io.github.baba983.nativedo.topic;
 
 import android.content.Context;
+import android.os.Bundle;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 
 import androidx.annotation.NonNull;
+import androidx.core.view.ViewCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -13,18 +17,25 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLog;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.BaseFragment;
+import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.DialogCell;
 import org.telegram.ui.Components.FilterTabsView;
 import org.telegram.ui.Components.FragmentFloatingButton;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.RecyclerListView;
+import org.telegram.ui.DialogsActivity;
+import org.telegram.ui.Stories.recorder.ButtonWithCounterView;
 
 import java.util.ArrayList;
 import java.util.List;
 
 import io.github.baba983.nativedo.R;
 import io.github.baba983.nativedo.app.NativeDo;
+import io.github.baba983.nativedo.app.NativeDoMainTabsActivity;
 import io.github.baba983.nativedo.core.di.AppContainer;
+import io.github.baba983.nativedo.core.messagebus.IncomingTopics;
+import io.github.baba983.nativedo.core.messagebus.MessageBusHandle;
+import io.github.baba983.nativedo.core.messagebus.MessageBusSession;
 import io.github.baba983.nativedo.core.model.CategorySummary;
 import io.github.baba983.nativedo.core.model.Tag;
 import io.github.baba983.nativedo.core.model.TopicSummary;
@@ -42,7 +53,7 @@ import org.telegram.tgnet.TLRPC;
  * per category of the site, ordered the way the site orders them, plus the all-topics tab, and the
  * site's own color as a dot in front of the name - the strip is where a reader reads it.</p>
  */
-public class TopicListFragment extends BaseFragment {
+public class TopicListFragment extends BaseFragment implements NativeDoMainTabsActivity.TabPage {
 
     /** The search item in the action bar, which opens the search screen. */
     private static final int SEARCH_ITEM = 1;
@@ -57,6 +68,12 @@ public class TopicListFragment extends BaseFragment {
     static final int CLEAR_TAG_ITEM = 3;
 
     /**
+     * The home's options item: upstream's own overflow item, the id and icon its chat list gives
+     * its three-dot menu ({@code DialogsActivity.optionsItem}).
+     */
+    static final int OPTIONS_ITEM = 4;
+
+    /**
      * The all-topics tab. Upstream's tabs are identified by an int, and the all-topics feed is not
      * a category, so it takes the id no category can have.
      */
@@ -69,7 +86,21 @@ public class TopicListFragment extends BaseFragment {
     private FilterTabsView tabsView;
     private FragmentFloatingButton startTopicButton;
     private org.telegram.ui.ActionBar.ActionBarMenuItem clearTagItem;
+    /** Upstream's overflow item: the three-dot menu this screen's actions live in. */
+    private org.telegram.ui.ActionBar.ActionBarMenuItem optionsItem;
     private RecyclerListView listView;
+    /**
+     * The "N new topics" pill: upstream's own rounded action control
+     * ({@code ButtonWithCounterView}, the button its story recorder and bottom sheets use), shown
+     * when the message bus has counted topics the list does not show yet.
+     */
+    private ButtonWithCounterView newTopicsPill;
+    /** The pill's feed from the message bus, detached when the screen is destroyed. */
+    private MessageBusHandle incomingTopicsObserver;
+    /** What the pill currently counts; nulls name no category, so all of them count. */
+    private IncomingTopics incomingTopics = new IncomingTopics();
+    /** Whether the pill is on screen, so the list can start below it instead of under it. */
+    private boolean newTopicsPillShown;
     /** What is shown instead of the list when the feed could not be read. */
     private org.telegram.ui.Components.EmptyTextProgressView emptyView;
     private final List<TopicSummary> topics = new ArrayList<>();
@@ -87,9 +118,31 @@ public class TopicListFragment extends BaseFragment {
     /** Set once a feed has arrived, so coming back to the screen reloads rather than double-loads. */
     private boolean feedLoaded;
 
+    /** Whether the screen is a page of the tab host, which adds the strip's height to the insets. */
+    private boolean hasMainTabs;
+    private int additionNavigationBarHeight;
+    private int additionFloatingButtonOffset;
+    private int navigationBarHeight;
+
+    /** The tab host builds its pages with the bundle that says a strip is under them. */
+    public TopicListFragment(Bundle args) {
+        super(args);
+    }
+
+    public TopicListFragment() {
+        super();
+    }
+
     @Override
     protected View createView(Context context) {
+        hasMainTabs = arguments != null && arguments.getBoolean("hasMainTabs", false);
+        additionNavigationBarHeight = hasMainTabs ? AndroidUtilities.dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS) : 0;
+        additionFloatingButtonOffset = hasMainTabs ? AndroidUtilities.dp(DialogsActivity.MAIN_TABS_HEIGHT + DialogsActivity.MAIN_TABS_MARGIN) : 0;
+
         actionBar.setTitle("linux.do");
+        // The page carries its own bar: inside the tab host the bar belongs to the page's screen,
+        // and the strip (a sibling of the pager) draws over the pages, never under them.
+        actionBar.setAddToContainer(false);
         actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
             @Override
             public void onItemClick(int id) {
@@ -109,12 +162,24 @@ public class TopicListFragment extends BaseFragment {
         // (the topic list's strip is categories), so this is one item whose dialog holds the tags.
         actionBar.createMenu().addItem(TAG_ITEM, org.telegram.messenger.R.drawable.menu_tag_filter);
         clearTagItem = actionBar.createMenu().addItem(CLEAR_TAG_ITEM, org.telegram.messenger.R.drawable.msg_close);
+        // The options item goes last, so it is the rightmost - upstream's chat list puts its own
+        // three-dot menu at that edge with the same id and icon.
+        optionsItem = actionBar.createMenu().addItem(OPTIONS_ITEM, org.telegram.messenger.R.drawable.ic_ab_other);
+        optionsItem.setContentDescription("更多");
+        optionsItem.setOnClickListener(v -> showItemOptions());
+        optionsItem.setOnLongClickListener(v -> {
+            showItemOptions();
+            return true;
+        });
 
         listView = new RecyclerListView(context);
         listView.setLayoutManager(new LinearLayoutManager(context));
         listView.setAdapter(new TopicListAdapter());
         listView.setVerticalScrollBarEnabled(false);
-        listView.setPadding(0, AndroidUtilities.dp(4), 0, AndroidUtilities.dp(4));
+        // The list reaches the bottom of the window and its rows scroll behind the glass strip;
+        // checkUi_listPadding() keeps the last row reachable above it.
+        listView.setClipToPadding(false);
+        checkUi_listPadding();
         listView.setOnItemClickListener((view, position) -> {
             TopicSummary topic = topics.get(position);
             presentTopic(topic);
@@ -136,9 +201,9 @@ public class TopicListFragment extends BaseFragment {
 
         // Upstream's own floating button, the one its chat list starts a new chat with: this list's
         // one action is to start a topic, so it is the same button in the same place.
-        android.widget.FrameLayout frame = new android.widget.FrameLayout(context);
+        FrameLayout frame = new FrameLayout(context);
         frame.addView(contentView, LayoutHelper.createFrame(
-                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP));
         // A fetch that failed leaves the list empty, which reads the same as a site with nothing to
         // show. This says which it was, and a tap on it asks the site again.
         emptyView = new org.telegram.ui.Components.EmptyTextProgressView(context);
@@ -149,18 +214,45 @@ public class TopicListFragment extends BaseFragment {
         emptyView.setOnTouchListener(null);
         emptyView.setOnClickListener(view -> loadFeed());
         frame.addView(emptyView, LayoutHelper.createFrame(
-                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP));
         startTopicButton = new FragmentFloatingButton(context, resourceProvider);
         startTopicButton.setImageResource(org.telegram.messenger.R.drawable.filled_fab_compose_32);
         startTopicButton.setContentDescription("发新帖");
-        startTopicButton.setOnClickListener(v -> {
-            if (getParentActivity() instanceof io.github.baba983.nativedo.app.NativeDoActivity) {
-                ((io.github.baba983.nativedo.app.NativeDoActivity) getParentActivity())
-                        .present(NewTopicFragment.create());
-            }
-        });
+        startTopicButton.setOnClickListener(v -> presentNewTopic());
         frame.addView(startTopicButton, FragmentFloatingButton.createDefaultLayoutParams());
+        // Upstream's own pill: the rounded control the story recorder and bottom sheets draw, used
+        // here for the count a refreshed list would show. It rides below the action bar and the
+        // category strip, centered, so the FAB (bottom right) and the glass tabs stay clear of it.
+        newTopicsPill = new ButtonWithCounterView(context, resourceProvider);
+        newTopicsPill.setUseWrapContent(true);
+        newTopicsPill.setRoundRadius(17);
+        newTopicsPill.setPadding(AndroidUtilities.dp(14), 0, AndroidUtilities.dp(14), 0);
+        newTopicsPill.setVisibility(View.GONE);
+        newTopicsPill.setOnClickListener(view -> onNewTopicsTapped());
+        frame.addView(newTopicsPill, LayoutHelper.createFrame(
+                LayoutHelper.WRAP_CONTENT, 34, Gravity.TOP | Gravity.CENTER_HORIZONTAL));
+        // The page's own action bar sits above the content, the way upstream's tab pages carry
+        // theirs; checkUi_contentTop() moves the content below it once it has been measured.
+        frame.addView(actionBar, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP));
         fragmentView = frame;
+        ViewCompat.setOnApplyWindowInsetsListener(fragmentView, this::onInsetsInternal);
+        actionBar.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> checkUi_contentTop());
+        container = NativeDo.container(getParentActivity());
+        // A theme switch rebuilds the page's views without destroying the fragment (upstream's
+        // animation clears the views of the fragments below the last), so a second createView has
+        // to let go of the previous view's listener: otherwise every switch leaves a collector
+        // holding a dead view.
+        if (incomingTopicsObserver != null) {
+            incomingTopicsObserver.close();
+            incomingTopicsObserver = null;
+        }
+        incomingTopicsObserver = container.getMessageBusSession().observeIncomingTopics(topics -> {
+            this.incomingTopics = topics;
+            updateNewTopicsPill();
+        });
+        checkUi_contentTop();
+        checkUi_floatingButton();
         updateTagActions();
         loadFeed();
         loadCategories();
@@ -169,15 +261,254 @@ public class TopicListFragment extends BaseFragment {
     }
 
     /**
-     * A feed that has already been read is read again when the reader comes back to it: the site is
-     * what knows how much of a topic is still unread, and a topic just read is exactly what changed.
+     * The strip's and the navigation bar's height, so the list's own bottom padding lets its rows
+     * scroll behind both while the last row is still reachable. Upstream's chat list reads the same
+     * two numbers for the same reason.
      */
     @Override
-    public void onResume() {
-        super.onResume();
-        if (feedLoaded) {
-            loadFeed();
+    public void onInsets(int left, int top, int right, int bottom) {
+        navigationBarHeight = bottom;
+        checkUi_listPadding();
+        checkUi_floatingButton();
+    }
+
+    private void checkUi_listPadding() {
+        if (listView != null) {
+            // The pill floats over the top of the list; while it is there the first row starts
+            // below it rather than under it.
+            int pillOffset = newTopicsPillShown ? AndroidUtilities.dp(50) : 0;
+            listView.setPadding(0, AndroidUtilities.dp(4) + pillOffset, 0,
+                    AndroidUtilities.dp(4) + navigationBarHeight + additionNavigationBarHeight);
         }
+    }
+
+    private void checkUi_floatingButton() {
+        if (startTopicButton != null) {
+            startTopicButton.setTranslationY(-navigationBarHeight - additionFloatingButtonOffset);
+        }
+    }
+
+    /** Keeps the page's content below its own action bar, including after a status bar change. */
+    private void checkUi_contentTop() {
+        final int top = actionBar != null ? actionBar.getMeasuredHeight() : 0;
+        if (top <= 0) {
+            return;
+        }
+        applyTopMargin(contentView, top);
+        applyTopMargin(emptyView, top);
+        checkUi_pillTop();
+    }
+
+    /**
+     * The pill hangs under what is above the list: the action bar, plus the category strip while
+     * the site's categories are shown. A strip that is not there does not reserve its height.
+     */
+    private void checkUi_pillTop() {
+        if (newTopicsPill == null || actionBar == null) {
+            return;
+        }
+        int top = actionBar.getMeasuredHeight();
+        if (tabsView != null && tabsView.getVisibility() == View.VISIBLE) {
+            top += AndroidUtilities.dp(TAB_STRIP_HEIGHT_DP);
+        }
+        top += AndroidUtilities.dp(8);
+        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) newTopicsPill.getLayoutParams();
+        if (params != null && params.topMargin != top) {
+            params.topMargin = top;
+            newTopicsPill.setLayoutParams(params);
+        }
+    }
+
+    /**
+     * Draws the incoming count for whichever filter is in front of the reader: 全部 means every
+     * category, a category tab only its own. The pill is upstream's animated control, so the text
+     * change animates and the show/hide uses upstream's own 150 ms alpha/scale constant.
+     */
+    private void updateNewTopicsPill() {
+        if (newTopicsPill == null) {
+            return;
+        }
+        Integer categoryId = selectedTabId == ALL_TAB_ID ? null : selectedTabId;
+        int count = incomingTopics.countForCategory(categoryId);
+        boolean show = count > 0;
+        if (show) {
+            newTopicsPill.setText(count + " 个新话题", true);
+        }
+        AndroidUtilities.updateViewVisibilityAnimated(newTopicsPill, show, 0.5f, true);
+        if (newTopicsPillShown != show) {
+            newTopicsPillShown = show;
+            // RecyclerView keeps its anchor when the padding changes, so the new space only shows
+            // up once the list is re-anchored at its start - done here, and only when the reader
+            // is already at the top, so a reader who is scrolled down is not yanked anywhere.
+            boolean atTop = listView != null && !listView.canScrollVertically(-1);
+            checkUi_listPadding();
+            if (atTop) {
+                listView.scrollToPosition(0);
+            }
+        }
+        checkUi_pillTop();
+    }
+
+    /**
+     * The reader asked for the new topics: the list is read again, its top is where they start, and
+     * the count they just acted on is no longer news - Discourse's web client resets its tracking
+     * state the same way after the list refresh.
+     */
+    private void onNewTopicsTapped() {
+        if (container != null) {
+            container.getMessageBusSession().clearIncomingTopics();
+        }
+        incomingTopics = new IncomingTopics();
+        updateNewTopicsPill();
+        if (listView != null) {
+            listView.scrollToPosition(0);
+        }
+        loadFeed();
+    }
+
+    /**
+     * The home's options menu, ported from upstream's {@code DialogsActivity.showItemOptions()}:
+     * upstream's own popup anchored on the options item, with the same dim and the same order -
+     * the theme switch first, a gap, then the actions. Only the entries with a linux.do meaning
+     * are here; upstream's Telegram-only entries (contacts, privacy, communities, archive) are
+     * not.
+     */
+    private void showItemOptions() {
+        org.telegram.ui.Components.ItemOptions io =
+                org.telegram.ui.Components.ItemOptions.makeOptions(this, optionsItem);
+        io.setColors(getThemedColor(Theme.key_actionBarDefaultTitle), getThemedColor(Theme.key_actionBarDefaultTitle));
+        io.setDimAlpha(0x08);
+
+        final boolean isCurrentThemeDark = Theme.isCurrentThemeDark();
+        io.add(isCurrentThemeDark ? org.telegram.messenger.R.drawable.menu_day_mode_24
+                        : org.telegram.messenger.R.drawable.menu_night_mode_24,
+                org.telegram.messenger.LocaleController.getString(isCurrentThemeDark
+                        ? org.telegram.messenger.R.string.SwitchThemeToDay
+                        : org.telegram.messenger.R.string.SwitchThemeToNight), () -> {
+                    if (DialogsActivity.switchingTheme) {
+                        return;
+                    }
+                    DialogsActivity.switchingTheme = true;
+                    android.content.SharedPreferences preferences = org.telegram.messenger.ApplicationLoader.applicationContext
+                            .getSharedPreferences("themeconfig", android.app.Activity.MODE_PRIVATE);
+                    String dayThemeName = preferences.getString("lastDayTheme", "Blue");
+                    if (Theme.getTheme(dayThemeName) == null || Theme.getTheme(dayThemeName).isDark()) {
+                        dayThemeName = "Blue";
+                    }
+                    String nightThemeName = preferences.getString("lastDarkTheme", "Dark Blue");
+                    if (Theme.getTheme(nightThemeName) == null || !Theme.getTheme(nightThemeName).isDark()) {
+                        nightThemeName = "Dark Blue";
+                    }
+                    Theme.ThemeInfo themeInfo = Theme.getActiveTheme();
+                    if (dayThemeName.equals(nightThemeName)) {
+                        if (themeInfo.isDark() || dayThemeName.equals("Dark Blue") || dayThemeName.equals("Night")) {
+                            dayThemeName = "Blue";
+                        } else {
+                            nightThemeName = "Dark Blue";
+                        }
+                    }
+
+                    boolean toDark;
+                    if (toDark = dayThemeName.equals(themeInfo.getKey())) {
+                        themeInfo = Theme.getTheme(nightThemeName);
+                    } else {
+                        themeInfo = Theme.getTheme(dayThemeName);
+                    }
+                    switchTheme(themeInfo, toDark);
+                    Theme.turnOffAutoNight(org.telegram.ui.Components.BulletinFactory.of(this), () -> {
+                        presentFragment(new org.telegram.ui.ThemeActivity(org.telegram.ui.ThemeActivity.THEME_TYPE_NIGHT));
+                    });
+                });
+        io.addGap();
+        io.add(org.telegram.messenger.R.drawable.outline_groups_24, "发新帖", this::presentNewTopic);
+        io.add(org.telegram.messenger.R.drawable.outline_saved_24, "书签", this::presentBookmarks);
+        io.show();
+        // Upstream raises its own chat-list menu by this constant; the popup otherwise hangs lower
+        // than the icon it belongs to.
+        io.setTranslationY(-AndroidUtilities.dp(64));
+    }
+
+    /**
+     * The menu's theme switch posts the icon's centre, so the host's circular reveal grows out of
+     * the menu item the reader just tapped - the same notification and the same position upstream's
+     * {@code DialogsActivity.switchTheme} posts.
+     */
+    private void switchTheme(Theme.ThemeInfo themeInfo, boolean toDark) {
+        if (optionsItem == null) {
+            return;
+        }
+        int[] pos = new int[2];
+        optionsItem.getLocationInWindow(pos);
+        pos[0] += optionsItem.getIconView().getMeasuredWidth() / 2;
+        pos[1] += optionsItem.getIconView().getMeasuredHeight() / 2;
+        org.telegram.messenger.NotificationCenter.getGlobalInstance().postNotificationName(
+                org.telegram.messenger.NotificationCenter.needSetDayNightTheme,
+                themeInfo, false, pos, -1, toDark, null, null, null, true);
+    }
+
+    /** The list's one action: the floating button and the menu's own 发新帖 row do the same thing. */
+    private void presentNewTopic() {
+        if (getParentActivity() instanceof io.github.baba983.nativedo.app.NativeDoActivity) {
+            ((io.github.baba983.nativedo.app.NativeDoActivity) getParentActivity())
+                    .present(NewTopicFragment.create());
+        }
+    }
+
+    /** The reader's own bookmarks, the list the settings and profile screens already open. */
+    private void presentBookmarks() {
+        if (getParentActivity() instanceof io.github.baba983.nativedo.app.NativeDoActivity) {
+            ((io.github.baba983.nativedo.app.NativeDoActivity) getParentActivity())
+                    .present(new io.github.baba983.nativedo.bookmarks.BookmarksFragment());
+        }
+    }
+
+    private static void applyTopMargin(View view, int top) {
+        if (view == null) {
+            return;
+        }
+        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) view.getLayoutParams();
+        if (params == null || params.topMargin == top) {
+            return;
+        }
+        params.topMargin = top;
+        view.setLayoutParams(params);
+    }
+
+    /**
+     * A feed that has already been read is read again when the reader comes back to the screen: the
+     * site is what knows how much of a topic is still unread, and a topic just read is exactly what
+     * changed. The tab host only calls this when the reader returns to the screen (a topic was
+     * closed, or the app came back to the front) - a tab switch does not reload anything.
+     *
+     * <p>This is the reader saying "show me what is there now", so the topics the refresh answers
+     * with stop being news. A filter change ({@link #loadFeed()} without the flag) is not a refresh:
+     * it is the same site state through a narrower window, so the counts the reader has not seen do
+     * not vanish.</p>
+     */
+    @Override
+    public void onParentBecameVisible() {
+        if (feedLoaded) {
+            loadFeed(true);
+        }
+    }
+
+    /** A second tap on the reader's tab: the list goes back to its top. */
+    @Override
+    public void onParentScrollToTop() {
+        if (listView != null) {
+            listView.smoothScrollToPosition(0);
+        }
+    }
+
+    /** The page reaches the bottom of the window itself; the shell must not reserve the bar. */
+    @Override
+    public boolean isSupportEdgeToEdge() {
+        return true;
+    }
+
+    @Override
+    public boolean drawEdgeNavigationBar() {
+        return false;
     }
 
     /**
@@ -215,6 +546,7 @@ public class TopicListFragment extends BaseFragment {
         }
         tabsView.finishAddingTabs(false);
         tabsView.setVisibility(categories.isEmpty() ? View.GONE : View.VISIBLE);
+        checkUi_pillTop();
     }
 
     private void presentTopic(TopicSummary topic) {
@@ -229,13 +561,22 @@ public class TopicListFragment extends BaseFragment {
      * two of them together. The title says which, because a filtered list is a different list.
      */
     private void loadFeed() {
+        loadFeed(false);
+    }
+
+    /**
+     * @param clearIncomingWhenLoaded whether a successful load is a refresh the new-topics count
+     *                               answers to (see {@link #onParentBecameVisible()}).
+     */
+    private void loadFeed(boolean clearIncomingWhenLoaded) {
         container = NativeDo.container(getParentActivity());
         updateTitle();
-        DiscourseLoader.INSTANCE.feed(container, categoryOf(selectedTabId), selectedTag, this::showTopics, error -> {
-            FileLog.e("topic list failed", error);
-            showFailure();
-            return kotlin.Unit.INSTANCE;
-        });
+        DiscourseLoader.INSTANCE.feed(container, categoryOf(selectedTabId), selectedTag,
+                loaded -> showTopics(loaded, clearIncomingWhenLoaded), error -> {
+                    FileLog.e("topic list failed", error);
+                    showFailure();
+                    return kotlin.Unit.INSTANCE;
+                });
     }
 
     /** The feed could not be read: the list stays as it is, and the failure is said out loud. */
@@ -337,7 +678,7 @@ public class TopicListFragment extends BaseFragment {
         return null;
     }
 
-    private kotlin.Unit showTopics(List<TopicSummary> loaded) {
+    private kotlin.Unit showTopics(List<TopicSummary> loaded, boolean clearIncoming) {
         if (emptyView != null) {
             emptyView.setVisibility(View.GONE);
         }
@@ -357,7 +698,25 @@ public class TopicListFragment extends BaseFragment {
         }
         fetchAvatars();
         feedLoaded = true;
+        // A refresh the reader asked for (the screen came back to the front) makes the listed
+        // topics the new baseline: what the pill counted has been shown. A filter change does not.
+        if (clearIncoming && container != null) {
+            container.getMessageBusSession().clearIncomingTopics();
+        }
         return kotlin.Unit.INSTANCE;
+    }
+
+    /**
+     * The pill's feed and nothing else of the screen outlives it: a destroyed page leaves no
+     * listener behind that would draw into a dead view.
+     */
+    @Override
+    public void onFragmentDestroy() {
+        if (incomingTopicsObserver != null) {
+            incomingTopicsObserver.close();
+            incomingTopicsObserver = null;
+        }
+        super.onFragmentDestroy();
     }
 
     /**
@@ -373,6 +732,8 @@ public class TopicListFragment extends BaseFragment {
                 return;
             }
             selectedTabId = tab.id;
+            // The count in front of the reader changes with the filter, before the new feed lands.
+            updateNewTopicsPill();
             loadFeed();
         }
 

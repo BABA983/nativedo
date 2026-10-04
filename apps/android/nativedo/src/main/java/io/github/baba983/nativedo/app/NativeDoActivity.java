@@ -1,38 +1,35 @@
 package io.github.baba983.nativedo.app;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
 import android.app.Activity;
-import android.graphics.Canvas;
+import android.graphics.Bitmap;
 import android.os.Build;
 import android.os.Bundle;
-import android.view.Gravity;
+import android.view.View;
+import android.view.ViewAnimationUtils;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.window.OnBackInvokedDispatcher;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 
-import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 
 import org.telegram.messenger.AndroidUtilities;
-import org.telegram.messenger.LiteMode;
+import org.telegram.messenger.FileLog;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.ui.ActionBar.ActionBarLayout;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.DrawerLayoutContainer;
 import org.telegram.ui.ActionBar.INavigationLayout;
 import org.telegram.ui.ActionBar.Theme;
-import org.telegram.ui.DialogsActivity;
-import org.telegram.ui.MainTabsLayout;
+import org.telegram.ui.Components.Easings;
+import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.LineProgressView;
-import org.telegram.ui.Components.blur3.BlurredBackgroundDrawableViewFactory;
-import org.telegram.ui.Components.blur3.drawable.BlurredBackgroundDrawable;
-import org.telegram.ui.Components.blur3.drawable.color.impl.BlurredBackgroundProviderImpl;
-import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceColor;
-import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceRenderNode;
-import org.telegram.ui.Components.chat.ViewPositionWatcher;
-import org.telegram.ui.Components.glass.GlassTabView;
+import org.telegram.ui.DialogsActivity;
 
 import java.util.ArrayList;
 
@@ -40,15 +37,16 @@ import io.github.baba983.nativedo.auth.LoginWebViewFragment;
 import io.github.baba983.nativedo.auth.SessionStarter;
 import io.github.baba983.nativedo.core.di.AppContainer;
 import io.github.baba983.nativedo.core.session.AppSessionState;
-import io.github.baba983.nativedo.topic.TopicListFragment;
 
 /**
- * NativeDo's shell: it hosts upstream's {@link DrawerLayoutContainer} and {@link ActionBarLayout}
- * and pushes our fragments into them.
+ * NativeDo's shell: it hosts upstream's {@link DrawerLayoutContainer} and {@link ActionBarLayout},
+ * gates everything on the Discourse session, and pushes our fragments into them.
  *
  * <p>{@code LaunchActivity.onCreate()} starts Telegram's account services and gates navigation on
- * {@code UserConfig.isClientActivated()}. This host instead wires the public navigation, tabs,
- * insets and theme APIs to the Discourse session.</p>
+ * {@code UserConfig.isClientActivated()}. This host instead wires the public navigation, insets and
+ * theme APIs to the Discourse session; the tab shell itself is
+ * {@link NativeDoMainTabsActivity}, presented as the root fragment the way upstream presents its
+ * own {@code MainTabsActivity}.</p>
  */
 public class NativeDoActivity extends Activity implements NotificationCenter.NotificationCenterDelegate {
 
@@ -56,16 +54,13 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
     private LineProgressView sessionProgress;
     private DrawerLayoutContainer drawerLayoutContainer;
     private FrameLayout contentView;
-    private MainTabsLayout tabs;
-    private BlurredBackgroundDrawable tabsBackground;
-    private final BlurredBackgroundSourceColor tabsColorSource = new BlurredBackgroundSourceColor();
-    private BlurredBackgroundSourceRenderNode tabsGlassSource;
-    private Insets systemInsets = Insets.NONE;
-    private boolean keyboardVisible;
-    private boolean tabsVisible;
-    private int selectedTab = -1;
-    /** Whether the reader is on the login page, which the roots and their strip stay away from. */
-    private boolean signedOut;
+    /**
+     * The day/night circular reveal's snapshot, the way upstream's {@code LaunchActivity} draws it:
+     * the old look in an {@link ImageView} over (or under) the layout while a circular clip animates.
+     */
+    private ImageView themeSwitchImageView;
+    /** The system-bar colors stay put while the reveal runs, as in upstream's handler. */
+    private boolean isNavigationBarColorFrozen;
     /** Whether the session question has been answered, so a link can be opened right away. */
     private boolean sessionResolved;
     /** The topic a VIEW link asked for, and the floor it named; 0 while there is none. */
@@ -85,13 +80,9 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         Theme.createChatResources(this, false);
         Theme.createCommonMessageResources();
 
-        // The upstream layout owns system/IME insets; only our root-tab height is supplied here.
-        actionBarLayout = new ActionBarLayout(this, false) {
-            @Override
-            public int getBottomTabsHeight(boolean animated) {
-                return tabsVisible ? AndroidUtilities.dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS) : 0;
-            }
-        };
+        // The upstream layout owns system/IME insets. It does not know about the tab strip: the
+        // strip belongs to NativeDoMainTabsActivity, which handles its own insets below.
+        actionBarLayout = new ActionBarLayout(this, false);
         actionBarLayout.setFragmentStack(new ArrayList<>());
 
         drawerLayoutContainer = new DrawerLayoutContainer(this);
@@ -99,35 +90,18 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         drawerLayoutContainer.setParentActionBarLayout(actionBarLayout);
         actionBarLayout.setDrawerLayoutContainer(drawerLayoutContainer);
 
-        if (Build.VERSION.SDK_INT >= 31) {
-            tabsGlassSource = new BlurredBackgroundSourceRenderNode(tabsColorSource);
-            tabsGlassSource.setBlur(AndroidUtilities.dp(8));
-        }
-        contentView = new FrameLayout(this) {
-            @Override
-            protected void dispatchDraw(Canvas canvas) {
-                if (canvas.isHardwareAccelerated() && tabsVisible && tabsGlassSource != null) {
-                    Canvas recording = tabsGlassSource.beginRecording(getWidth(), getHeight());
-                    recording.drawColor(Theme.getColor(Theme.key_windowBackgroundWhite));
-                    drawerLayoutContainer.draw(recording);
-                    tabsGlassSource.endRecording();
-                    tabsGlassSource.invalidateDisplayListForDrawables();
-                }
-                super.dispatchDraw(canvas);
-            }
-        };
-        contentView.setClipChildren(false);
-        contentView.setClipToPadding(false);
+        contentView = new FrameLayout(this);
         contentView.addView(drawerLayoutContainer, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        // The snapshot sits at index 0 for a switch to night (under the layout, which the circular
+        // reveal un-clips) and is inserted at index 1 for a switch to day (over the layout, shrinking
+        // away); both insertions are the way upstream's handler does it.
+        themeSwitchImageView = new ImageView(this);
+        themeSwitchImageView.setVisibility(View.GONE);
         drawerLayoutContainer.addView(actionBarLayout.getView(), new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         setContentView(contentView);
         ViewCompat.setOnApplyWindowInsetsListener(contentView, (view, insets) -> {
-            systemInsets = AndroidUtilities.getDefaultWindowInsets(insets, false);
-            keyboardVisible = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom > systemInsets.bottom;
-            updateTabsVisibility();
-            updateTabInsets();
             ViewCompat.dispatchApplyWindowInsets(drawerLayoutContainer, insets);
             return WindowInsetsCompat.CONSUMED;
         });
@@ -192,65 +166,13 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         return true;
     }
 
-    /**
-     * Three entries, upstream's own tab strip: the feeds, the reader's notifications, and settings.
-     * The tabs replace the root screen instead of stacking on top of it: switching from a topic to
-     * settings must not leave the topic behind the back button.
-     */
-    private void addTabs() {
-        tabs = new MainTabsLayout(this, null);
-        int padding = AndroidUtilities.dp(DialogsActivity.MAIN_TABS_MARGIN + 4);
-        tabs.setPadding(padding, padding, padding, padding);
-        tabs.setClipChildren(false);
-        tabs.setMaxWidth(AndroidUtilities.dp(328 + DialogsActivity.MAIN_TABS_MARGIN * 2));
-        GlassTabView.TabAnimation[] icons = {
-                GlassTabView.TabAnimation.CHATS, GlassTabView.TabAnimation.REPLIES, GlassTabView.TabAnimation.SETTINGS};
-        int[] labels = {org.telegram.messenger.R.string.MainTabsChats,
-                org.telegram.messenger.R.string.MainTabsContacts, org.telegram.messenger.R.string.Settings};
-        String[] descriptions = {"话题", "通知", "设置"};
-        for (int index = 0; index < labels.length; index++) {
-            final int tabIndex = index;
-            GlassTabView tab = GlassTabView.createMainTab(this, null, icons[index], labels[index]);
-            tab.setContentDescription(descriptions[index]);
-            tab.setOnClickListener(view -> showTab(tabIndex));
-            tabs.addView(tab);
-            tabs.setViewVisible(tab, true, false);
-        }
-        tabsColorSource.setColor(Theme.getColor(Theme.key_windowBackgroundWhite));
-        BlurredBackgroundDrawableViewFactory factory = new BlurredBackgroundDrawableViewFactory(
-                tabsGlassSource != null ? tabsGlassSource : tabsColorSource);
-        factory.setSourceRootView(new ViewPositionWatcher(contentView), contentView);
-        factory.setLiquidGlassEffectAllowed(LiteMode.isEnabled(LiteMode.FLAG_LIQUID_GLASS));
-        tabsBackground = factory.create(tabs, BlurredBackgroundProviderImpl.mainTabs(null));
-        tabsBackground.setRadius(AndroidUtilities.dp(DialogsActivity.MAIN_TABS_HEIGHT / 2f));
-        tabsBackground.setPadding(AndroidUtilities.dp(DialogsActivity.MAIN_TABS_MARGIN - 0.334f));
-        tabs.setBackground(tabsBackground);
-        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, AndroidUtilities.dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS),
-                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        contentView.addView(tabs, params);
-        updateTabInsets();
-        actionBarLayout.setFragmentStackChangedListener(this::updateTabsVisibility);
-        showTabs(true, false);
-    }
-
-    /**
-     * The tab strip belongs to the roots. A screen opened from one of them (a topic, a settings
-     * page) takes the whole window, the way a chat does in Telegram: the strip slides away and the
-     * content keeps the height it frees.
-     */
-    private void updateTabsVisibility() {
-        showTabs(!signedOut && !keyboardVisible && actionBarLayout.getFragmentStack().size() <= 1, true);
-        updateSystemBarColors();
-    }
-
-    private void updateTabInsets() {
-        if (tabs != null) {
-            AndroidUtilities.setViewLayoutMargins(tabs, systemInsets.left, 0, systemInsets.right, systemInsets.bottom);
-        }
-    }
-
     private void updateSystemBarColors() {
+        // While the reveal is running upstream keeps the system-bar colours from before the switch;
+        // recomputing them here would paint the status bar in the new theme before the circle
+        // reaches it.
+        if (isNavigationBarColorFrozen) {
+            return;
+        }
         BaseFragment fragment = actionBarLayout.getLastFragment();
         int navigationColor = fragment != null ? fragment.getNavigationBarColor()
                 : Theme.getColor(Theme.key_windowBackgroundGray);
@@ -259,71 +181,154 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         WindowInsetsControllerCompat controller = new WindowInsetsControllerCompat(getWindow(), contentView);
         controller.setAppearanceLightStatusBars(fragment != null ? fragment.isLightStatusBar() : !Theme.isCurrentThemeDark());
         controller.setAppearanceLightNavigationBars(AndroidUtilities.computePerceivedBrightness(navigationColor) >= 0.721f);
-        tabsColorSource.setColor(Theme.getColor(Theme.key_windowBackgroundWhite));
-        if (tabsBackground != null) {
-            tabsBackground.updateColors();
-        }
-        if (tabs != null) {
-            for (int index = 0; index < tabs.getChildCount(); index++) {
-                ((GlassTabView) tabs.getChildAt(index)).updateColorsLottie();
+        // The tab strip belongs to the root fragment, and a theme change has to reach it even while
+        // a screen that fragment pushed (the appearance page) is on top: every host in the stack is
+        // told, not only the last fragment.
+        for (BaseFragment stacked : actionBarLayout.getFragmentStack()) {
+            if (stacked instanceof NativeDoMainTabsActivity) {
+                ((NativeDoMainTabsActivity) stacked).updateColors();
             }
-        }
-    }
-
-    private void showTabs(boolean visible, boolean animated) {
-        if (tabs == null) {
-            return;
-        }
-        boolean changed = tabsVisible != visible;
-        tabsVisible = visible;
-        int height = AndroidUtilities.dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS) + systemInsets.bottom;
-        tabs.animate().cancel();
-        if (animated) {
-            tabs.animate()
-                    .alpha(visible ? 1f : 0f)
-                    .translationY(visible ? 0f : (float) height)
-                    .setDuration(200)
-                    .setInterpolator(org.telegram.ui.Components.CubicBezierInterpolator.EASE_BOTH)
-                    .start();
-        } else {
-            tabs.setAlpha(visible ? 1f : 0f);
-            tabs.setTranslationY(visible ? 0f : (float) height);
-        }
-        if (changed) {
-            ViewCompat.requestApplyInsets(actionBarLayout);
         }
     }
 
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
-        if (id == NotificationCenter.needSetDayNightTheme) {
-            Theme.ThemeInfo theme = (Theme.ThemeInfo) args[0];
-            boolean nightTheme = (Boolean) args[1];
-            int accentId = (Integer) args[3];
-            if (accentId != -1) {
-                theme.setCurrentAccentId(accentId);
-                Theme.saveThemeAccents(theme, true, false, true, false);
+        if (id != NotificationCenter.needSetDayNightTheme) {
+            return;
+        }
+        Theme.ThemeInfo theme = (Theme.ThemeInfo) args[0];
+        boolean nightTheme = (Boolean) args[1];
+        int[] pos = args.length > 2 ? (int[]) args[2] : null;
+        int accentId = args.length > 3 ? (Integer) args[3] : -1;
+        boolean toDark = args.length > 4 && args[4] != null && (Boolean) args[4];
+        Runnable calcInBackgroundEnd = args.length > 7 ? (Runnable) args[7] : null;
+
+        // The menu's own switch carries the icon's centre; upstream's handler turns that into a
+        // circular reveal of the new theme, and the per-view colour animation is skipped for it
+        // (`instant`) because the reveal is what the reader sees. Any other switch (the appearance
+        // page) has no position and keeps the colour animation.
+        boolean instant = false;
+        if (pos != null) {
+            if (themeSwitchImageView.getVisibility() == View.VISIBLE) {
+                return;
             }
-            // Theme's save=true also saves to a Telegram account. Keep only the local preference
-            // read by its startup loader, and use its public local-only application path.
-            Theme.applyTheme(theme, false, nightTheme);
-            if (!nightTheme) {
-                getSharedPreferences("mainconfig", MODE_PRIVATE).edit().putString("theme", theme.getKey()).apply();
+            try {
+                int w = drawerLayoutContainer.getMeasuredWidth();
+                int h = drawerLayoutContainer.getMeasuredHeight();
+                isNavigationBarColorFrozen = true;
+                invalidateCachedViews(drawerLayoutContainer);
+
+                Bitmap bitmap = null;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    bitmap = AndroidUtilities.getBitmapFromWindow(getWindow());
+                }
+                if (bitmap == null) {
+                    bitmap = AndroidUtilities.snapshotView(drawerLayoutContainer);
+                }
+                contentView.removeView(themeSwitchImageView);
+                themeSwitchImageView = new ImageView(this);
+                if (toDark) {
+                    contentView.addView(themeSwitchImageView, 0, LayoutHelper.createFrame(
+                            LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+                } else {
+                    contentView.addView(themeSwitchImageView, 1, LayoutHelper.createFrame(
+                            LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+                }
+                themeSwitchImageView.setImageBitmap(bitmap);
+                themeSwitchImageView.setVisibility(View.VISIBLE);
+                float finalRadius = (float) Math.max(
+                        Math.sqrt((w - pos[0]) * (w - pos[0]) + (h - pos[1]) * (h - pos[1])),
+                        Math.sqrt(pos[0] * pos[0] + (h - pos[1]) * (h - pos[1])));
+                float finalRadius2 = (float) Math.max(
+                        Math.sqrt((w - pos[0]) * (w - pos[0]) + pos[1] * pos[1]),
+                        Math.sqrt(pos[0] * pos[0] + pos[1] * pos[1]));
+                finalRadius = Math.max(finalRadius, finalRadius2);
+                Animator anim = ViewAnimationUtils.createCircularReveal(
+                        toDark ? drawerLayoutContainer : themeSwitchImageView, pos[0], pos[1],
+                        toDark ? 0 : finalRadius, toDark ? finalRadius : 0);
+                anim.setDuration(400);
+                anim.setInterpolator(Easings.easeInOutQuad);
+                anim.addListener(new AnimatorListenerAdapter() {
+                    @Override
+                    public void onAnimationEnd(Animator animation) {
+                        drawerLayoutContainer.invalidate();
+                        themeSwitchImageView.invalidate();
+                        themeSwitchImageView.setImageDrawable(null);
+                        themeSwitchImageView.setVisibility(View.GONE);
+                        DialogsActivity.switchingTheme = false;
+                    }
+                });
+                // Upstream holds the system-bar colours through the reveal and sets them once the
+                // circle has passed the navigation bar; the same delay and constant here.
+                AndroidUtilities.runOnUIThread(() -> {
+                    if (isNavigationBarColorFrozen) {
+                        isNavigationBarColorFrozen = false;
+                        updateSystemBarColors();
+                    }
+                }, toDark ? (h - pos[1]) / AndroidUtilities.dp(2.25f) : 50);
+                anim.start();
+                instant = true;
+            } catch (Throwable e) {
+                FileLog.e(e);
+                try {
+                    themeSwitchImageView.setImageDrawable(null);
+                    contentView.removeView(themeSwitchImageView);
+                    DialogsActivity.switchingTheme = false;
+                } catch (Exception e2) {
+                    FileLog.e(e2);
+                }
+                isNavigationBarColorFrozen = false;
             }
-            INavigationLayout.ThemeAnimationSettings settings = new INavigationLayout.ThemeAnimationSettings(
-                    theme, accentId, nightTheme, false);
-            settings.applyTheme = settings.applyTrulyTheme = false;
-            settings.animationProgress = progress -> updateSystemBarColors();
-            settings.afterAnimationRunnable = () -> {
-                DialogsActivity.switchingTheme = false;
-                updateSystemBarColors();
-            };
-            Runnable onApplied = args.length > 7 ? (Runnable) args[7] : null;
-            actionBarLayout.animateThemedValues(settings, null);
-            if (onApplied != null) {
-                onApplied.run();
-            }
+        } else {
+            DialogsActivity.switchingTheme = false;
+        }
+
+        if (accentId != -1) {
+            theme.setCurrentAccentId(accentId);
+            Theme.saveThemeAccents(theme, true, false, true, false);
+        }
+        // Theme's save=true also saves to a Telegram account. Keep only the local preference
+        // read by its startup loader, and use its public local-only application path.
+        Theme.applyTheme(theme, false, nightTheme);
+        if (!nightTheme) {
+            getSharedPreferences("mainconfig", MODE_PRIVATE).edit().putString("theme", theme.getKey()).apply();
+        }
+        INavigationLayout.ThemeAnimationSettings settings = new INavigationLayout.ThemeAnimationSettings(
+                theme, accentId, nightTheme, instant);
+        settings.applyTheme = settings.applyTrulyTheme = false;
+        settings.animationProgress = progress -> updateSystemBarColors();
+        settings.afterAnimationRunnable = () -> {
+            DialogsActivity.switchingTheme = false;
             updateSystemBarColors();
+        };
+        actionBarLayout.animateThemedValues(settings, null);
+        if (calcInBackgroundEnd != null) {
+            calcInBackgroundEnd.run();
+        }
+        updateSystemBarColors();
+        // Upstream's animation clears only the fragments below the last, so with just the tab host
+        // on the stack no view is cleared and its pages keep views built with the old theme's
+        // colours. Rebuild the stack here - the same rebuild that already happens when a screen
+        // pushed over the host makes the stack deeper than one - under the reveal.
+        if (actionBarLayout.getFragmentStack().size() == 1
+                && actionBarLayout.getFragmentStack().get(0) instanceof NativeDoMainTabsActivity) {
+            actionBarLayout.rebuildFragments(INavigationLayout.REBUILD_FLAG_REBUILD_LAST);
+        }
+    }
+
+    /**
+     * The recursive invalidation upstream's handler runs before a reveal snapshot, so no view with
+     * a cached hardware layer keeps drawing the old theme while the circle grows.
+     */
+    private void invalidateCachedViews(View parent) {
+        if (parent.getLayerType() != View.LAYER_TYPE_NONE) {
+            parent.invalidate();
+        }
+        if (parent instanceof ViewGroup) {
+            ViewGroup viewGroup = (ViewGroup) parent;
+            for (int i = 0; i < viewGroup.getChildCount(); i++) {
+                invalidateCachedViews(viewGroup.getChildAt(i));
+            }
         }
     }
 
@@ -356,6 +361,23 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
     }
 
     /**
+     * The message bus belongs to the app, not to a screen: the host is the one place that knows
+     * whether the app is in front, so it is the one that tells the session. The session itself
+     * follows sign-in and sign-out, so a logged-out app has nothing polling.
+     */
+    @Override
+    protected void onStart() {
+        super.onStart();
+        NativeDo.container(this).getMessageBusSession().onForeground();
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        NativeDo.container(this).getMessageBusSession().onBackground();
+    }
+
+    /**
      * Upstream's fragments ask the system for a result through the layout, so the layout's host has
      * to hand the answer back: the top screen is the one that asked.
      */
@@ -368,29 +390,13 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         }
     }
 
-    /** Replaces the root with the selected tab's screen. */
-    private void showTab(int index) {
-        if (index == selectedTab || actionBarLayout == null) {
+    /** Presents the tab shell as the root, replacing whatever was there. */
+    private void presentRoot() {
+        if (actionBarLayout == null) {
             return;
         }
-        selectedTab = index;
-        if (tabs != null) {
-            tabs.setTabSelected(tabs.getChildAt(index), true);
-        }
         actionBarLayout.removeAllFragments();
-        actionBarLayout.presentFragment(rootFor(index), false);
-    }
-
-    private BaseFragment rootFor(int index) {
-        if (index == 1) {
-            return new io.github.baba983.nativedo.notifications.NotificationsFragment();
-        }
-        if (index == 2) {
-            // Our own settings, built from upstream's cells; the appearance page itself is still
-            // upstream's, one row in.
-            return new io.github.baba983.nativedo.settings.SettingsFragment();
-        }
-        return new TopicListFragment();
+        actionBarLayout.presentFragment(new NativeDoMainTabsActivity(), false);
     }
 
     private void showSessionProgress() {
@@ -410,13 +416,9 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         }
         sessionResolved = true;
         if (authenticated) {
-            addTabs();
             showRootOrPendingTopic();
         } else {
-            actionBarLayout.presentFragment(new LoginWebViewFragment(() -> {
-                addTabs();
-                showRootOrPendingTopic();
-            }), false);
+            actionBarLayout.presentFragment(new LoginWebViewFragment(this::showRootOrPendingTopic), false);
         }
     }
 
@@ -426,19 +428,15 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
      */
     private void showRootOrPendingTopic() {
         if (pendingTopicId == 0) {
-            showTab(0);
+            presentRoot();
             return;
         }
         // A link wants two screens at once: the feed, so back returns to it, and the topic over it.
         // Presenting both in the same turn drops the second - the first transition is still running
         // and presentFragment refuses while one is - so the feed goes on the stack without an
         // animation and the topic is presented over it.
-        selectedTab = 0;
-        if (tabs != null) {
-            tabs.setTabSelected(tabs.getChildAt(0), false);
-        }
         actionBarLayout.removeAllFragments();
-        actionBarLayout.addFragmentToStack(rootFor(0));
+        actionBarLayout.addFragmentToStack(new NativeDoMainTabsActivity());
         openPendingTopic();
     }
 
@@ -455,24 +453,16 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
 
     /**
      * The reader signed out. The session is gone, so every screen built on it is gone too: the
-     * login page replaces the stack, and the tabs come back once there is a reader again.
+     * login page replaces the stack, and the tab shell comes back once there is a reader again.
      */
     public void signedOut() {
         if (actionBarLayout == null) {
             return;
         }
-        // Nothing behind the login page is usable without a session, so the tab strip goes with it
+        // Nothing behind the login page is usable without a session, so the tab shell goes with it
         // and comes back when the reader is back.
-        signedOut = true;
         actionBarLayout.removeAllFragments();
-        showTabs(false, false);
-        actionBarLayout.presentFragment(new LoginWebViewFragment(() -> {
-            signedOut = false;
-            if (tabs == null) {
-                addTabs();
-            }
-            showTab(0);
-        }), false);
+        actionBarLayout.presentFragment(new LoginWebViewFragment(this::showRootOrPendingTopic), false);
     }
 
     /** Pushes a screen on top of the current one; back returns to it. */
