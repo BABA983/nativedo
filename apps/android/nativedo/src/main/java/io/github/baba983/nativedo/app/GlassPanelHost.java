@@ -111,6 +111,23 @@ public final class GlassPanelHost {
         return factory;
     }
 
+    /** Whether a render node is recording; false on a device that cannot blur. */
+    public boolean hasSource() {
+        return renderNode != null;
+    }
+
+    /**
+     * The recorded content itself, drawn into a rectangle the way {@code DialogsActivity}'s
+     * blur-rect override reads its frosted source under the header's glass (930-950). The
+     * rectangle is in the position root's coordinates, which is where the source was recorded.
+     */
+    public void drawSource(Canvas canvas, float left, float top, float right, float bottom) {
+        if (renderNode == null || right <= left || bottom <= top) {
+            return;
+        }
+        renderNode.draw(canvas, left, top, right, bottom);
+    }
+
     /**
      * Records what is behind the panels. Called from the position root's draw pass, before it draws
      * its children, so a panel samples the content and never itself.
