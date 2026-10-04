@@ -158,6 +158,8 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
             }
         };
         actionBarLayout.setFragmentStack(new ArrayList<>());
+        // LaunchActivity:553 loads the chat wallpaper here, so a chat screen can draw it at once.
+        Theme.loadWallpaper(true);
 
         drawerLayoutContainer = new DrawerLayoutContainer(this);
         drawerLayoutContainer.setActionBarLayout(actionBarLayout);

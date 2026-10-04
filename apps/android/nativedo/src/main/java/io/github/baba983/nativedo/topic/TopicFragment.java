@@ -120,9 +120,15 @@ public class TopicFragment extends BaseFragment {
      */
     private final NotificationCenter.NotificationCenterDelegate themeObserver =
             (id, account, args) -> {
+                if (id == NotificationCenter.didSetNewWallpapper) {
+                    // ChatActivity:23988 - a new wallpaper replaces the one the screen draws.
+                    updateBackground();
+                    return;
+                }
                 if (id != NotificationCenter.needSetDayNightTheme) {
                     return;
                 }
+                updateBackground();
                 if (glassHost != null) {
                     glassHost.updateColors();
                 }
@@ -138,6 +144,18 @@ public class TopicFragment extends BaseFragment {
                             getThemedColor(org.telegram.ui.ActionBar.Theme.key_actionBarDefaultSubtitle));
                 }
             };
+    /** The frame that draws the chat wallpaper behind the posts (ChatActivity's contentView). */
+    private SizeNotifierFrameLayout wallpaperView;
+
+    /** ChatActivity.updateBackground (44180-44191): the current chat wallpaper, with its motion. */
+    private void updateBackground() {
+        if (wallpaperView == null) {
+            return;
+        }
+        wallpaperView.setBackgroundImage(
+                org.telegram.ui.ActionBar.Theme.getCachedWallpaper(),
+                org.telegram.ui.ActionBar.Theme.isWallpaperMotion());
+    }
     /** The floor this reply answers, when the reader picked one in the post menu. */
     private Integer replyToPostNumber;
     /** Our own attach entry point, for the files upstream's button cannot offer (see its builder). */
@@ -277,6 +295,18 @@ public class TopicFragment extends BaseFragment {
                 return super.dispatchTouchEvent(ev);
             }
 
+            // ChatActivityFragmentView (17652-17660): the bar floats over the posts, so the
+            // wallpaper starts at the top of the screen instead of below a bar and status bar.
+            @Override
+            protected boolean isActionBarVisible() {
+                return false;
+            }
+
+            @Override
+            protected boolean isStatusBarVisible() {
+                return false;
+            }
+
             @Override
             protected void dispatchDraw(Canvas canvas) {
                 // The capsules' blur source records the post list before the frame draws its
@@ -288,8 +318,10 @@ public class TopicFragment extends BaseFragment {
                 super.dispatchDraw(canvas);
             }
         };
-        contentView.setBackgroundColor(org.telegram.ui.ActionBar.Theme.getColor(
-                org.telegram.ui.ActionBar.Theme.key_windowBackgroundWhite));
+        // ChatActivity.updateBackground (44180-44191): the posts sit on the chat wallpaper, which is
+        // also what makes the white glass capsules read as capsules.
+        wallpaperView = contentView;
+        updateBackground();
         // The capsules' bottom edge sits one dp past the bar's own height, and the bar's shadows
         // live at its edges: neither may be clipped by the frame (ChatActivity does the same,
         // 7797).
@@ -445,6 +477,8 @@ public class TopicFragment extends BaseFragment {
         // the topic list's strip is told.
         NotificationCenter.getGlobalInstance().addObserver(
                 themeObserver, NotificationCenter.needSetDayNightTheme);
+        NotificationCenter.getGlobalInstance().addObserver(
+                themeObserver, NotificationCenter.didSetNewWallpapper);
         loadTopic(topicId);
         return fragmentView;
     }
@@ -947,6 +981,8 @@ public class TopicFragment extends BaseFragment {
         }
         NotificationCenter.getGlobalInstance().removeObserver(
                 themeObserver, NotificationCenter.needSetDayNightTheme);
+        NotificationCenter.getGlobalInstance().removeObserver(
+                themeObserver, NotificationCenter.didSetNewWallpapper);
         if (avatarContainer != null) {
             avatarContainer.onDestroy();
         }
