@@ -242,6 +242,42 @@ stands, and the upstream component each row is meant to use.
 - 我的 tab：头像 tab 的图标是否认得出来（会话头像、22dp 圆角方形）、四个 tab 的宽度分配是否匀称；自己的资料页作为根没有返回箭头、下拉展开与折叠的手感是否与从帖子打开的作者资料页一致。
 - 通知 tab：没有推送和未读计数时，列表的排序和徽章是否仍然清楚。
 
+### 主页随滚动收起：搜索框滑进动作栏、分类条顶上（2026-10-04，`emulator-5554`，`nativedo-home-scroll`，已登录 @example_user）
+
+- 上游 12.10.5 的手感是：动作栏不动，搜索框（48dp）随滚动上移并在同一距离里淡出，分类条跟着滑到
+  动作栏正下方，滚动停下时按半个搜索框的高度吸附到全开或全收。这不是看来的：`DialogsActivity` 的
+  `onScrolled` 里 `applyScrollY` 被写死成 `false`（4571），真正的偏移在 `ContentView.dispatchDraw` 里由列表自己
+  算出来——`visiblePartAfterScroll = paddingTop - 第一行.getY()`，夹在 `[-48dp, 0]`（957-1006）；`setScrollY`
+  （8918-8940）只做记账，`checkUi_searchFieldVisibility`（14036-14056）按这个值淡出搜索框并把动作栏里的搜索图标
+  交出来（`alpha <= 0.01` → `animatorSearchButtonVisible`，14054 + 14119-14128），`updateContextViewPosition`
+  （6560-6596）让分类条跟同一偏移减去 4dp×搜索框透明度，`getActionBarTop/getActionBarFullHeight`（862-886）让
+  顶部的玻璃矩形和列表的裁剪线一起从「栏+框」收到「只剩栏」，停下的滚动在
+  `checkAutoscrollToStories`（5760-5808）里用 `RecyclerListViewScroller.smoothScrollBy` 吸附（阈值 24dp），
+  动作栏自身的阴影是 `animatorShadowVisible` + `drawHeaderShadow`（313、4605-4606、14284-14314）。
+- 移植（`TopicListFragment`，未改 `apps/android/telegram` 子树）：动作栏改成这一屏自己的浮动栏
+  （`setAddToContainer(false)`/`setCastShadows(false)`/`setClipContent(true)`，3527-3529；玻璃交给 frame 画，
+  5425），frame 换成 `SizeNotifierFrameLayout` 并在 draw pass 里做上面那套；列表 padding 照上游
+  （栏高 + 48 + 36+14 − 5）、裁到表头下缘；分类条与搜索框的布局也照上游（onLayout 1148-1151）。玻璃在 LOW 档
+  是上游自己的纯色回退（`drawBlurRect` 930-950 的第一条分支），高档走同一处录制的模糊源。
+- 设备检查（覆盖安装 `-r -t`，未卸载未清数据，仍登录 @example_user；主体是一片 APK SHA-256 `0770d5af…` 与设备 `base.apk` 一致，
+  收尾的 null 守卫重打包成 `e2a375fd…` 并覆盖安装后复验了静止与收起两张 `56-rest-final-apk`、`57-collapsed-final-apk`）：
+  静止浅色 `42-after-retry`；按住半收（`dumpsys` 第一行 421/392，滚动 34/63px）`26-held-small`、`27-mid-collapse`
+  ——搜索框上移并半透明、分类条同步上移；松开在阈值上 → 吸附到全收（`dumpsys` 329 = 126px）`28-snap-to-collapsed`；
+  全收 `11-collapsed-fixed`/`44-collapsed-fixed2`（搜索框消失、动作栏出现 🔍、分类条顶在栏下缘、行的裁剪线
+  像素级确认在 y=210 = 栏高）；从收起态点动作栏 🔍 进搜索页 `45-search-from-collapsed-fixed2`，返回键两次
+  回主页仍是收起态 `47-back-to-collapsed`；夜间 `53-dark-rest-rows`/`54-dark-collapsed-rows`，验后切回浅色
+  `55-light-restored`。分类条选中、标签菜单、发帖 FAB 与底部四栏均未受影响（同一 APK 上点过一遍）。
+- 设备上改掉的三处（`fdc1c0e7`）：frame 才是画这一步的 view，列表自己滚不会重画它，`onScrolled` 必须
+  `fragmentView.invalidate()`（上游 4523-4524 就有）；搜索打开时不能再按列表位置重算偏移（一次 feed 重载会把
+  搜索框顶到状态栏后面）；搜索页自己的布局从「栏下缘」起算，所以它的容器要带栏高的上边距。
+- 未验证：真机模糊／液态玻璃（本机仍是 LOW 档，`chatBlurEnabled()` 假，只看得到上游的纯色回退）；`screenrecord`
+  在这台模拟器上冻结（两次尝试，70 帧同哈希），滚动过程改用按住拖拽的截图 + `dumpsys` 行坐标记录，吸附用
+  松开前后的坐标差证明；高档机上 frame 玻璃走的是同一处录制源，没有第二个几何分支。
+- 构建与测试：`:nativedo:assembleDebug -Pandroid.injected.build.abi=arm64-v8a` 通过；同 HEAD
+  `:nativedo:testDebugUnitTest` 33 类 98 项全过（0 失败、0 error、0 skipped；全量跑中一次 `ReadProgressTest`
+  既有 flaky 命中，单独重跑 3/3 过）。没有改 `apps/android/telegram` 子树，vendor-guard 不涉及。证据在
+  `.amp/in/artifacts/home-scroll/`。
+
 ### 浮层下的列表：帖子与行穿过胶囊/分类条（2026-10-04，`emulator-5554`，`nativedo-glass-under`，已登录 @example_user）
 
 - 症状两处、根因两个。其一：列表默认 `clipToPadding`，子行在 padding 的边界被裁成一条直线——话题页帖子在胶囊下缘、
@@ -337,7 +373,7 @@ stands, and the upstream component each row is meant to use.
 
 ### 主页玻璃分类条与搜索页（2026-10-04，`emulator-5554`，`nativedo-home-search`）
 
-- 分类条改成 12.10.5 自己的浮动玻璃胶囊：`FilterTabsView` 以 `BlurredBackgroundProviderImpl.topPanel` 的模糊背景、圆角 18、内边距 6.666、两边 4dp 边距浮在列表上；列表把搜索框（48dp）加胶囊（50dp）的高度留成 padding，所以首行在胶囊下方、滚动时行从胶囊下穿过。上游 12.10.5 不把分类条随滚动收起（列表滚动监听里 `applyScrollY = false`），这一版也保持固定。模糊源是 `GlassPanelHost`：`DialogsActivity` 自己的 source render node + `BlurredBackgroundDrawableViewFactory` 收到我们这边一处，话题页以后的 action-bar 胶囊复用同一个类。
+- 分类条改成 12.10.5 自己的浮动玻璃胶囊：`FilterTabsView` 以 `BlurredBackgroundProviderImpl.topPanel` 的模糊背景、圆角 18、内边距 6.666、两边 4dp 边距浮在列表上；列表把搜索框（48dp）加胶囊（50dp）的高度留成 padding，所以首行在胶囊下方、滚动时行从胶囊下穿过。上游 12.10.5 的 `onScrolled` 当时看的是把 `applyScrollY` 写死成 `false` 的那条死路，这一版也保持固定；它的真实偏移由 `ContentView.dispatchDraw` 从列表自己的位置算出来，后来的「主页随滚动收起」一片把它和搜索框、顶部玻璃一起补上了。模糊源是 `GlassPanelHost`：`DialogsActivity` 自己的 source render node + `BlurredBackgroundDrawableViewFactory` 收到我们这边一处，话题页以后的 action-bar 胶囊复用同一个类。
 - 搜索改成 12.10.5 主列表的形态：顶部是上游的 `FragmentSearchField`（提示「搜索 linux.do」，`setHint` 而不是动画 hint drawable），点它按 `DialogsActivity` 的动画打开 - 列表 alpha→0（低性能档不做 0.95 缩放）、搜索页从 1.05 收到 1、进度值驱动分类条 `1 - searchVisible` 淡出与搜索胶囊从 0.98 出现，200ms EASE_OUT 开、180ms + 20ms 关；底部的 话题/通知/设置 栏同时按 `MainTabsActivity` 自己的方式（380ms EASE_OUT_QUINT、下移 40dp、alpha 与 0.85 缩放）让位与返回。设备录屏 `home-search-open-close.mp4`，逐帧拼图 `open-animation-frames.png` / `close-animation-frames.png`：打开时标题、分类条与列表一起让位、底部栏消失；关闭后列表、分类条与底部栏都回来。
 - 搜索页是 `ViewPagerFixed` + 药丸 `TabsView`（装在 `SearchTabsAndFiltersLayout` 玻璃胶囊里）：话题/帖子/用户来自一次 `/search.json`（300ms 防抖，只显示输入框里那个查询的答案），分类/标签来自 `/categories.json` 与 `/tags.json`，按查询在客户端过滤。真实站点：`telegram` 的话题页命中话题行（`08-search-topics`）、帖子页显示带楼层摘要的帖子行（`09-search-posts`）、标签页显示 `#Telegram`（`10-search-tags`）；`claude` 的话题页同样有结果（暗色 `06-search-dark`）。空/加载状态是上游的 `StickerEmptyView` + `FlickerLoadingView`：没输入时「输入关键词开始搜索」（`12-search-idle`），没有命中时「没有找到相关内容」与鸭子贴纸（`11-search-empty`）。
 - 关闭：字段的 × 一步关搜索，主页立即恢复（`13-close-button-home`）；返回键同样先关搜索（搜索打开时第一次返回收键盘，第二次返回关搜索且应用不退出）。返回关搜索要壳先把根屏幕问一遍，`NativeDoActivity.onBackPressed` 的单 fragment 分支现在先问 `getLastFragment()`。

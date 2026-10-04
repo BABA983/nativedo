@@ -685,7 +685,7 @@ public class TopicListFragment extends BaseFragment implements FactorAnimator.Ta
         final int scrollY = (int) -scrollYOffset;
         final int actionBarHeight = AndroidUtilities.dp(org.telegram.ui.DialogsActivity.SEARCH_FIELD_HEIGHT);
         if (scrollY != 0 && scrollY != actionBarHeight) {
-            if (listView == null || !listView.canScrollVertically(-1)) {
+            if (listView == null || scroller == null || !listView.canScrollVertically(-1)) {
                 return false;
             }
             final int h = AndroidUtilities.dp(org.telegram.ui.DialogsActivity.SEARCH_FIELD_HEIGHT);
