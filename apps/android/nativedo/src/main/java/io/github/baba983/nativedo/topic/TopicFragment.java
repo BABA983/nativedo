@@ -1569,7 +1569,20 @@ public class TopicFragment extends BaseFragment {
             if (longPress || !(url instanceof URLSpan)) {
                 return;
             }
-            Browser.openUrl(getParentActivity(), ((URLSpan) url).getURL());
+            String target = ((URLSpan) url).getURL();
+            // A link to this site's own topic opens the topic, not a web page: the reader asked
+            // for the topic, and the app can draw it natively whether or not the in-app browser is
+            // turned on. Anything else is a real external link and goes to the browser.
+            io.github.baba983.nativedo.core.web.DiscourseTopicLink topicLink =
+                    container == null ? null
+                            : io.github.baba983.nativedo.core.web.DiscourseLinks.topicLink(
+                                    target, container.getBaseUrl());
+            if (topicLink != null && topicLink.getTopicId() > 0) {
+                Integer floor = topicLink.getFloor() > 0 ? topicLink.getFloor() : null;
+                presentFragment(TopicFragment.forFloor(topicLink.getTopicId(), null, floor));
+                return;
+            }
+            Browser.openUrl(getParentActivity(), target);
         }
 
         /**
