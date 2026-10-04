@@ -242,6 +242,34 @@ stands, and the upstream component each row is meant to use.
 - 我的 tab：头像 tab 的图标是否认得出来（会话头像、22dp 圆角方形）、四个 tab 的宽度分配是否匀称；自己的资料页作为根没有返回箭头、下拉展开与折叠的手感是否与从帖子打开的作者资料页一致。
 - 通知 tab：没有推送和未读计数时，列表的排序和徽章是否仍然清楚。
 
+### 浮层下的列表：帖子与行穿过胶囊/分类条（2026-10-04，`emulator-5554`，`nativedo-glass-under`，已登录 @example_user）
+
+- 症状两处、根因两个。其一：列表默认 `clipToPadding`，子行在 padding 的边界被裁成一条直线——话题页帖子在胶囊下缘、
+  主页行在分类条下缘（`ChatActivity:6421`、`DialogsActivity:4070` 都关掉它），两处列表照做（`6995895a`）。其二：
+  `GlassPanelHost` 原来录的是「白底 + 列表」且 API≥31 就建源；现在按上游的条件只在 `SharedConfig.chatBlurEnabled()`
+  为真时建源（否则退回 `iBlur3SourceColor` 纯色，即上游 LOW 档的等价物），录制内容 = 壁纸视图（`ChatActivity:17239-17241`
+  的壁纸链，话题页传入 `contentView.backgroundView`）+ 列表（`6cc5574c`）。
+- 设备检查（覆盖安装 `-r -t`，未卸载未清数据，仍登录 @example_user；APK SHA-256 `04422cde…` 与设备 `base.apk` 一致）：
+  - 话题页浅色：滚动到帖子中部后，帖子的标题行/正文/卡片从状态栏后和三个胶囊下穿过，胶囊之间的缺口里能看到同一
+    行文字，胶囊内被不透明填充盖住（`after/scan-4`、`after/after-header-topic-gaps`）；静止时首帖仍在胶囊之下
+    （top padding 照旧，`after/after-header-topic-rest`）。修复前同一位置是硬切线：表情条被拦腰截断、缺口里只有
+    壁纸（`before/03-topic-scrolled3-before`、`before/before-header-topic`）。
+  - 主页浅色：滚动后行连续地从搜索框/分类条下穿过，行在条左端的缺口处露出且半行不再被切（`after/after-header-home`；
+    修复前 `before/05-home-scrolled-before`、`before/before-header-home`）。
+  - 夜间：话题页状态栏后是帖子里的照片（`after/after-header-topic-dark`），主页行照旧穿过搜索框与分类条
+    （`after/after-header-home-dark`）；验证后切回浅色（`after/41-home-light-restored`、`after/42-home-light-retry`）。
+  - 不回归：长按菜单五项（`after/08-longpress-menu`）、选择文本 + Copy 浮层 + 两个句柄（`after/09-text-selection`、
+    `after/12-top-text-selection`）、左滑回复带 `@ErJi` 与附件条（`after/13-swipe-reply`，随后清空输入框）、帖子图片
+    进 PhotoViewer（`after/35-photoviewer-dark`）；crash buffer 为空，无 FATAL/ANR。
+- 这台模拟器仍是 LOW 档（logcat `selected_class = 0`，cpu_count=1，API 36；`lite_mode6` 未写 → `PRESET_LOW`，无
+  `FLAG_CHAT_BLUR`，`SharedConfig.chatBlurEnabled()` 为假）：上游在这档上胶囊是不透明的 `key_chat_topPanelBackground`
+  （夜间 `key_actionBarDefault`）、分类条的源只是纯色，所以本机看不到模糊与液态玻璃，也没法用肉眼验证「壁纸 + 帖子」
+  的录制内容；该路径只在 `chatBlurEnabled()` 为真的高档机型（provider 取 0.76 透明分支）上显示。真机未验证。
+- 构建与测试：`:nativedo:assembleDebug -Pandroid.injected.build.abi=arm64-v8a` 通过（本 worktree 从设备 worktree
+  拷入 `TMessagesProj_Modules/media`、`lib/jlatexmath` 与同 commit 的 arm64 `libtmessages.49.so`，排除两个 CMake
+  任务）；`:nativedo:testDebugUnitTest` 33 类 98 项全过（0 失败、0 error、0 skipped）。没有改 `apps/android/telegram`
+  子树，vendor-guard 不涉及。证据在 `.amp/in/artifacts/glass-under/`。
+
 ### 话题胶囊栏：chat header 的玻璃胶囊（2026-10-04，`emulator-5554`，`nativedo-topic-capsules`，已登录 @example_user）
 
 - 话题页的动作栏改成 12.10.5 聊天的 header：`ActionBar.setupGlass(factory, BlurredBackgroundProviderImpl.topPanelChatActivity(...))`
