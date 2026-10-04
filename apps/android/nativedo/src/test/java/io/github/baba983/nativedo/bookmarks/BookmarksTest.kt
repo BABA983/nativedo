@@ -7,7 +7,10 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import io.github.baba983.nativedo.app.NativeDo
 import io.github.baba983.nativedo.harness.FakeDiscourseSite
 import io.github.baba983.nativedo.harness.UpstreamUiHarness
+import io.github.baba983.nativedo.harness.clickMenuItem
 import io.github.baba983.nativedo.harness.contentListOf
+import io.github.baba983.nativedo.harness.latestItemOptionsMenu
+import io.github.baba983.nativedo.harness.menuItemLabels
 import io.github.baba983.nativedo.harness.shadows.ShadowAnimatedFileNative
 import io.github.baba983.nativedo.harness.shadows.ShadowConnectionsManager
 import io.github.baba983.nativedo.harness.shadows.ShadowIntro
@@ -30,9 +33,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import org.robolectric.shadows.ShadowDialog
 import org.telegram.messenger.ApplicationLoader
-import org.telegram.ui.ActionBar.AlertDialog
 import org.telegram.ui.Cells.ChatMessageCell
 import java.net.URLDecoder
 
@@ -99,12 +100,12 @@ internal class BookmarksTest {
         val items = menuItems()
         println("bookmarks: the menu offers $items")
         assertEquals(
-            "the menu offers the bookmark and nothing else new",
-            listOf("复制", "复制链接", "添加书签", "回复"),
+            "the menu offers the bookmark and the post's text too",
+            listOf("复制", "复制链接", "添加书签", "回复", "选择文本"),
             items,
         )
 
-        menuRows().first { row -> textOf(row) == "添加书签" }.performClick()
+        clickMenuItem(menuRows(), "添加书签")
         harness.idle()
 
         harness.await("the site to take the bookmark") {
@@ -132,7 +133,7 @@ internal class BookmarksTest {
         }
         openTheMenu(cell)
         println("bookmarks: the menu now offers " + menuItems())
-        menuRows().first { row -> textOf(row) == "取消书签" }.performClick()
+        clickMenuItem(menuRows(), "取消书签")
         harness.idle()
         harness.await("the site to be told the bookmark goes") {
             site.recordedRequests.any { it == "DELETE /posts/$postId/bookmark" }
@@ -168,6 +169,10 @@ internal class BookmarksTest {
         // to where they are - which is how a reader reaches them too.
         harness.await("the profile's own fields") { rowLabels().isNotEmpty() }
         val profileList = contentListOf(harness.activity) ?: throw AssertionError("no profile list")
+        // A drag, not one scroll event: the profile's first upward event on its collapsing header
+        // only disarms the pull-down and returns the list to rest (upstream's own clamp), so the
+        // reach for the bottom is the move after it.
+        profileList.scrollBy(0, 1)
         profileList.scrollBy(0, 20_000)
         harness.layoutApp()
         harness.idle()
@@ -218,13 +223,12 @@ internal class BookmarksTest {
 
     /**
      * Whether the menu the reader opens offers [item]. The menu is what the reader sees, so it is
-     * what a test can read: opening and closing it is exactly what the reader does.
+     * what a test can read: opening it is exactly what the reader does.
      */
     private fun menuOffers(item: String): Boolean {
         val cell = laidOutCells().firstOrNull() ?: throw AssertionError("the topic drew no cell")
         openTheMenu(cell)
-        val offered = menuItems().contains(item)
-        (ShadowDialog.getLatestDialog() as? android.app.Dialog)?.dismiss()
+        val offered = menuItemLabels(latestItemOptionsMenu(harness.activity)).contains(item)
         harness.idle()
         return offered
     }
@@ -234,27 +238,11 @@ internal class BookmarksTest {
         harness.idle()
     }
 
-    private fun menuItems(): List<String> = menuRows().map(::textOf)
+    private fun menuItems(): List<String> = menuItemLabels(menuRows())
 
-    /** The menu's rows are upstream's own dialog cells, one per item. */
-    private fun menuRows(): List<AlertDialog.AlertDialogCell> {
-        val dialog = ShadowDialog.getLatestDialog() as? AlertDialog
-            ?: throw AssertionError("the long press opened no menu")
-        val out = mutableListOf<AlertDialog.AlertDialogCell>()
-        collect(dialog.window?.decorView, out)
-        return out
-    }
-
-    private fun collect(view: View?, out: MutableList<AlertDialog.AlertDialogCell>) {
-        when (view) {
-            is AlertDialog.AlertDialogCell -> out += view
-            is ViewGroup -> for (index in 0 until view.childCount) collect(view.getChildAt(index), out)
-        }
-    }
-
-    /** What one of the menu's rows says. */
-    private fun textOf(row: AlertDialog.AlertDialogCell): String =
-        (row.getChildAt(1) as TextView).text.toString()
+    /** The menu's rows are upstream's own ItemOptions items, one per choice. */
+    private fun menuRows(): List<org.telegram.ui.ActionBar.ActionBarMenuSubItem> =
+        latestItemOptionsMenu(harness.activity)
 
     /** The labels the profile's own rows draw, for the row that opens the bookmarks. */
     private fun rowLabels(): List<String> {
@@ -278,8 +266,14 @@ internal class BookmarksTest {
     private fun positionOf(view: View): Int {
         val list = contentListOf(harness.activity) ?: return -1
         val first = (list.layoutManager as? LinearLayoutManager)?.findFirstVisibleItemPosition() ?: return -1
+        // The list's children sit consecutively from the first attached one, and the collapsing
+        // header's padding can leave the first ones inside the padding area, which the layout
+        // manager does not count as visible; the attached window starts a few rows above its answer.
+        val visibleIndex = (0 until list.childCount).firstOrNull { index ->
+            list.getChildAt(index).bottom > list.paddingTop
+        } ?: return -1
         val index = (0 until list.childCount).firstOrNull { list.getChildAt(it) === view } ?: return -1
-        return first + index
+        return first + (index - visibleIndex)
     }
 
     private fun rowCount(): Int = contentListOf(harness.activity)?.adapter?.itemCount ?: 0

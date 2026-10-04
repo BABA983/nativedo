@@ -25220,7 +25220,7 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public boolean isWebBrowserOpenInApp(String url) {
-        return webBrowserSettings != null && url != null && !isWebBrowserOpenInExternal(webBrowserSettings, url);
+        return io.github.baba983.nativedo.hooks.NativeDoHooks.isWebBrowserOpenInApp(url, webBrowserSettings != null && url != null && !isWebBrowserOpenInExternal(webBrowserSettings, url)); // NativeDo: in-app browser is the default without Telegram's server settings
     }
 
 

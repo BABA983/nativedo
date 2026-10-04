@@ -1,9 +1,11 @@
 package io.github.baba983.nativedo.topic;
 
 import android.content.Context;
+import android.graphics.Canvas;
 import android.text.style.CharacterStyle;
 import android.text.style.URLSpan;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 
@@ -12,8 +14,10 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.ImageLocation;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
+import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.BaseFragment;
@@ -63,12 +67,24 @@ public class TopicFragment extends BaseFragment {
     /** The height of our own attach strip, which sits on top of the composer. */
     private static final int STRIP_HEIGHT_DP = 36;
 
+    /** The right capsule's overflow item and the sub-items behind it. */
+    private static final int MENU_ITEM_MORE = 1;
+    private static final int MENU_ITEM_BOOKMARK = 2;
+    private static final int MENU_ITEM_COPY_LINK = 3;
+    private static final int MENU_ITEM_OPEN_BROWSER = 4;
+
     /** Upstream fragments take their arguments through the constructor, not a setter. */
     public TopicFragment(android.os.Bundle args) {
         super(args);
     }
 
     private PostListView listView;
+    /**
+     * Upstream's own text selection for chat lists, the one a chat's message list drives: the
+     * posts hand it their touches the way {@code ChatMessageCell} does, and the overlay it draws
+     * (handles, highlight and the copy bar) is added to the content view.
+     */
+    private org.telegram.ui.Cells.TextSelectionHelper.ChatListTextSelectionHelper textSelectionHelper;
     /** The topic's floors, in order: one post each, drawn as one or more bubbles. */
     private final List<Post> floors = new ArrayList<>();
     /** Every bubble of every floor, in order; this is what the list binds. */
@@ -84,6 +100,66 @@ public class TopicFragment extends BaseFragment {
     private AppContainer container;
     private long topicId;
     private ChatActivityEnterView composer;
+    /** The floating center capsule: the topic author's avatar, the title and the subtitle. */
+    private org.telegram.ui.Components.ChatAvatarContainer avatarContainer;
+    /** The bar's blur source; the post list is the content it records. */
+    private io.github.baba983.nativedo.app.GlassPanelHost glassHost;
+    /** The topic as last read; the capsule and the bookmark item draw from it. */
+    private TopicDetail topicDetail;
+    /** The topic's original poster, as the synthetic user the rows also draw. */
+    private TLRPC.User topicAuthor;
+    /** The reader's own topic-level bookmark, mirrored from the site's answer. */
+    private boolean topicBookmarked;
+    /** What the list keeps above its first post for the floating bar (bar height + 4dp). */
+    private int listPaddingTop;
+    /** The overflow item's 书签 row, whose label and icon follow [topicBookmarked]. */
+    private org.telegram.ui.ActionBar.ActionBarMenuSubItem bookmarkMenuItem;
+    /**
+     * The day/night switch updates the capsules' glass and the center capsule's own text colours;
+     * a chat activity is rebuilt on a theme change, this screen is not.
+     */
+    private final NotificationCenter.NotificationCenterDelegate themeObserver =
+            (id, account, args) -> {
+                if (id == NotificationCenter.didSetNewWallpapper) {
+                    // ChatActivity:23988 - a new wallpaper replaces the one the screen draws.
+                    updateBackground();
+                    return;
+                }
+                if (id != NotificationCenter.needSetDayNightTheme) {
+                    return;
+                }
+                updateBackground();
+                if (glassHost != null) {
+                    glassHost.updateColors();
+                }
+                if (actionBar != null) {
+                    actionBar.updateColors();
+                    actionBar.setItemsColor(
+                            getThemedColor(org.telegram.ui.ActionBar.Theme.key_actionBarDefaultIcon), false);
+                }
+                if (avatarContainer != null) {
+                    avatarContainer.updateColors();
+                    avatarContainer.setTitleColors(
+                            getThemedColor(org.telegram.ui.ActionBar.Theme.key_actionBarDefaultTitle),
+                            getThemedColor(org.telegram.ui.ActionBar.Theme.key_actionBarDefaultSubtitle));
+                }
+            };
+    /** The frame that draws the chat wallpaper behind the posts (ChatActivity's contentView). */
+    private SizeNotifierFrameLayout wallpaperView;
+
+    /** ChatActivity.updateBackground (44180-44191): the current chat wallpaper, with its motion. */
+    private void updateBackground() {
+        if (wallpaperView == null) {
+            return;
+        }
+        wallpaperView.setBackgroundImage(
+                org.telegram.ui.ActionBar.Theme.getCachedWallpaper(),
+                org.telegram.ui.ActionBar.Theme.isWallpaperMotion());
+        if (glassHost != null) {
+            // setBackgroundImage may have just created the wallpaper view; the source records it.
+            glassHost.setBackgroundView(wallpaperView.backgroundView);
+        }
+    }
     /** The floor this reply answers, when the reader picked one in the post menu. */
     private Integer replyToPostNumber;
     /** Our own attach entry point, for the files upstream's button cannot offer (see its builder). */
@@ -171,34 +247,123 @@ public class TopicFragment extends BaseFragment {
     protected View createView(Context context) {
         long topicId = getArguments() == null ? 0 : getArguments().getLong(ARG_TOPIC_ID, 0);
         String title = getArguments() == null ? null : getArguments().getString(ARG_TOPIC_TITLE);
-        actionBar.setTitle(title == null ? "话题" : title);
-        actionBar.setBackButtonImage(org.telegram.messenger.R.drawable.ic_ab_back);
-        actionBar.setAllowOverlayTitle(true);
+        // The bar floats over the post list exactly the way a chat header does: it is kept out of
+        // the container (ChatActivity:3678 setAddToContainer(false)) and given to this screen's own
+        // content view, with no background and the chat's own back arrow (3680-3686).
+        actionBar.setAddToContainer(false);
+        actionBar.setCastShadows(false);
+        actionBar.setBackground(null);
+        actionBar.setBackButtonDrawable(new org.telegram.ui.ActionBar.BackDrawable(false));
         actionBar.setActionBarMenuOnItemClick(new org.telegram.ui.ActionBar.ActionBar.ActionBarMenuOnItemClick() {
             @Override
             public void onItemClick(int id) {
-                if (id == -1) {
+                if (id == -1 && onBackPressed(true)) {
                     finishFragment();
+                } else if (id == MENU_ITEM_BOOKMARK) {
+                    toggleTopicBookmark();
+                } else if (id == MENU_ITEM_COPY_LINK) {
+                    copyTopicLink();
+                } else if (id == MENU_ITEM_OPEN_BROWSER) {
+                    openTopicInBrowser();
                 }
             }
         });
+        // The chat header's own overflow (its 12.10.5 edit item is the same ic_ab_other,
+        // ChatActivity:4281): one item whose sub-items are this topic's actions. The menu is
+        // created before setupGlass because that is where it is switched into glass mode
+        // (ActionBar.java:245-248).
+        org.telegram.ui.ActionBar.ActionBarMenu menu = actionBar.createMenu();
+        org.telegram.ui.ActionBar.ActionBarMenuItem overflowItem =
+                menu.addItem(MENU_ITEM_MORE, org.telegram.messenger.R.drawable.ic_ab_other);
+        overflowItem.setContentDescription("更多");
+        bookmarkMenuItem = overflowItem.addSubItem(
+                MENU_ITEM_BOOKMARK, org.telegram.messenger.R.drawable.msg_fave, "书签");
+        overflowItem.addSubItem(
+                MENU_ITEM_COPY_LINK, org.telegram.messenger.R.drawable.msg_link, "复制链接");
+        overflowItem.addSubItem(
+                MENU_ITEM_OPEN_BROWSER, org.telegram.messenger.R.drawable.msg_openin, "在浏览器打开");
 
         sharedResources = new org.telegram.messenger.ChatMessageSharedResources(context);
-        SizeNotifierFrameLayout contentView = new SizeNotifierFrameLayout(context);
-        contentView.setBackgroundColor(org.telegram.ui.ActionBar.Theme.getColor(
-                org.telegram.ui.ActionBar.Theme.key_windowBackgroundWhite));
+        SizeNotifierFrameLayout contentView = new SizeNotifierFrameLayout(context) {
+            @Override
+            public boolean dispatchTouchEvent(MotionEvent ev) {
+                // ChatActivity's own dispatch does this: a tap away from the selection's handles
+                // ends the selection and must not also reach what it landed on.
+                if (textSelectionHelper != null && textSelectionHelper.isInSelectionMode()) {
+                    org.telegram.ui.Cells.TextSelectionHelper.TextSelectionOverlay selectionOverlay =
+                            textSelectionHelper.getOverlayView(getContext());
+                    if (selectionOverlay.checkOnTap(ev)) {
+                        ev.setAction(MotionEvent.ACTION_CANCEL);
+                    }
+                }
+                return super.dispatchTouchEvent(ev);
+            }
+
+            // ChatActivityFragmentView (17652-17660): the bar floats over the posts, so the
+            // wallpaper starts at the top of the screen instead of below a bar and status bar.
+            @Override
+            protected boolean isActionBarVisible() {
+                return false;
+            }
+
+            @Override
+            protected boolean isStatusBarVisible() {
+                return false;
+            }
+
+            @Override
+            protected void dispatchDraw(Canvas canvas) {
+                // The capsules' blur source records the post list before the frame draws its
+                // children, so a capsule samples the posts behind it and never itself - the same
+                // wiring the topic list's floating strip uses.
+                if (glassHost != null) {
+                    glassHost.record();
+                }
+                super.dispatchDraw(canvas);
+            }
+        };
+        // ChatActivity.updateBackground (44180-44191): the posts sit on the chat wallpaper, which is
+        // also what makes the white glass capsules read as capsules.
+        wallpaperView = contentView;
+        updateBackground();
+        // The capsules' bottom edge sits one dp past the bar's own height, and the bar's shadows
+        // live at its edges: neither may be clipped by the frame (ChatActivity does the same,
+        // 7797).
+        contentView.setClipChildren(false);
         listView = new PostListView(context);
+        // ChatActivity:6421 - the list's top padding is the floating bar's own, and a post scrolled
+        // up is drawn through it to the frame's top edge (under the capsules and the status bar)
+        // instead of being cut off in a line at the bar's bottom edge.
+        listView.setClipToPadding(false);
         listView.setAvatarSource(senderId -> users.get(senderId));
-        listView.setLayoutManager(new LinearLayoutManager(context));
+        // Upstream's own chat-list manager: it is the one whose vertical scroll the swipe gesture
+        // switches off while a post is being dragged (the ported processTouchEvent).
+        androidx.recyclerview.widget.GridLayoutManagerFixed layoutManager =
+                new androidx.recyclerview.widget.GridLayoutManagerFixed(
+                        context, 1000, LinearLayoutManager.VERTICAL, false);
+        layoutManager.setSpanSizeLookup(new androidx.recyclerview.widget.GridLayoutManager.SpanSizeLookup() {
+            @Override
+            public int getSpanSize(int position) {
+                return 1000;
+            }
+        });
+        listView.setLayoutManager(layoutManager);
         listView.setAdapter(new PostAdapter());
+        // One leftward drag on a post is the menu's 回复: the composer opens on that floor.
+        listView.setSwipeReplyListener(cell -> {
+            int floor = floorOf(cell.getMessageObject());
+            if (floor >= 0) {
+                replyTo(floor);
+            }
+        });
         // Upstream's cell only arms its own long press when the touch landed on something it calls
         // pressable, which a rich message's text is not, so the row asks for the menu itself. Same
-        // floor, same dialog as a long press would open.
+        // floor, same menu as a long press would open, anchored on the row that was pressed.
         listView.setOnItemLongClickListener((view, position) -> {
             if (position < 0 || position >= bubbleFloors.size()) {
                 return false;
             }
-            showMessageMenu(bubbleFloors.get(position));
+            showMessageMenu(view, bubbleFloors.get(position));
             return true;
         });
         listView.setVerticalScrollBarEnabled(false);
@@ -212,6 +377,18 @@ public class TopicFragment extends BaseFragment {
                     // it a topic left open on a desk would count as read time.
                     reporter.noteActivity();
                 }
+                if (textSelectionHelper != null) {
+                    // A scroll moves the selection's coordinates with the list; upstream's chat does
+                    // the same in its own scroll listener.
+                    textSelectionHelper.onParentScrolled();
+                }
+            }
+
+            @Override
+            public void onScrollStateChanged(@NonNull RecyclerView recyclerView, int newState) {
+                if (newState == RecyclerView.SCROLL_STATE_IDLE && textSelectionHelper != null) {
+                    textSelectionHelper.stopScrolling();
+                }
             }
         });
         // The first layout is what fills the viewport, and a viewport that never scrolls never
@@ -219,8 +396,10 @@ public class TopicFragment extends BaseFragment {
         listView.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
                 reportViewport());
 
-        // The composer floats at the bottom over the list, so the list keeps its last post clear.
-        listView.setPadding(0, 0, 0, AndroidUtilities.dp(52));
+        // The bar floats at the top of the list and the composer at its bottom, so the list keeps
+        // both clear: the top padding is the bar's measured height (the status bar is already in
+        // it), the same term ChatActivity's own list padding adds (11947-11952).
+        updateListPadding();
         contentView.addView(listView, org.telegram.ui.Components.LayoutHelper.createFrame(
                 org.telegram.ui.Components.LayoutHelper.MATCH_PARENT,
                 org.telegram.ui.Components.LayoutHelper.MATCH_PARENT));
@@ -248,7 +427,69 @@ public class TopicFragment extends BaseFragment {
                 org.telegram.ui.Components.LayoutHelper.MATCH_PARENT,
                 org.telegram.ui.Components.LayoutHelper.MATCH_PARENT));
 
+        // The center capsule is the chat's own ChatAvatarContainer in glass mode, added to the bar
+        // the way ChatActivity adds it (4134-4162, 4224: WRAP_CONTENT next to MATCH_PARENT, margins
+        // 52/52). The bar itself draws the back, center and menu capsules around it and animates
+        // their widths (ActionBar.java:2219-2270), and setupGlass is what turns the three glass
+        // drawables on with the chat header's own provider (ActionBar.java:210-255;
+        // ChatActivity:4569-4572). The list is the content the capsules' blur source records.
+        avatarContainer = new org.telegram.ui.Components.ChatAvatarContainer(
+                context, this, false, resourceProvider);
+        avatarContainer.setGlassMode();
+        avatarContainer.setClipChildren(false);
+        avatarContainer.setActionBar(actionBar);
+        // A tap on the capsule is the reader asking for the author, the same as a tap on a post's
+        // avatar or name (ChatActivity opens the profile from its own listener the same way).
+        avatarContainer.setOnClickListener(view -> openTopicAuthorProfile());
+        if (title != null && !title.trim().isEmpty()) {
+            avatarContainer.setTitle(title.trim());
+        }
+        actionBar.setChatAvatarContainer(avatarContainer);
+        actionBar.addView(avatarContainer, 0, org.telegram.ui.Components.LayoutHelper.createFrame(
+                org.telegram.ui.Components.LayoutHelper.WRAP_CONTENT,
+                org.telegram.ui.Components.LayoutHelper.MATCH_PARENT,
+                Gravity.TOP | Gravity.LEFT, 52, 0, 52, 0));
+        actionBar.createMenu().bringToFront();
+        glassHost = new io.github.baba983.nativedo.app.GlassPanelHost(listView, contentView);
+        // The wallpaper chain is part of what a capsule samples (ChatActivity's navbar source draws
+        // the wallpaper under the posts); the frame owns that view and hands it over here.
+        glassHost.setBackgroundView(contentView.backgroundView);
+        actionBar.setupGlass(
+                glassHost.getFactory(),
+                org.telegram.ui.Components.blur3.drawable.color.impl.BlurredBackgroundProviderImpl
+                        .topPanelChatActivity(resourceProvider));
+        contentView.addView(actionBar);
+
+        // Upstream's selection, wired the way ChatActivity wires it: the overlay is a child of the
+        // content view, the message list is its parent (that is where a handle's coordinates are
+        // computed from), and the callback ends a sliding gesture that the selection supersedes.
+        textSelectionHelper = new org.telegram.ui.Cells.TextSelectionHelper.ChatListTextSelectionHelper();
+        textSelectionHelper.setCallback(new org.telegram.ui.Cells.TextSelectionHelper.Callback() {
+            @Override
+            public void onStateChanged(boolean isSelected) {
+                if (isSelected && listView != null) {
+                    // A selection that starts ends a sliding gesture, upstream's callback does the
+                    // same: the two touches can never belong to one drag.
+                    listView.cancelSlidingView();
+                }
+            }
+
+            @Override
+            public void onTextCopied() {
+            }
+        });
+        View selectionOverlay = textSelectionHelper.getOverlayView(context);
+        contentView.addView(selectionOverlay);
+        textSelectionHelper.setParentView(listView);
+        listView.setTextSelectionHelper(textSelectionHelper);
+
         fragmentView = contentView;
+        // The capsules' glass and the capsule's own colours follow the day/night switch, the way
+        // the topic list's strip is told.
+        NotificationCenter.getGlobalInstance().addObserver(
+                themeObserver, NotificationCenter.needSetDayNightTheme);
+        NotificationCenter.getGlobalInstance().addObserver(
+                themeObserver, NotificationCenter.didSetNewWallpapper);
         loadTopic(topicId);
         return fragmentView;
     }
@@ -351,9 +592,50 @@ public class TopicFragment extends BaseFragment {
         int wanted = hasText ? View.VISIBLE : View.GONE;
         if (attachStrip.getVisibility() != wanted) {
             attachStrip.setVisibility(wanted);
-            // The strip is an overlay on the list, so the list keeps its last post clear of it too.
-            listView.setPadding(0, 0, 0, AndroidUtilities.dp(hasText ? 52 + STRIP_HEIGHT_DP : 52));
+            // The strip is an overlay on the list, so the list keeps its last post clear of it too
+            // - and keeps the floating bar's own padding above it.
+            applyListPadding();
         }
+    }
+
+    /**
+     * What the list keeps above its first post: the floating bar's own height (the status bar is
+     * already in it, since the bar occupies the status bar the way a chat header does) plus the
+     * 4dp every one of upstream's lists keeps (ChatActivity's own list padding starts with it,
+     * 11947).
+     */
+    private void updateListPadding() {
+        if (listView == null) {
+            return;
+        }
+        int barHeight = actionBar != null && actionBar.getMeasuredHeight() > 0
+                ? actionBar.getMeasuredHeight()
+                : org.telegram.ui.ActionBar.ActionBar.getCurrentActionBarHeight() + AndroidUtilities.statusBarHeight;
+        listPaddingTop = AndroidUtilities.dp(4) + barHeight;
+        applyListPadding();
+    }
+
+    /** Writes the list's paddings from what the bar and the composer need, together. */
+    private void applyListPadding() {
+        if (listView == null) {
+            return;
+        }
+        boolean hasText = composer != null && composer.getEditField() != null
+                && composer.getEditField().length() > 0;
+        listView.setPadding(0, listPaddingTop, 0,
+                AndroidUtilities.dp(hasText ? 52 + STRIP_HEIGHT_DP : 52));
+    }
+
+    /**
+     * The system insets are where the status bar is; the bar's measured height follows them
+     * (ActionBar.onMeasure adds {@code AndroidUtilities.statusBarHeight}, ActionBar.java:1400), so
+     * the list's padding is rebuilt here - ChatActivity recomputes its own the same way when its
+     * insets change.
+     */
+    @Override
+    public void onInsets(int left, int top, int right, int bottom) {
+        super.onInsets(left, top, right, bottom);
+        updateListPadding();
     }
 
     /** A pick that is being uploaded; the strip says so and takes no second tap. */
@@ -413,10 +695,18 @@ public class TopicFragment extends BaseFragment {
         if (failureView != null) {
             failureView.setVisibility(View.GONE);
         }
-        // The site's own title is the authoritative one; a link that named no title gets it here.
-        String loadedTitle = detail.getTitle();
-        if (loadedTitle != null && !loadedTitle.trim().isEmpty()) {
-            actionBar.setTitle(loadedTitle.trim());
+        topicDetail = detail;
+        topicBookmarked = detail.getBookmarked();
+        updateBookmarkMenuItem();
+        // The site's own title is the authoritative one; a link that named no title gets it here,
+        // and it goes into the center capsule the way a chat's title does.
+        if (avatarContainer != null) {
+            String loadedTitle = detail.getTitle();
+            if (loadedTitle != null && !loadedTitle.trim().isEmpty()) {
+                avatarContainer.setTitle(loadedTitle.trim());
+            }
+            bindTopicAuthor(detail);
+            bindSubtitle(detail);
         }
         streamPostIds = detail.getStreamPostIds();
         reporter.start(detail);
@@ -440,6 +730,188 @@ public class TopicFragment extends BaseFragment {
             }
         }
         return false;
+    }
+
+    /**
+     * The center capsule's picture: the topic's original poster, as the same synthetic user the
+     * rows draw (DiscourseAvatars). The container asks for the picture by user
+     * ({@code setUserAvatar}, ChatAvatarContainer.java:1383-1413), and the file the session
+     * downloaded is handed to that receiver by path once it lands - the same hand-over a row's
+     * avatar needs (PostListView.ensureAvatar), because a synthetic photo's own location names no
+     * path the image loader can read.
+     */
+    private void bindTopicAuthor(TopicDetail detail) {
+        if (avatarContainer == null || container == null) {
+            return;
+        }
+        io.github.baba983.nativedo.core.model.MentionCandidate author = detail.getCreatedBy();
+        if (author == null || author.getUsername().isEmpty()) {
+            return;
+        }
+        topicAuthor = DiscourseAvatars.INSTANCE.user(
+                author.getUsername(),
+                author.getDisplayName(),
+                author.getAvatarTemplate(),
+                container.getBaseUrl());
+        // The container's avatar ask goes through MessagesController's own user table, so the
+        // synthetic user is registered there first (the rows do the same when they bind).
+        MessagesController.getInstance(currentAccount).putUser(topicAuthor, true);
+        avatarContainer.setUserAvatar(topicAuthor);
+        bindAuthorAvatarImage();
+        String url = DiscourseAvatars.INSTANCE.url(
+                author.getAvatarTemplate(), container.getBaseUrl(), DiscourseAvatars.DEFAULT_SIZE);
+        if (url != null && !DiscourseAvatars.INSTANCE.isCached(topicAuthor)) {
+            DiscourseLoader.INSTANCE.cacheAvatar(container, url, topicAuthor, () -> {
+                bindAuthorAvatarImage();
+                return kotlin.Unit.INSTANCE;
+            });
+        }
+    }
+
+    /** The downloaded avatar at the path the image loader reads; the ask by user has no path. */
+    private void bindAuthorAvatarImage() {
+        if (avatarContainer == null || topicAuthor == null) {
+            return;
+        }
+        ImageLocation location = DiscourseAvatars.INSTANCE.imageLocation(topicAuthor);
+        if (location == null) {
+            return;
+        }
+        org.telegram.ui.Components.BackupImageView avatarView = avatarContainer.getAvatarImageView();
+        if (avatarView != null) {
+            avatarView.setImage(location, "50_50", avatarView.getImageReceiver().getDrawable(), topicAuthor);
+        }
+    }
+
+    /**
+     * The capsule's second line: the topic's category, and - while the capsule still fits - how
+     * many replies the topic has. The name comes from the category store the topic list fills; a
+     * category it cannot name leaves the reply count to stand alone.
+     */
+    private void bindSubtitle(TopicDetail detail) {
+        if (avatarContainer == null) {
+            return;
+        }
+        if (container == null || detail.getCategoryId() <= 0) {
+            setCapsuleSubtitle(null);
+            return;
+        }
+        DiscourseLoader.INSTANCE.categoryName(container, detail.getCategoryId(), name -> {
+            setCapsuleSubtitle(name);
+            return kotlin.Unit.INSTANCE;
+        });
+    }
+
+    private void setCapsuleSubtitle(String categoryName) {
+        if (avatarContainer == null) {
+            return;
+        }
+        int replies = topicDetail == null ? 0 : Math.max(0, topicDetail.getTotalPosts() - 1);
+        String subtitle = categoryName == null || categoryName.isEmpty() ? null : categoryName;
+        if (replies > 0) {
+            String count = replies + " 回复";
+            String composed = subtitle == null ? count : subtitle + " · " + count;
+            if (subtitleFits(composed)) {
+                subtitle = composed;
+            }
+        }
+        avatarContainer.setSubtitle(subtitle);
+    }
+
+    /**
+     * Whether the header's center capsule still fits this line. ActionBar clamps the capsule to
+     * the bar minus the back and menu capsules (ActionBar.java:2155, the same
+     * dp(6+46+6+6+46+6) there), and the container spends a 52dp avatar plus 18dp on the text
+     * (ChatAvatarContainer.getVisualWidth) and draws the capsule 6dp past the text on each side
+     * (setupGlass). What is left is what the line may hold; the reply count is only added while
+     * the composed line still fits there.
+     */
+    private boolean subtitleFits(String subtitle) {
+        if (avatarContainer == null || actionBar == null) {
+            return false;
+        }
+        int barWidth = actionBar.getMeasuredWidth();
+        if (barWidth <= 0) {
+            return true;
+        }
+        float available = barWidth
+                - AndroidUtilities.dp(6 + 46 + 6 + 6 + 46 + 6)
+                - AndroidUtilities.dp(52 + 18);
+        return avatarContainer.getSubtitlePaint().measureText(subtitle) <= available;
+    }
+
+    /** The 书签 row says what the next tap does, from the topic's own state. */
+    private void updateBookmarkMenuItem() {
+        if (bookmarkMenuItem == null) {
+            return;
+        }
+        bookmarkMenuItem.setTextAndIcon(
+                topicBookmarked ? "取消书签" : "书签",
+                topicBookmarked
+                        ? org.telegram.messenger.R.drawable.msg_unfave
+                        : org.telegram.messenger.R.drawable.msg_fave);
+    }
+
+    /** The topic's own bookmark, from where it is to where it is not (and back). */
+    private void toggleTopicBookmark() {
+        if (container == null || topicId <= 0) {
+            return;
+        }
+        boolean wanted = !topicBookmarked;
+        DiscourseLoader.INSTANCE.setTopicBookmark(container, topicId, wanted, () -> {
+            topicBookmarked = wanted;
+            updateBookmarkMenuItem();
+            return kotlin.Unit.INSTANCE;
+        }, error -> {
+            showError("书签失败", error);
+            return kotlin.Unit.INSTANCE;
+        });
+    }
+
+    /** The topic's canonical address, slug when the site named one and the bare id otherwise. */
+    private String topicUrl() {
+        if (container == null) {
+            return "";
+        }
+        String slug = topicDetail == null ? null : topicDetail.getSlug();
+        if (slug == null || slug.trim().isEmpty()) {
+            return container.getBaseUrl() + "t/" + topicId;
+        }
+        return container.getBaseUrl() + "t/" + slug.trim() + "/" + topicId;
+    }
+
+    /** What the menu's 复制链接 leaves on the clipboard: the topic's own address. */
+    private void copyTopicLink() {
+        if (getParentActivity() == null) {
+            return;
+        }
+        android.content.ClipboardManager clipboard = (android.content.ClipboardManager)
+                getParentActivity().getSystemService(Context.CLIPBOARD_SERVICE);
+        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("link", topicUrl()));
+    }
+
+    /** 在浏览器打开: upstream's own browser, in-app by default (see the link-open setting). */
+    private void openTopicInBrowser() {
+        if (getParentActivity() == null) {
+            return;
+        }
+        Browser.openUrl(getParentActivity(), topicUrl());
+    }
+
+    /**
+     * A tap on the center capsule asks for the person who started the topic; it is the same screen
+     * a tap on their post's avatar opens, and the same the chat header opens on a tap of its own
+     * (ChatAvatarContainer's container listener).
+     */
+    private void openTopicAuthorProfile() {
+        if (topicAuthor == null || topicAuthor.username == null || topicAuthor.username.isEmpty()) {
+            return;
+        }
+        if (getParentActivity() instanceof NativeDoActivity) {
+            ((NativeDoActivity) getParentActivity()).present(
+                    io.github.baba983.nativedo.profile.ProfileFragment.forUser(
+                            topicAuthor.username, topicAuthor.first_name));
+        }
     }
 
     /**
@@ -490,6 +962,21 @@ public class TopicFragment extends BaseFragment {
         }
     }
 
+    /**
+     * Back means the selection first, the topic second - upstream's chat does the same: a back press
+     * while text is selected drops the selection and the topic stays.
+     */
+    @Override
+    public boolean onBackPressed(boolean invoked) {
+        if (textSelectionHelper != null && textSelectionHelper.isInSelectionMode()) {
+            if (invoked) {
+                textSelectionHelper.clear();
+            }
+            return false;
+        }
+        return super.onBackPressed(invoked);
+    }
+
     @Override
     public void onPause() {
         super.onPause();
@@ -502,6 +989,13 @@ public class TopicFragment extends BaseFragment {
             // The screen is gone: the ticker must be too, or it keeps crediting floors of a topic
             // nobody is looking at.
             reporter.stop();
+        }
+        NotificationCenter.getGlobalInstance().removeObserver(
+                themeObserver, NotificationCenter.needSetDayNightTheme);
+        NotificationCenter.getGlobalInstance().removeObserver(
+                themeObserver, NotificationCenter.didSetNewWallpapper);
+        if (avatarContainer != null) {
+            avatarContainer.onDestroy();
         }
         leaveTopic();
         super.onFragmentDestroy();
@@ -825,37 +1319,74 @@ public class TopicFragment extends BaseFragment {
     }
 
     /**
-     * What the reader can do with a post: copy its text, copy a link to it, or reply to it. The
-     * dialog is upstream's own, so it looks like every other confirmation in the app. Every bubble
-     * of a floor opens it, and it always speaks for the whole floor, not for one segment of it.
+     * What the reader can do with a post: copy its text, copy a link to it, bookmark it, or reply
+     * to it. The choices are upstream's own scrim popup, anchored on the bubble that was pressed —
+     * the shape a chat uses for a message's menu — so the bubble stays lit above the dim while the
+     * reader decides.
      */
-    private void showMessageMenu(int floor) {
-        if (getParentActivity() == null || floor < 0 || floor >= floors.size()) {
+    private void showMessageMenu(android.view.View scrim, int floor) {
+        if (getParentActivity() == null || scrim == null || floor < 0 || floor >= floors.size()) {
             return;
         }
         boolean bookmarked = floors.get(floor).isBookmarked();
-        String[] items = new String[]{
-                "复制",
-                "复制链接",
-                bookmarked ? "取消书签" : "添加书签",
-                "回复",
-        };
-        org.telegram.ui.ActionBar.AlertDialog.Builder builder =
-                new org.telegram.ui.ActionBar.AlertDialog.Builder(getParentActivity());
-        builder.setItems(items, (dialog, which) -> {
-            if (which == 0) {
-                AndroidUtilities.addToClipboard(plainText(floor));
-            } else if (which == 1) {
-                android.content.ClipboardManager clipboard = (android.content.ClipboardManager)
-                        getParentActivity().getSystemService(Context.CLIPBOARD_SERVICE);
-                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("link", postUrl(floor)));
-            } else if (which == 2) {
-                toggleBookmark(floor);
-            } else {
-                replyTo(floor);
-            }
+        org.telegram.ui.Components.ItemOptions options =
+                org.telegram.ui.Components.ItemOptions.makeOptions(this, scrim);
+        options.add(org.telegram.messenger.R.drawable.msg_copy, "复制",
+                () -> AndroidUtilities.addToClipboard(plainText(floor)));
+        options.add(org.telegram.messenger.R.drawable.msg_link, "复制链接", () -> {
+            android.content.ClipboardManager clipboard = (android.content.ClipboardManager)
+                    getParentActivity().getSystemService(Context.CLIPBOARD_SERVICE);
+            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("link", postUrl(floor)));
         });
-        showDialog(builder.create());
+        options.add(
+                bookmarked
+                        ? org.telegram.messenger.R.drawable.msg_unfave
+                        : org.telegram.messenger.R.drawable.msg_fave,
+                bookmarked ? "取消书签" : "添加书签",
+                () -> toggleBookmark(floor));
+        options.add(org.telegram.messenger.R.drawable.menu_reply, "回复", () -> replyTo(floor));
+        if (scrim instanceof ChatMessageCell && hasSelectableText((ChatMessageCell) scrim)) {
+            options.add(org.telegram.messenger.R.drawable.msg_select, "选择文本",
+                    () -> startTextSelection((ChatMessageCell) scrim));
+        }
+        options.show();
+    }
+
+    /**
+     * Whether the bubble draws text a selection can take. A poll bubble has none of its own - its
+     * answers are buttons - and neither has a bubble whose body was empty.
+     */
+    private static boolean hasSelectableText(ChatMessageCell cell) {
+        return cell.getMessageObject() != null
+                && cell.getMessageObject().richLayout != null
+                && !cell.getMessageObject().richLayout.textBlocks.isEmpty()
+                && cell.getMessageObject().richLayout.joinedText.length() > 0;
+    }
+
+    /**
+     * The reader asked for the post's text. Upstream starts a selection by holding a finger on a
+     * message's text, and the message has to be in the state its menu put it in; our menu is a popup
+     * that owns the screen while it is up, so the menu is where the selection starts: the whole text
+     * is picked, and the handles are what narrows it. From there the overlay is upstream's own.
+     *
+     * <p>A post's body is a rich layout, and the helper draws a selection over one only while it is
+     * told so — a touch sets that flag on its way in, and a selection started from the menu has to
+     * set it itself, or there is no highlight and the handles are measured against the wrong
+     * layout. The cell is asked to draw again for the same reason: its draw pass is what hands the
+     * helper the text's position inside it.</p>
+     */
+    private void startTextSelection(ChatMessageCell cell) {
+        if (textSelectionHelper == null || cell == null || cell.getMessageObject() == null
+                || cell.getMessageObject().richLayout == null) {
+            return;
+        }
+        CharSequence text = cell.getMessageObject().richLayout.joinedText;
+        if (text == null || text.length() == 0) {
+            return;
+        }
+        textSelectionHelper.isRich = true;
+        textSelectionHelper.select(cell, 0, text.length());
+        cell.invalidate();
     }
 
     /**
@@ -1327,14 +1858,14 @@ public class TopicFragment extends BaseFragment {
             toggleReaction(floors.get(floor).getId(), reactionId);
         }
 
-        /** Long press on any bubble of a floor: the three things a reader does with a post. */
+        /** Long press on any bubble of a floor: the menu a reader opens on a post. */
         @Override
         public void didLongPress(ChatMessageCell cell, float x, float y) {
             int floor = floorOf(cell.getMessageObject());
             if (floor < 0) {
                 return;
             }
-            showMessageMenu(floor);
+            showMessageMenu(cell, floor);
         }
 
         /**
@@ -1382,11 +1913,20 @@ public class TopicFragment extends BaseFragment {
             String digest = new String(answer.option, java.nio.charset.StandardCharsets.UTF_8);
             PollVoteSelection selection = DiscoursePolls.selectionFor(poll, digest);
             if (selection == null) {
-                showMessageMenu(floorOf(message));
+                showMessageMenu(cell, floorOf(message));
                 return true;
             }
             vote(message, poll, selection);
             return true;
+        }
+
+        /**
+         * Upstream asks the delegate for the selection helper on every touch a message receives;
+         * handing it over is what lets a post's text be selected at all.
+         */
+        @Override
+        public org.telegram.ui.Cells.TextSelectionHelper.ChatListTextSelectionHelper getTextSelectionHelper() {
+            return textSelectionHelper;
         }
 
         /**
@@ -1434,7 +1974,33 @@ public class TopicFragment extends BaseFragment {
             if (longPress || !(url instanceof URLSpan)) {
                 return;
             }
-            Browser.openUrl(getParentActivity(), ((URLSpan) url).getURL());
+            String target = ((URLSpan) url).getURL();
+            // A link to this site's own topic opens the topic, not a web page: the reader asked
+            // for the topic, and the app can draw it natively whether or not the in-app browser is
+            // turned on. Anything else is a real external link and goes to the browser.
+            io.github.baba983.nativedo.core.web.DiscourseTopicLink topicLink =
+                    container == null ? null
+                            : io.github.baba983.nativedo.core.web.DiscourseLinks.topicLink(
+                                    target, container.getBaseUrl());
+            if (topicLink != null && topicLink.getTopicId() > 0) {
+                Integer floor = topicLink.getFloor() > 0 ? topicLink.getFloor() : null;
+                presentFragment(TopicFragment.forFloor(topicLink.getTopicId(), null, floor));
+                return;
+            }
+            Browser.openUrl(getParentActivity(), target);
+        }
+
+        /**
+         * A tap on a link preview (an onebox): upstream's own delegate default calls
+         * {@code Browser.openUrl} directly, and the shared CookieManager makes that the
+         * signed-in page for linux.do URLs.
+         */
+        @Override
+        public void didPressWebPage(ChatMessageCell cell, TLRPC.WebPage webpage, String url, boolean safe) {
+            if (url == null || url.isEmpty()) {
+                return;
+            }
+            Browser.openUrl(getParentActivity(), url);
         }
 
         /**

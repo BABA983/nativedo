@@ -60,6 +60,42 @@ object DiscourseLoader {
         }
     }
 
+    /**
+     * The reader's bookmark on the topic itself, the same shape as a post's: the site is told
+     * first, and the caller draws the new state only once the site has taken it.
+     */
+    fun setTopicBookmark(
+        container: AppContainer,
+        topicId: Long,
+        bookmarked: Boolean,
+        onDone: () -> Unit,
+        onFailed: (Throwable) -> Unit,
+    ) {
+        scope.launch {
+            runCatching { container.discourseApiClient.setTopicBookmark(topicId, bookmarked) }
+                .onSuccess { onDone() }
+                .onFailure(onFailed)
+        }
+    }
+
+    /**
+     * The name of one of the site's categories, from the shared category store the topic list
+     * already fills. A category the site did not name (or a store that could not load) answers
+     * null, which the reader sees as a subtitle without a category.
+     */
+    fun categoryName(
+        container: AppContainer,
+        categoryId: Int,
+        onLoaded: (String?) -> Unit,
+    ) {
+        scope.launch {
+            val name = runCatching {
+                container.categoryStore.loadIfNeeded().getOrNull()?.get(categoryId)?.name
+            }.getOrNull()
+            onLoaded(name)
+        }
+    }
+
     /** The categories the topic list filters by, in the site's own order. */
     fun categories(
         container: AppContainer,

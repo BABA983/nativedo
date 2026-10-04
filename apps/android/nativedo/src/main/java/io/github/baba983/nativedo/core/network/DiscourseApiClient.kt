@@ -31,6 +31,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
+import java.io.IOException
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
@@ -52,21 +53,26 @@ class DiscourseApiClient(
     }
     private var onSessionInvalidated: suspend (SessionExpiredReason, Int) -> Unit = { _, _ -> }
     private var onLoginRequired: suspend () -> Unit = {}
+    private var hasAuthenticatedCookies: () -> Boolean = { true }
 
     /**
      * Injects the session boundary this client reports to: every request
      * resolves its [SessionRequestContext] up front, and a proven logout is
      * reported back with the generation that started the request so a stale
-     * response cannot invalidate a newer WebView login.
+     * response cannot invalidate a newer WebView login. [hasAuthenticatedCookies]
+     * reads the shared jar, so a logout performed in the browser is noticed by
+     * the first request that would have needed the session.
      */
     fun setSessionBoundary(
         contextProvider: () -> SessionRequestContext,
         onSessionInvalidated: suspend (SessionExpiredReason, Int) -> Unit,
         onLoginRequired: suspend () -> Unit,
+        hasAuthenticatedCookies: () -> Boolean = { true },
     ) {
         sessionContextProvider = contextProvider
         this.onSessionInvalidated = onSessionInvalidated
         this.onLoginRequired = onLoginRequired
+        this.hasAuthenticatedCookies = hasAuthenticatedCookies
     }
 
     override suspend fun fetchBootstrap(): ParsedBootstrap =
@@ -370,16 +376,37 @@ class DiscourseApiClient(
             }
         }
 
+    /**
+     * The reader's bookmark on the topic itself. Discourse creates it through the topic's own
+     * `bookmark` route and takes it back through `remove_bookmarks` (the topic-level undo), so a
+     * client that only knows the topic id needs no bookmark id for either.
+     */
+    suspend fun setTopicBookmark(topicId: Long, bookmarked: Boolean) =
+        runWithSessionBoundary(requiresAuthentication = true) {
+            val csrfToken = service.csrf().csrf
+            if (bookmarked) {
+                service.bookmarkTopic(topicId, csrfToken).close()
+            } else {
+                service.removeTopicBookmarks(topicId, csrfToken).close()
+            }
+        }
+
     /** Sends the reader's selection; the answer carries the poll's new state. */
     suspend fun votePoll(postId: Long, pollName: String, optionIds: List<String>): PostPoll? =
         runWithSessionBoundary(requiresAuthentication = true) {
             val csrfToken = service.csrf().csrf
-            service.votePoll(
+            val response = service.votePoll(
                 postId = postId,
                 pollName = pollName,
                 optionIds = optionIds,
                 csrfToken = csrfToken,
-            ).poll?.toModel()
+            )
+            // The answer's `vote` is the site's own echo of the reader's selection, and it is the
+            // only place a regular poll's answer carries it: the option serializer emits no
+            // `chosen` for a single-choice poll (a multiple one merges it per option, the same
+            // selection again). Without this the rebuilt floor draws the new counts as if the
+            // reader had not voted.
+            response.poll?.toModel(votes = response.vote)
         }
 
     /** Retracts the reader's vote; the answer carries the poll's new state. */
@@ -423,6 +450,15 @@ class DiscourseApiClient(
         block: suspend () -> T,
     ): T {
         val requestContext = sessionContextProvider()
+        if (requiresAuthentication && requestContext.canUseAuthenticatedSession &&
+            !hasAuthenticatedCookies()
+        ) {
+            // The browser's own logout (or a server deletion) emptied the shared jar. An
+            // authenticated call must report the session gone instead of going out anonymous.
+            onSessionInvalidated(SessionExpiredReason.CookieMissing, requestContext.generation)
+            onLoginRequired()
+            throw LoginRequiredException()
+        }
         return try {
             block()
         } catch (error: CancellationException) {
@@ -454,7 +490,12 @@ class DiscourseApiClient(
         cause: Throwable,
     ): Nothing {
         if (requestContext.canUseAuthenticatedSession) {
-            onSessionInvalidated(SessionExpiredReason.ServerLoggedOut, requestContext.generation)
+            // A restore is the coordinator's own verification and reports the rejection through
+            // SessionLoggedOutException; an ordinary request reports it against its own
+            // generation so a stale response cannot invalidate a newer WebView login.
+            if (requestContext.auth != SessionRequestAuth.Restoring) {
+                onSessionInvalidated(SessionExpiredReason.ServerLoggedOut, requestContext.generation)
+            }
             throw SessionLoggedOutException(cause = cause)
         }
         if (requiresAuthentication || requestContext.auth == SessionRequestAuth.Anonymous) {

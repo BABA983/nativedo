@@ -10,7 +10,6 @@ import android.webkit.CookieManager
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import io.github.baba983.nativedo.core.session.CookieSyncBridge
 import io.github.baba983.nativedo.core.storage.SvgSpriteStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -29,7 +28,6 @@ class DiscourseSvgSpriteLoader(
     private val appContext: Context,
     private val baseUrl: String,
     private val userAgent: String,
-    private val cookieSyncBridge: CookieSyncBridge,
     private val svgSpriteStore: SvgSpriteStore,
 ) {
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -86,8 +84,8 @@ class DiscourseSvgSpriteLoader(
 
     @SuppressLint("SetJavaScriptEnabled")
     private suspend fun loadSpriteViaHiddenWebView(): Boolean {
-        val revision = cookieSyncBridge.revision()
-        if (!cookieSyncBridge.syncToWebViewAsync()) return false
+        // The hidden WebView reads the shared CookieManager directly; a homepage load can rotate
+        // `_t` in it, and that rotation is the one every other participant sees next.
         val loaded = suspendCancellableCoroutine<Boolean> { continuation ->
             var finished = false
             var captureAttempts = 0
@@ -173,8 +171,6 @@ class DiscourseSvgSpriteLoader(
         svgSpriteDebugLog("loadSprite: loadUrl=$loadUrl")
         webView.loadUrl(loadUrl)
         }
-        // Homepage requests can rotate _t even when this WebView only loads icons.
-        cookieSyncBridge.syncFromWebViewIfCurrent(revision)
         return loaded
     }
 

@@ -9,19 +9,14 @@ import kotlinx.coroutines.delay
  * Orchestrates the login completion flow after the WebView detects a successful
  * Discourse login.
  *
- * Stages:
- * 1. Read DOM identity (CurrentUserExtractor)
- * 2. Sync non-auth cookies (cf_clearance etc.)
- * 3. Advance generation + sync auth cookies + state transition (SessionCoordinator)
- * 4. Sync runtime cookies (_rt)
- *
- * Stage 3 delegates to [SessionCoordinator.completeLoginFromWebViewStaged],
- * which advances the operation generation (cutting off stale requests) and
- * transitions the session to Authenticated.
+ * <p>The WebView writes its cookies straight into the shared [SharedCookieJar]; there is nothing
+ * to import. This use case only reads the DOM identity, waits out Chromium's asynchronous cookie
+ * flush, and hands the identity to [SessionCoordinator.completeLoginFromWebViewStaged], which
+ * stores it with [SessionFreshness.WebView] so normal startup verifies it natively later.</p>
  */
 class CompleteLoginUseCase(
     private val sessionCoordinator: SessionCoordinator,
-    private val cookieSyncBridge: CookieSyncBridge,
+    private val cookieJar: SharedCookieJar,
     private val baseUrl: String,
 ) {
     /**
@@ -34,7 +29,7 @@ class CompleteLoginUseCase(
         CookieManager.getInstance().flush()
 
         return awaitAuthenticatedSession(
-            hasAuthenticatedCookies = { cookieSyncBridge.hasAuthenticatedCookiesInWebView(baseUrl) },
+            hasAuthenticatedCookies = { cookieJar.hasAuthenticatedCookies() },
             completeLogin = {
                 val liveUrl = webView.url.orEmpty().ifBlank { currentUrl }
                 if (!isDiscourseSameOrigin(liveUrl, baseUrl)) {
@@ -46,9 +41,9 @@ class CompleteLoginUseCase(
                         false
                     } else if (currentUser != null) {
                         completeWithKnownUsername(currentUser.username, currentUser.displayName,
-                            currentUser.avatarTemplate, liveUrl)
+                            currentUser.avatarTemplate)
                     } else {
-                        sessionCoordinator.completeLoginFromWebView(liveUrl)
+                        sessionCoordinator.completeLoginFromWebView()
                         sessionCoordinator.sessionState.value is AppSessionState.Authenticated
                     }
                 }
@@ -60,31 +55,14 @@ class CompleteLoginUseCase(
         username: String,
         displayName: String?,
         avatarTemplate: String?,
-        cookieUrl: String?,
     ): Boolean {
-        // Stage 2: sync non-auth cookies (cf_clearance etc.)
-        cookieSyncBridge.syncFromWebViewExcluding(
-            url = cookieUrl ?: baseUrl,
-            excludeNames = CookieSyncBridge.AUTH_COOKIE_NAMES,
-        )
-
-        // Stage 3: advance generation + sync auth cookies + state transition
         sessionCoordinator.completeLoginFromWebViewStaged(
             username = username,
             displayName = displayName,
             avatarTemplate = avatarTemplate,
-            cookieUrl = cookieUrl,
         )
-
-        // Stage 4: sync runtime cookies (_rt)
-        cookieSyncBridge.syncFromWebViewByName(
-            url = cookieUrl ?: baseUrl,
-            names = CookieSyncBridge.RUNTIME_COOKIE_NAMES,
-        )
-
         return sessionCoordinator.sessionState.value is AppSessionState.Authenticated
     }
-
 }
 
 private const val LOGIN_COOKIE_READY_MAX_ATTEMPTS = 20

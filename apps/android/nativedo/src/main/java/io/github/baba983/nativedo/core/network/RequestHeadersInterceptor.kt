@@ -1,6 +1,6 @@
 package io.github.baba983.nativedo.core.network
 
-import io.github.baba983.nativedo.core.storage.CookieStore
+import io.github.baba983.nativedo.core.session.SharedCookieJar
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Interceptor
 import okhttp3.Response
@@ -8,7 +8,7 @@ import okhttp3.Response
 class RequestHeadersInterceptor(
     baseUrl: String = "https://linux.do/",
     private val userAgent: String = FALLBACK_USER_AGENT,
-    private val cookieStore: CookieStore? = null,
+    private val cookieJar: SharedCookieJar? = null,
 ) : Interceptor {
     private val siteUrl = baseUrl.toHttpUrl()
     private val siteOrigin = buildString {
@@ -49,7 +49,7 @@ class RequestHeadersInterceptor(
                 if (originalRequest.header("Referer") == null) {
                     header("Referer", "$siteOrigin/")
                 }
-                if (cookieStore?.hasAuthenticatedCookies() == true) {
+                if (cookieJar?.hasAuthenticatedCookies() == true) {
                     header("Discourse-Logged-In", "true")
                     header("Discourse-Present", "true")
                 }

@@ -8753,7 +8753,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         if (instance != null && instance.getActionBarLayout() != null) {
             return instance.getActionBarLayout().getLastFragment();
         }
-        return null;
+        return io.github.baba983.nativedo.hooks.NativeDoHooks.getLastFragment(); // NativeDo: our host is not a LaunchActivity
     }
 
     // last fragment that is not finishing itself
@@ -8781,7 +8781,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         if (instance != null && instance.getActionBarLayout() != null) {
             return instance.getActionBarLayout().getSafeLastFragment();
         }
-        return null;
+        return io.github.baba983.nativedo.hooks.NativeDoHooks.getSafeLastFragment(); // NativeDo: our host is not a LaunchActivity
     }
 
     public int getNavigationBarColor() {

@@ -20,7 +20,7 @@ object SessionStarter {
 
     fun start(container: AppContainer, onResult: (AppSessionState) -> Unit) {
         scope.launch {
-            // start() restores from the cookie store and verifies against the site; a failure here
+            // start() verifies the shared jar's session against the site; a failure here
             // is "not logged in", not an error to surface.
             runCatching { container.sessionCoordinator.start() }
                 .onSuccess { onResult(container.sessionCoordinator.sessionState.value) }

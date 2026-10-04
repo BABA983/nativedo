@@ -2,6 +2,11 @@ package io.github.baba983.nativedo.core.di
 
 import android.content.Context
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
+import io.github.baba983.nativedo.auth.device.DeviceAuthApi
+import io.github.baba983.nativedo.auth.device.DeviceKeyStore
+import io.github.baba983.nativedo.auth.device.DeviceLoginKey
+import io.github.baba983.nativedo.auth.device.DeviceLoginKeys
+import io.github.baba983.nativedo.auth.device.HttpDeviceAuthApi
 import io.github.baba983.nativedo.core.messagebus.MessageBusSession
 import io.github.baba983.nativedo.core.network.DiscourseApiClient
 import io.github.baba983.nativedo.core.network.DiscourseApiService
@@ -10,15 +15,15 @@ import io.github.baba983.nativedo.core.network.NetworkJson
 import io.github.baba983.nativedo.core.network.SessionCookieInterceptor
 import io.github.baba983.nativedo.core.network.RequestHeadersInterceptor
 import io.github.baba983.nativedo.core.network.resolveNativeDoUserAgent
-import io.github.baba983.nativedo.core.session.CookieSyncBridge
+import io.github.baba983.nativedo.core.session.LegacyCookieMigration
+import io.github.baba983.nativedo.core.session.SharedCookieJar
 import io.github.baba983.nativedo.core.session.SessionCoordinator
+import io.github.baba983.nativedo.core.session.AndroidKeystoreCipher
 import io.github.baba983.nativedo.core.session.CredentialStore
 import io.github.baba983.nativedo.core.session.CompleteLoginUseCase
 import io.github.baba983.nativedo.core.storage.CategoryStore
-import io.github.baba983.nativedo.core.storage.CookieStore
 import io.github.baba983.nativedo.core.storage.EmojiCatalogStore
 import io.github.baba983.nativedo.core.storage.SessionStore
-import io.github.baba983.nativedo.core.storage.SharedPreferencesCookieStorePersistence
 import io.github.baba983.nativedo.core.storage.SharedPreferencesEmojiCatalogStorePersistence
 import io.github.baba983.nativedo.core.storage.SharedPreferencesSessionStorePersistence
 import io.github.baba983.nativedo.core.storage.SharedPreferencesSvgSpriteStorePersistence
@@ -50,7 +55,8 @@ class AppContainer(
     private val json: Json = NetworkJson.instance
     private val appContext = context?.applicationContext
     val userAgent: String = userAgent ?: resolveNativeDoUserAgent(appContext)
-    private val cookiePreferences = appContext?.getSharedPreferences(COOKIE_STORE_PREFS, Context.MODE_PRIVATE)
+    /** The retired native snapshot: read once by [LegacyCookieMigration], never written again. */
+    private val legacyCookiePreferences = appContext?.getSharedPreferences(COOKIE_STORE_PREFS, Context.MODE_PRIVATE)
     private val sessionPreferences = appContext?.getSharedPreferences(SESSION_STORE_PREFS, Context.MODE_PRIVATE)
     private val profileCachePreferences = appContext?.getSharedPreferences(PROFILE_CACHE_PREFS, Context.MODE_PRIVATE)
     private val svgSpritePreferences = appContext?.getSharedPreferences(SVG_SPRITE_STORE_PREFS, Context.MODE_PRIVATE)
@@ -58,11 +64,12 @@ class AppContainer(
     private val topicReplyDraftPreferences = appContext?.getSharedPreferences(TOPIC_REPLY_DRAFT_STORE_PREFS, Context.MODE_PRIVATE)
     private val topicReadPositionPreferences = appContext?.getSharedPreferences(TOPIC_READ_POSITION_STORE_PREFS, Context.MODE_PRIVATE)
     val applicationScope: CoroutineScope? = applicationScope
-    val cookieStore: CookieStore = cookiePreferences
-        ?.let { preferences ->
-            CookieStore(persistence = SharedPreferencesCookieStorePersistence(preferences))
-        }
-        ?: CookieStore()
+    /**
+     * The session jar every participant shares: CookieManager is the store, this facade is how
+     * OkHttp reads and writes it; the login WebView and the in-app browser use the same store
+     * through Chromium.
+     */
+    val cookieJar: SharedCookieJar = SharedCookieJar(baseUrl)
     val sessionStore: SessionStore = sessionPreferences
         ?.let { preferences ->
             SessionStore(persistence = SharedPreferencesSessionStorePersistence(preferences))
@@ -89,16 +96,11 @@ class AppContainer(
             TopicReadPositionStore(SharedPreferencesTopicReadPositionPersistence(preferences))
         }
         ?: TopicReadPositionStore()
-    val cookieSyncBridge: CookieSyncBridge = CookieSyncBridge(
-        baseUrl = baseUrl,
-        cookieStore = cookieStore,
-    )
     val discourseSvgSpriteLoader: DiscourseSvgSpriteLoader? = appContext?.let { context ->
         DiscourseSvgSpriteLoader(
             appContext = context,
             baseUrl = baseUrl,
             userAgent = this.userAgent,
-            cookieSyncBridge = cookieSyncBridge,
             svgSpriteStore = svgSpriteStore,
         )
     }
@@ -109,18 +111,18 @@ class AppContainer(
      * of building a second jar.
      */
     val okHttpClient: OkHttpClient = OkHttpClient.Builder()
-        .addNetworkInterceptor(SessionCookieInterceptor(cookieStore))
+        .addNetworkInterceptor(SessionCookieInterceptor(cookieJar))
         .addInterceptor(
             RequestHeadersInterceptor(
                 baseUrl = baseUrl,
                 userAgent = this.userAgent,
-                cookieStore = cookieStore,
+                cookieJar = cookieJar,
             ),
         )
         .build()
 
     val imageOkHttpClient: OkHttpClient = OkHttpClient.Builder()
-        .addNetworkInterceptor(SessionCookieInterceptor(cookieStore))
+        .addNetworkInterceptor(SessionCookieInterceptor(cookieJar))
         .addInterceptor(ImageRequestHeadersInterceptor(baseUrl = baseUrl, userAgent = this.userAgent))
         .build()
 
@@ -154,16 +156,34 @@ class AppContainer(
         client = discourseApiClient,
     )
     val credentialStore: CredentialStore = CredentialStore(appContext)
+    private val deviceLoginPreferences = appContext?.getSharedPreferences(DEVICE_LOGIN_PREFS, Context.MODE_PRIVATE)
+    private val deviceKeyPreferences = appContext?.getSharedPreferences(DEVICE_KEY_PREFS, Context.MODE_PRIVATE)
+    /**
+     * The identifier linux.do's approval page shows for this install. Nothing is registered with
+     * the site under it - that is why the page warns about an unregistered application - but a
+     * stable value keeps one device's grants distinguishable from another's.
+     */
+    val deviceClientId: String = deviceLoginPreferences?.let { preferences ->
+        preferences.getString(DEVICE_CLIENT_ID_KEY, null)?.takeIf(String::isNotBlank)
+            ?: newDeviceClientId().also { clientId ->
+                preferences.edit().putString(DEVICE_CLIENT_ID_KEY, clientId).apply()
+            }
+    } ?: newDeviceClientId()
+    val deviceKeyStore: DeviceKeyStore = DeviceKeyStore(deviceKeyPreferences)
+    /** Lazily built: Keystore RSA generation (and the software fallback) is several hundred ms. */
+    val deviceLoginKey: DeviceLoginKey by lazy {
+        DeviceLoginKeys.create(deviceKeyPreferences, AndroidKeystoreCipher)
+    }
+    val deviceAuthApi: DeviceAuthApi by lazy { HttpDeviceAuthApi(baseUrl, this.userAgent, cookieJar) }
     val sessionCoordinator: SessionCoordinator = SessionCoordinator(
-        cookieStore = cookieStore,
         sessionStore = sessionStore,
+        cookieJar = cookieJar,
         apiClient = discourseApiClient,
-        cookieSyncBridge = cookieSyncBridge,
         applicationScope = applicationScope,
     )
     val completeLoginUseCase: CompleteLoginUseCase = CompleteLoginUseCase(
         sessionCoordinator = sessionCoordinator,
-        cookieSyncBridge = cookieSyncBridge,
+        cookieJar = cookieJar,
         baseUrl = baseUrl,
     )
 
@@ -181,10 +201,16 @@ class AppContainer(
     )
 
     init {
+        // One-time: the old native snapshot must not keep shadowing the shared jar. Runs before
+        // any request or WebView touches the store.
+        legacyCookiePreferences?.let { preferences ->
+            LegacyCookieMigration.migrate(preferences, cookieJar)
+        }
         discourseApiClient.setSessionBoundary(
             contextProvider = sessionCoordinator::currentRequestContext,
             onSessionInvalidated = sessionCoordinator::markExpiredIfCurrent,
             onLoginRequired = sessionCoordinator::requestLogin,
+            hasAuthenticatedCookies = cookieJar::hasAuthenticatedCookies,
         )
     }
 
@@ -196,5 +222,14 @@ class AppContainer(
         const val EMOJI_CATALOG_STORE_PREFS: String = "nativedo.emoji_catalog"
         const val TOPIC_REPLY_DRAFT_STORE_PREFS: String = "nativedo.topic_reply_drafts"
         const val TOPIC_READ_POSITION_STORE_PREFS: String = "nativedo.topic_read_positions"
+        const val DEVICE_LOGIN_PREFS: String = "nativedo.device_login"
+        const val DEVICE_KEY_PREFS: String = "nativedo.device_key"
+        const val DEVICE_CLIENT_ID_KEY: String = "client_id"
+    }
+
+    private fun newDeviceClientId(): String {
+        val bytes = ByteArray(8)
+        java.security.SecureRandom().nextBytes(bytes)
+        return "nativedo-" + bytes.joinToString("") { "%02x".format(it) }
     }
 }

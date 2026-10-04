@@ -101,10 +101,11 @@ internal class SettingsTabTest {
         assertTrue("and it carries the appearance entry", "主题" in rows)
         assertTrue("the bookmarks entry is kept here as well", "书签" in rows)
         assertTrue("with the account the session belongs to", rows.any { it == "@baba" })
+        assertTrue("and the in-app link choice", "在应用内打开链接" in rows)
         harness.renderApp("settings")
         harness.assertNoTelegramSideEffects()
 
-        clickRow(1)
+        clickNamedRow("主题")
         harness.await("upstream's appearance page") { currentFragmentName(shell) == "ThemeActivity" }
         val themeField = org.telegram.ui.ThemeActivity::class.java
             .getDeclaredField("currentType").apply { isAccessible = true }
@@ -118,7 +119,7 @@ internal class SettingsTabTest {
 
         back()
         harness.await("back on the settings screen") { currentFragmentName(shell) == "SettingsFragment" }
-        clickRow(3)
+        clickNamedRow("书签")
         harness.await("the bookmark list") { currentFragmentName(shell) == "BookmarksFragment" }
 
         back()
@@ -133,7 +134,7 @@ internal class SettingsTabTest {
         tapTab(2)
         harness.await("the settings screen") { currentFragmentName(shell) == "SettingsFragment" }
         harness.layoutApp()
-        assertTrue("the reader is signed in to start with", container.cookieStore.hasAuthenticatedCookies())
+        assertTrue("the reader is signed in to start with", container.cookieJar.hasAuthenticatedCookies())
 
         clickNamedRow("退出登录")
         val confirm = ShadowDialog.getLatestDialog() as? AlertDialog
@@ -144,7 +145,7 @@ internal class SettingsTabTest {
         harness.await("the login screen") { currentFragmentName(shell) == "LoginWebViewFragment" }
         assertFalse(
             "the cookies the session was made of are gone",
-            container.cookieStore.hasAuthenticatedCookies(),
+            container.cookieJar.hasAuthenticatedCookies(),
         )
         assertEquals(
             "the signed-out account is not remembered either",
@@ -185,7 +186,7 @@ internal class SettingsTabTest {
         val shell = openVerificationFromSettings()
         val identity = container.sessionStore.snapshot()
         val generation = container.sessionCoordinator.currentRequestContext()
-        val cookies = container.cookieStore.load(site.baseUrl.toHttpUrl())
+        val cookies = container.cookieJar.requestCookieHeader(site.baseUrl.toHttpUrl())
         val draftKey = io.github.baba983.nativedo.feature.topic.data.TopicReplyDraftKey(site.baseUrl, "baba", 101)
         val readKey = io.github.baba983.nativedo.feature.topic.data.TopicReadPositionKey(site.baseUrl, "baba", 101)
         val draft = io.github.baba983.nativedo.feature.topic.data.TopicReplyDraft("kept draft", 7)
@@ -200,7 +201,7 @@ internal class SettingsTabTest {
         back()
         harness.await("cancel back to settings") { currentFragmentName(shell) == "SettingsFragment" }
         assertEquals(identity, container.sessionStore.snapshot())
-        assertEquals(cookies, container.cookieStore.load(site.baseUrl.toHttpUrl()))
+        assertEquals(cookies, container.cookieJar.requestCookieHeader(site.baseUrl.toHttpUrl()))
         assertEquals(draft, container.topicReplyDraftStore.load(draftKey))
         assertEquals(19, container.topicReadPositionStore.load(readKey))
         assertEquals(generation, container.sessionCoordinator.currentRequestContext())
@@ -261,9 +262,9 @@ internal class SettingsTabTest {
         shadow.lastEvaluatedJavascriptCallback!!.onReceiveValue(
             org.json.JSONObject.quote("""{"username":"baba","name":"Baba"}"""))
         harness.await("explicit completion back to settings") { currentFragmentName(shell) == "SettingsFragment" }
-        assertTrue(container.cookieStore.hasAuthenticatedCookies())
-        assertEquals("renewed-clearance", container.cookieStore.load(site.baseUrl.toHttpUrl())
-            .first { it.name == "cf_clearance" }.value)
+        assertTrue(container.cookieJar.hasAuthenticatedCookies())
+        assertEquals("renewed-clearance", io.github.baba983.nativedo.core.session.SharedCookieJar.cookieValue(
+            container.cookieJar.requestCookieHeader(site.baseUrl.toHttpUrl()), "cf_clearance"))
         assertTrue("completion actually ran the session use case",
             generation != container.sessionCoordinator.currentRequestContext())
         assertNoWrites()
@@ -285,7 +286,7 @@ internal class SettingsTabTest {
         }
         assertEquals("recovery navigates to the site's challenge, not its login page", site.url("/challenge"),
             org.robolectric.Shadows.shadowOf(web).lastLoadedUrl)
-        assertTrue("the browser keeps the existing auth", container.cookieSyncBridge.hasAuthenticatedCookiesInWebView())
+        assertTrue("the browser keeps the existing auth", container.cookieJar.hasAuthenticatedCookies())
         return shell
     }
 
@@ -343,36 +344,39 @@ internal class SettingsTabTest {
 
     /**
      * The rows the settings list draws, top to bottom. A row's value is upstream's animated text
-     * view, which paints its own glyphs rather than being a {@link TextView}, so both are read.
+     * view, which paints its own glyphs rather than being a {@link TextView}, and a red button row
+     * is upstream's {@link org.telegram.ui.ActionBar.SimpleTextView}, so all three are read.
      */
     private fun rowTexts(): List<String> {
         val list = contentListOf(harness.activity) ?: return emptyList()
-        return (0 until list.childCount).flatMap { index ->
-            val texts = viewsUnder(list.getChildAt(index))
-            texts.filterIsInstance<TextView>().map { it.text.toString() } +
-                texts.filterIsInstance<org.telegram.ui.Components.AnimatedTextView>()
-                    .mapNotNull { it.text?.toString() }
-        }.filter { it.isNotEmpty() }
+        return (0 until list.childCount).flatMap { index -> textsOf(list.getChildAt(index)) }
     }
 
-    /** A tap on the row at the adapter's [position], the way the list hands one over. */
+    private fun textsOf(view: View): List<String> {
+        val texts = viewsUnder(view)
+        return texts.filterIsInstance<TextView>().map { it.text.toString() } +
+            texts.filterIsInstance<org.telegram.ui.ActionBar.SimpleTextView>()
+                .mapNotNull { it.text?.toString() } +
+            texts.filterIsInstance<org.telegram.ui.Components.AnimatedTextView>()
+                .mapNotNull { it.text?.toString() }
+    }
+
+    /** A tap on the row labelled [label], scrolling the list down when the row is below the fold. */
     private fun clickNamedRow(label: String) {
         harness.layoutApp()
         val list = contentListOf(harness.activity) ?: throw AssertionError("the settings list is gone")
-        val child = (0 until list.childCount).map { list.getChildAt(it) }
-            .single { label in viewsUnder(it).filterIsInstance<TextView>().map { text -> text.text.toString() } }
-        list.clickItem(child, list.getChildAdapterPosition(child))
-        harness.idle()
-    }
-
-    private fun clickRow(position: Int) {
-        val list = contentListOf(harness.activity) ?: throw AssertionError("the settings list is gone")
-        harness.layoutApp()
-        val first = (list.layoutManager as? androidx.recyclerview.widget.LinearLayoutManager)
-            ?.findFirstVisibleItemPosition() ?: 0
-        val child = list.getChildAt(position - first)
-            ?: throw AssertionError("no row drew at $position")
-        list.clickItem(child, position)
+        fun find(): View? = (0 until list.childCount).map { list.getChildAt(it) }
+            .firstOrNull { label in textsOf(it) }
+        var child = find()
+        if (child == null) {
+            // The header makes the list taller than the window; the reader scrolls to the row,
+            // and so does the test.
+            list.scrollToPosition((list.adapter?.itemCount ?: 1) - 1)
+            harness.layoutApp()
+            child = find()
+        }
+        val row = child ?: throw AssertionError("no $label row")
+        list.clickItem(row, list.getChildAdapterPosition(row))
         harness.idle()
     }
 

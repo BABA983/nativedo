@@ -2,7 +2,6 @@ package io.github.baba983.nativedo.core.session
 
 import io.github.baba983.nativedo.core.network.ParsedBootstrap
 import io.github.baba983.nativedo.core.network.SessionRecoveryRequiredException
-import io.github.baba983.nativedo.core.storage.CookieStore
 import io.github.baba983.nativedo.core.storage.SessionStore
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
@@ -32,11 +31,20 @@ interface SessionBootstrapClient {
     suspend fun fetchCurrentUsername(): String? = null
 }
 
+/**
+ * Owns the app's session state over the shared cookie jar.
+ *
+ * <p>There is no separate native cookie copy any more: the WebView jar, the in-app browser's jar
+ * and the OkHttp client's jar are one [SharedCookieJar]. This coordinator therefore no longer
+ * imports cookies from anywhere - it only asks whether the shared jar carries `_t` and verifies
+ * the identity behind it. A `_t` the owner created in the in-app browser while the app was closed
+ * is a valid session, so a cold start with an empty [SessionStore] verifies and adopts it; that is
+ * the normal path, not a recovery special case.</p>
+ */
 class SessionCoordinator(
-    private val cookieStore: CookieStore,
     private val sessionStore: SessionStore,
+    private val cookieJar: SharedCookieJar,
     private val apiClient: SessionBootstrapClient,
-    private val cookieSyncBridge: CookieSyncBridge? = null,
     private val now: () -> Long = System::currentTimeMillis,
     applicationScope: CoroutineScope? = null,
     private val persistenceDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.IO,
@@ -53,52 +61,36 @@ class SessionCoordinator(
     private var logoutJob: Job? = null
 
     suspend fun start() {
-        var recoveredFromWebView = false
-        val generation = cookieOperationMutex.withLock {
-            val next = beginOperation()
-            // No cached identity after explicit logout: never resurrect browser cookies.
-            if (!cookieStore.hasAuthenticatedCookies() && sessionStore.snapshot() != null) {
-                try {
-                    cookieSyncBridge?.syncFromWebViewIfCurrent(cookieStore.revision())
-                    recoveredFromWebView = cookieStore.hasAuthenticatedCookies()
-                    SessionDiagnostics.record("startup_browser_recovery", cookieStore.revision(),
-                        accepted = recoveredFromWebView)
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (error: Exception) {
-                    SessionDiagnostics.record("startup_browser_unavailable", cookieStore.revision(), accepted = false)
-                }
-            }
-            next
-        }
+        // The shared jar is the truth: whatever `_t` it holds (possibly written by the WebView
+        // while the app was not running) is verified natively before the app calls itself signed
+        // in. No cached identity is required for this to work.
         restore(
-            generation = generation,
-            // Browser cookies can belong to a different account. Verify before using cached identity.
-            allowCachedFallback = !recoveredFromWebView,
+            generation = beginOperation(),
+            allowCachedFallback = true,
         )
     }
 
-    suspend fun completeLoginFromWebView(cookieUrl: String? = null) {
-        val generation = cookieOperationMutex.withLock {
-            val nextGeneration = beginOperation()
-            if (cookieUrl == null) {
-                cookieSyncBridge?.syncFromWebView()
-            } else {
-                cookieSyncBridge?.syncFromWebView(cookieUrl)
+    suspend fun completeLoginFromWebView() {
+        val generation = beginOperation()
+        if (!cookieJar.hasAuthenticatedCookies()) {
+            // The browser finished a login the shared jar could not read yet: Chromium flushes
+            // its cookie store asynchronously. A native verify here would answer "not logged in"
+            // and clear the session the browser just created, so keep the identity for recovery
+            // and let the next attempt read the jar.
+            cookieOperationMutex.withLock {
+                if (generation == currentOperationGeneration()) {
+                    SessionDiagnostics.record(
+                        "webview_login_unreadable",
+                        cookieJar.revision(),
+                        accepted = false,
+                    )
+                    keepSessionForRecovery(
+                        cachedSnapshot = sessionStore.snapshot(),
+                        allowCachedFallback = false,
+                        reason = SessionExpiredReason.RecoveryFailed,
+                    )
+                }
             }
-            nextGeneration
-        }
-        if (!cookieStore.hasAuthenticatedCookies()) {
-            // The browser finished a login the native jar could not read: Chromium flushes its
-            // cookie store asynchronously, and a conflicting `_t` pair is reported, not chosen.
-            // A native verify here would answer "not logged in" and clear the session the browser
-            // just created, so keep both jars and let the next attempt read them.
-            SessionDiagnostics.record("webview_login_unreadable", cookieStore.revision(), accepted = false)
-            keepSessionForRecovery(
-                cachedSnapshot = sessionStore.snapshot(),
-                allowCachedFallback = false,
-                reason = SessionExpiredReason.RecoveryFailed,
-            )
             return
         }
         restore(
@@ -109,44 +101,29 @@ class SessionCoordinator(
     }
 
     /**
-     * Staged login completion — trusts the username just read from the
-     * same-origin WebView DOM and syncs only the auth cookies
-     * ([CookieSyncBridge.AUTH_COOKIE_NAMES]); the non-auth and runtime cookie
-     * stages are orchestrated by [CompleteLoginUseCase].
+     * Staged login completion - trusts the username just read from the same-origin WebView DOM and
+     * stores the identity with [SessionFreshness.WebView] so normal startup verifies it natively
+     * later.
      *
-     * This is the preferred login-completion path because Cloudflare may
-     * reject native OkHttp requests even when the WebView session is valid:
-     * `cf_clearance` is bound to the WebView's TLS fingerprint and does not
-     * always survive when replayed from OkHttp. The identity is stored with
-     * [SessionFreshness.WebView] so normal startup verifies it natively later.
+     * This is the preferred login-completion path because Cloudflare may reject native OkHttp
+     * requests even when the WebView session is valid: `cf_clearance` is bound to the WebView's
+     * TLS fingerprint and does not always survive when replayed from OkHttp. The cookies need no
+     * import at all: the WebView wrote them into the shared jar, where the native client reads
+     * them.
      */
     suspend fun completeLoginFromWebViewStaged(
         username: String,
         displayName: String? = null,
         avatarTemplate: String? = null,
-        cookieUrl: String? = null,
     ) {
-        val generation = cookieOperationMutex.withLock {
-            val nextGeneration = beginOperation()
-            if (cookieUrl == null) {
-                cookieSyncBridge?.syncFromWebViewByName(
-                    names = CookieSyncBridge.AUTH_COOKIE_NAMES,
-                )
-            } else {
-                cookieSyncBridge?.syncFromWebViewByName(
-                    url = cookieUrl,
-                    names = CookieSyncBridge.AUTH_COOKIE_NAMES,
-                )
-            }
-            nextGeneration
-        }
+        val generation = beginOperation()
         if (generation != currentOperationGeneration()) return
         val normalizedUsername = username.trim().takeIf(String::isNotBlank)
         if (normalizedUsername == null) {
             _sessionState.value = AppSessionState.Anonymous
             return
         }
-        if (!cookieStore.hasAuthenticatedCookies()) {
+        if (!cookieJar.hasAuthenticatedCookies()) {
             applyMissingAuthenticatedCookies()
             return
         }
@@ -159,26 +136,25 @@ class SessionCoordinator(
             if (generation != currentOperationGeneration()) return
             sessionStore.save(snapshot)
             withContext(persistenceDispatcher) {
-                cookieStore.flush()
                 sessionStore.flush()
             }
             _sessionState.value = AppSessionState.Authenticated(
                 snapshot = snapshot,
                 freshness = SessionFreshness.WebView,
             )
-            SessionDiagnostics.record("login_committed", cookieStore.revision())
+            SessionDiagnostics.record("login_committed", cookieJar.revision())
         }
         _events.emit(SessionEvent.LoginCompleted(snapshot))
     }
 
     /**
-     * Auth cookies vanished but a persisted identity may exist — keep it long
+     * Auth cookies vanished but a persisted identity may exist - keep it long
      * enough to render a useful re-login state; an explicit logout clears the
      * snapshot before reaching here.
      */
     private fun applyMissingAuthenticatedCookies() {
         val cachedSnapshot = sessionStore.snapshot()
-        SessionDiagnostics.record("auth_cookie_missing", cookieStore.revision(), accepted = false)
+        SessionDiagnostics.record("auth_cookie_missing", cookieJar.revision(), accepted = false)
         _sessionState.value = if (cachedSnapshot == null) {
             sessionStore.clear()
             AppSessionState.Anonymous
@@ -262,18 +238,22 @@ class SessionCoordinator(
                 val snapshot = currentSnapshot()
                 operationGeneration += 1
                 _sessionState.value = AppSessionState.Expired(reason = reason, snapshot = snapshot)
-                SessionDiagnostics.record("expired_${reason.name}", cookieStore.revision(), accepted = false)
+                SessionDiagnostics.record(
+                    "expired_${reason.name}",
+                    cookieJar.revision(),
+                    accepted = false,
+                )
                 true
             }
             if (shouldEmit && reason == SessionExpiredReason.ServerLoggedOut) {
+                // The server has told this client the session is gone; the shared jar holds the
+                // dead `_t`, and the next participant would send it again, so the site's own
+                // cookies are deleted here. Other hosts the in-app browser visited keep their
+                // own cookies.
                 withContext(kotlinx.coroutines.NonCancellable) {
                     sessionStore.clear()
-                    cookieStore.clear()
-                    withContext(persistenceDispatcher) {
-                        sessionStore.flush()
-                        cookieStore.flush()
-                    }
-                    clearCookiesAsync()
+                    withContext(persistenceDispatcher) { sessionStore.flush() }
+                    cookieJar.clearSessionCookies()
                 }
             }
             shouldEmit
@@ -299,12 +279,10 @@ class SessionCoordinator(
                             _sessionState.value = AppSessionState.Anonymous
                         }
                         sessionStore.clear()
-                        cookieStore.clear()
                         withContext(persistenceDispatcher) {
                             sessionStore.flush()
-                            cookieStore.flush()
                         }
-                        clearCookiesAsync()
+                        cookieJar.clearSessionCookies()
                     }
                 }
                 _events.emit(SessionEvent.LogoutCompleted)
@@ -323,10 +301,9 @@ class SessionCoordinator(
         generation: Int,
         loginCompletion: Boolean = false,
         allowCachedFallback: Boolean,
-        adoptedBrowserSession: Boolean = false,
     ) {
         if (generation != currentOperationGeneration()) return
-        if (!cookieStore.hasAuthenticatedCookies()) {
+        if (!cookieJar.hasAuthenticatedCookies()) {
             applyMissingAuthenticatedCookies()
             return
         }
@@ -371,7 +348,6 @@ class SessionCoordinator(
                 if (generation != currentOperationGeneration()) return
                 sessionStore.save(snapshot)
                 withContext(persistenceDispatcher) {
-                    cookieStore.flush()
                     sessionStore.flush()
                 }
             }
@@ -390,20 +366,8 @@ class SessionCoordinator(
         } catch (error: CancellationException) {
             throw error
         } catch (error: SessionLoggedOutException) {
-            // A rejected `_t` is not proof that the account is logged out: Discourse rotates `_t`
-            // every ~10 minutes, and the browser jar can hold the rotation the native jar missed
-            // (an in-app browser visit, a challenge page, a login handoff). Adopt what the browser
-            // has and ask once more before anything is cleared.
-            if (!adoptedBrowserSession && adoptBrowserSessionIfCurrent(generation)) {
-                SessionDiagnostics.record("webview_session_adopted", cookieStore.revision())
-                restore(
-                    generation = generation,
-                    loginCompletion = loginCompletion,
-                    allowCachedFallback = allowCachedFallback,
-                    adoptedBrowserSession = true,
-                )
-                return
-            }
+            // The shared jar's own token was rejected with explicit logout evidence: there is no
+            // second jar holding a newer rotation, so this is a real logout.
             markExpiredIfCurrent(
                 reason = SessionExpiredReason.ServerLoggedOut,
                 expectedGeneration = generation,
@@ -444,48 +408,20 @@ class SessionCoordinator(
             )
             return
         }
-        // Keep both stores intact. The WebView can solve a challenge or a
-        // transient outage on the next attempt, and the native jar must still
-        // contain the cookies that made that attempt possible.
+        // Keep the shared jar and the stored identity intact. The WebView can solve a challenge
+        // or a transient outage on the next attempt, and the jar must still contain the cookies
+        // that made that attempt possible.
         _sessionState.value = AppSessionState.Expired(
             reason = reason,
             snapshot = cachedSnapshot,
         )
     }
 
-    private suspend fun clearCookiesAsync() {
-        cookieSyncBridge?.clearAsync() ?: cookieStore.clear()
-    }
-
-    /**
-     * Adopt the browser's cookie values for the operation this caller started from. This is the
-     * reconcile half of "the browser can hold a `_t` rotation the native jar missed"; the caller
-     * re-verifies afterwards, so a browser jar that holds the same rejected token changes nothing.
-     *
-     * False when there is no bridge, the browser jar cannot be read (a `CookieManager` that is not
-     * up yet, or a conflicting pair the import refuses to choose between), or a login/logout moved
-     * the generation while this was running - none of which is a deletion signal.
-     */
-    private suspend fun adoptBrowserSessionIfCurrent(generation: Int): Boolean =
-        cookieOperationMutex.withLock {
-            val bridge = cookieSyncBridge ?: return@withLock false
-            if (generation != currentOperationGeneration()) return@withLock false
-            try {
-                bridge.syncFromWebViewIfCurrent(cookieStore.revision())
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                SessionDiagnostics.record("webview_session_unavailable", cookieStore.revision(), accepted = false)
-                false
-            }
-        }
-
     internal fun currentOperationGeneration(): Int = synchronized(operationLock) {
         operationGeneration
     }
 
     private fun beginOperation(): Int = synchronized(operationLock) {
-        cookieStore.advanceRevision()
         operationGeneration += 1
         operationGeneration
     }

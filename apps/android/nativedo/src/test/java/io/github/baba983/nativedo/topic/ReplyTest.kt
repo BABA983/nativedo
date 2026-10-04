@@ -5,7 +5,9 @@ import androidx.recyclerview.widget.RecyclerView
 import io.github.baba983.nativedo.app.NativeDo
 import io.github.baba983.nativedo.harness.FakeDiscourseSite
 import io.github.baba983.nativedo.harness.UpstreamUiHarness
+import io.github.baba983.nativedo.harness.clickMenuItem
 import io.github.baba983.nativedo.harness.contentListOf
+import io.github.baba983.nativedo.harness.latestItemOptionsMenu
 import io.github.baba983.nativedo.harness.shadows.ShadowAnimatedFileNative
 import io.github.baba983.nativedo.harness.shadows.ShadowConnectionsManager
 import io.github.baba983.nativedo.harness.shadows.ShadowIntro
@@ -102,10 +104,9 @@ internal class ReplyTest {
         val cell = laidOutCells().firstOrNull() ?: throw AssertionError("the topic drew no cell")
         cell.delegate.didLongPress(cell, 0f, 0f)
         harness.idle()
-        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog() as? org.telegram.ui.ActionBar.AlertDialog
-        assertNotNull("the post menu opened", dialog)
-        val replyRow = menuRows(dialog!!).lastOrNull() ?: throw AssertionError("the menu has no rows")
-        replyRow.performClick()
+        val rows = latestItemOptionsMenu(harness.activity)
+        assertTrue("the post menu opened", rows.isNotEmpty())
+        clickMenuItem(rows, "回复")
         harness.idle()
         println("reply: after the menu picked a reply, the field is \"" + composer.fieldText + "\"")
         composer.setFieldText("thanks, that helped")
@@ -244,20 +245,6 @@ internal class ReplyTest {
     private fun createdPostJson(): String {
         val base = JSONObject(harness.fixture("topic-detail.json"))
         return base.getJSONObject("post_stream").getJSONArray("posts").getJSONObject(0).toString()
-    }
-
-    private fun menuRows(dialog: org.telegram.ui.ActionBar.AlertDialog):
-        List<org.telegram.ui.ActionBar.AlertDialog.AlertDialogCell> {
-        val out = mutableListOf<org.telegram.ui.ActionBar.AlertDialog.AlertDialogCell>()
-        collect(dialog.window?.decorView, out)
-        return out
-    }
-
-    private fun collect(view: android.view.View?, out: MutableList<org.telegram.ui.ActionBar.AlertDialog.AlertDialogCell>) {
-        when (view) {
-            is org.telegram.ui.ActionBar.AlertDialog.AlertDialogCell -> out += view
-            is ViewGroup -> for (index in 0 until view.childCount) collect(view.getChildAt(index), out)
-        }
     }
 
     private fun composer(): ChatActivityEnterView? {

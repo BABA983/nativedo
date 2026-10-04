@@ -1,0 +1,41 @@
+{
+  "create_request": {
+    "nonce": "e6b1c0f3a94d2b7f8c5e1a0d3b6f9c24",
+    "scopes": "read",
+    "client_id": "nativedo-android-1a2b3c4d",
+    "application_name": "NativeDo（linux.do 客户端）",
+    "public_key": "-----BEGIN PUBLIC KEY-----\n<SPKI PEM, RSA 2048-8192>\n-----END PUBLIC KEY-----\n",
+    "padding": "oaep"
+  },
+  "create_response": {
+    "device_code": "<64 hex chars>",
+    "user_code": "ABCD-2345",
+    "verification_uri": "https://linux.do/login/device",
+    "verification_uri_with_request": "https://linux.do/login/device?request=AbCdEfGh",
+    "expires_in": 600,
+    "interval": 5
+  },
+  "poll_request": {
+    "device_code": "<64 hex chars>"
+  },
+  "poll_pending": {
+    "status": "authorization_pending"
+  },
+  "poll_authorized": {
+    "status": "authorized",
+    "payload": "<base64 RSA-OAEP of decrypted_payload>"
+  },
+  "poll_denied": {
+    "status": "access_denied"
+  },
+  "poll_expired": {
+    "status": "expired_token"
+  },
+  "decrypted_payload": {
+    "key": "<User API Key>",
+    "nonce": "e6b1c0f3a94d2b7f8c5e1a0d3b6f9c24",
+    "push": false,
+    "api": 4,
+    "expires_at": "2027-10-04T00:00:00.000Z"
+  }
+}

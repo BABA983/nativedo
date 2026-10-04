@@ -45,4 +45,15 @@
     -->
     <string name="SwitchThemeToDay">日间模式</string>
     <string name="SwitchThemeToNight">夜间模式</string>
+
+    <!-- The home screen's search field and its pages. -->
+    <string name="search_hint">搜索 linux.do</string>
+    <string name="search_idle">输入关键词开始搜索</string>
+    <string name="search_no_results">没有找到相关内容</string>
+    <string name="search_failed">没能读到搜索结果\n点一下重试</string>
+    <string name="search_tab_topics">话题</string>
+    <string name="search_tab_posts">帖子</string>
+    <string name="search_tab_users">用户</string>
+    <string name="search_tab_categories">分类</string>
+    <string name="search_tab_tags">标签</string>
 </resources>

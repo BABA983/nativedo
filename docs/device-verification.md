@@ -713,7 +713,8 @@ tests in `SessionCoordinatorTest`. New diagnostics: `webview_session_adopted`,
 
 Still to check on device, and it needs a live `_t` (a fresh in-app login): browse linux.do in the
 in-app browser, wait out a rotation, cold-start - the log should show `webview_session_adopted`
-instead of `expired_ServerLoggedOut`.
+instead of `expired_ServerLoggedOut`. Superseded 2026-10-04 (#37): the two-jar reconcile this
+waited for was deleted; the one shared jar has its own verdict there.
 
 ## 15. `cf_clearance` only arrives through the WebView (new, 2026-09-20)
 
@@ -1776,3 +1777,38 @@ Open question for the owner (A vs B), no change made yet:
 
 Also open: whether the collage should keep cropping to fill (Telegram's grouped-media behaviour, what it does
 today) or letterbox the cells.
+
+## 37. One shared cookie jar: CookieManager is the store (`f100aa7e`) — passed (2026-10-04, `emulator-5554`)
+
+What changed: the native cookie snapshot is gone. `SharedCookieJar` is OkHttp's side of the one
+`CookieManager` (read `getCookie` per exchange, write each response `Set-Cookie` value verbatim,
+linux.do hosts only); `LegacyCookieMigration` reads the retired `nativedo.cookie_store` once
+into an empty jar and deletes it; `SessionCoordinator` verifies the jar's `_t` at startup, so an
+account created in the in-app browser while the app was closed is the normal cold-start session.
+The in-flight fence compares the `_t` the request carried with the jar's current one: a response
+that lost a rotation may not write or delete auth cookies, and a logout-shaped answer that lost
+it fails its own request instead of clearing the session. The two-jar reconcile machinery (#14)
+is deleted.
+
+Verdict (build SHA-256 `f4d0f829328b8a6a311608f84c698a2291a8e0c776ca069c6e7e6e813bb61442`):
+before installing, the device's WebView `Cookies` DB and `nativedo.*` prefs were backed up to
+`.amp/in/session-backup/`. The state under test was exactly the design's target - native
+SessionStore empty, WebView jar holding a fresh `_t`. Cold start verified it natively
+(`route=session status=200`, `hasToken=true`) and Settings showed `已登录 @example_user`. `_t` rotated
+twice during the pass (`setsToken=true` at 13:43:19 and 13:53:17); the in-app browser, opened
+from a post link, stayed signed in across both, and two force-stop cold starts plus browser<->app
+round trips stayed signed in. `expired_*` appeared zero times and the crash buffer was empty. A
+reaction tap exercised the write path (csrf 200, one `403 evidence=Challenge`, retry 200) without
+ending the session; the chip's selected state could not be confirmed from the screenshot.
+
+Suite: 32 classes / 94 tests green (new `SharedCookieJarTest` pins cold-start recovery, the
+in-flight rotation fence, the stale logout answer, real logout's host isolation, and migration).
+Evidence: `.amp/in/artifacts/cookie-single-jar/` (screenshots `01`-`19`, `logcat-session.txt`).
+
+Post-pass note: at 14:09 the parallel `nativedo-settings-tab` worktree (based on `cdcc23ad`,
+still carrying the native cookie snapshot) installed and ran its build against the same app data.
+At 14:21 the single-jar build's first cold start found the server had deleted `_t`
+(`404 evidence=LoggedOut deletesToken=true`) - the session had been consumed by that second
+client with its own stale copy. The single-jar build cleared the site's cookies and stopped at
+the login gate (screenshot `20`) with an empty crash buffer; per the device rules no login was
+attempted. The verdict above (13:43-13:54) stands for the pass itself.

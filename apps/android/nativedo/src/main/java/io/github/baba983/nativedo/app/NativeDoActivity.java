@@ -23,6 +23,8 @@ import org.telegram.messenger.FileLog;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.ui.ActionBar.ActionBarLayout;
 import org.telegram.ui.ActionBar.BaseFragment;
+import org.telegram.ui.ActionBar.BottomSheetTabs;
+import org.telegram.ui.ActionBar.BottomSheetTabsOverlay;
 import org.telegram.ui.ActionBar.DrawerLayoutContainer;
 import org.telegram.ui.ActionBar.INavigationLayout;
 import org.telegram.ui.ActionBar.Theme;
@@ -37,6 +39,7 @@ import io.github.baba983.nativedo.auth.LoginWebViewFragment;
 import io.github.baba983.nativedo.auth.SessionStarter;
 import io.github.baba983.nativedo.core.di.AppContainer;
 import io.github.baba983.nativedo.core.session.AppSessionState;
+import io.github.baba983.nativedo.hooks.NativeDoHooks;
 
 /**
  * NativeDo's shell: it hosts upstream's {@link DrawerLayoutContainer} and {@link ActionBarLayout},
@@ -51,6 +54,8 @@ import io.github.baba983.nativedo.core.session.AppSessionState;
 public class NativeDoActivity extends Activity implements NotificationCenter.NotificationCenterDelegate {
 
     private ActionBarLayout actionBarLayout;
+    /** Upstream's browser hands its minimized pages to its host's overlay; this is that view. */
+    private BottomSheetTabsOverlay browserTabsOverlay;
     private LineProgressView sessionProgress;
     private DrawerLayoutContainer drawerLayoutContainer;
     private FrameLayout contentView;
@@ -80,10 +85,56 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         Theme.createChatResources(this, false);
         Theme.createCommonMessageResources();
 
-        // The upstream layout owns system/IME insets. It does not know about the tab strip: the
-        // strip belongs to NativeDoMainTabsActivity, which handles its own insets below.
-        actionBarLayout = new ActionBarLayout(this, false);
+        // Upstream's in-app browser finds its host through LaunchActivity: its static instance,
+        // its bottom-sheet tabs and the safe last fragment of its ActionBarLayout. This shell is
+        // not a LaunchActivity, so it answers those questions itself through the same single seam
+        // every other upstream edit uses. The overlay is created first because the layout asks for
+        // it while the tabs are built, exactly as LaunchActivity's does.
+        browserTabsOverlay = new BottomSheetTabsOverlay(this);
+        NativeDoHooks.setBrowserHost(new NativeDoHooks.BrowserHost() {
+            @Override
+            public BottomSheetTabs getBottomSheetTabs() {
+                return actionBarLayout == null ? null : actionBarLayout.getBottomSheetTabs();
+            }
+
+            @Override
+            public BottomSheetTabsOverlay getBottomSheetTabsOverlay() {
+                return browserTabsOverlay;
+            }
+
+            @Override
+            public BaseFragment getLastFragment() {
+                return actionBarLayout == null ? null : actionBarLayout.getLastFragment();
+            }
+
+            @Override
+            public BaseFragment getSafeLastFragment() {
+                return actionBarLayout == null ? null : actionBarLayout.getSafeLastFragment();
+            }
+
+            @Override
+            public void checkSystemBarColors() {
+                updateSystemBarColors();
+            }
+        });
+
+        // The upstream layout owns system/IME insets and the browser's minimized tabs. It does not
+        // know about the root tab strip: that belongs to NativeDoMainTabsActivity, which pads its
+        // own pages and steps its strip aside for the browser through this shell.
+        actionBarLayout = new ActionBarLayout(this, true) {
+            @Override
+            public void relayout() {
+                super.relayout();
+                // Tabs appearing and disappearing is the browser telling the layout the bottom bar
+                // changes hands; the shell's own strip yields to it.
+                if (drawerLayoutContainer != null && contentView != null) {
+                    updateBrowserTabs();
+                }
+            }
+        };
         actionBarLayout.setFragmentStack(new ArrayList<>());
+        // LaunchActivity:553 loads the chat wallpaper here, so a chat screen can draw it at once.
+        Theme.loadWallpaper(true);
 
         drawerLayoutContainer = new DrawerLayoutContainer(this);
         drawerLayoutContainer.setActionBarLayout(actionBarLayout);
@@ -99,6 +150,8 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         themeSwitchImageView = new ImageView(this);
         themeSwitchImageView.setVisibility(View.GONE);
         drawerLayoutContainer.addView(actionBarLayout.getView(), new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        contentView.addView(browserTabsOverlay, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         setContentView(contentView);
         ViewCompat.setOnApplyWindowInsetsListener(contentView, (view, insets) -> {
@@ -166,6 +219,43 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         return true;
     }
 
+    /**
+     * The shell's strip lives in {@link NativeDoMainTabsActivity}, so the states that used to hide
+     * this activity's own strip - the home search opening, the browser's minimized pages taking
+     * the bottom bar - are forwarded to the host fragment that owns it. A screen pushed from a
+     * page covers the strip, and the login page leaves no host on the stack, so neither needs a
+     * flag here.
+     */
+    public void setSearchOpen(boolean open) {
+        if (actionBarLayout == null) {
+            return;
+        }
+        for (BaseFragment stacked : actionBarLayout.getFragmentStack()) {
+            if (stacked instanceof NativeDoMainTabsActivity) {
+                ((NativeDoMainTabsActivity) stacked).setSearchOpen(open);
+            }
+        }
+    }
+
+    /** Whether upstream's browser has a minimized page; its strip occupies the bottom bar then. */
+    private boolean browserTabsExpanded() {
+        BottomSheetTabs browserTabs = actionBarLayout == null ? null : actionBarLayout.getBottomSheetTabs();
+        return browserTabs != null && !browserTabs.getTabs().isEmpty();
+    }
+
+    /** The strip yields to the browser's minimized pages through the host fragment's own state. */
+    private void updateBrowserTabs() {
+        if (actionBarLayout == null) {
+            return;
+        }
+        boolean expanded = browserTabsExpanded();
+        for (BaseFragment stacked : actionBarLayout.getFragmentStack()) {
+            if (stacked instanceof NativeDoMainTabsActivity) {
+                ((NativeDoMainTabsActivity) stacked).setBrowserTabsExpanded(expanded);
+            }
+        }
+    }
+
     private void updateSystemBarColors() {
         // While the reveal is running upstream keeps the system-bar colours from before the switch;
         // recomputing them here would paint the status bar in the new theme before the circle
@@ -176,7 +266,18 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         BaseFragment fragment = actionBarLayout.getLastFragment();
         int navigationColor = fragment != null ? fragment.getNavigationBarColor()
                 : Theme.getColor(Theme.key_windowBackgroundGray);
+        // A sheet above the screen (the in-app browser is one) owns the bar color; upstream's own
+        // checkSystemBarColors carries the same rule.
+        navigationColor = sheetNavigationBarColor(fragment, navigationColor);
+        BaseFragment sheetFragment = actionBarLayout.getSheetFragment(false);
+        if (sheetFragment != null) {
+            navigationColor = sheetNavigationBarColor(sheetFragment, navigationColor);
+        }
         drawerLayoutContainer.setInternalNavigationBarColor(navigationColor);
+        BottomSheetTabs browserTabs = actionBarLayout.getBottomSheetTabs();
+        if (browserTabs != null) {
+            browserTabs.setNavigationBarColor(navigationColor);
+        }
         contentView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
         WindowInsetsControllerCompat controller = new WindowInsetsControllerCompat(getWindow(), contentView);
         controller.setAppearanceLightStatusBars(fragment != null ? fragment.isLightStatusBar() : !Theme.isCurrentThemeDark());
@@ -189,6 +290,18 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
                 ((NativeDoMainTabsActivity) stacked).updateColors();
             }
         }
+    }
+
+    private int sheetNavigationBarColor(BaseFragment fragment, int color) {
+        if (fragment == null || fragment.sheetsStack == null) {
+            return color;
+        }
+        for (BaseFragment.AttachedSheet sheet : fragment.sheetsStack) {
+            if (sheet.attachedToParent()) {
+                color = sheet.getNavigationBarColor(color);
+            }
+        }
+        return color;
     }
 
     @Override
@@ -335,6 +448,7 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
     @Override
     protected void onDestroy() {
         NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.needSetDayNightTheme);
+        NativeDoHooks.setBrowserHost(null);
         super.onDestroy();
     }
 
@@ -477,8 +591,18 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
 
     @Override
     public void onBackPressed() {
+        if (browserTabsOverlay != null && browserTabsOverlay.isOpen) {
+            browserTabsOverlay.onBackPressed();
+            return;
+        }
         if (actionBarLayout != null && actionBarLayout.getFragmentStack().size() > 1) {
             actionBarLayout.onBackPressed();
+            return;
+        }
+        // The root screen can take the back before the app leaves: the home screen's search is
+        // closed by it (BaseFragment.onBackPressed answers false when it has taken it).
+        BaseFragment last = actionBarLayout == null ? null : actionBarLayout.getLastFragment();
+        if (last != null && !last.onBackPressed(true)) {
             return;
         }
         super.onBackPressed();

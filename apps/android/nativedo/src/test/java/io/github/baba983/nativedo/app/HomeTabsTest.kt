@@ -37,7 +37,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 
 /**
- * The home structure: three entries, upstream's tab strip, and the topic list as the first screen.
+ * The home structure: four entries, upstream's tab strip, and the topic list as the first screen.
  *
  * <p>The failures this pins: a tab switch that rebuilds the page (scroll position and rows lost,
  * the feed read again), a pushed screen that leaves the strip in front of the window, and a shell

@@ -28,6 +28,7 @@ import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.ActionBar.ThemeDescription;
 import org.telegram.ui.Components.AvatarDrawable;
 import org.telegram.ui.Components.BackupImageView;
+import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.blur3.BlurredBackgroundDrawableViewFactory;
 import org.telegram.ui.Components.blur3.BlurredBackgroundWithFadeDrawable;
@@ -86,6 +87,14 @@ public class NativeDoMainTabsActivity extends ViewPagerActivity {
     private View fadeView;
     /** The notifications badge's feed from the message bus, detached when the host is destroyed. */
     private MessageBusHandle badgeObserver;
+    /** The home screen's search is up: the strip steps away for its pager. */
+    private boolean searchOpen;
+    /** Upstream's browser owns the bottom bar while it has minimized pages. */
+    private boolean browserTabsExpanded;
+    /** Whether the strip went away because of the search, so it comes back the same way. */
+    private boolean stripHiddenForSearch;
+    /** The strip's current shown state, so a hide request that changes nothing is not re-animated. */
+    private boolean stripVisible = true;
 
     private int insetLeft;
     private int insetRight;
@@ -217,6 +226,78 @@ public class NativeDoMainTabsActivity extends ViewPagerActivity {
                 LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.BOTTOM));
 
         return contentView;
+    }
+
+    /**
+     * The home screen's search opening and closing. Upstream's own main tabs disappear while a
+     * search is up (DialogsActivity.checkUi_mainTabsVisible -> MainTabsActivity.setTabsVisible),
+     * and this is that answer for this strip: {@link #showTabs} takes it away in
+     * MainTabsActivity's own way (380ms EASE_OUT_QUINT over dp(40), alpha and 0.85 scale).
+     */
+    public void setSearchOpen(boolean open) {
+        if (searchOpen == open) {
+            return;
+        }
+        searchOpen = open;
+        updateTabsVisibility();
+    }
+
+    /**
+     * Upstream's in-app browser has minimized pages: its strip owns the bottom bar, so this
+     * shell's strip steps aside - the same yield the browser host asked of the activity-owned
+     * strip before (NativeDoActivity's updateTabsVisibility).
+     */
+    public void setBrowserTabsExpanded(boolean expanded) {
+        if (browserTabsExpanded == expanded) {
+            return;
+        }
+        browserTabsExpanded = expanded;
+        updateTabsVisibility();
+    }
+
+    private void updateTabsVisibility() {
+        showTabs(!searchOpen && !browserTabsExpanded, true);
+    }
+
+    /** MainTabsActivity's animatorTabsVisible (109-110, 1072-1087), applied to this strip. */
+    private void showTabs(boolean visible, boolean animated) {
+        if (tabsViewWrapper == null || tabsView == null || stripVisible == visible) {
+            return;
+        }
+        stripVisible = visible;
+        if (searchOpen && !visible) {
+            stripHiddenForSearch = true;
+        }
+        if (!searchOpen && visible) {
+            stripHiddenForSearch = false;
+        }
+        tabsViewWrapper.animate().cancel();
+        final float hiddenY = AndroidUtilities.dp(40);
+        if (animated) {
+            tabsViewWrapper.animate()
+                    .alpha(visible ? 1f : 0f)
+                    .translationY(visible ? 0f : hiddenY)
+                    .scaleX(visible ? 1f : 0.85f)
+                    .scaleY(visible ? 1f : 0.85f)
+                    .setDuration(380)
+                    .setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT)
+                    .start();
+            if (fadeView != null) {
+                fadeView.animate()
+                        .alpha(visible ? 1f : 0f)
+                        .setDuration(380)
+                        .setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT)
+                        .start();
+            }
+        } else {
+            tabsViewWrapper.setAlpha(visible ? 1f : 0f);
+            tabsViewWrapper.setTranslationY(visible ? 0f : hiddenY);
+            tabsViewWrapper.setScaleX(visible ? 1f : 0.85f);
+            tabsViewWrapper.setScaleY(visible ? 1f : 0.85f);
+            if (fadeView != null) {
+                fadeView.setAlpha(visible ? 1f : 0f);
+            }
+        }
     }
 
     @Override

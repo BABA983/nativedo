@@ -3897,6 +3897,10 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             }
             return;
         }
+        if (io.github.baba983.nativedo.hooks.NativeDoHooks.browserHostPresent()) { // NativeDo: without tgnet the article lookup has no answer, so the page loads directly
+            addPageToStack(url, 1);
+            return;
+        }
         Utilities.Callback0Return<Boolean> checkInternal = () -> {
             if (!Browser.isInternalUri(Uri.parse(url), forceBrowser)) {
                 return false;
@@ -14890,8 +14894,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 }
             };
             webViewContainer.setOnCloseRequestedListener(() -> {
-                if (LaunchActivity.instance == null) return;
-                final BottomSheetTabs tabs = LaunchActivity.instance.getBottomSheetTabs();
+                final BottomSheetTabs tabs = io.github.baba983.nativedo.hooks.NativeDoHooks.getBottomSheetTabs(); // NativeDo: the host owns the minimized browser tabs
                 if (tabs == null || !tabs.tryRemoveTabWith(ArticleViewer.this)) {
                     close(true, true);
                 }
@@ -15746,7 +15749,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             dismissing = true;
             dismissingIntoTabs = tabs;
             if (tabs) {
-                LaunchActivity.instance.getBottomSheetTabsOverlay().dismissSheet(this);
+                io.github.baba983.nativedo.hooks.NativeDoHooks.dismissSheet(this); // NativeDo: the host, not LaunchActivity, owns the tabs overlay
             } else {
                 animateDismiss(true, true, () -> {
                     release();
@@ -16010,7 +16013,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             if (dialog != null) {
                 dialog.updateNavigationBarColor();
             } else {
-                LaunchActivity.instance.checkSystemBarColors(true, true, true);
+                io.github.baba983.nativedo.hooks.NativeDoHooks.checkSystemBarColors(); // NativeDo: the host, not LaunchActivity, owns the system bars
                 AndroidUtilities.setLightNavigationBar(getWindowView(), AndroidUtilities.computePerceivedBrightness(getNavigationBarColor(getThemedColor(Theme.key_windowBackgroundGray))) >= .721f);
             }
         }

@@ -29,6 +29,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.ApplicationLoader
 import org.telegram.messenger.MessageObject
 import org.telegram.messenger.MessagesController
@@ -119,12 +120,13 @@ internal class ProfileScreenTest {
         assertEquals("the score the site sent", "2731", detailValue("得分"))
         assertEquals("the followers the site sent", "340", detailValue("关注者"))
         // A list binds the rows that are on screen: the fields below the fold need a scroll, which
-        // is what the reader does to reach them.
-        listView()?.scrollToPosition(8)
+        // is what the reader does to reach them. The screen itself starts at the "资料" section now
+        // that the head is the collapsing header and not a list row.
+        listView()?.scrollToPosition(7)
         harness.layoutApp()
         assertEquals("seconds read as hours", "79 小时", detailValue("阅读时长"))
         assertEquals("the views the site sent", "97", detailValue("浏览"))
-        listView()?.scrollToPosition(14)
+        listView()?.scrollToPosition(13)
         harness.layoutApp()
         assertEquals("the accepted answers the site sent", "18", detailValue("被采纳回复"))
 
@@ -180,7 +182,7 @@ internal class ProfileScreenTest {
             harness.idle()
             assertEquals("no photo was delivered yet", 0,
                 magentaPixels(harness.renderApp("profile-avatar-pending")))
-            listView()?.scrollToPosition(14)
+            listView()?.scrollToPosition(13)
             harness.layoutApp()
             assertEquals("the header is offscreen", "18", detailValue("被采纳回复"))
             release.countDown()
@@ -201,6 +203,39 @@ internal class ProfileScreenTest {
         } finally {
             release.countDown()
         }
+    }
+
+    /**
+     * The header and the list at the same time.
+     *
+     * <p>The failure this pins: the collapsing header is drawn over the list and hides the fields
+     * the site sent, or the list stops binding its rows once the header's position starts moving.</p>
+     */
+    @Test
+    fun theCollapsingHeaderKeepsTheProfileReadable() {
+        site.serveFixture("u/baba.json", "user-profile.json")
+        site.serveImage("user_avatar/linux.do/baba/96/1.png", magentaPng(96, 96))
+
+        harness.bootApp()
+        harness.await("the topic list to load") { rowCount() == 2 }
+        harness.present(ProfileFragment.forUser("baba", "Baba"))
+        harness.await("the profile to load") { detailValue("信任等级") == "3" }
+
+        // Part of the way up: the header sits between its rest position and its collapsed one. It
+        // takes two events, because the first upward one only disarms the pull-down and returns the
+        // list to rest (the profile header's own clamp, upstream's).
+        val list = listView()!!
+        list.scrollBy(0, 1)
+        list.scrollBy(0, AndroidUtilities.dp(100f))
+        harness.layoutApp()
+        harness.idle()
+        assertEquals(
+            "the fields stay readable while the header collapses",
+            "3",
+            detailValue("信任等级"),
+        )
+        harness.renderApp("profile-screen-mid")
+        harness.assertNoTelegramSideEffects()
     }
 
     /**
