@@ -132,13 +132,20 @@ race fails its own request instead of ending the session. The retired native sna
   newest first, one `DialogCell` row per action, and a tap opens that action's topic at the floor it
   happened on. Telegram-only parts of the header (stories ring, gift/emoji status, pull-down-to-open
   gallery, shared media, call buttons) are left out.
-* **Search** — the topic list's action bar carries upstream's search item
-  (`ActionBarMenuItem.setIsSearchField`), and the screen behind it is upstream's own expanding field
-  over `/search.json`: the site's three kinds of hit, each drawn by the cell upstream draws that row
-  with - a topic hit is the topic list's `DialogCell`, a post hit is the topic it sits in with the
-  post's own blurb, and a person is a `ProfileSearchCell`. A hit opens what it is: a topic or a post
-  its topic at the floor it was found on, a person their site profile. The field waits 300 ms after
-  the last keystroke, and an answer is only shown for the query still in the field when it arrives.
+* **Search** — the home screen shows upstream's own `FragmentSearchField` where 12.10.5's chat list
+  shows it, instead of an action-bar icon, and tapping it runs `DialogsActivity`'s open-search
+  animation (the field's glass goes on, the list leaves over 200ms EASE_OUT, the shell's bottom bar
+  steps away in `MainTabsActivity`'s own 380ms way) onto a `ViewPagerFixed` with the pill
+  `TabsView` 12.10.5 makes its search tabs with. The tabs are this site's kinds of answer: 话题 /
+  帖子 / 用户 are the topics, posts and people of one `/search.json` request, each drawn by the cell
+  upstream draws that row with (`DialogCell`, `ProfileSearchCell`), and 分类 / 标签 are the site's
+  own `/categories.json` and `/tags.json` narrowed to the query, because neither has a search route
+  of its own. A hit opens what it is: a topic or a post its topic at the floor it was found on, a
+  person their site profile, a category or tag the list filtered by it. The field waits 300 ms after
+  the last keystroke, an answer is only shown for the query still in the field when it arrives, and
+  loading/empty answers are upstream's `FlickerLoadingView` / `StickerEmptyView`. Back or the
+  field's close button runs the close animation. The old pushed search screen is gone: every kind of
+  hit it had (topics, posts, people) is on these tabs.
 * **Notifications** — `/notifications.json` in a screen of our own, because upstream's notification
   screens are an account's own (its chats, its deliveries) and there is no account here. The row is
   upstream's `DialogCell` - a title, a line under it, a date and its unread badge; the site's actor
@@ -193,7 +200,7 @@ stands, and the upstream component each row is meant to use.
 | Sign-in and session restore (WebView `/login`, `_t` / `_forum_session` / `cf_clearance`, `/session/csrf`) | done | done | our own (moved from the old app's `ui/auth`) |
 | Latest topic feed with paging | done | done | `DialogCell.CustomDialog` + `RecyclerListView` |
 | New / top feeds | done | missing | the same rows, driven by our own feed calls |
-| A category filter over the topic list (`/categories.json`, `/c/{slug}/{id}/l/latest.json`) | done | done: upstream's `FilterTabsView` strip above the list, one tab per top-level category in the site's own order, the site's color as the dot in front of the name, and a tab loads that category's own feed; the strip appears when the categories arrive so a site that answers none leaves the list the whole screen | `FilterTabsView`, upstream's own list-filter control (the one its chat list filters chat folders with) |
+| A category filter over the topic list (`/categories.json`, `/c/{slug}/{id}/l/latest.json`) | done | done: upstream's `FilterTabsView` as the floating glass capsule 12.10.5 presents its own filter tabs as, one tab per top-level category in the site's own order, the site's color as the dot in front of the name, and a tab loads that category's own feed; the strip floats over the list, which keeps its height as padding so rows scroll under it, and it appears when the categories arrive so a site that answers none leaves the list the whole screen | `FilterTabsView`, upstream's own list-filter control (the one its chat list filters chat folders with), with `BlurredBackgroundDrawableViewFactory` + `BlurredBackgroundProviderImpl.topPanel` over our `GlassPanelHost` |
 | A tag filter over the topic list (`/tags.json`, `/tag/{slug}/l/latest.json`, `/tags/c/.../{tag}/{id}`) | not built | done: one item in the action bar (not a second strip, which would take the list's height) opens the site's tags in a dialog, the chosen tag shows in the title and clears in one tap, and it combines with the category tab over the site's own combined route | the action bar's own icon-and-dialog pattern, `ActionBarMenuItem` |
 | Start a topic (a title, a category, a body → `POST /posts.json`) | not built | done: the list's own floating button - upstream's, the one its chat list starts a new chat with - opens upstream's titled field, upstream's composer for the body, and the site's categories behind a dialog; the send button appears only when the form is complete | `FragmentFloatingButton`, `EditTextBoldCursor`, `ChatActivityEnterView`, `AlertDialog` of the site's items |
 | Topic detail, cooked HTML to native blocks | done, 41 ports | done | upstream `RichHtml.parse` into `ChatMessageCell` |
@@ -212,7 +219,7 @@ stands, and the upstream component each row is meant to use.
 | Polls: vote, retract, voter list | done | vote and retract; voter list missing | `TL_messageMediaPoll` with one bubble per poll, the floor split at its `div.poll`; a tap votes through our own `PUT /polls/vote`. Known gaps: `View Votes (N)` (upstream draws it, its voters list lives in `ChatActivity`, which this screen does not have) and `ranked_choice` (a tap cannot express a rank, so those polls open the floor menu instead of voting); poll option images and "add option" are not offered |
 | Bookmarks (`/bookmarks.json`, `DELETE /posts/{id}/bookmark`) | done | done: the post menu adds and takes back a bookmark, and the reader's own list (`/u/{username}/bookmarks.json`, a 书签 row under 我的 on their own profile) draws the site's entries, a tap opening the topic at the bookmarked floor. The site's own envelope has a trap: a page with rows arrives under `user_bookmark_list`, an empty one is a bare `{"bookmarks":[]}` | upstream's `DialogCell` rows and the settings-shaped row on the profile |
 | Read progress (`POST /topics/timings`) and restore | done | done, without upstream's unread divider: the floors the viewport reaches are reported as the reader moves (debounced) and at once when they leave, the dwell reported is the reader's real time - counted the way Discourse's own screen-track counts it, only while the screen is in front, a floor is on screen and the reader has scrolled within three minutes - a topic opens at the site's own `last_read_post_number` (or this device's further one), and the list's unread counts follow the site's answer - a topic read in full draws no badge even before the site has taken the report in | our own reporter over the site's endpoint; the list's rows are upstream's `DialogCell` |
-| Search: topics, posts, users, in-topic | done | done, the site's topics, posts and people from the action bar's own search field; a hit opens its topic at its floor, a person opens their profile; in-topic search missing | `ActionBarMenuItem.setIsSearchField` over `/search.json`, hits drawn by `DialogCell` / `ProfileSearchCell` |
+| Search: topics, posts, users, categories, tags, in-topic | done | done: the home screen carries upstream's own `FragmentSearchField` (12.10.5's visible search entry, not a bar icon), and tapping it runs DialogsActivity's open-search animation - the list leaves, the pager arrives, the category strip fades, the bottom bar steps away - onto a `ViewPagerFixed` whose pill tabs are 话题 / 帖子 / 用户 / 分类 / 标签. The first three are one `/search.json` answer (topics, posts, users) with a 300ms debounce; 分类 and 标签 are `/categories.json` and `/tags.json` narrowed to the query, and picking one filters the home list. A hit opens its topic at its floor or a person their profile; the empty and loading states are upstream's `StickerEmptyView` / `FlickerLoadingView`; back or the field's close button runs the close animation; in-topic search missing | `FragmentSearchField`, `ViewPagerFixed` + its pill `TabsView` (+ `SearchTabsAndFiltersLayout`), `DialogsActivity`'s search animator math, `DialogCell` / `ProfileSearchCell` / `HashtagSearchCell` over `/search.json` / `/categories.json` / `/tags.json` |
 | User profile (`/u/{username}.json`, activity feed) | done | done, `/user_actions.json` for the topics created and the replies merged into one stream, one upstream `DialogCell` row per action, a tap opens the topic at that floor; the head is upstream's own collapsing header (`ProfileGooeyView` + `ProfileActivity`'s `needLayout` math) | our own `BaseFragment` with `ProfileGooeyView` / `HeaderCell` / `TextDetailCell` / `TextInfoPrivacyCell` / `DialogCell`; `ProfileActivity` is unusable here (it loads the full user through tgnet and is bound to a Telegram account) |
 | Notifications | not built | done, the reader's own list from `/notifications.json`; nothing pushes, and there is no unread count on the tab | upstream's notification screens are Telegram-account bound, so our own screen over upstream's `DialogCell`; unread is the row's own badge |
 | Appearance and theme | done | done: the settings tab's 外观 row opens it | `ThemeActivity` (`THEME_TYPE_BASIC`) |
@@ -264,6 +271,17 @@ stands, and the upstream component each row is meant to use.
   app data 上安装并运行了它的构建；14:21 本片构建冷启动时站点已对 jar 里的 `_t` 回答
   `404 evidence=LoggedOut deletesToken=true`，会话被并行的第二份客户端消耗。本构建按契约清掉 linux.do
   cookie 与本地身份、停在登录页（截图 `20`），crash buffer 为空；按约定本片不自行登录。
+
+### 主页玻璃分类条与搜索页（2026-10-04，`emulator-5554`，`nativedo-home-search`）
+
+- 分类条改成 12.10.5 自己的浮动玻璃胶囊：`FilterTabsView` 以 `BlurredBackgroundProviderImpl.topPanel` 的模糊背景、圆角 18、内边距 6.666、两边 4dp 边距浮在列表上；列表把搜索框（48dp）加胶囊（50dp）的高度留成 padding，所以首行在胶囊下方、滚动时行从胶囊下穿过。上游 12.10.5 不把分类条随滚动收起（列表滚动监听里 `applyScrollY = false`），这一版也保持固定。模糊源是 `GlassPanelHost`：`DialogsActivity` 自己的 source render node + `BlurredBackgroundDrawableViewFactory` 收到我们这边一处，话题页以后的 action-bar 胶囊复用同一个类。
+- 搜索改成 12.10.5 主列表的形态：顶部是上游的 `FragmentSearchField`（提示「搜索 linux.do」，`setHint` 而不是动画 hint drawable），点它按 `DialogsActivity` 的动画打开 - 列表 alpha→0（低性能档不做 0.95 缩放）、搜索页从 1.05 收到 1、进度值驱动分类条 `1 - searchVisible` 淡出与搜索胶囊从 0.98 出现，200ms EASE_OUT 开、180ms + 20ms 关；底部的 话题/通知/设置 栏同时按 `MainTabsActivity` 自己的方式（380ms EASE_OUT_QUINT、下移 40dp、alpha 与 0.85 缩放）让位与返回。设备录屏 `home-search-open-close.mp4`，逐帧拼图 `open-animation-frames.png` / `close-animation-frames.png`：打开时标题、分类条与列表一起让位、底部栏消失；关闭后列表、分类条与底部栏都回来。
+- 搜索页是 `ViewPagerFixed` + 药丸 `TabsView`（装在 `SearchTabsAndFiltersLayout` 玻璃胶囊里）：话题/帖子/用户来自一次 `/search.json`（300ms 防抖，只显示输入框里那个查询的答案），分类/标签来自 `/categories.json` 与 `/tags.json`，按查询在客户端过滤。真实站点：`telegram` 的话题页命中话题行（`08-search-topics`）、帖子页显示带楼层摘要的帖子行（`09-search-posts`）、标签页显示 `#Telegram`（`10-search-tags`）；`claude` 的话题页同样有结果（暗色 `06-search-dark`）。空/加载状态是上游的 `StickerEmptyView` + `FlickerLoadingView`：没输入时「输入关键词开始搜索」（`12-search-idle`），没有命中时「没有找到相关内容」与鸭子贴纸（`11-search-empty`）。
+- 关闭：字段的 × 一步关搜索，主页立即恢复（`13-close-button-home`）；返回键同样先关搜索（搜索打开时第一次返回收键盘，第二次返回关搜索且应用不退出）。返回关搜索要壳先把根屏幕问一遍，`NativeDoActivity.onBackPressed` 的单 fragment 分支现在先问 `getLastFragment()`。
+- 主题：设置 → 外观 → Switch to Night Mode 后主页与搜索页（字段、药丸条、行、底部栏）对比度正常（`05-home-dark`、`06-search-dark`，这两张是切到夜间后重新进入应用拍的；再切回白天时主页在运行中即时恢复，见 `07-home-light-restored`）。
+- 未验到：`用户` 页的有行状态 - 真站点对 `telegram`/`baba`/`neo`/`daud`/`linux` 都回了空 `users`，这一页在这几个查询下只有空状态；行与「点开资料页」由渲染 harness 的 `SearchTest` 覆盖（`ProfileSearchCell`）。`分类` 页同理只有空状态：linux.do 的分类名都是中文，而 `adb shell input text` 不能输入中文，没有 ASCII 命中查询；分类行与标签行是同一个 cell（`HashtagSearchCell` + `CategoryLabels` 的彩色圆点）。
+- 设备上左缘那条系统浮条（麦克风/收键盘/搜索/表情/菜单）随输入法出现，不是本应用的 UI。
+- 构建与测试：同一 HEAD `:nativedo:testDebugUnitTest` 31 类 87 项全过（0 失败 0 error 0 skipped）；一次全量命中既有的 `ReadProgressTest` 竞态（`the topic the reader finished is not unread any more`），单独重跑该 10 项连过 3/3，判为既有 flaky。`assembleDebug -Pandroid.injected.build.abi=arm64-v8a` 通过，APK SHA-256 `c7e6a916757d30a78fc0ab6c2b81a4de7cc22163314aae30c7496de7d6c21e5d`，`install -r -t` 覆盖安装（未卸载未清数据）。设备期间另一 agent 清掉了会话，等 cookie-sync 恢复（@example_user）后继续；未登录阶段只到登录页。证据在 `.amp/in/artifacts/home-search/`。
 
 ### 帖子链接与内置浏览器（2026-10-04，`emulator-5554`，`nativedo-browser-wave2`）
 

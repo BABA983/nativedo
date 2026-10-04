@@ -1,9 +1,14 @@
 package io.github.baba983.nativedo.topic;
 
+import android.animation.AnimatorSet;
+import android.animation.ObjectAnimator;
+import android.animation.ValueAnimator;
 import android.content.Context;
+import android.graphics.Canvas;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.LinearLayout;
+import android.widget.FrameLayout;
 
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -18,6 +23,8 @@ import org.telegram.ui.Components.FilterTabsView;
 import org.telegram.ui.Components.FragmentFloatingButton;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.RecyclerListView;
+import org.telegram.ui.Components.blur3.drawable.BlurredBackgroundDrawable;
+import org.telegram.ui.Components.blur3.drawable.color.impl.BlurredBackgroundProviderImpl;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -44,9 +51,6 @@ import org.telegram.tgnet.TLRPC;
  */
 public class TopicListFragment extends BaseFragment {
 
-    /** The search item in the action bar, which opens the search screen. */
-    private static final int SEARCH_ITEM = 1;
-
     /** The tag item: it opens the site's tags, and its icon is upstream's own tag filter. */
     static final int TAG_ITEM = 2;
 
@@ -65,13 +69,53 @@ public class TopicListFragment extends BaseFragment {
     /** The strip's own height, as upstream's chat list gives it (36 + 7 + 7). */
     private static final int TAB_STRIP_HEIGHT_DP = 50;
 
-    private LinearLayout contentView;
+    /** The strip's side margin, as upstream's floating panel has it. */
+    private static final int TAB_STRIP_MARGIN_DP = 4;
+
+    /** The strip's top edge: the search field stands above it, 2dp up the screen. */
+    private static final int STRIP_TOP_DP = org.telegram.ui.DialogsActivity.SEARCH_FIELD_HEIGHT - 2;
+
+    private FrameLayout contentStack;
     private FilterTabsView tabsView;
+    /** The strip's blur source; the recorded content is the list it floats over. */
+    private io.github.baba983.nativedo.app.GlassPanelHost glassHost;
+    /** The day/night switch rebuilds the strip's own colours and the blur source's. */
+    private final org.telegram.messenger.NotificationCenter.NotificationCenterDelegate themeObserver =
+            (id, account, args) -> {
+                if (id != org.telegram.messenger.NotificationCenter.needSetDayNightTheme) {
+                    return;
+                }
+                if (this.glassHost != null) {
+                    this.glassHost.updateColors();
+                }
+                if (this.tabsView != null) {
+                    this.tabsView.updateColors();
+                }
+                if (this.searchField != null) {
+                    this.searchField.updateColors();
+                }
+                if (this.searchPanel != null) {
+                    this.searchPanel.updateColors();
+                }
+            };
     private FragmentFloatingButton startTopicButton;
+    private org.telegram.ui.ActionBar.ActionBarMenuItem tagItem;
     private org.telegram.ui.ActionBar.ActionBarMenuItem clearTagItem;
     private RecyclerListView listView;
     /** What is shown instead of the list when the feed could not be read. */
     private org.telegram.ui.Components.EmptyTextProgressView emptyView;
+    /** Upstream's own search field, the one 12.10.5's chat list shows instead of a bar icon. */
+    private org.telegram.ui.Components.FragmentSearchField searchField;
+    /** The search pager's home; the pager itself is built on the first search. */
+    private FrameLayout searchContainer;
+    private io.github.baba983.nativedo.search.SearchPanel searchPanel;
+    /** Whether the search is open; it is what the list and the shell's strip stand aside for. */
+    private boolean searching;
+    /** 0 at the list, 1 in the search: drives the strip, the field's glass and the floating button. */
+    private float searchAnimationProgress;
+    private android.animation.AnimatorSet searchAnimator;
+    /** Whether the site answered any categories, so the strip has tabs to show. */
+    private boolean stripHasTabs;
     private final List<TopicSummary> topics = new ArrayList<>();
     /** One author per row, kept so the avatar download can refresh the row it belongs to. */
     private final List<TLRPC.User> authors = new ArrayList<>();
@@ -93,32 +137,53 @@ public class TopicListFragment extends BaseFragment {
         actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
             @Override
             public void onItemClick(int id) {
-                if (id == SEARCH_ITEM) {
-                    presentFragment(new io.github.baba983.nativedo.search.SearchFragment());
-                } else if (id == TAG_ITEM) {
+                if (id == TAG_ITEM) {
                     pickTag();
                 } else if (id == CLEAR_TAG_ITEM) {
                     selectTag(null);
                 }
             }
         });
-        // Upstream's own search item: the icon that opens the field, which the search screen then
-        // uses for the query.
-        actionBar.createMenu().addItem(SEARCH_ITEM, org.telegram.messenger.R.drawable.outline_header_search);
         // The tag filter is a filter, not a second strip: the list's own space belongs to the topics
         // (the topic list's strip is categories), so this is one item whose dialog holds the tags.
-        actionBar.createMenu().addItem(TAG_ITEM, org.telegram.messenger.R.drawable.menu_tag_filter);
+        tagItem = actionBar.createMenu().addItem(TAG_ITEM, org.telegram.messenger.R.drawable.menu_tag_filter);
         clearTagItem = actionBar.createMenu().addItem(CLEAR_TAG_ITEM, org.telegram.messenger.R.drawable.msg_close);
 
         listView = new RecyclerListView(context);
         listView.setLayoutManager(new LinearLayoutManager(context));
         listView.setAdapter(new TopicListAdapter());
         listView.setVerticalScrollBarEnabled(false);
-        listView.setPadding(0, AndroidUtilities.dp(4), 0, AndroidUtilities.dp(4));
+        // The strip floats over the rows, and the search field stands above the strip: the list
+        // keeps both as padding, so its first row starts under the strip and the rows scroll
+        // beneath it (DialogsActivity's own list padding carries the field's height and the
+        // strip's, 2065-2095).
+        listView.setPadding(0,
+                AndroidUtilities.dp(4) + AndroidUtilities.dp(STRIP_TOP_DP + TAB_STRIP_HEIGHT_DP - 5),
+                0, AndroidUtilities.dp(4));
         listView.setOnItemClickListener((view, position) -> {
             TopicSummary topic = topics.get(position);
             presentTopic(topic);
         });
+
+        // Upstream's own floating button, the one its chat list starts a new chat with: this list's
+        // one action is to start a topic, so it is the same button in the same place.
+        android.widget.FrameLayout frame = new android.widget.FrameLayout(context) {
+            @Override
+            protected void dispatchDraw(Canvas canvas) {
+                // The strip's blur source is recorded before the frame draws its children, so the
+                // strip samples the rows behind it and never itself.
+                glassHost.record();
+                super.dispatchDraw(canvas);
+            }
+        };
+
+        // The list side, on its own: it is what leaves while search is open (showSearch's
+        // viewPages[0] animators), and it is what the strip's blur source records.
+        contentStack = new FrameLayout(context);
+        contentStack.addView(listView, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        frame.addView(contentStack, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
 
         tabsView = new FilterTabsView(context, resourceProvider);
         tabsView.setDelegate(new CategoryTabsDelegate());
@@ -127,18 +192,79 @@ public class TopicListFragment extends BaseFragment {
         // the whole screen rather than an empty row above it.
         tabsView.setVisibility(View.GONE);
 
-        contentView = new LinearLayout(context);
-        contentView.setOrientation(LinearLayout.VERTICAL);
-        contentView.addView(tabsView, LayoutHelper.createLinear(
-                LayoutHelper.MATCH_PARENT, TAB_STRIP_HEIGHT_DP));
-        contentView.addView(listView, LayoutHelper.createLinear(
-                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, 1f));
+        // The strip is the floating glass capsule 12.10.5 presents its own filter tabs as:
+        // DialogsActivity gives it the top panel's blur background, radius 18, padding 6.666, a
+        // 7dp inner padding and 4dp side margins (5151-5155), over a list that scrolls under it.
+        glassHost = new io.github.baba983.nativedo.app.GlassPanelHost(listView, frame);
+        tabsView.setPadding(0, AndroidUtilities.dp(7), 0, AndroidUtilities.dp(7));
+        BlurredBackgroundDrawable stripBackground = glassHost.createPanel(
+                tabsView, BlurredBackgroundProviderImpl.topPanel(resourceProvider));
+        stripBackground.setRadius(AndroidUtilities.dp(18));
+        stripBackground.setPadding(AndroidUtilities.dp(6.666f));
+        tabsView.setBlurredBackground(stripBackground);
 
-        // Upstream's own floating button, the one its chat list starts a new chat with: this list's
-        // one action is to start a topic, so it is the same button in the same place.
-        android.widget.FrameLayout frame = new android.widget.FrameLayout(context);
-        frame.addView(contentView, LayoutHelper.createFrame(
+        // The strip sits in the frame rather than in the list side: it fades on its own while
+        // search opens, it does not scale or move with the list.
+        frame.addView(tabsView, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT, TAB_STRIP_HEIGHT_DP, Gravity.TOP,
+                TAB_STRIP_MARGIN_DP, STRIP_TOP_DP, TAB_STRIP_MARGIN_DP, 0));
+
+        // The search pager's home. It is built on the first search; until then it is the empty
+        // frame that holds the field's place in the draw order.
+        searchContainer = new FrameLayout(context);
+        searchContainer.setVisibility(View.GONE);
+        frame.addView(searchContainer, LayoutHelper.createFrame(
                 LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+
+        // Upstream's own search field: DialogsActivity's chat list shows this instead of a bar
+        // icon (3220-3250, field at 3279-3300), in the same frame (48dp, TOP, 7/-2/7/0 at
+        // 5337-5339). Tapping it is what opens the search; its close button is what leaves it.
+        searchField = new org.telegram.ui.Components.FragmentSearchField(context, resourceProvider);
+        searchField.setPadding(AndroidUtilities.dp(4), AndroidUtilities.dp(4),
+                AndroidUtilities.dp(4), AndroidUtilities.dp(4));
+        searchField.setPivotX(0);
+        searchField.setPivotY(0);
+        searchField.setupBlurredBackground(glassHost.createPanel(
+                searchField, BlurredBackgroundProviderImpl.topPanel(resourceProvider)));
+        searchField.setHintText("", false);
+        // The hint is the TextView's own, which is what DialogsActivity's field carries
+        // (checkUi_searchFieldHint, 14055-14062): the animated hint drawable that
+        // FragmentSearchField.setHintText feeds does not paint on this screen at rest.
+        searchField.editText.setHint(context.getString(R.string.search_hint));
+        searchField.editText.setContentDescription(context.getString(R.string.search_hint));
+        searchField.setCloseButtonOnClickListener(this::closeSearch);
+        // Opening on the field's own focus, the way upstream's chat list opens its search
+        // (DialogsActivity's field focus listener at 3311-3315): a tap hands the field focus and
+        // the keyboard, and that focus is the same gesture. The first keystroke opens it too, for
+        // a field that somehow has focus without the search being up.
+        searchField.editText.setOnFocusChangeListener((view, hasFocus) -> {
+            if (hasFocus) {
+                openSearch();
+            }
+        });
+        searchField.editText.setOnClickListener(view -> openSearch());
+        searchField.editText.addTextChangedListener(new android.text.TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                if (s.length() > 0) {
+                    openSearch();
+                }
+                if (searching && searchPanel != null) {
+                    searchPanel.search(s.toString());
+                }
+            }
+
+            @Override
+            public void afterTextChanged(android.text.Editable s) {
+            }
+        });
+        frame.addView(searchField, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT, org.telegram.ui.DialogsActivity.SEARCH_FIELD_HEIGHT,
+                Gravity.TOP, 7, -2, 7, 0));
         // A fetch that failed leaves the list empty, which reads the same as a site with nothing to
         // show. This says which it was, and a tap on it asks the site again.
         emptyView = new org.telegram.ui.Components.EmptyTextProgressView(context);
@@ -161,11 +287,22 @@ public class TopicListFragment extends BaseFragment {
         });
         frame.addView(startTopicButton, FragmentFloatingButton.createDefaultLayoutParams());
         fragmentView = frame;
+        // The strip's glass and the strip itself capture theme colours; the day/night switch tells
+        // this screen the same way it tells the shell's own strip.
+        org.telegram.messenger.NotificationCenter.getGlobalInstance().addObserver(
+                themeObserver, org.telegram.messenger.NotificationCenter.needSetDayNightTheme);
         updateTagActions();
         loadFeed();
         loadCategories();
         loadTags();
         return fragmentView;
+    }
+
+    @Override
+    public void onFragmentDestroy() {
+        super.onFragmentDestroy();
+        org.telegram.messenger.NotificationCenter.getGlobalInstance().removeObserver(
+                themeObserver, org.telegram.messenger.NotificationCenter.needSetDayNightTheme);
     }
 
     /**
@@ -177,6 +314,221 @@ public class TopicListFragment extends BaseFragment {
         super.onResume();
         if (feedLoaded) {
             loadFeed();
+        }
+    }
+
+    /**
+     * The search opens when the reader touches the field, the way upstream's own chat list opens
+     * it: on focus (DialogsActivity's field focus listener at 3311-3315).
+     */
+    private void openSearch() {
+        if (searching) {
+            return;
+        }
+        ensureSearchPanel();
+        showSearch(true);
+    }
+
+    /** The field's close button and the system back both leave the search. */
+    private void closeSearch() {
+        if (!searching) {
+            return;
+        }
+        searchField.editText.getText().clear();
+        AndroidUtilities.hideKeyboard(searchField.editText);
+        searchField.editText.clearFocus();
+        showSearch(false);
+    }
+
+    /** The pager is built on the first search: its five pages are what the field then drives. */
+    private void ensureSearchPanel() {
+        if (searchPanel != null || getParentActivity() == null) {
+            return;
+        }
+        searchPanel = new io.github.baba983.nativedo.search.SearchPanel(
+                getParentActivity(), resourceProvider, new SearchDelegate());
+        searchPanel.setContainer(NativeDo.container(getParentActivity()));
+        searchContainer.addView(searchPanel, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+    }
+
+    /**
+     * Opening and closing the search, DialogsActivity's own animation (showSearch's animator set,
+     * 7530-7660): the list leaves and the pager arrives - the list to alpha 0 (and 0.95 of its
+     * size off a low-performance device), the pager from 1.05 to 1 - over 200ms in and 180ms plus
+     * a 20ms delay out, EASE_OUT, with a progress value that drives the field and the strip.
+     */
+    private void showSearch(boolean show) {
+        if (searching == show) {
+            return;
+        }
+        searching = show;
+        if (show) {
+            searchField.setCloseButtonVisible(true);
+            // The strip is off while searching: the pager's pill capsule is the panel that floats,
+            // and the panel records its own page for the blur.
+            glassHost.setRecordingEnabled(false);
+            searchPanel.clear();
+            setActionBarForSearch(true);
+            if (getParentActivity() instanceof io.github.baba983.nativedo.app.NativeDoActivity) {
+                ((io.github.baba983.nativedo.app.NativeDoActivity) getParentActivity()).setSearchOpen(true);
+            }
+            AndroidUtilities.runOnUIThread(() -> {
+                if (searching) {
+                    AndroidUtilities.showKeyboard(searchField.editText);
+                }
+            }, 100);
+        } else {
+            searchField.setCloseButtonVisible(false);
+            glassHost.setRecordingEnabled(true);
+            searchPanel.clear();
+            setActionBarForSearch(false);
+            if (getParentActivity() instanceof io.github.baba983.nativedo.app.NativeDoActivity) {
+                ((io.github.baba983.nativedo.app.NativeDoActivity) getParentActivity()).setSearchOpen(false);
+            }
+        }
+        animateSearch(show);
+    }
+
+    private void animateSearch(boolean show) {
+        if (searchAnimator != null) {
+            searchAnimator.cancel();
+            searchAnimator = null;
+        }
+        boolean budget = org.telegram.messenger.SharedConfig.getDevicePerformanceClass()
+                == org.telegram.messenger.SharedConfig.PERFORMANCE_CLASS_LOW
+                || !org.telegram.messenger.LiteMode.isEnabled(org.telegram.messenger.LiteMode.FLAG_CHAT_SCALE);
+        if (show) {
+            searchContainer.setVisibility(View.VISIBLE);
+            searchContainer.setAlpha(0f);
+        } else {
+            contentStack.setVisibility(View.VISIBLE);
+        }
+        AnimatorSet set = new AnimatorSet();
+        java.util.ArrayList<android.animation.Animator> animators = new java.util.ArrayList<>();
+        animators.add(ObjectAnimator.ofFloat(contentStack, View.ALPHA, show ? 0f : 1f));
+        animators.add(ObjectAnimator.ofFloat(searchContainer, View.ALPHA, show ? 1f : 0f));
+        if (!budget) {
+            animators.add(ObjectAnimator.ofFloat(contentStack, View.SCALE_X, show ? 0.95f : 1f));
+            animators.add(ObjectAnimator.ofFloat(contentStack, View.SCALE_Y, show ? 0.95f : 1f));
+            animators.add(ObjectAnimator.ofFloat(searchContainer, View.SCALE_X, show ? 1f : 1.05f));
+            animators.add(ObjectAnimator.ofFloat(searchContainer, View.SCALE_Y, show ? 1f : 1.05f));
+        } else {
+            contentStack.setScaleX(1);
+            contentStack.setScaleY(1);
+            searchContainer.setScaleX(1);
+            searchContainer.setScaleY(1);
+        }
+        ValueAnimator progress = ValueAnimator.ofFloat(searchAnimationProgress, show ? 1f : 0f);
+        progress.addUpdateListener(
+                animation -> setSearchAnimationProgress((float) animation.getAnimatedValue()));
+        animators.add(progress);
+        set.playTogether(animators);
+        set.setDuration(show ? 200 : 180);
+        set.setInterpolator(org.telegram.ui.Components.CubicBezierInterpolator.EASE_OUT);
+        if (!show) {
+            set.setStartDelay(20);
+        }
+        final AnimatorSet started = set;
+        set.addListener(new android.animation.AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(android.animation.Animator animation) {
+                if (searchAnimator != started) {
+                    return;
+                }
+                if (show) {
+                    contentStack.setVisibility(View.GONE);
+                } else {
+                    searchContainer.setVisibility(View.GONE);
+                    searchContainer.setAlpha(0f);
+                }
+                setSearchAnimationProgress(show ? 1f : 0f);
+                searchAnimator = null;
+            }
+        });
+        searchAnimator = set;
+        set.start();
+    }
+
+    /**
+     * One value drives everything that is not the two sides themselves, the way DialogsActivity's
+     * searchAnimationProgress does: the strip leaves by {@code 1 - searchVisible}
+     * (checkUi_filterTabsVisible, 13990-14010), the search's pill tabs arrive from 0.98 of their
+     * size (checkUi_searchFiltersVisibility, 13927-13947), the field puts its glass on
+     * (checkUi_searchFieldStyle, 14050), and the compose button leaves with the list.
+     */
+    private void setSearchAnimationProgress(float progress) {
+        searchAnimationProgress = progress;
+        tabsView.setAlpha(1f - progress);
+        updateStripVisibility();
+        if (searchPanel != null) {
+            searchPanel.setTabsVisibility(progress);
+        }
+        searchField.setBlurredBackgroundVisibility(progress);
+        FragmentFloatingButton.setAnimatedVisibility(startTopicButton, 1f - progress);
+    }
+
+    /** The strip is up when the categories arrived and the search has not taken over. */
+    private void updateStripVisibility() {
+        tabsView.setVisibility(
+                stripHasTabs && searchAnimationProgress < 1f ? View.VISIBLE : View.GONE);
+    }
+
+    /** The bar belongs to the list while it is up; the search carries its own close button. */
+    private void setActionBarForSearch(boolean searching) {
+        if (tagItem != null) {
+            tagItem.setVisibility(searching ? View.GONE : View.VISIBLE);
+        }
+        if (clearTagItem != null) {
+            clearTagItem.setVisibility(searching || selectedTag == null ? View.GONE : View.VISIBLE);
+        }
+        if (searching) {
+            actionBar.setTitle("");
+        } else {
+            updateTitle();
+        }
+    }
+
+    @Override
+    public boolean onBackPressed(boolean invoked) {
+        // The search is closed by back before the screen behind it is left: true says the stack may
+        // pop, false says this screen took the back.
+        if (searching) {
+            closeSearch();
+            return false;
+        }
+        return super.onBackPressed(invoked);
+    }
+
+    /** What a chosen search row asks for: open it, or filter the home list by it. */
+    private class SearchDelegate implements io.github.baba983.nativedo.search.SearchPanel.Delegate {
+
+        @Override
+        public void openTopic(TopicSummary topic) {
+            presentFragment(TopicFragment.forFloor(
+                    topic.getId(), topic.getTitle(), topic.getTargetPostNumber()));
+        }
+
+        @Override
+        public void openPerson(io.github.baba983.nativedo.core.model.SearchUserSummary person) {
+            presentFragment(io.github.baba983.nativedo.profile.ProfileFragment.forUser(
+                    person.getUsername(), person.getName()));
+        }
+
+        @Override
+        public void filterByCategory(CategorySummary category) {
+            selectedTabId = category.getId();
+            closeSearch();
+            // The strip's own selection, completed: selecting the tab and loading its feed are one
+            // step, and the strip must not be left showing the tab the reader was on.
+            tabsView.selectTabWithId(category.getId(), 1f);
+            loadFeed();
+        }
+
+        @Override
+        public void filterByTag(Tag tag) {
+            closeSearch();
+            selectTag(tag);
         }
     }
 
@@ -214,7 +566,8 @@ public class TopicListFragment extends BaseFragment {
                     category.getId(), category.getId(), CategoryLabels.of(category), false, false, false);
         }
         tabsView.finishAddingTabs(false);
-        tabsView.setVisibility(categories.isEmpty() ? View.GONE : View.VISIBLE);
+        stripHasTabs = !categories.isEmpty();
+        updateStripVisibility();
     }
 
     private void presentTopic(TopicSummary topic) {
@@ -250,6 +603,10 @@ public class TopicListFragment extends BaseFragment {
     }
 
     private void updateTitle() {
+        // While the search is open the bar carries nothing: the field is the title.
+        if (searching) {
+            return;
+        }
         CategorySummary category = categoryOf(selectedTabId);
         StringBuilder title = new StringBuilder("linux.do");
         if (category != null) {
@@ -323,7 +680,7 @@ public class TopicListFragment extends BaseFragment {
     /** What the tag filter looks like: the tag in the title, and the way out of it in the bar. */
     private void updateTagActions() {
         if (clearTagItem != null) {
-            clearTagItem.setVisibility(selectedTag == null ? View.GONE : View.VISIBLE);
+            clearTagItem.setVisibility(selectedTag == null || searching ? View.GONE : View.VISIBLE);
         }
         updateTitle();
     }

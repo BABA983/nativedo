@@ -75,6 +75,10 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
     private Insets systemInsets = Insets.NONE;
     private boolean keyboardVisible;
     private boolean tabsVisible;
+    /** The home screen's search: upstream's main tabs step aside while it is open. */
+    private boolean searchOpen;
+    /** Whether the strip is down because of the search, so it comes back the same way. */
+    private boolean tabsHiddenForSearch;
     private int selectedTab = -1;
     /** Whether the reader is on the login page, which the roots and their strip stay away from. */
     private boolean signedOut;
@@ -353,9 +357,23 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
      * same way, so this shell's strip steps aside while they are up.
      */
     private void updateTabsVisibility() {
-        showTabs(!signedOut && !keyboardVisible && !browserTabsExpanded()
+        showTabs(!signedOut && !keyboardVisible && !browserTabsExpanded() && !searchOpen
                 && actionBarLayout.getFragmentStack().size() <= 1, true);
         updateSystemBarColors();
+    }
+
+    /**
+     * The home screen's search opening and closing. Upstream's own main tabs disappear while a
+     * search is up (DialogsActivity.checkUi_mainTabsVisible -> MainTabsActivity.setTabsVisible),
+     * and this is that answer for this shell's strip: {@link #showTabs} takes it away in
+     * MainTabsActivity's own way while this flag is on.
+     */
+    public void setSearchOpen(boolean open) {
+        if (searchOpen == open) {
+            return;
+        }
+        searchOpen = open;
+        updateTabsVisibility();
     }
 
     /** Whether upstream's browser has a minimized page; its strip occupies the bottom bar then. */
@@ -421,16 +439,42 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         tabsVisible = visible;
         int height = AndroidUtilities.dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS) + systemInsets.bottom;
         tabs.animate().cancel();
+        // The search takes the strip away in MainTabsActivity's own way, not this shell's: its
+        // animatorTabsVisible is 380ms EASE_OUT_QUINT over hiddenY = normalY + dp(40), with
+        // alpha = factor and scale = lerp(0.85, 1, factor) (MainTabsActivity.java:109-110,
+        // 1072-1087). It is the same call in both directions, so the return uses it too.
+        boolean searchAnimation = searchOpen || tabsHiddenForSearch;
+        if (searchOpen && !visible) {
+            tabsHiddenForSearch = true;
+        }
+        if (!searchOpen && visible) {
+            tabsHiddenForSearch = false;
+        }
         if (animated) {
-            tabs.animate()
-                    .alpha(visible ? 1f : 0f)
-                    .translationY(visible ? 0f : (float) height)
-                    .setDuration(200)
-                    .setInterpolator(org.telegram.ui.Components.CubicBezierInterpolator.EASE_BOTH)
-                    .start();
+            if (searchAnimation) {
+                tabs.animate()
+                        .alpha(visible ? 1f : 0f)
+                        .translationY(visible ? 0f : (float) AndroidUtilities.dp(40))
+                        .scaleX(visible ? 1f : 0.85f)
+                        .scaleY(visible ? 1f : 0.85f)
+                        .setDuration(380)
+                        .setInterpolator(org.telegram.ui.Components.CubicBezierInterpolator.EASE_OUT_QUINT)
+                        .start();
+            } else {
+                tabs.animate()
+                        .alpha(visible ? 1f : 0f)
+                        .translationY(visible ? 0f : (float) height)
+                        .scaleX(1f)
+                        .scaleY(1f)
+                        .setDuration(200)
+                        .setInterpolator(org.telegram.ui.Components.CubicBezierInterpolator.EASE_BOTH)
+                        .start();
+            }
         } else {
             tabs.setAlpha(visible ? 1f : 0f);
-            tabs.setTranslationY(visible ? 0f : (float) height);
+            tabs.setTranslationY(visible ? 0f : (float) (searchAnimation ? AndroidUtilities.dp(40) : height));
+            tabs.setScaleX(visible ? 1f : 0.85f);
+            tabs.setScaleY(visible ? 1f : 0.85f);
         }
         if (changed) {
             ViewCompat.requestApplyInsets(actionBarLayout);
@@ -645,6 +689,12 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         }
         if (actionBarLayout != null && actionBarLayout.getFragmentStack().size() > 1) {
             actionBarLayout.onBackPressed();
+            return;
+        }
+        // The root screen can take the back before the app leaves: the home screen's search is
+        // closed by it (BaseFragment.onBackPressed answers false when it has taken it).
+        BaseFragment last = actionBarLayout == null ? null : actionBarLayout.getLastFragment();
+        if (last != null && !last.onBackPressed(true)) {
             return;
         }
         super.onBackPressed();
