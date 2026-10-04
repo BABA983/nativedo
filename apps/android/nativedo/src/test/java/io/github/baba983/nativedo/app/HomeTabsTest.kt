@@ -34,7 +34,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 
 /**
- * The home structure: three entries, upstream's tab strip, and the topic list as the first screen.
+ * The home structure: four entries, upstream's tab strip, and the topic list as the first screen.
  *
  * <p>The failure this pins: switching tabs must replace the root rather than push on top of it, or
  * a reader who opens a topic and then taps settings ends up with a topic behind the back button and
@@ -85,7 +85,7 @@ internal class HomeTabsTest {
 
         val tabs = findTabs(harness.activity.findViewById(android.R.id.content))
         assertTrue("the shell shows upstream's tab strip", tabs != null)
-        assertEquals("with all three entries", 3, tabs!!.childCount)
+        assertEquals("with all four entries", 4, tabs!!.childCount)
         assertTrue("the topic tab is selected", (tabs.getChildAt(0) as GlassTabView).isTabSelected)
 
         // Open a topic the way the list does, then switch tabs: the topic must not survive behind
@@ -108,6 +108,14 @@ internal class HomeTabsTest {
             fragmentStackSize(shell),
         )
         assertTrue("and the strip is back", tabs.alpha == 1f && tabs.translationY == 0f)
+
+        // The fourth tab is the reader's own profile, and it too is a root: tapping it must not
+        // leave the settings screen behind the back button.
+        tapTab(tabs, 3)
+        harness.await("the reader's own profile") { currentFragmentName() == "ProfileFragment" }
+        assertEquals("the profile tab replaced the root as well", 1, fragmentStackSize(shell))
+        assertTrue("and the avatar tab is selected",
+            (tabs.getChildAt(3) as GlassTabView).isTabSelected)
         harness.assertNoTelegramSideEffects()
     }
 

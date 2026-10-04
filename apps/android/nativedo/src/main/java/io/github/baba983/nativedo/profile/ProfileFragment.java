@@ -87,6 +87,8 @@ public class ProfileFragment extends BaseFragment {
 
     private static final String ARG_USERNAME = "username";
     private static final String ARG_DISPLAY_NAME = "displayName";
+    /** Whether the screen is a shell tab root, which has nothing behind it to go back to. */
+    private static final String ARG_ROOT = "root";
 
     private static final int TYPE_SECTION = 1;
     private static final int TYPE_DETAIL = 2;
@@ -169,12 +171,25 @@ public class ProfileFragment extends BaseFragment {
         return new ProfileFragment(args);
     }
 
+    /**
+     * The reader's own profile as a shell tab root: the same screen, but there is nothing behind it
+     * to go back to, so it draws no back button - upstream's own profile tab does the same
+     * ({@code ProfileActivity}'s {@code hasMainTabs} draws the back button only when it is a step,
+     * not a root).
+     */
+    public static ProfileFragment forRoot(String username, String displayName) {
+        ProfileFragment fragment = forUser(username, displayName);
+        fragment.getArguments().putBoolean(ARG_ROOT, true);
+        return fragment;
+    }
+
     public ProfileFragment(Bundle args) {
         super(args);
     }
 
     @Override
     protected View createView(Context context) {
+        final boolean root = getArguments() != null && getArguments().getBoolean(ARG_ROOT, false);
         // The profile draws behind its own transparent action bar, the way upstream's profile does
         // (ProfileActivity.java:2470-2478), so it keeps its view the whole screen.
         actionBar.setAddToContainer(false);
@@ -182,7 +197,9 @@ public class ProfileFragment extends BaseFragment {
         actionBar.setForceSkipTouches(true);
         actionBar.setItemsBackgroundColor(getThemedColor(Theme.key_avatar_actionBarSelectorBlue), false);
         actionBar.setItemsColor(getThemedColor(Theme.key_actionBarDefaultIcon), false);
-        actionBar.setBackButtonImage(R.drawable.ic_ab_back);
+        if (!root) {
+            actionBar.setBackButtonImage(R.drawable.ic_ab_back);
+        }
         actionBar.setAllowOverlayTitle(true);
         actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
             @Override
