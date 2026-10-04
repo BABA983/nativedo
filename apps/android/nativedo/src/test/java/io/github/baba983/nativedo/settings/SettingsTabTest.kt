@@ -133,7 +133,7 @@ internal class SettingsTabTest {
         tapTab(2)
         harness.await("the settings screen") { currentFragmentName(shell) == "SettingsFragment" }
         harness.layoutApp()
-        assertTrue("the reader is signed in to start with", container.cookieStore.hasAuthenticatedCookies())
+        assertTrue("the reader is signed in to start with", container.cookieJar.hasAuthenticatedCookies())
 
         clickNamedRow("退出登录")
         val confirm = ShadowDialog.getLatestDialog() as? AlertDialog
@@ -144,7 +144,7 @@ internal class SettingsTabTest {
         harness.await("the login screen") { currentFragmentName(shell) == "LoginWebViewFragment" }
         assertFalse(
             "the cookies the session was made of are gone",
-            container.cookieStore.hasAuthenticatedCookies(),
+            container.cookieJar.hasAuthenticatedCookies(),
         )
         assertEquals(
             "the signed-out account is not remembered either",
@@ -181,7 +181,7 @@ internal class SettingsTabTest {
         val shell = openVerificationFromSettings()
         val identity = container.sessionStore.snapshot()
         val generation = container.sessionCoordinator.currentRequestContext()
-        val cookies = container.cookieStore.load(site.baseUrl.toHttpUrl())
+        val cookies = container.cookieJar.requestCookieHeader(site.baseUrl.toHttpUrl())
         val draftKey = io.github.baba983.nativedo.feature.topic.data.TopicReplyDraftKey(site.baseUrl, "baba", 101)
         val readKey = io.github.baba983.nativedo.feature.topic.data.TopicReadPositionKey(site.baseUrl, "baba", 101)
         val draft = io.github.baba983.nativedo.feature.topic.data.TopicReplyDraft("kept draft", 7)
@@ -196,7 +196,7 @@ internal class SettingsTabTest {
         back()
         harness.await("cancel back to settings") { currentFragmentName(shell) == "SettingsFragment" }
         assertEquals(identity, container.sessionStore.snapshot())
-        assertEquals(cookies, container.cookieStore.load(site.baseUrl.toHttpUrl()))
+        assertEquals(cookies, container.cookieJar.requestCookieHeader(site.baseUrl.toHttpUrl()))
         assertEquals(draft, container.topicReplyDraftStore.load(draftKey))
         assertEquals(19, container.topicReadPositionStore.load(readKey))
         assertEquals(generation, container.sessionCoordinator.currentRequestContext())
@@ -257,9 +257,9 @@ internal class SettingsTabTest {
         shadow.lastEvaluatedJavascriptCallback!!.onReceiveValue(
             org.json.JSONObject.quote("""{"username":"baba","name":"Baba"}"""))
         harness.await("explicit completion back to settings") { currentFragmentName(shell) == "SettingsFragment" }
-        assertTrue(container.cookieStore.hasAuthenticatedCookies())
-        assertEquals("renewed-clearance", container.cookieStore.load(site.baseUrl.toHttpUrl())
-            .first { it.name == "cf_clearance" }.value)
+        assertTrue(container.cookieJar.hasAuthenticatedCookies())
+        assertEquals("renewed-clearance", io.github.baba983.nativedo.core.session.SharedCookieJar.cookieValue(
+            container.cookieJar.requestCookieHeader(site.baseUrl.toHttpUrl()), "cf_clearance"))
         assertTrue("completion actually ran the session use case",
             generation != container.sessionCoordinator.currentRequestContext())
         assertNoWrites()
@@ -281,7 +281,7 @@ internal class SettingsTabTest {
         }
         assertEquals("recovery navigates to the site's challenge, not its login page", site.url("/challenge"),
             org.robolectric.Shadows.shadowOf(web).lastLoadedUrl)
-        assertTrue("the browser keeps the existing auth", container.cookieSyncBridge.hasAuthenticatedCookiesInWebView())
+        assertTrue("the browser keeps the existing auth", container.cookieJar.hasAuthenticatedCookies())
         return shell
     }
 

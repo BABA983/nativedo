@@ -68,18 +68,16 @@ the app, so a real Telegram host keeps its own setting. One more Telegram-only s
 `ArticleViewer`'s `messages.getWebPage` lookup, which cannot be answered without tgnet, so the page
 is loaded directly instead of waiting for it.
 
-The browser and the login WebView share one `CookieManager`, but the session lives in the native
-store, and a WebView jar goes stale the moment the native client rotates `_t`. So a linux.do link is
-seeded before it opens: `InAppBrowserSession` writes the native jar's cookies into the browser jar
-first - only for `linux.do` and its subdomains - and when the two jars disagree on `_t` it asks the
-server which value it still accepts before replacing anything (an accepted native token wins, a
-rejected one makes the native jar adopt the browser's rotation, an unanswered probe writes
-nothing). The other direction keeps the rejection-driven adoption described in
-`contracts/discourse/auth-flow.md`: a rotation made while browsing is adopted on the first native
-request whose token fails - every logout-shaped answer is reconciled against the browser jar before
-anything is cleared, so sharing `_t` costs an occasional failed read, not the session - rather than
-copied back on every visit, because an unconditional import could replace a rotation the native jar
-already holds with an older browser one. Signing out clears both jars.
+The browser, the login WebView and the API client share one cookie store:
+`android.webkit.CookieManager` is the only jar. OkHttp's side of it is a network interceptor that
+reads `CookieManager.getCookie(url)` per exchange and writes each response `Set-Cookie` value
+back verbatim (attributes included), for `linux.do` and its subdomains only; nothing is seeded or
+imported between the WebViews and the native client, so a `_t` rotation by any of them is what
+every other participant sends next. A response that arrives after another participant already
+rotated `_t` may not write or delete the auth cookies, and a logout-shaped answer that lost that
+race fails its own request instead of ending the session. The retired native snapshot
+(`nativedo.cookie_store`) is read once into an empty jar and then deleted. Details in
+`contracts/discourse/auth-flow.md`.
 
 ## How upstream's cells get our data
 
@@ -223,30 +221,35 @@ stands, and the upstream component each row is meant to use.
 - 设置页：外观 / 我的 / 账号三组的行高与间距是否符合上游观感；退出登录的确认框、清 cookie 后回到登录页、再登录回来后话题与通知是否正常。
 - 通知 tab：没有推送和未读计数时，列表的排序和徽章是否仍然清楚。
 
-### 内置浏览器里的会话（2026-10-04，`emulator-5554`，`nativedo-cookie-sync`）
+### 一个 cookie jar（2026-10-04，`emulator-5554`，`nativedo-cookie-sync`）
 
-- 目标前一半在设备上成立：iOS App 帖一楼里的 `https://linux.do/t/topic/2974886` 进入内置浏览器后整页渲染，
-  站点页头是头像、没有「登录」按钮；logcat 里先有 `route=session status=200`，随后 `browser_bridge_seed
-  accepted=true`（probe 确认原生 token 后把会话种进 WebView jar），截图 `03`/`04`。覆盖安装后再开一次，
-  两个 jar 的 `_t` 相同，走静默路径不 probe，页面同样是登录态（截图 `13`）。
-- 外站隔离：同一页面里的 TestFlight 链接经站点自己的「打开外部链接」确认后，在内置浏览器里加载
-  `testflight.apple.com/join/UH7yJbk4`（截图 `16`/`17`）；linux.do 的 `_t`/`_forum_session` 只落在
-  linux.do 主机下（写入端 `isSessionHost` 门 + CookieManager 域匹配，`InAppBrowserSessionTest` 固定；
-  改动前 12:18 的 WebView cookie 库元数据也只见 linux.do 主机）。
-- 后半程是本片最重的发现：两个 jar 共享同一个 `_t` 后各自替对方轮换。12:47:29 原生 csrf 把 `_t` 轮换走，
-  浏览器页面随后自己再轮换，12:49:37 原生请求带着已滑出 `{current, prev}` 窗口的 token 被站点判为
-  `evidence=LoggedOut`；当时的客户端只在 `Restoring` 校验里才对账，普通请求的这条证据直接把两边的 jar 清掉，
-  应用被登出。现在每条已登录请求的登出形证据都先走 reconcile：adopt 浏览器 jar，再用 `probeSession` 复验；
-  `Accepted`/`Unavailable` 只让这一条请求以可重试的 `IOException` 失败，`Rejected` 才是真登出。
-  两个失败模式由 `BrowserRotationAdoptionTest` 固定（关掉 reconcile 钩子时中段拒绝一例变红，接回即绿）。
-- 代价与未完成项：轮换竞争发生在验证过程中，把设备上唯一的登录消耗掉了（cookie store 与 session store 均被清空，
-  没有可用凭据再登录），所以修复后的构建没有在真机上复验——本片设备证据覆盖的是修复前的种子行为与失败复现。
-  下次有已登录设备时按两步重跑：打开 linux.do 链接是登录态；在内置浏览器里浏览数分钟后，原生请求只丢一条、会话仍在。
-- 构建与测试：`:nativedo:testDebugUnitTest` 33 类 95 项全过（0 失败、0 error、0 skipped；新增
-  `InAppBrowserSessionTest` 6 项、`BrowserRotationAdoptionTest` 2 项）；`assembleDebug -Pandroid.injected.build.abi=arm64-v8a
-  --quiet` 通过，最终 APK SHA-256 `814696398f3902f9b3f7ad3a05a55e7dd321faaa78cf91960fb374de52b0b1f4`
-  （设备上最后装的是修复中段、还没有 reconcile 钩子的 `976a88ab2fbe12e3501e921a437dca16b2151c3ae7cb9c71a31103bec265dbb2`）。
-  本片没有改 `apps/android/telegram` 子树，vendor-guard 不涉及。证据在 `.amp/in/artifacts/cookie-sync/`。
+- 模型：`android.webkit.CookieManager` 是唯一的 cookie 存储（登录 WebView、内置浏览器、OkHttp 三方共用）。
+  OkHttp 侧由网络拦截器在每次请求读 `getCookie(url)`、把响应的 `Set-Cookie` 原文写回（SameSite 等属性保真），
+  只对 linux.do 及其子域读写。旧的 `nativedo.cookie_store` 快照只做一次性迁移（jar 为空才导入）后删除；
+  本机快照为空（`legacy_cookie_migration accepted=false`）。两 jar 互抄、互相轮换的实现（上一片）全部删除。
+- 设备状态与恢复：改前按约定备份了 WebView `Cookies` DB 与 `nativedo.*` 到 `.amp/in/session-backup/`。
+  设备上原生 SessionStore 为空、WebView jar 持有 `_t`；覆盖安装后冷启动，第一条请求就是
+  `route=session status=200`（`hasToken=true`），设置页显示「已登录 @example_user」（截图 `01`/`02`）——浏览器留下的会话
+  被原生验证并采纳，这正是本次要修的正常冷启动路径。
+- `_t` 轮换：13:43:19 冷启动第一条请求把浏览器那份 token 轮换走（`setsToken=true`），13:53:17 原生读帖时
+  再次轮换（`revision=1 setsToken=true`）；两次之后紧接着进内置浏览器，站点页头都是头像、无「登录」
+  （截图 `09`/`18`）。全程 logcat `expired_*` 0 次、crash buffer 为空；浏览器↔应用往返两次、强停后冷启动两次
+  都仍是登录态（`16`/`17`/`19`）。
+- 写路径：在原生帖子里点了一个 reaction chip，请求先拿到 `route=csrf status=200`，写请求被一次
+  `403 evidence=Challenge` 挡下并按契约保留会话，重试 200；没有登出（chip 的选中态截图上未能确认）。
+- 测试与构建：`:nativedo:testDebugUnitTest` 32 类 94 项全过（0 失败、0 error、0 skipped；新增
+  `SharedCookieJarTest` 7 项，固定冷启动恢复、在途轮换不覆盖、陈旧登出形答复只失败当条请求、
+  真登出只清 linux.do、迁移不覆盖浏览器 jar、跨站隔离）。`assembleDebug -Pandroid.injected.build.abi=arm64-v8a`
+  通过（该 worktree 的 jni 子模块为空，用 `jni/arm64-v8a/` 预编译 `.so`、排除 CMake 任务，与上一片同做法），
+  APK SHA-256 `f4d0f829328b8a6a311608f84c698a2291a8e0c776ca069c6e7e6e813bb61442`。本片没有改
+  `apps/android/telegram` 子树，vendor-guard 不涉及。
+- 历史一行：上一片（`8eefe051`）两个 jar 各自轮换 `_t`，原生请求带着滑出窗口的 token 被站点判为登出，
+  耗掉了设备上唯一的登录（`expired_ServerLoggedOut`）。证据在 `.amp/in/artifacts/cookie-single-jar/`
+  （截图 `01`–`19`、`logcat-session.txt`）。
+- 交还与终态：14:09 另一个任务（`nativedo-settings-tab`，仍带旧两 jar 代码、基于 `cdcc23ad`）在同一
+  app data 上安装并运行了它的构建；14:21 本片构建冷启动时站点已对 jar 里的 `_t` 回答
+  `404 evidence=LoggedOut deletesToken=true`，会话被并行的第二份客户端消耗。本构建按契约清掉 linux.do
+  cookie 与本地身份、停在登录页（截图 `20`），crash buffer 为空；按约定本片不自行登录。
 
 ### 帖子链接与内置浏览器（2026-10-04，`emulator-5554`，`nativedo-browser-wave2`）
 

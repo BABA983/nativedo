@@ -9,17 +9,14 @@ import io.github.baba983.nativedo.core.network.NetworkJson
 import io.github.baba983.nativedo.core.network.SessionCookieInterceptor
 import io.github.baba983.nativedo.core.network.RequestHeadersInterceptor
 import io.github.baba983.nativedo.core.network.resolveNativeDoUserAgent
-import io.github.baba983.nativedo.core.session.CookieSyncBridge
-import io.github.baba983.nativedo.core.session.InAppBrowserSession
+import io.github.baba983.nativedo.core.session.LegacyCookieMigration
+import io.github.baba983.nativedo.core.session.SharedCookieJar
 import io.github.baba983.nativedo.core.session.SessionCoordinator
-import io.github.baba983.nativedo.core.session.SessionProbeResult
 import io.github.baba983.nativedo.core.session.CredentialStore
 import io.github.baba983.nativedo.core.session.CompleteLoginUseCase
 import io.github.baba983.nativedo.core.storage.CategoryStore
-import io.github.baba983.nativedo.core.storage.CookieStore
 import io.github.baba983.nativedo.core.storage.EmojiCatalogStore
 import io.github.baba983.nativedo.core.storage.SessionStore
-import io.github.baba983.nativedo.core.storage.SharedPreferencesCookieStorePersistence
 import io.github.baba983.nativedo.core.storage.SharedPreferencesEmojiCatalogStorePersistence
 import io.github.baba983.nativedo.core.storage.SharedPreferencesSessionStorePersistence
 import io.github.baba983.nativedo.core.storage.SharedPreferencesSvgSpriteStorePersistence
@@ -48,7 +45,8 @@ class AppContainer(
     private val json: Json = NetworkJson.instance
     private val appContext = context?.applicationContext
     val userAgent: String = userAgent ?: resolveNativeDoUserAgent(appContext)
-    private val cookiePreferences = appContext?.getSharedPreferences(COOKIE_STORE_PREFS, Context.MODE_PRIVATE)
+    /** The retired native snapshot: read once by [LegacyCookieMigration], never written again. */
+    private val legacyCookiePreferences = appContext?.getSharedPreferences(COOKIE_STORE_PREFS, Context.MODE_PRIVATE)
     private val sessionPreferences = appContext?.getSharedPreferences(SESSION_STORE_PREFS, Context.MODE_PRIVATE)
     private val profileCachePreferences = appContext?.getSharedPreferences(PROFILE_CACHE_PREFS, Context.MODE_PRIVATE)
     private val svgSpritePreferences = appContext?.getSharedPreferences(SVG_SPRITE_STORE_PREFS, Context.MODE_PRIVATE)
@@ -56,11 +54,12 @@ class AppContainer(
     private val topicReplyDraftPreferences = appContext?.getSharedPreferences(TOPIC_REPLY_DRAFT_STORE_PREFS, Context.MODE_PRIVATE)
     private val topicReadPositionPreferences = appContext?.getSharedPreferences(TOPIC_READ_POSITION_STORE_PREFS, Context.MODE_PRIVATE)
     val applicationScope: CoroutineScope? = applicationScope
-    val cookieStore: CookieStore = cookiePreferences
-        ?.let { preferences ->
-            CookieStore(persistence = SharedPreferencesCookieStorePersistence(preferences))
-        }
-        ?: CookieStore()
+    /**
+     * The session jar every participant shares: CookieManager is the store, this facade is how
+     * OkHttp reads and writes it; the login WebView and the in-app browser use the same store
+     * through Chromium.
+     */
+    val cookieJar: SharedCookieJar = SharedCookieJar(baseUrl)
     val sessionStore: SessionStore = sessionPreferences
         ?.let { preferences ->
             SessionStore(persistence = SharedPreferencesSessionStorePersistence(preferences))
@@ -87,33 +86,28 @@ class AppContainer(
             TopicReadPositionStore(SharedPreferencesTopicReadPositionPersistence(preferences))
         }
         ?: TopicReadPositionStore()
-    val cookieSyncBridge: CookieSyncBridge = CookieSyncBridge(
-        baseUrl = baseUrl,
-        cookieStore = cookieStore,
-    )
     val discourseSvgSpriteLoader: DiscourseSvgSpriteLoader? = appContext?.let { context ->
         DiscourseSvgSpriteLoader(
             appContext = context,
             baseUrl = baseUrl,
             userAgent = this.userAgent,
-            cookieSyncBridge = cookieSyncBridge,
             svgSpriteStore = svgSpriteStore,
         )
     }
 
     private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
-        .addNetworkInterceptor(SessionCookieInterceptor(cookieStore))
+        .addNetworkInterceptor(SessionCookieInterceptor(cookieJar))
         .addInterceptor(
             RequestHeadersInterceptor(
                 baseUrl = baseUrl,
                 userAgent = this.userAgent,
-                cookieStore = cookieStore,
+                cookieJar = cookieJar,
             ),
         )
         .build()
 
     val imageOkHttpClient: OkHttpClient = OkHttpClient.Builder()
-        .addNetworkInterceptor(SessionCookieInterceptor(cookieStore))
+        .addNetworkInterceptor(SessionCookieInterceptor(cookieJar))
         .addInterceptor(ImageRequestHeadersInterceptor(baseUrl = baseUrl, userAgent = this.userAgent))
         .build()
 
@@ -148,48 +142,29 @@ class AppContainer(
     )
     val credentialStore: CredentialStore = CredentialStore(appContext)
     val sessionCoordinator: SessionCoordinator = SessionCoordinator(
-        cookieStore = cookieStore,
         sessionStore = sessionStore,
+        cookieJar = cookieJar,
         apiClient = discourseApiClient,
-        cookieSyncBridge = cookieSyncBridge,
         applicationScope = applicationScope,
     )
     val completeLoginUseCase: CompleteLoginUseCase = CompleteLoginUseCase(
         sessionCoordinator = sessionCoordinator,
-        cookieSyncBridge = cookieSyncBridge,
+        cookieJar = cookieJar,
         baseUrl = baseUrl,
-    )
-    /**
-     * The one entry point for opening a linux.do page in upstream's in-app browser: the session is
-     * seeded into the WebView jar first, so the page is the reader's own.
-     */
-    val inAppBrowserSession: InAppBrowserSession = InAppBrowserSession(
-        cookieStore = cookieStore,
-        bridge = cookieSyncBridge,
-        probeSession = discourseApiClient::probeSession,
     )
 
     init {
+        // One-time: the old native snapshot must not keep shadowing the shared jar. Runs before
+        // any request or WebView touches the store.
+        legacyCookiePreferences?.let { preferences ->
+            LegacyCookieMigration.migrate(preferences, cookieJar)
+        }
         discourseApiClient.setSessionBoundary(
             contextProvider = sessionCoordinator::currentRequestContext,
             onSessionInvalidated = sessionCoordinator::markExpiredIfCurrent,
             onLoginRequired = sessionCoordinator::requestLogin,
+            hasAuthenticatedCookies = cookieJar::hasAuthenticatedCookies,
         )
-        // A rejected native token is not a logout until the browser jar has been asked: it may
-        // hold the rotation this request missed. Adopt it, and keep it unless the server answers
-        // with explicit logout evidence - an unanswered check (challenge, outage) must not
-        // destroy the only candidate rotation.
-        discourseApiClient.setLoggedOutReconciler { generation ->
-            if (!sessionCoordinator.adoptBrowserSessionIfCurrent(generation)) {
-                false
-            } else {
-                when (discourseApiClient.probeSession()) {
-                    SessionProbeResult.Accepted -> true
-                    SessionProbeResult.Rejected -> false
-                    SessionProbeResult.Unavailable -> true
-                }
-            }
-        }
     }
 
     private companion object {

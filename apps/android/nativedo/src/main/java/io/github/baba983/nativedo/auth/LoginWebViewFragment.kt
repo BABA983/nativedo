@@ -64,10 +64,8 @@ class LoginWebViewFragment @JvmOverloads constructor(
     private var errorContainer: ArticleViewer.ErrorContainer? = null
     private var restoreJob: Job? = null
     private var progressJob: Job? = null
-    private var initialLoadJob: Job? = null
     private var hasFinished = false
     private var rendererGone = false
-    private var requiresCookieResync = false
     private var failedUrl: String? = null
     private var navigationGeneration = 0
     private var failedNavigationGeneration = -1
@@ -351,18 +349,8 @@ class LoginWebViewFragment @JvmOverloads constructor(
         if (recoveryMode) "/challenge" else "/login"
 
     private fun loadAfterCookieSync(view: WebView, url: String) {
-        initialLoadJob?.cancel()
-        initialLoadJob = fragmentScope.launch {
-            val synced = appContainer.cookieSyncBridge.syncToWebViewAsync()
-            if (webView !== view || hasFinished) return@launch
-            if (synced) {
-                requiresCookieResync = false
-                view.loadUrl(url)
-            } else {
-                requiresCookieResync = true
-                showLoadError(view, url, 0, "WebView cookies could not be restored")
-            }
-        }
+        // The login WebView reads the shared CookieManager itself; there is nothing to copy in.
+        view.loadUrl(url)
     }
 
     private fun showLoadError(
@@ -405,8 +393,6 @@ class LoginWebViewFragment @JvmOverloads constructor(
             val root = webRoot ?: return
             val recreated = createLoginWebView(root.context, root)
             loadAfterCookieSync(recreated, targetUrl)
-        } else if (requiresCookieResync) {
-            loadAfterCookieSync(current, targetUrl)
         } else {
             current.loadUrl(targetUrl)
         }
@@ -426,8 +412,6 @@ class LoginWebViewFragment @JvmOverloads constructor(
         restoreJob = null
         progressJob?.cancel()
         progressJob = null
-        initialLoadJob?.cancel()
-        initialLoadJob = null
         webView = null
         (view.parent as? ViewGroup)?.removeView(view)
         runCatching { view.destroy() }
@@ -549,8 +533,7 @@ class LoginWebViewFragment @JvmOverloads constructor(
             loginWebBackAction(
                 isRestoringSession = restoreJob?.isActive == true,
                 canGoBack = view.canGoBack(),
-                hasAuthenticatedCookies = appContainer.cookieSyncBridge
-                    .hasAuthenticatedCookiesInWebView(appContainer.baseUrl),
+                hasAuthenticatedCookies = appContainer.cookieJar.hasAuthenticatedCookies(),
             )
         ) {
             LoginWebBackAction.CONSUME_RESTORE -> false
@@ -580,8 +563,6 @@ class LoginWebViewFragment @JvmOverloads constructor(
         restoreJob = null
         progressJob?.cancel()
         progressJob = null
-        initialLoadJob?.cancel()
-        initialLoadJob = null
         popupWebViews.toList().forEach(::destroyPopupWebView)
         webView?.let { view ->
             runCatching {

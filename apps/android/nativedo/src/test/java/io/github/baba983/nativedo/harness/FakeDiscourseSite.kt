@@ -3,8 +3,6 @@ package io.github.baba983.nativedo.harness
 import android.content.Context
 import io.github.baba983.nativedo.core.di.AppContainer
 import io.github.baba983.nativedo.core.session.SessionSnapshot
-import okhttp3.Cookie
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -238,19 +236,14 @@ internal class FakeDiscourseSite {
      * A container pointing at this site with a usable session already in it.
      *
      * Every screen sits behind the session gate, so a screen test needs a session for the same
-     * reason the app does; seeding it here keeps that out of each test.
+     * reason the app does; seeding it here keeps that out of each test. The cookies go into the
+     * shared CookieManager, exactly where the login WebView would have put them.
      */
     fun authenticatedContainer(context: Context): AppContainer {
         val container = AppContainer(context, baseUrl, null, null)
-        val url = baseUrl.toHttpUrl()
-        container.cookieStore.save(
-            url,
-            listOf(
-                cookie(url.host, "_t", "session-token"),
-                cookie(url.host, "_forum_session", "forum-session"),
-                cookie(url.host, "cf_clearance", "clearance"),
-            ),
-        )
+        seedSharedJarCookie("_t=session-token; Path=/; HttpOnly")
+        seedSharedJarCookie("_forum_session=forum-session; Path=/; HttpOnly")
+        seedSharedJarCookie("cf_clearance=clearance; Path=/")
         container.sessionStore.save(
             SessionSnapshot(
                 username = "baba",
@@ -262,8 +255,10 @@ internal class FakeDiscourseSite {
         return container
     }
 
-    private fun cookie(host: String, name: String, value: String): Cookie =
-        Cookie.Builder().name(name).value(value).domain(host).path("/").build()
+    /** Writes one `Set-Cookie` value into the shared jar, as a response or the login page would. */
+    fun seedSharedJarCookie(setCookieHeader: String) {
+        android.webkit.CookieManager.getInstance().setCookie(baseUrl, setCookieHeader)
+    }
 
     fun stop() = server.shutdown()
 

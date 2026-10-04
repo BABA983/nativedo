@@ -20,7 +20,6 @@ import io.github.baba983.nativedo.core.session.LoginRequiredException
 import io.github.baba983.nativedo.core.session.SessionBootstrapClient
 import io.github.baba983.nativedo.core.session.SessionExpiredReason
 import io.github.baba983.nativedo.core.session.SessionLoggedOutException
-import io.github.baba983.nativedo.core.session.SessionProbeResult
 import io.github.baba983.nativedo.core.session.SessionRequestAuth
 import io.github.baba983.nativedo.core.session.SessionRequestContext
 import io.github.baba983.nativedo.core.session.SessionUserSummary
@@ -54,32 +53,26 @@ class DiscourseApiClient(
     }
     private var onSessionInvalidated: suspend (SessionExpiredReason, Int) -> Unit = { _, _ -> }
     private var onLoginRequired: suspend () -> Unit = {}
-    private var reconcileLoggedOutRequest: suspend (Int) -> Boolean = { false }
+    private var hasAuthenticatedCookies: () -> Boolean = { true }
 
     /**
      * Injects the session boundary this client reports to: every request
      * resolves its [SessionRequestContext] up front, and a proven logout is
      * reported back with the generation that started the request so a stale
-     * response cannot invalidate a newer WebView login.
+     * response cannot invalidate a newer WebView login. [hasAuthenticatedCookies]
+     * reads the shared jar, so a logout performed in the browser is noticed by
+     * the first request that would have needed the session.
      */
     fun setSessionBoundary(
         contextProvider: () -> SessionRequestContext,
         onSessionInvalidated: suspend (SessionExpiredReason, Int) -> Unit,
         onLoginRequired: suspend () -> Unit,
+        hasAuthenticatedCookies: () -> Boolean = { true },
     ) {
         sessionContextProvider = contextProvider
         this.onSessionInvalidated = onSessionInvalidated
         this.onLoginRequired = onLoginRequired
-    }
-
-    /**
-     * The rejection reconcile: before an authenticated request's logout evidence is allowed to
-     * clear anything, the coordinator gets one chance to adopt the browser jar's `_t` and confirm
-     * it. The answer is a request failure either way; `true` only keeps the evidence from being
-     * treated as a logout.
-     */
-    fun setLoggedOutReconciler(reconcile: suspend (Int) -> Boolean) {
-        reconcileLoggedOutRequest = reconcile
+        this.hasAuthenticatedCookies = hasAuthenticatedCookies
     }
 
     override suspend fun fetchBootstrap(): ParsedBootstrap =
@@ -101,46 +94,6 @@ class DiscourseApiClient(
                 throw SessionRecoveryRequiredException(cause = error)
             }
         }
-
-    /**
-     * Asks the server whether it accepts the token the native jar is holding, without reporting the
-     * answer as a session transition.
-     *
-     * <p>This exists for the one decision [fetchCurrentUser] cannot serve: before the native jar's
-     * cookies are written over the in-app browser's, something has to say which of two disagreeing
-     * `_t` values the server still takes. Logout evidence here is [SessionProbeResult.Rejected],
-     * not a clear - the caller reconciles with the browser jar and lets the normal flows own the
-     * expiry. A response rotation is still applied to the native jar by the cookie interceptor.</p>
-     */
-    suspend fun probeSession(): SessionProbeResult = try {
-        val currentUser = service.currentSession().currentUser
-        when {
-            currentUser == JsonNull -> SessionProbeResult.Rejected
-            else -> NetworkJson.instance.decodeFromJsonElement<CurrentUserDto>(currentUser)
-                .toSessionUserSummary()?.let { SessionProbeResult.Accepted }
-                ?: SessionProbeResult.Unavailable
-        }
-    } catch (error: CancellationException) {
-        throw error
-    } catch (error: HttpException) {
-        val errorBody = error.response()?.errorBody()?.string().orEmpty()
-        val evidence = SessionResponseEvidence.classify(
-            error.code(),
-            error.response()?.headers() ?: okhttp3.Headers.Builder().build(),
-            errorBody,
-        )
-        when (evidence) {
-            SessionResponseEvidence.LoggedOut -> SessionProbeResult.Rejected
-            SessionResponseEvidence.Challenge,
-            SessionResponseEvidence.Csrf,
-            SessionResponseEvidence.Forbidden,
-            SessionResponseEvidence.RateLimited,
-            SessionResponseEvidence.Other,
-            -> SessionProbeResult.Unavailable
-        }
-    } catch (error: Throwable) {
-        SessionProbeResult.Unavailable
-    }
 
     override suspend fun fetchCurrentUsername(): String? =
         fetchCurrentUser()?.username
@@ -474,6 +427,15 @@ class DiscourseApiClient(
         block: suspend () -> T,
     ): T {
         val requestContext = sessionContextProvider()
+        if (requiresAuthentication && requestContext.canUseAuthenticatedSession &&
+            !hasAuthenticatedCookies()
+        ) {
+            // The browser's own logout (or a server deletion) emptied the shared jar. An
+            // authenticated call must report the session gone instead of going out anonymous.
+            onSessionInvalidated(SessionExpiredReason.CookieMissing, requestContext.generation)
+            onLoginRequired()
+            throw LoginRequiredException()
+        }
         return try {
             block()
         } catch (error: CancellationException) {
@@ -505,18 +467,10 @@ class DiscourseApiClient(
         cause: Throwable,
     ): Nothing {
         if (requestContext.canUseAuthenticatedSession) {
-            // A restore is the coordinator's own verification, and it reconciles before it
-            // accepts a rejection: the browser jar may hold the `_t` rotation this token missed.
-            // Reporting the evidence as a session transition here would clear the browser jar
-            // before that adoption could run, so the coordinator keeps this one.
-            val restoring = requestContext.auth == SessionRequestAuth.Restoring
-            if (!restoring && reconcileLoggedOutRequest(requestContext.generation)) {
-                // The browser jar held the rotation; it is adopted and the adopted token is
-                // confirmed. This one request still failed - the caller may retry - but the
-                // evidence must not clear a session whose token the server has just accepted.
-                throw IOException("Session rotated while the request was in flight", cause)
-            }
-            if (!restoring) {
+            // A restore is the coordinator's own verification and reports the rejection through
+            // SessionLoggedOutException; an ordinary request reports it against its own
+            // generation so a stale response cannot invalidate a newer WebView login.
+            if (requestContext.auth != SessionRequestAuth.Restoring) {
                 onSessionInvalidated(SessionExpiredReason.ServerLoggedOut, requestContext.generation)
             }
             throw SessionLoggedOutException(cause = cause)

@@ -3,28 +3,52 @@
 NativeDo uses Discourse's browser session. It does not collect or submit a
 linux.do username/password in native code.
 
+## The one cookie jar
+
+`android.webkit.CookieManager` is the single cookie store for the site's own
+hosts (`linux.do` and its subdomains). The login WebView, upstream's in-app
+browser and OkHttp all read and write that one jar:
+
+- the network interceptor reads the request's cookies with
+  `CookieManager.getCookie(url)` and applies every response `Set-Cookie` value
+  verbatim with `CookieManager.setCookie(url, header)`, preserving attributes
+  OkHttp's model does not carry (SameSite, Partitioned);
+- the WebViews write their cookies through Chromium as usual;
+- `android.webkit.CookieManager.flush()` is called at app-visible boundaries
+  (page finished/paused, after the jar's own writes) so the store reaches disk.
+
+There is no native snapshot and no copy between jars. An earlier design kept
+one, and two copies of a rotating `_t` cannot both stay valid: the stale reuse
+made Discourse log the session out (`expired_ServerLoggedOut`). Writes and
+reads are restricted to the site's own hosts, so a linux.do cookie is never
+sent to another site and another site's cookies are never cleared. One `_t`
+belongs to one client: a build that still keeps its own native copy (or any
+second client using the token) will rotate the session out from under this jar
+and the server will log it out; this client cannot protect the session from
+another build sharing the same app data.
+
 ## Login and Restore
 
-1. Open `/login` in the WebView. Before loading it, copy the native jar's
-   cookies into the WebView when they exist.
+1. Open `/login` in the WebView. The WebView reads the shared jar directly;
+   nothing is copied in.
 2. Let the normal linux.do page complete login, SSO, and any Cloudflare
    challenge. Do not infer success from a redirect alone.
-3. When a same-origin page outside `/login` is reached, wait until the WebView
-   exposes a non-empty `_t` and current-user identity. The completion path
-   retries briefly because Chromium writes cookies asynchronously, including when
-   the DOM already exposes the username. Recheck same-origin navigation after
-   reading JavaScript. Wait for native cookie and identity persistence before
-   publishing WebView login completion.
-4. At that boundary, read `_t`, `_forum_session`, `cf_clearance`, and other
-   current-domain cookies and merge the values that are actually visible into
-   the native jar. A transient or blank `CookieManager` result, or a missing
-   cookie name, is not a deletion signal and must not erase the native jar.
-5. The WebView DOM identity is stored as a `WebView`-freshness snapshot so the
+3. When a same-origin page outside `/login` is reached, wait until the shared
+   jar exposes a non-empty `_t` and the DOM exposes the current-user identity.
+   The completion path retries briefly because Chromium writes cookies
+   asynchronously, including when the DOM already exposes the username.
+   Recheck same-origin navigation after reading JavaScript. Wait for identity
+   persistence before publishing WebView login completion.
+4. The WebView DOM identity is stored as a `WebView`-freshness snapshot so the
    user can leave the login page even when Cloudflare blocks OkHttp. Normal
    startup then verifies the identity with `/session/current.json`.
-6. Prefer `/session/current.json` for verification. If that request fails
+5. Prefer `/session/current.json` for verification. If that request fails
    temporarily, try the homepage bootstrap (`meta[name=current-username]` or
    `#data-preloaded`) before showing a recovery state.
+6. A cold start with a `_t` in the shared jar and an empty native identity store
+   is the normal path: verify the jar and adopt the account. This is exactly the
+   state left behind by signing in through the in-app browser while the app was
+   closed, so it must not show as logged out.
 
 ## Visible session recovery
 
@@ -37,9 +61,9 @@ callbacks. Recovery does not autofill credentials.
 
 After the reader finishes the site's verification, they press `完成验证` on a
 successfully loaded same-origin page outside `/login`. Reuse the login completion
-use case to import cookies and persist the session. A main-frame 403 document
-stays visible so its challenge can be used, but cannot complete recovery until
-a successful navigation. Normal first login still completes automatically.
+use case to persist the session. A main-frame 403 document stays visible so its
+challenge can be used, but cannot complete recovery until a successful
+navigation. Normal first login still completes automatically.
 
 Authenticated means the login is usable, not that Cloudflare permits native
 writes. Do not send a write probe or replay a reply on opening or completion.
@@ -48,28 +72,33 @@ reporter only after explicit completion. A reply still requires a new user send.
 
 ## Native Requests
 
-1. Replay persisted cookies through a network interceptor for JSON and image
-   calls, including each redirect. Capture the cookie revision and actual sent
-   values together. Login/logout fence earlier requests; `_t` changes advance
-   the revision. A response whose revision moved under it drops its stale cookie
-   write, but it is still *returned* when it is a plain success: the payload does
-   not depend on the jar, and Discourse rotates `_t` roughly every ten minutes,
-   so a cold start's parallel requests lose that race routinely. Only a negative
-   answer - not successful, or classified as anything but `Other` - loses its
-   meaning in that race and fails the request, so a stale response never reports
-   a logout, a challenge or a rejection. `CookieJar` alone lacks the request
-   context needed for this check.
-   Response `Set-Cookie` headers, including expired/deleted values, update the
-   same `(name, normalized domain, path)` cookie identity; an expired `_t`
-   removes the previous value.
-2. Fetch `/session/csrf` immediately before state-changing requests and send
+1. Each exchange reads the request's cookies from the shared jar and applies
+   each response `Set-Cookie` value back to it, including redirects and expired
+   values (an expired `_t` deletes the value). No stored snapshot is replayed.
+2. Fencing is by the `_t` value itself, not by a store revision: capture the
+   `_t` the request was sent with; when the response arrives, re-read the jar.
+   If the jar now holds a different non-empty `_t`, another participant (the
+   login WebView, the in-app browser, a parallel response) rotated the token
+   while this exchange was in flight - that newer rotation is the live one, so
+   this response may not write or delete `_t`/`_forum_session`. A plain success
+   is still returned (Discourse rotates `_t` roughly every ten minutes, so a
+   cold start's parallel requests lose that race routinely); a negative answer
+   - not successful, or classified as anything but `Other` - loses its meaning
+   in that race and fails the request with a retryable `IOException`, so a
+   stale response never reports a logout, a challenge or a rejection. A token
+   the jar no longer has at all (cleared, e.g. by a logout in the browser) is
+   not a rotation: the response's logout evidence is real.
+3. A Cloudflare challenge response must not overwrite or delete
+   `_t`/`_forum_session`; other response cookies may still be applied.
+4. Fetch `/session/csrf` immediately before state-changing requests and send
    the returned value as `X-CSRF-Token`.
-3. A CSRF refresh or JSON parse failure is recoverable unless the response also
+5. A CSRF refresh or JSON parse failure is recoverable unless the response also
    proves that the session is logged out.
 
 ## Invalidation Boundary
 
-Only these signals authorize clearing both native and WebView cookies:
+Only these signals authorize clearing the site's cookies and the native
+identity:
 
 - HTTP `401`;
 - `discourse-logged-out: true` (or `1`);
@@ -89,134 +118,54 @@ let the WebView solve the challenge or retry later.
 
 Session invalidation is generation-bound. A `401` from a request started under
 an older cookie generation must not clear cookies established by a newer
-WebView login. WebView cookie deletion is asynchronous, so logout/invalidation
-must await deletion and serialize it against the next login cookie import.
+WebView login.
 
-## Cookie ownership and recovery
-
-On startup, keep the native jar authoritative when `_t` exists. If it is missing
-and a cached identity exists, attempt a guarded WebView import, then verify the
-account. Do not use the old cached account as authenticated fallback after this
-import. Without a cached identity, do not import browser cookies automatically:
-explicit logout removes that identity before asynchronous browser deletion.
-
-Hidden homepage WebViews can rotate `_t`. Await native-to-browser synchronization
-and import browser changes after loading only if the native revision has not
-changed in the meantime.
+Clearing means: delete the cookies the site's own hosts present (their names are
+read from the jar and each is expired for `/`, host-only and domain scoped) and
+remove the stored identity. Other hosts the in-app browser visited keep their
+own cookies. CookieManager has no domain-scoped removal API, so a path-scoped
+cookie the site never shows for `/` can survive until the browser's own logout
+removes it.
 
 ### `_t` rotates, so a rejected token is not a logout
 
 `_t` is a per-device `UserAuthToken` (upstream: `lib/auth/default_current_user_provider.rb`,
 `app/models/user_auth_token.rb`). It is rotated roughly every ten minutes
 (`UserAuthToken::ROTATE_TIME_MINS = 10`; a token that was never seen rotates after one minute),
-and the rotation hands the new value to whichever client made that request. The previous value
-stays acceptable for exactly one more request (`lookup` matches `auth_token OR prev_auth_token`,
-then clears `auth_token_seen`), after which it resolves to no user: the server answers
-`not_logged_in` and deletes the cookie (`refresh_session`: `cookie_jar.delete(TOKEN_COOKIE) if
-!user`). That is the `status=404 evidence=LoggedOut deletesToken=true` shape this app logs.
+and the rotation hands the new value to whichever request made that rotation.
+The previous value stays acceptable for exactly one more request (`lookup`
+matches `auth_token OR prev_auth_token`, then clears `auth_token_seen`), after
+which it resolves to no user: the server answers `not_logged_in` and deletes the
+cookie (`refresh_session`: `cookie_jar.delete(TOKEN_COOKIE) if !user`). That is
+the `status=404 evidence=LoggedOut deletesToken=true` shape this app logs.
 
-A rejected token therefore proves only that the token *this* request carried is stale - the
-browser jar (login WebView, article viewer, challenge page) may hold the rotation the native jar
-missed. Reconcile before clearing anything:
+Because all participants share one jar, a rotation performed by any of them is
+the value the next request carries; a request that went out before the rotation
+can still draw that `ServerLoggedOut` shape, and the fence above keeps it from
+clearing anything - the jar's newer token is the live one. Only a rejection of
+the token the jar itself holds ends the session.
 
-1. adopt the browser's values for the current revision (`CookieSyncBridge.syncFromWebViewIfCurrent`),
-2. re-run verification once,
-3. only then treat `ServerLoggedOut` as real, which clears both jars and the identity.
+### Web-side logout
 
-A browser jar that is blank, unreadable, or holds the same rejected token changes nothing: the
-second verify fails and the session expires as before. Adoption never happens after a
-*successful* native request - a stale browser jar must not replace a rotation the native jar
-already has, which is the same rule the startup path follows.
-
-Login completion repeats the direction: when the browser has authenticated but the import
-produced no `_t` (Chromium flushes asynchronously; a conflicting pair is reported, not chosen),
-the native verify must not run - it would answer "not logged in" and clear the session the
-browser just created. Keep both jars and report recovery instead.
-
-One `_t` belongs to one client. Copying a browser session into the app, or running two app
-instances on the same token, gives two clients one rotating token, and the server logs the
-second one out within a rotation. Multiple devices are fine - each logs in for itself.
-
-`CookieManager.getCookie` only exposes name/value pairs. Preserve known cookie
-attributes when possible and never rewrite unchanged browser cookies. Unknown
-cookies use a host-only root scope; expiry cannot be inferred. Conflicting
-same-name auth values require recovery rather than choosing an arbitrary token.
-Full browser attribute fidelity remains limited by the Android CookieManager API.
-
-## The in-app browser
-
-A linux.do link in a post opens upstream's in-app browser (the `ArticleViewer`
-sheet, minimized into Telegram's `BottomSheetTabs` strip). Its WebView and the
-login WebView share the process-wide `CookieManager`, but the native jar stays the
-single source of truth and the WebView jar is derived from it:
-
-1. Before a linux.do URL is handed to `Browser.openUrl`, the native cookies that
-   match it are seeded into the WebView jar (`InAppBrowserSession`). Only the
-   site's own hosts (`linux.do` and its subdomains) are written; any other URL
-   opens with the jar untouched, so a linux.do cookie can never land under
-   another domain. The cookie's own `domain`/`path`/`secure`/`httpOnly`/expiry
-   attributes ride along in the written value.
-2. A cookie the browser already presents is left as it is: its value may be the
-   newer rotation, and `getCookie` cannot reproduce the attributes a rewrite
-   would need. Only names whose native values the server has just accepted are
-   replaced: `_t` and `_forum_session` for a session seed.
-3. Two jars that disagree on `_t` cannot be ordered locally - either side may be
-   the rotation the other missed - so the seed asks the server first
-   (`DiscourseApiClient.probeSession`, which never reports a session transition):
-   `Accepted` means the native values replace the browser's; `Rejected` means the
-   browser holds the rotation, so it is imported into the native jar
-   (`syncFromWebViewByName`) and the browser keeps its own values; an
-   `Unavailable` answer (challenge, network, fence) writes nothing. An unanswered
-   question is not a licence to overwrite the possibly only live token.
-4. The other direction is deliberately not copied back after every visit. A
-   browser jar that is merely older must not replace a rotation the native jar
-   already holds, so the two jars are only reconciled through the rejection path
-   below. A rotation or a `cf_clearance` renewal made in the browser is adopted on
-   the first native request whose token fails; a logout made in the browser removes
-   `_t` from the browser jar, the rejection finds nothing to adopt, and the session
-   expires normally. A blank or absent browser read is never treated as a deletion
-   signal.
-5. Logout clears both jars: `SessionCoordinator.onLogout` empties the native
-   store and removes the WebView's cookies (`removeAllCookies`, awaited) before
-   the next login may import anything, so a signed-in WebView cannot outlive it.
-
-Because the in-app browser and the native client now carry the same `_t`, each
-rotates the token for the other and one of the two eventually asks with a value
-that has fallen out of the `{auth_token, prev_auth_token}` window (the device pass
-hit this within two minutes of browsing). No logout-shaped answer may clear
-anything before that reconcile: every authenticated request that gets one first
-goes through the client's reconcile hook, which adopts the browser jar and asks
-the server about the adopted token (`probeSession`). `Accepted` or an unanswered
-check (`Unavailable` - a challenge or an outage is not a logout) keeps the
-session and fails only that request with a retryable `IOException`; an explicit
-`Rejected` answer is a real logout and expires as before. The same evidence on a
-verification that started while the coordinator is `Restoring` is kept for the
-restore itself, which does the adoption and one more verify before it expires -
-the client must not clear the browser jar, the one place the rotation still
-exists, before that adoption can read it. A rotation therefore costs one failed
-read, never the session.
+The site's own Log Out removes `_t` in the shared jar. The next cold start sees
+no `_t` and shows the login gate (with the cached identity as an expired state,
+or anonymous when there is none). While the app is running, the first call that
+needs authentication checks the jar before sending: with no `_t` it reports
+`CookieMissing`, requests login and throws `LoginRequiredException` instead of
+going out anonymous. Public reads may still succeed anonymously until then.
 
 ## Diagnostics
 
-`adb logcat -s NativeDoSession` reports fixed event names, cookie revision,
-HTTP status, response classification, fixed route categories, presence of
-`_t`/`_forum_session`/`cf_clearance`/`_rt`, token update/deletion flags and
-acceptance flags. The full-upstream client also labels responses with fixed
-`operation=posts`, `operation=timings` or `operation=other`. It never records
-cookie values, usernames, URLs, query strings or response
-bodies. Events cover native responses, stale browser imports,
-startup recovery, missing auth cookies, committed login and expiration reason,
-plus the rotation reconciles: `webview_session_adopted` (the browser's values
-were taken for a rejected native token), `webview_session_unavailable` (the
-browser jar could not be read), `webview_login_unreadable` (a login the
-native jar could not read, kept for recovery instead of verified) and
-`fenced_read_returned` (a successful read whose cookie write was dropped
-because a parallel response advanced the revision). The in-app browser seed adds
-`browser_bridge_seed` (native values written into the WebView jar; `accepted`
-false when a write did not confirm), `browser_bridge_adopt` (the probe rejected
-the native token and the browser's rotation was imported) and
-`browser_bridge_unavailable` (divergent jars, unanswered probe, nothing
-written).
+`adb logcat -s NativeDoSession` reports fixed event names, the jar write
+counter, HTTP status, response classification, fixed route categories,
+presence of `_t`/`_forum_session`/`cf_clearance`/`_rt`, token update/deletion
+flags and acceptance flags. The full-upstream client also labels responses with
+fixed `operation=posts`, `operation=timings` or `operation=other`. It never
+records cookie values, usernames, URLs, query strings or response bodies.
+Events cover native responses, missing auth cookies, committed login and
+expiration reason, plus `legacy_cookie_migration` (the retired native snapshot
+was read once) and `fenced_read_returned` (a successful read whose auth writes
+were dropped because another participant had already rotated `_t`).
 
 ## 403 classification
 
@@ -234,7 +183,10 @@ session unless explicit logout evidence is present. A 429 without challenge
 signals reports rate limiting.
 
 The Android client uses the WebView user agent for both transports. Do not copy
-desktop browser client hints or navigation headers to native JSON calls.
-`cf_clearance` presence does not prove acceptance by a different HTTP/TLS client;
-verification may still require the visible WebView. `_rt` is synchronized but
-its linux.do-specific lifetime is not inferred from its opaque value.
+desktop browser client hints or navigation headers to native JSON calls. The
+login WebView sets that same string explicitly and upstream's in-app browser
+uses `WebSettings.getDefaultUserAgent`, so `cf_clearance` is issued to the same
+User-Agent the native client sends. `cf_clearance` presence does not prove
+acceptance by a different HTTP/TLS client; verification may still require the
+visible WebView. `_rt` is shared through the same jar; its linux.do-specific
+lifetime is not inferred from its opaque value.

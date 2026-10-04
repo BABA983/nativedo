@@ -109,7 +109,7 @@ internal class SessionGateTest {
         assertTrue("cf_clearance must be sent", cookieHeader.contains("cf_clearance="))
 
         // The store is the source of truth for the API client, so it must have kept them too.
-        assertTrue("the cookie store kept the session", container.cookieStore.hasAuthenticatedCookies())
+        assertTrue("the shared jar kept the session", container.cookieJar.hasAuthenticatedCookies())
         harness.assertNoTelegramSideEffects()
     }
 
@@ -133,7 +133,7 @@ internal class SessionGateTest {
         shadow.lastEvaluatedJavascriptCallback!!.onReceiveValue(
             org.json.JSONObject.quote("""{"username":"baba","name":"Baba"}"""))
         harness.await("normal login to open the feed") { currentFragmentName() == "TopicListFragment" }
-        assertTrue(container.cookieStore.hasAuthenticatedCookies())
+        assertTrue(container.cookieJar.hasAuthenticatedCookies())
         assertEquals("baba", container.sessionStore.snapshot()?.username)
         harness.assertNoTelegramSideEffects()
     }

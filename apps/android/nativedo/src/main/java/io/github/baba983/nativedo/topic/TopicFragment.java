@@ -1570,29 +1570,22 @@ public class TopicFragment extends BaseFragment {
                 return;
             }
             String target = ((URLSpan) url).getURL();
-            if (container != null) {
-                // The one path a linux.do link takes into upstream's in-app browser: the session is
-                // seeded into the WebView jar first, so the page opens as the signed-in reader.
-                container.getInAppBrowserSession().open(getParentActivity(), target);
-            } else {
-                Browser.openUrl(getParentActivity(), target);
-            }
+            // linux.do links reach upstream's in-app browser through the host hook; the page is
+            // signed in because both sides read the same CookieManager.
+            Browser.openUrl(getParentActivity(), target);
         }
 
         /**
-         * A tap on a link preview (an onebox): upstream's own delegate default would call
-         * {@code Browser.openUrl} directly, which skips the session seed a linux.do page needs.
+         * A tap on a link preview (an onebox): upstream's own delegate default calls
+         * {@code Browser.openUrl} directly, and the shared CookieManager makes that the
+         * signed-in page for linux.do URLs.
          */
         @Override
         public void didPressWebPage(ChatMessageCell cell, TLRPC.WebPage webpage, String url, boolean safe) {
             if (url == null || url.isEmpty()) {
                 return;
             }
-            if (container != null) {
-                container.getInAppBrowserSession().open(getParentActivity(), url);
-            } else {
-                Browser.openUrl(getParentActivity(), url);
-            }
+            Browser.openUrl(getParentActivity(), url);
         }
 
         /**
