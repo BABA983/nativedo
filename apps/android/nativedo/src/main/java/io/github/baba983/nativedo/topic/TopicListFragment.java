@@ -164,6 +164,49 @@ public class TopicListFragment extends BaseFragment {
             TopicSummary topic = topics.get(position);
             presentTopic(topic);
         });
+        // DialogsActivity's onScrolled (4526-4549): the floating button leaves while the reader
+        // scrolls down and comes back when they scroll up, so it never sits over the last row.
+        listView.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            private int prevPosition;
+            private int prevTop;
+            private boolean scrollUpdated;
+            private boolean scrollingManually;
+
+            @Override
+            public void onScrollStateChanged(RecyclerView recyclerView, int newState) {
+                scrollingManually = newState == RecyclerView.SCROLL_STATE_DRAGGING;
+            }
+
+            @Override
+            public void onScrolled(RecyclerView recyclerView, int dx, int dy) {
+                if (recyclerView.getChildCount() == 0 || startTopicButton == null) {
+                    return;
+                }
+                int firstVisiblePosition = ((LinearLayoutManager) recyclerView.getLayoutManager())
+                        .findFirstVisibleItemPosition();
+                if (firstVisiblePosition == RecyclerView.NO_POSITION) {
+                    return;
+                }
+                RecyclerView.ViewHolder holder =
+                        recyclerView.findViewHolderForAdapterPosition(firstVisiblePosition);
+                int firstViewTop = holder != null ? holder.itemView.getTop() : 0;
+                boolean goingDown;
+                boolean changed = true;
+                if (prevPosition == firstVisiblePosition) {
+                    final int topDelta = prevTop - firstViewTop;
+                    goingDown = firstViewTop < prevTop;
+                    changed = Math.abs(topDelta) > 1;
+                } else {
+                    goingDown = firstVisiblePosition > prevPosition;
+                }
+                if (changed && scrollUpdated && (goingDown || scrollingManually)) {
+                    startTopicButton.setButtonVisible(!goingDown, true);
+                }
+                prevPosition = firstVisiblePosition;
+                prevTop = firstViewTop;
+                scrollUpdated = true;
+            }
+        });
 
         // Upstream's own floating button, the one its chat list starts a new chat with: this list's
         // one action is to start a topic, so it is the same button in the same place.
