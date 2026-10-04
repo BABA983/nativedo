@@ -7,7 +7,9 @@ import android.view.ViewGroup;
 
 import androidx.annotation.Nullable;
 
+import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.LiteMode;
+import org.telegram.messenger.SharedConfig;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.blur3.BlurredBackgroundDrawableViewFactory;
 import org.telegram.ui.Components.blur3.drawable.BlurredBackgroundDrawable;
@@ -32,14 +34,23 @@ import java.util.List;
  * {@code FragmentSearchField.setupBlurredBackground} do.</p>
  *
  * <p>The home screen's category strip is the first user; the topic screen's action-bar capsules are
- * the next. When the platform cannot render a node ({@code RenderEffect} needs API 31) or the
- * window is not hardware accelerated, the factory falls back to a flat colour source, which is what
- * upstream's own {@code iBlur3SourceColor} is for.</p>
+ * the next. The source exists only while the chat blur is on (ChatActivity.java:2620-2661 builds
+ * its sources behind {@code SharedConfig.chatBlurEnabled()}), so a panel whose screen cannot blur -
+ * a LOW-performance device, where upstream's own provider paints an opaque fill - stands over the
+ * flat colour source below, which is what upstream's own {@code iBlur3SourceColor} is for. When the
+ * platform cannot render a node at all ({@code RenderEffect} needs API 31) the factory is given
+ * that same colour.</p>
  */
 public final class GlassPanelHost {
 
     /** What the source records: the content the panels float over. */
     private View recordedContent;
+    /**
+     * What stands behind that content - the chat wallpaper - when the screen has one. A chat's
+     * source draws the wallpaper chain under the posts (ChatActivity's navbar source, 17239-17241);
+     * without one the recording's own base colour is what shows through.
+     */
+    private @Nullable View backgroundView;
     private final BlurredBackgroundSourceColor colorSource = new BlurredBackgroundSourceColor();
     /** The blur source; null while the platform cannot render one. */
     private final @Nullable BlurredBackgroundSourceRenderNode renderNode;
@@ -58,10 +69,10 @@ public final class GlassPanelHost {
     public GlassPanelHost(View recordedContent, ViewGroup positionRoot) {
         this.recordedContent = recordedContent;
         this.positionWatcher = new ViewPositionWatcher(positionRoot);
-        if (Build.VERSION.SDK_INT >= 31) {
-            colorSource.setColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        colorSource.setColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        if (Build.VERSION.SDK_INT >= 31 && SharedConfig.chatBlurEnabled()) {
             BlurredBackgroundSourceRenderNode node = new BlurredBackgroundSourceRenderNode(colorSource);
-            node.setBlur(org.telegram.messenger.AndroidUtilities.dp(8));
+            node.setBlur(AndroidUtilities.dp(8));
             renderNode = node;
         } else {
             renderNode = null;
@@ -74,6 +85,11 @@ public final class GlassPanelHost {
     /** Swaps what is recorded, when the panel that is up changes with the screen's state. */
     public void setRecordedContent(View content) {
         recordedContent = content;
+    }
+
+    /** What the recording draws under the content; a chat screen hands it its wallpaper view. */
+    public void setBackgroundView(@Nullable View backgroundView) {
+        this.backgroundView = backgroundView;
     }
 
     /**
@@ -110,6 +126,11 @@ public final class GlassPanelHost {
         }
         Canvas recording = renderNode.beginRecording(width, height);
         recording.drawColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        if (backgroundView != null && backgroundView.getWidth() > 0 && backgroundView.getHeight() > 0) {
+            // The chat's source draws the wallpaper under the posts (ChatActivity:17239-17241):
+            // what a capsule samples is the wallpaper chain plus the list, never a colour fill.
+            backgroundView.draw(recording);
+        }
         recordedContent.draw(recording);
         renderNode.endRecording();
         renderNode.invalidateDisplayListForDrawables();

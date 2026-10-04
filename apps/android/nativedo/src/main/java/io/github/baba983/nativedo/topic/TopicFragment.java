@@ -155,6 +155,10 @@ public class TopicFragment extends BaseFragment {
         wallpaperView.setBackgroundImage(
                 org.telegram.ui.ActionBar.Theme.getCachedWallpaper(),
                 org.telegram.ui.ActionBar.Theme.isWallpaperMotion());
+        if (glassHost != null) {
+            // setBackgroundImage may have just created the wallpaper view; the source records it.
+            glassHost.setBackgroundView(wallpaperView.backgroundView);
+        }
     }
     /** The floor this reply answers, when the reader picked one in the post menu. */
     private Integer replyToPostNumber;
@@ -447,6 +451,9 @@ public class TopicFragment extends BaseFragment {
                 Gravity.TOP | Gravity.LEFT, 52, 0, 52, 0));
         actionBar.createMenu().bringToFront();
         glassHost = new io.github.baba983.nativedo.app.GlassPanelHost(listView, contentView);
+        // The wallpaper chain is part of what a capsule samples (ChatActivity's navbar source draws
+        // the wallpaper under the posts); the frame owns that view and hands it over here.
+        glassHost.setBackgroundView(contentView.backgroundView);
         actionBar.setupGlass(
                 glassHost.getFactory(),
                 org.telegram.ui.Components.blur3.drawable.color.impl.BlurredBackgroundProviderImpl
