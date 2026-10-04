@@ -27,10 +27,12 @@ import org.telegram.messenger.SharedConfig;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Cells.ChatActionCell;
 import org.telegram.ui.Cells.DialogCell;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.EmptyTextProgressView;
 import org.telegram.ui.Components.FilterTabsView;
+import org.telegram.ui.Components.FlickerLoadingView;
 import org.telegram.ui.Components.FragmentFloatingButton;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.RecyclerListView;
@@ -39,7 +41,6 @@ import org.telegram.ui.Components.blur3.drawable.BlurredBackgroundDrawable;
 import org.telegram.ui.Components.blur3.drawable.color.impl.BlurredBackgroundProviderImpl;
 import org.telegram.ui.DialogsActivity;
 import org.telegram.ui.RecyclerListViewScroller;
-import org.telegram.ui.Stories.recorder.ButtonWithCounterView;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -162,13 +163,20 @@ public class TopicListFragment extends BaseFragment
                     this.searchPanel.updateColors();
                 }
                 if (this.newTopicsPill != null) {
-                    this.newTopicsPill.updateColors();
+                    // The service paints are shared and the cell reads them at draw time
+                    // (ChatActionCell.drawBackground, 3319-3321); a redraw is the whole recolor.
+                    this.newTopicsPill.invalidate();
                 }
                 // DialogsActivity's theme delegate rebinds its attached DialogCells
                 // (12022-12033); the same rows live here, so the same rebind.
                 if (viewPages != null) {
                     for (ViewPage page : viewPages) {
                         refreshPageRows(page);
+                        // The shimmer reads the theme colours at draw time (FlickerLoadingView's
+                        // updateColors is its own onDraw); a redraw is its recolor.
+                        if (page.progressView != null) {
+                            page.progressView.invalidate();
+                        }
                     }
                 }
                 actionBarDefaultPaint.setColor(getThemedColor(Theme.key_windowBackgroundWhite));
@@ -190,17 +198,19 @@ public class TopicListFragment extends BaseFragment
     /** The page in front's list; the working alias of {@code viewPages[0].listView}. */
     private RecyclerListView listView;
     /**
-     * The "N new topics" pill: upstream's own rounded action control
-     * ({@code ButtonWithCounterView}, the button its story recorder and bottom sheets use), shown
-     * when the message bus has counted topics the list does not show yet.
+     * The "N new topics" pill: the chat's own floating date view, a {@link ChatActionCell} with
+     * custom text. ChatActivity builds its floating date exactly this way (7043-7100), so the
+     * pill is the service-message capsule the action bar's date uses - background and text from
+     * {@code key_paint_chatActionBackground} / {@code key_paint_chatActionText}, the same paints
+     * upstream picks when there is no chat wallpaper.
      */
-    private ButtonWithCounterView newTopicsPill;
+    private ChatActionCell newTopicsPill;
+    /** ChatActivity's own floatingDateAnimation (13612-13624): one 150 ms alpha set, tag-guarded. */
+    private AnimatorSet newTopicsPillAnimation;
     /** The pill's feed from the message bus, detached when the screen is destroyed. */
     private MessageBusHandle incomingTopicsObserver;
     /** What the pill currently counts; nulls name no category, so all of them count. */
     private IncomingTopics incomingTopics = new IncomingTopics();
-    /** Whether the pill is on screen, so the list can start below it instead of under it. */
-    private boolean newTopicsPillShown;
     /**
      * DialogsActivity's scrollYOffset (345): how far the top panel is collapsed, in [-48dp, 0].
      * The list's own position is what sets it (ContentView.dispatchDraw, 957-1006).
@@ -438,17 +448,56 @@ public class TopicListFragment extends BaseFragment
         startTopicButton.setContentDescription("发新帖");
         startTopicButton.setOnClickListener(v -> presentNewTopic());
         frame.addView(startTopicButton, FragmentFloatingButton.createDefaultLayoutParams());
-        // Upstream's own pill: the rounded control the story recorder and bottom sheets draw, used
-        // here for the count a refreshed list would show. It rides below the action bar and the
-        // category strip, centered, so the FAB (bottom right) and the glass tabs stay clear of it.
-        newTopicsPill = new ButtonWithCounterView(context, resourceProvider);
-        newTopicsPill.setUseWrapContent(true);
-        newTopicsPill.setRoundRadius(17);
-        newTopicsPill.setPadding(AndroidUtilities.dp(14), 0, AndroidUtilities.dp(14), 0);
-        newTopicsPill.setVisibility(View.GONE);
-        newTopicsPill.setOnClickListener(view -> onNewTopicsTapped());
+        // The chat's own floating date view, carrying the reader's count instead of a date
+        // (ChatActivity:7043-7100): a ChatActionCell whose background is the service message's
+        // paint, so the pill is the capsule Telegram shows under the action bar. It floats over
+        // the rows and rides the header's collapse on its own translation - it never takes a band
+        // in the list's layout.
+        newTopicsPill = new ChatActionCell(context, false, resourceProvider) {
+            @Override
+            public boolean isFloating() {
+                return true;
+            }
+
+            @Override
+            public void setTranslationY(float translationY) {
+                if (getTranslationY() != translationY) {
+                    invalidate();
+                }
+                super.setTranslationY(translationY);
+            }
+
+            @Override
+            public boolean onInterceptTouchEvent(MotionEvent ev) {
+                if (getAlpha() == 0) {
+                    return false;
+                }
+                return super.onInterceptTouchEvent(ev);
+            }
+
+            @Override
+            public boolean onTouchEvent(MotionEvent event) {
+                if (getAlpha() == 0) {
+                    return false;
+                }
+                return super.onTouchEvent(event);
+            }
+
+            // ChatActivity's own override (7093-7096): an alpha of zero is what takes the view
+            // out, so the fade is the only visibility state there is.
+            @Override
+            public void setAlpha(float alpha) {
+                super.setAlpha(alpha);
+                setVisibility(alpha > 0 ? View.VISIBLE : View.INVISIBLE);
+            }
+        };
+        newTopicsPill.setAlpha(0.0f);
+        newTopicsPill.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        newTopicsPill.setInvalidateColors(true);
+        newTopicsPill.setOnActionClickListener(view -> onNewTopicsTapped());
         frame.addView(newTopicsPill, LayoutHelper.createFrame(
-                LayoutHelper.WRAP_CONTENT, 34, Gravity.TOP | Gravity.CENTER_HORIZONTAL));
+                LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT,
+                Gravity.TOP | Gravity.CENTER_HORIZONTAL, 0, 4, 0, 0));
         fragmentView = frame;
         ViewCompat.setOnApplyWindowInsetsListener(fragmentView, this::onInsetsInternal);
         actionBar.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> checkUi_contentTop());
@@ -491,6 +540,8 @@ public class TopicListFragment extends BaseFragment
         public LinearLayoutManager layoutManager;
         public RecyclerListViewScroller scroller;
         public EmptyTextProgressView emptyView;
+        /** DialogsActivity's own ViewPage.progressView (373, 4059-4062): the chat-list shimmer. */
+        public FlickerLoadingView progressView;
         public TopicListAdapter adapter;
         /** The tab whose feed this page shows (DialogsActivity's own selectedType). */
         public int selectedType = ALL_TAB_ID;
@@ -531,6 +582,14 @@ public class TopicListFragment extends BaseFragment
     private ViewPage createViewPage(Context context) {
         final ViewPage page = new ViewPage(context);
         page.adapter = new TopicListAdapter(page);
+        // DialogsActivity's own shimmer (4059-4064): the chat list's rows drawn while it holds
+        // none, as the list's empty view, so it is up only until the first answer lands. It is
+        // added before the list, the way upstream adds its own.
+        page.progressView = new FlickerLoadingView(context);
+        page.progressView.setViewType(FlickerLoadingView.DIALOG_CELL_TYPE);
+        page.progressView.setVisibility(View.GONE);
+        page.addView(page.progressView, LayoutHelper.createFrame(
+                LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER));
         page.listView = new RecyclerListView(context);
         page.listView.setLayoutManager(page.layoutManager = new LinearLayoutManager(context) {
             private boolean lastDragging;
@@ -555,11 +614,16 @@ public class TopicListFragment extends BaseFragment
         });
         page.listView.setAdapter(page.adapter);
         page.listView.setVerticalScrollBarEnabled(false);
+        // DialogsActivity's own empty-view wiring (4064, 4695): while the adapter has no rows the
+        // list falls back to the shimmer, with upstream's own alpha animation. See
+        // updatePageState for the failed page, where the shimmer stands aside for the sentence.
+        page.listView.setEmptyView(page.progressView);
+        page.listView.setAnimateEmptyView(true, RecyclerListView.EMPTY_VIEW_ANIMATION_TYPE_ALPHA);
         // The list keeps the bar, the field and the strip as padding, the way DialogsActivity's
         // own list does (2065-2095): the first row starts under the strip and the rows scroll
-        // beneath it. checkUi_listPadding(page) owns the whole padding - it adds the pill's own
-        // slot while the pill is up and the navigation-bar/strip space at the bottom, so the last
-        // row stays reachable above the glass tabs.
+        // beneath it. checkUi_listPadding(page) owns the whole padding - the header's resting
+        // height at the top and the navigation-bar/strip space at the bottom, so the last row
+        // stays reachable above the glass tabs.
         page.listView.setClipToPadding(false);
         checkUi_listPadding(page);
         page.listView.setOnItemClickListener((view, position) -> {
@@ -646,8 +710,8 @@ public class TopicListFragment extends BaseFragment
                 }
             }
         });
-        // The page's own state: the spinner while its feed is being read, the failure text with a
-        // tap that asks the site again.
+        // The page's own state: the failure text with a tap that asks the site again. While the
+        // feed has not arrived at all, the shimmer above stands in for its rows.
         page.emptyView = new EmptyTextProgressView(context);
         page.emptyView.setVisibility(View.GONE);
         // The view consumes touches in its own constructor; the tap that retries has to get through.
@@ -791,7 +855,13 @@ public class TopicListFragment extends BaseFragment
         page.feed.scrollOffset = first == null ? 0 : first.getTop() - page.listView.getPaddingTop();
     }
 
-    /** The state a page draws while its feed is not in: the spinner, the failure, or nothing. */
+    /**
+     * The state a page draws while its feed is not in: upstream's shimmer while the page has no
+     * feed yet (the list's empty view, so a kept feed shows nothing), the failure sentence when
+     * the read did not arrive, or nothing once the feed is there. A loaded-but-empty feed is the
+     * list's own empty state - the shimmer is not a stand-in for "nothing", it is a stand-in for
+     * "not yet".
+     */
     private void updatePageState(ViewPage page) {
         if (page == null || page.emptyView == null || page.feed == null) {
             return;
@@ -799,16 +869,30 @@ public class TopicListFragment extends BaseFragment
         final CategoryFeed feed = page.feed;
         if (feed.loaded) {
             page.emptyView.setVisibility(View.GONE);
+            if (page.adapter.getItemCount() == 0) {
+                // A feed that arrived and held nothing: no shimmer stands for "nothing". A feed
+                // that arrived with rows is left to the list's own empty view, which fades the
+                // shimmer out the way upstream's does.
+                page.listView.setEmptyView(null);
+                page.progressView.setVisibility(View.GONE);
+            }
             return;
         }
-        page.emptyView.setVisibility(View.VISIBLE);
         if (feed.failed) {
+            // A failure is a sentence with a tap, not shimmering rows (DialogsActivity's own
+            // fallback for a list that cannot be read, 9300-9306).
+            page.listView.setEmptyView(null);
+            page.progressView.setVisibility(View.GONE);
+            page.emptyView.setVisibility(View.VISIBLE);
             page.emptyView.setText(org.telegram.messenger.ApplicationLoader.applicationContext.getString(
                     R.string.topic_list_failed));
             page.emptyView.showTextView();
-        } else {
-            page.emptyView.showProgress();
+            return;
         }
+        // No feed yet: DialogsActivity's own view for the same moment (setEmptyView, 4695).
+        page.listView.setEmptyView(page.progressView);
+        page.progressView.setVisibility(View.VISIBLE);
+        page.emptyView.setVisibility(View.GONE);
     }
 
     /**
@@ -1473,17 +1557,20 @@ public class TopicListFragment extends BaseFragment
         if (page != null && page.listView != null) {
             // The list's bottom padding keeps the last row reachable above the navigation bar and
             // the glass tabs; the top keeps the bar, the field and the strip as the header's own
-            // resting height (the same numbers DialogsActivity's list pads with), plus the pill's
-            // own slot while the pill floats over the list - so the first row starts below it
-            // rather than under it.
+            // resting height (the same numbers DialogsActivity's list pads with). The pill is not
+            // in this number: it floats over the first row the way the chat's date does over its
+            // messages, and the list keeps the place it had.
             final int barHeight = ActionBar.getCurrentActionBarHeight() + AndroidUtilities.statusBarHeight;
-            int pillOffset = newTopicsPillShown ? AndroidUtilities.dp(50) : 0;
-            page.listView.setPadding(0,
-                    barHeight + AndroidUtilities.dp(
-                            org.telegram.ui.DialogsActivity.SEARCH_FIELD_HEIGHT
-                                    + TAB_STRIP_HEIGHT_DP - 5) + pillOffset,
-                    0,
+            final int topPadding = barHeight + AndroidUtilities.dp(
+                    org.telegram.ui.DialogsActivity.SEARCH_FIELD_HEIGHT
+                            + TAB_STRIP_HEIGHT_DP - 5);
+            page.listView.setPadding(0, topPadding, 0,
                     AndroidUtilities.dp(4) + navigationBarHeight + additionNavigationBarHeight);
+            // The shimmer's own rows start below the header, the way DialogsActivity keeps its
+            // progress view under its top panel (2093-2095).
+            if (page.progressView != null) {
+                page.progressView.setPaddingTop(topPadding);
+            }
         }
     }
 
@@ -1510,7 +1597,9 @@ public class TopicListFragment extends BaseFragment
     /**
      * The pill hangs under what is above the list: the action bar, the search field's own slot and
      * the category strip while the site's categories are shown. A strip that is not there does not
-     * reserve its height.
+     * reserve its height. The cell draws its own capsule at its top + 4dp - ChatActivity cancels
+     * that same inset when it places the floating date (11968) - so the margin carries the resting
+     * gap alone.
      */
     private void checkUi_pillTop() {
         if (newTopicsPill == null || actionBar == null) {
@@ -1521,7 +1610,7 @@ public class TopicListFragment extends BaseFragment
         if (tabsView != null && tabsView.getVisibility() == View.VISIBLE) {
             top += AndroidUtilities.dp(TAB_STRIP_HEIGHT_DP);
         }
-        top += AndroidUtilities.dp(8);
+        top += AndroidUtilities.dp(8) - AndroidUtilities.dp(4);
         FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) newTopicsPill.getLayoutParams();
         if (params != null && params.topMargin != top) {
             params.topMargin = top;
@@ -1531,8 +1620,8 @@ public class TopicListFragment extends BaseFragment
 
     /**
      * Draws the incoming count for whichever filter is in front of the reader: 全部 means every
-     * category, a category tab only its own. The pill is upstream's animated control, so the text
-     * change animates and the show/hide uses upstream's own 150 ms alpha/scale constant.
+     * category, a category tab only its own. The text goes into the chat's own floating date view
+     * and the show/hide is upstream's own animation (ChatActivity:13600-13660).
      */
     private void updateNewTopicsPill() {
         if (newTopicsPill == null) {
@@ -1544,21 +1633,58 @@ public class TopicListFragment extends BaseFragment
         // pill keeps its count but stays off the pager; showSearch re-asks when it closes.
         boolean show = count > 0 && !searching;
         if (show) {
-            newTopicsPill.setText(count + " 个新话题", true);
+            newTopicsPill.setCustomText(count + " 个新话题");
         }
-        AndroidUtilities.updateViewVisibilityAnimated(newTopicsPill, show, 0.5f, true);
-        if (newTopicsPillShown != show) {
-            newTopicsPillShown = show;
-            // RecyclerView keeps its anchor when the padding changes, so the new space only shows
-            // up once the list is re-anchored at its start - done here, and only when the reader
-            // is already at the top, so a reader who is scrolled down is not yanked anywhere.
-            boolean atTop = listView != null && !listView.canScrollVertically(-1);
-            checkUi_listPadding();
-            if (atTop) {
-                listView.scrollToPosition(0);
-            }
-        }
+        setNewTopicsPillVisible(show);
         checkUi_pillTop();
+    }
+
+    /**
+     * ChatActivity's own floating-date arrival and departure (13600-13660): the pill appears by
+     * one 150 ms alpha animator and leaves by the same, with the tag saying whether it is up.
+     * Upstream's hide also carries its scrolling hide-dateDelay; there is no scrolling date here,
+     * so nothing delays the pill's departure.
+     */
+    private void setNewTopicsPillVisible(boolean show) {
+        if (newTopicsPill == null) {
+            return;
+        }
+        if (show) {
+            if (newTopicsPill.getTag() == null) {
+                if (newTopicsPillAnimation != null) {
+                    newTopicsPillAnimation.cancel();
+                }
+                newTopicsPill.setTag(1);
+                newTopicsPillAnimation = new AnimatorSet();
+                newTopicsPillAnimation.setDuration(150);
+                newTopicsPillAnimation.playTogether(
+                        ObjectAnimator.ofFloat(newTopicsPill, View.ALPHA, 1.0f));
+                newTopicsPillAnimation.addListener(new android.animation.AnimatorListenerAdapter() {
+                    @Override
+                    public void onAnimationEnd(android.animation.Animator animation) {
+                        if (animation.equals(newTopicsPillAnimation)) {
+                            newTopicsPillAnimation = null;
+                        }
+                    }
+                });
+                newTopicsPillAnimation.start();
+            }
+        } else if (newTopicsPill.getTag() != null) {
+            newTopicsPill.setTag(null);
+            newTopicsPillAnimation = new AnimatorSet();
+            newTopicsPillAnimation.setDuration(150);
+            newTopicsPillAnimation.playTogether(
+                    ObjectAnimator.ofFloat(newTopicsPill, View.ALPHA, 0.0f));
+            newTopicsPillAnimation.addListener(new android.animation.AnimatorListenerAdapter() {
+                @Override
+                public void onAnimationEnd(android.animation.Animator animation) {
+                    if (animation.equals(newTopicsPillAnimation)) {
+                        newTopicsPillAnimation = null;
+                    }
+                }
+            });
+            newTopicsPillAnimation.start();
+        }
     }
 
     /**

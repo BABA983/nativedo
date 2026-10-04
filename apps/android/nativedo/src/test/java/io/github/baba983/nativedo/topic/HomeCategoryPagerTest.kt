@@ -35,6 +35,7 @@ import org.telegram.ui.ActionBar.Theme
 import org.telegram.ui.Components.FilterTabsView
 import org.telegram.ui.Components.RecyclerListView
 import org.telegram.ui.DialogsActivity
+import okhttp3.mockwebserver.MockResponse
 
 /**
  * The home's category pages and the day/night switch over them.
@@ -116,6 +117,8 @@ internal class HomeCategoryPagerTest {
         assertTrue("the list really is scrolled", firstBefore >= 5)
         val categoryRequests = site.requestPaths.count { it == "c/develop/4/l/latest.json" }
         val allRequests = site.requestPaths.count { it == "latest.json" }
+        val pill = fragmentField("newTopicsPill")
+        val shimmer = progressViews()[0]
         harness.renderApp("home-category-theme-light")
 
         val toDark = !Theme.isCurrentThemeDark()
@@ -134,6 +137,11 @@ internal class HomeCategoryPagerTest {
 
             assertSame("the switch keeps the page's own view", pageView, fragment.fragmentView)
             assertSame("and keeps the strip", strip, strip())
+            // The pill and the first-load shimmer are views of this screen too: the switch must
+            // recolour them, not replace them (a rebuilt pill loses its count, and the shimmer
+            // would come back for a feed that is still there).
+            assertSame("and keeps the pill", pill, fragmentField("newTopicsPill"))
+            assertSame("and keeps the shimmer", shimmer, progressViews()[0])
             assertEquals("the strip stays visible", View.VISIBLE, strip.visibility)
             assertEquals("on the tab the reader chose", 4, strip.currentTabId)
             assertEquals("the feed is not read a second time", categoryRequests,
@@ -176,7 +184,10 @@ internal class HomeCategoryPagerTest {
             ?: throw AssertionError("the strip drew no view for tab 4")
         container.clickItem(tab, tabIds().indexOf(4))
         assertTrue("the strip animates its indicator", strip.isAnimatingIndicator)
-        assertEquals("the pair is on screen mid-slide", 2, shownLists().size)
+        // Both page frames are on screen mid-slide; the incoming page's own list may already be
+        // standing behind its shimmer (the page has no feed yet), which is DialogsActivity's own
+        // empty-view behaviour, so the pair is counted by its frames.
+        assertEquals("the pair is on screen mid-slide", 2, visiblePages())
         harness.idle(2)
         harness.renderAppFrame("home-category-slide-mid")
         harness.idleClock(400)
@@ -256,6 +267,57 @@ internal class HomeCategoryPagerTest {
         assertEquals("a drag back returns to the all-topics tab", 0, strip.currentTabId)
         assertEquals("and its feed is the one it had", 30, rowCount())
         assertEquals("read once, not again", 1, site.requestPaths.count { it == "latest.json" })
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * The first-load shimmer: DialogsActivity's own view for a page that has no feed yet. It is
+     * up while the page is empty and goes with the first answer; a page that kept its feed -
+     * coming back to a tab that already has one - never shows it again. The failure modes: no
+     * skeleton while the site is still being read, and a skeleton that comes back for a kept
+     * page (it would stand in front of rows that are there).
+     */
+    @Test
+    fun theFirstLoadShimmerOnlyStandsInForAPageWithNoFeedYet() {
+        // The first read of the all-topics feed is held at the site, so the shimmer is examined
+        // while the page really is still loading rather than after a race with the answer.
+        val answer = java.util.concurrent.CountDownLatch(1)
+        site.serveResponse("latest.json") {
+            answer.await(10, java.util.concurrent.TimeUnit.SECONDS)
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(manyTopics("latest-topics.json", 30))
+        }
+
+        harness.bootApp()
+        harness.await("the shimmer while the page has no feed") {
+            progressViews().any { it.isShown }
+        }
+        assertEquals("no rows are drawn under the shimmer", 0, rowCount())
+        harness.renderApp("home-first-load-skeleton")
+
+        answer.countDown()
+        harness.await("the first answer") { rowCount() == 30 }
+        harness.await("the shimmer to go with it") {
+            harness.idleClock(120)
+            progressViews().none { it.isShown }
+        }
+
+        // A kept page: the category feed is read once, and the all-topics feed is still in hand
+        // when the reader comes back - neither return shows a shimmer again.
+        harness.await("the site's categories to arrive as tabs") { tabIds().size == 5 }
+        tapTab(4)
+        harness.await("the category's own feed") { rowCount() == 40 }
+        harness.await("its shimmer is gone too") {
+            harness.idleClock(120)
+            progressViews().none { it.isShown }
+        }
+        tapTab(0)
+        harness.await("the kept feed") { rowCount() == 30 }
+        harness.idleClock(400)
+        assertTrue("a kept page shows no shimmer", progressViews().none { it.isShown })
+        assertEquals("and its feed was not read again", 1, site.requestPaths.count { it == "latest.json" })
         harness.assertNoTelegramSideEffects()
     }
 
@@ -343,4 +405,28 @@ internal class HomeCategoryPagerTest {
     }
 
     private fun rowCount(): Int = shownList()?.adapter?.itemCount ?: 0
+
+    /** A field of the screen under test, read the way the other tests read one. */
+    private fun fragmentField(name: String): Any? {
+        val field = TopicListFragment::class.java.getDeclaredField(name).apply { isAccessible = true }
+        return field.get(fragment())
+    }
+
+    /** Both pages' first-load shimmers, shown page and waiting page alike. */
+    private fun progressViews(): List<View> {
+        val listFragment = harness.visibleFragment() as? TopicListFragment ?: return emptyList()
+        val field = TopicListFragment::class.java.getDeclaredField("viewPages").apply { isAccessible = true }
+        val pages = field.get(listFragment) as Array<*>
+        return pages.mapNotNull { page ->
+            val pageField = page!!.javaClass.getField("progressView")
+            pageField.get(page) as? View
+        }
+    }
+
+    /** The page pair's own frames that are on screen; a page whose shimmer is up is still one. */
+    private fun visiblePages(): Int {
+        val field = TopicListFragment::class.java.getDeclaredField("viewPages").apply { isAccessible = true }
+        val pages = field.get(fragment()) as Array<*>
+        return pages.count { (it as? View)?.visibility == View.VISIBLE }
+    }
 }

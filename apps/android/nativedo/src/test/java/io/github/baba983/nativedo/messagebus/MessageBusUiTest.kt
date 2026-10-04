@@ -1,5 +1,6 @@
 package io.github.baba983.nativedo.messagebus
 
+import android.view.MotionEvent
 import android.view.View
 import io.github.baba983.nativedo.app.NativeDo
 import io.github.baba983.nativedo.app.NativeDoMainTabsActivity
@@ -20,6 +21,7 @@ import io.github.baba983.nativedo.harness.shadows.ShadowUtilities
 import java.util.concurrent.atomic.AtomicInteger
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -27,9 +29,13 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.telegram.messenger.ApplicationLoader
+import org.telegram.messenger.NotificationCenter
+import org.telegram.ui.ActionBar.Theme
+import org.telegram.ui.Cells.ChatActionCell
 import org.telegram.ui.Components.FilterTabsView
+import org.telegram.ui.Components.RecyclerListView
+import org.telegram.ui.DialogsActivity
 import org.telegram.ui.Components.glass.GlassTabView
-import org.telegram.ui.Stories.recorder.ButtonWithCounterView
 
 /**
  * The message-bus wiring a reader can see: the topic list's "N new topics" pill and the
@@ -99,8 +105,10 @@ internal class MessageBusUiTest {
 
         harness.bootApp()
         harness.await("the topic list to load") { rowCount() == 2 }
-        harness.await("the bus to count three new topics") { pillText() == "3 个新话题" }
-        assertEquals(View.VISIBLE, pill().visibility)
+        harness.await("the bus to count three new topics") {
+            harness.idleClock(60)
+            pillText() == "3 个新话题" && pill().visibility == View.VISIBLE
+        }
 
         // The pill hangs under the category strip, not over the list's own controls.
         harness.layoutApp()
@@ -122,7 +130,7 @@ internal class MessageBusUiTest {
         harness.await("all categories again") { pillText() == "3 个新话题" }
 
         val feedReads = site.requestPaths.count { it == "latest.json" }
-        pill().performClick()
+        tapPill()
         harness.await("the pill's own refresh") {
             site.requestPaths.count { it == "latest.json" } > feedReads
         }
@@ -192,6 +200,68 @@ internal class MessageBusUiTest {
         harness.assertNoTelegramSideEffects()
     }
 
+    /**
+     * The pill is the chat's own floating date: it floats over the first row instead of taking a
+     * band in the list's layout, and the day/night switch keeps it in place. The failure modes: a
+     * pill that pushes the list down (the first row moves when the count arrives) and a switch
+     * that rebuilds the screen (a second pill instance, drawn from scratch).
+     */
+    @Test
+    fun thePillFloatsOverTheFirstRowAndTheThemeSwitchKeepsIt() {
+        servePollResponses(batch(newTopic(topicId = 901, categoryId = 2)))
+
+        harness.bootApp()
+        harness.await("the topic list to load") { rowCount() == 2 }
+        harness.layoutApp()
+        val list = shownList() ?: throw AssertionError("no topic list on screen")
+        val paddingBefore = list.paddingTop
+        val firstRowTopBefore = firstRowTop(list)
+
+        harness.await("the pill") {
+            harness.idleClock(60)
+            pill().visibility == View.VISIBLE
+        }
+        harness.idleClock(200)
+        harness.layoutApp()
+
+        assertEquals("the pill takes no band in the list", paddingBefore, list.paddingTop)
+        assertEquals("the first row keeps the place it had", firstRowTopBefore, firstRowTop(list))
+
+        val pill = pill()
+        val pillLocation = IntArray(2)
+        pill.getLocationInWindow(pillLocation)
+        val row = list.findViewHolderForAdapterPosition(0)?.itemView
+            ?: throw AssertionError("the list drew no first row")
+        val rowLocation = IntArray(2)
+        row.getLocationInWindow(rowLocation)
+        assertTrue(
+            "the pill floats over the first row",
+            pillLocation[1] < rowLocation[1] + row.height
+                    && pillLocation[1] + pill.height > rowLocation[1],
+        )
+        harness.renderApp("pill-light")
+
+        val toDark = !Theme.isCurrentThemeDark()
+        NotificationCenter.getGlobalInstance().postNotificationName(
+            NotificationCenter.needSetDayNightTheme,
+            if (toDark) Theme.getTheme("Dark Blue") else Theme.getTheme("Blue"),
+            false, null, -1, toDark, null, null, null, true,
+        )
+        try {
+            harness.await("the theme to switch") {
+                harness.idleClock(60)
+                Theme.isCurrentThemeDark() == toDark && !DialogsActivity.switchingTheme
+            }
+            harness.layoutApp()
+            assertSame("the switch keeps the pill's own view", pill, fragmentField("newTopicsPill"))
+            assertEquals("and keeps it on screen", View.VISIBLE, pill.visibility)
+            harness.renderApp("pill-dark")
+        } finally {
+            Theme.applyTheme(Theme.getTheme("Blue"), false, false)
+            DialogsActivity.switchingTheme = false
+        }
+    }
+
     // ------------------------------------------------------------------------------------------
 
     /** Queues one answer per poll; later polls get an empty batch. */
@@ -230,10 +300,37 @@ internal class MessageBusUiTest {
     private fun fragment(): io.github.baba983.nativedo.topic.TopicListFragment =
         harness.visibleFragment() as io.github.baba983.nativedo.topic.TopicListFragment
 
-    private fun pill(): ButtonWithCounterView =
-        fragmentField("newTopicsPill") as ButtonWithCounterView
+    private fun pill(): ChatActionCell =
+        fragmentField("newTopicsPill") as ChatActionCell
 
-    private fun pillText(): CharSequence? = pill().text.text
+    /** The cell's custom text, where the count is drawn from (ChatActionCell.customText). */
+    private fun pillText(): CharSequence? {
+        val field = ChatActionCell::class.java.getDeclaredField("customText").apply { isAccessible = true }
+        return field.get(pill()) as CharSequence?
+    }
+
+    /**
+     * A tap on the pill, as the window would hand one over: upstream's own cell turns a touch
+     * inside its drawn capsule into the action (ChatActionCell.onTouchEvent), so the capsule's
+     * bounds have to exist - that is what drawApp's pass is for - and the touch has to land in
+     * the middle of the cell, where the capsule is drawn.
+     */
+    private fun tapPill() {
+        val pill = pill()
+        harness.drawApp()
+        val x = pill.width / 2f
+        val y = pill.height / 2f
+        val now = android.os.SystemClock.uptimeMillis()
+        pill.dispatchTouchEvent(MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, x, y, 0))
+        pill.dispatchTouchEvent(MotionEvent.obtain(now, now + 16, MotionEvent.ACTION_UP, x, y, 0))
+        harness.idle()
+    }
+
+    private fun shownList(): RecyclerListView? = contentListOf(harness.activity)
+
+    /** The first row's own top, in the list's coordinates: where the pill must not push it. */
+    private fun firstRowTop(list: RecyclerListView): Int =
+        list.findViewHolderForAdapterPosition(0)?.itemView?.top ?: Int.MIN_VALUE
 
     private fun strip(): FilterTabsView? = fragmentField("tabsView") as FilterTabsView?
 
