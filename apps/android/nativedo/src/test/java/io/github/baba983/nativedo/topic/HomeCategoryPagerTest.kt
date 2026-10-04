@@ -80,6 +80,8 @@ internal class HomeCategoryPagerTest {
         site.serveJson("latest.json", manyTopics("latest-topics.json", 30))
         site.serveFixture("categories.json", "categories.json")
         site.serveJson("c/develop/4/l/latest.json", manyTopics("category-latest.json", 40))
+        // The neighbour tab a horizontal drag lands on (运营反馈, the site's first category).
+        site.serveJson("c/feedback/2/l/latest.json", manyTopics("category-latest.json", 20))
         NativeDo.setContainerFactory { context -> site.authenticatedContainer(context) }
     }
 
@@ -227,7 +229,55 @@ internal class HomeCategoryPagerTest {
         harness.assertNoTelegramSideEffects()
     }
 
+    /**
+     * A horizontal drag on the list moves to the neighbouring category (and back): the strip's
+     * indicator follows the finger and the page pair settles on the neighbour. The failure: the
+     * drag does nothing (the gesture dies in the list) or the root pager takes it.
+     */
+    @Test
+    fun aHorizontalDragOnTheListMovesToTheNeighbouringCategory() {
+        harness.bootApp()
+        harness.await("the all-topics feed to load") { rowCount() == 30 }
+        harness.await("the site's categories to arrive as tabs") { tabIds().size == 5 }
+        val strip = strip() ?: throw AssertionError("the topic list carries no category strip")
+        val frame = harness.visibleFragment()!!.fragmentView
+
+        drag(frame, fromX = harness.width * 0.6f, toX = harness.width * 0.15f)
+        harness.idleClock(400)
+        harness.layoutApp()
+
+        assertEquals("the drag lands on the next category", tabIds()[1], strip.currentTabId)
+        assertEquals("with that category's own feed", 20, rowCount())
+
+        drag(frame, fromX = harness.width * 0.4f, toX = harness.width * 0.85f)
+        harness.idleClock(400)
+        harness.layoutApp()
+
+        assertEquals("a drag back returns to the all-topics tab", 0, strip.currentTabId)
+        assertEquals("and its feed is the one it had", 30, rowCount())
+        assertEquals("read once, not again", 1, site.requestPaths.count { it == "latest.json" })
+        harness.assertNoTelegramSideEffects()
+    }
+
     // ------------------------------------------------------------------ helpers
+
+    /** A finger's horizontal drag, dispatched the way the window's would be. */
+    private fun drag(view: View, fromX: Float, toX: Float) {
+        val startY = harness.height * 0.45f
+        val down = 0L
+        fun event(action: Int, x: Float, time: Long): MotionEvent =
+            MotionEvent.obtain(down, down + time, action, x, startY, 0)
+        view.dispatchTouchEvent(event(MotionEvent.ACTION_DOWN, fromX, 0))
+        harness.idle()
+        val steps = 8
+        for (step in 1..steps) {
+            val x = fromX + (toX - fromX) * step / steps
+            view.dispatchTouchEvent(event(MotionEvent.ACTION_MOVE, x, step * 16L))
+            harness.idle()
+        }
+        view.dispatchTouchEvent(event(MotionEvent.ACTION_UP, toX, steps * 16L + 16L))
+        harness.idle()
+    }
 
     /** One of the fixture's feeds, with [count] rows: every row is a copy with its own id. */
     private fun manyTopics(fixture: String, count: Int): String {

@@ -974,12 +974,13 @@ stands, and the upstream component each row is meant to use.
      pager；action bar 上的触摸总是 pager 的。本客户端没有 Telegram 账号、没有 chat swipe 设置
      可读，横滑分类固定开启（等价于上游 SWIPE_GESTURE_FOLDERS 那一支）。换页时收起数学读
      `viewPages[0].listView`；每页各自 320ms 的滚动吸附、FAB 隐藏与阴影监听照旧，只是按页持有。
-- 证明：`HomeCategoryPagerTest` 三项钉住「主题切换不重建：同一 fragmentView/strip 实例、选中
+- 证明：`HomeCategoryPagerTest` 四项钉住「主题切换不重建：同一 fragmentView/strip 实例、选中
   tab、滚动位置，且不发第二次请求」「切 tab 中两页同时在屏，结束后是新分类的 feed，切回第一页
-  仍是原来的 items 和第一可见行」「首/末 tab 的 root pager 裁决」；`HomeMenuTest` 的原重建断言
-  改成钉「不重建、不重启 message bus、不泄漏监听」。四张 harness 渲染图（浅色、切换后夜间、
-  切 tab 中帧、切完）在 `.amp/in/artifacts/strip-anim/`。
-- 构建与测试：`:nativedo:testDebugUnitTest --quiet` 全量 40 类 131 项 0 失败 0 error 0 skipped
+  仍是原来的 items 和第一可见行」「横滑列表到相邻分类并滑回（同一套触摸事件走完 DOWN/MOVE/UP）」
+  「首/末 tab 的 root pager 裁决」；`HomeMenuTest` 的原重建断言改成钉「不重建、不重启 message
+  bus、不泄漏监听」。四张 harness 渲染图（浅色、切换后夜间、切 tab 中帧、切完）在
+  `.amp/in/artifacts/strip-anim/`。
+- 构建与测试：`:nativedo:testDebugUnitTest --quiet` 全量 40 类 132 项 0 失败 0 error 0 skipped
   （XML 在 `apps/android/nativedo/build/test-results/testDebugUnitTest`）；arm64
   `:nativedo:assembleDebug -Pandroid.injected.build.abi=arm64-v8a --quiet` 通过，APK SHA-256
   `029d71874a3ea2996f6e48dbdcc9d2f21c0b5bfc2bee828389acd76cab0ed7bb`，`install -r -t`
