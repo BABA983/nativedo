@@ -235,6 +235,20 @@ interface DiscourseApiService {
         @Header("X-CSRF-Token") csrfToken: String,
     ): ResponseBody
 
+    /** Bookmarks the topic itself (Discourse's `topics#bookmark`); the state lands in `bookmarked`. */
+    @PUT("t/{id}/bookmark.json")
+    suspend fun bookmarkTopic(
+        @Path("id") topicId: Long,
+        @Header("X-CSRF-Token") csrfToken: String,
+    ): ResponseBody
+
+    /** Drops the reader's bookmarks on this topic - a topic's own bookmark has no single id here. */
+    @PUT("t/{id}/remove_bookmarks.json")
+    suspend fun removeTopicBookmarks(
+        @Path("id") topicId: Long,
+        @Header("X-CSRF-Token") csrfToken: String,
+    ): ResponseBody
+
     @GET("discourse-reactions/posts/{id}/reactions-users.json")
     suspend fun reactionUsers(
         @Path("id") postId: Long,
@@ -615,6 +629,10 @@ data class TopicResponseDto(
     val lastReadPostId: Long? = null,
     @SerialName("created_at")
     val createdAt: String = "",
+    @SerialName("category_id")
+    val categoryId: Int = 0,
+    /** The reader's own topic-level bookmark; a post's own flag is the same idea one level down. */
+    val bookmarked: Boolean = false,
     @SerialName("last_posted_at")
     val lastPostedAt: String = "",
     val views: Int = 0,
@@ -629,7 +647,20 @@ data class TopicResponseDto(
 
 @Serializable
 data class TopicDetailsDto(
+    @SerialName("created_by")
+    val createdBy: TopicCreatedByDto? = null,
     val participants: List<TopicParticipantDto> = emptyList(),
+)
+
+/** `details.created_by`, the topic's original poster (Discourse's own BasicUserSerializer). */
+@Serializable
+data class TopicCreatedByDto(
+    val username: String = "",
+    val name: String? = null,
+    @SerialName("avatar_template")
+    val avatarTemplate: String = "",
+    @SerialName("animated_avatar")
+    val animatedAvatar: String? = null,
 )
 
 @Serializable
@@ -1122,6 +1153,9 @@ internal fun TopicResponseDto.toModel(
         highestPostNumber = highestPostNumber,
         lastReadPostNumber = lastReadPostNumber ?: 0,
         lastReadPostId = lastReadPostId,
+        categoryId = categoryId,
+        bookmarked = bookmarked,
+        createdBy = details?.createdBy?.toModel(),
         posts = postStream.posts.map { post -> post.toModel(emojiCatalog = emojiCatalog) },
         participants = details?.participants.orEmpty().mapNotNull { participant ->
             participant.username.takeIf(String::isNotBlank)?.let { username ->
@@ -1149,6 +1183,16 @@ internal fun TopicResponseDto.toModel(
 internal fun TopicPostsResponseDto.toModel(
     emojiCatalog: Map<String, String> = emptyMap(),
 ): List<Post> = postStream.posts.map { post -> post.toModel(emojiCatalog = emojiCatalog) }
+
+private fun TopicCreatedByDto.toModel(): MentionCandidate? {
+    val name = username.takeIf(String::isNotBlank) ?: return null
+    return MentionCandidate(
+        username = name,
+        displayName = this.name.orEmpty(),
+        avatarTemplate = avatarTemplate,
+        animatedAvatarUrl = animatedAvatar.orEmpty(),
+    )
+}
 
 internal fun UserProfileResponseDto.toModel(): UserProfile = UserProfile(
     username = user.username,

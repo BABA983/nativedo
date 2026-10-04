@@ -242,6 +242,41 @@ stands, and the upstream component each row is meant to use.
 - 我的 tab：头像 tab 的图标是否认得出来（会话头像、22dp 圆角方形）、四个 tab 的宽度分配是否匀称；自己的资料页作为根没有返回箭头、下拉展开与折叠的手感是否与从帖子打开的作者资料页一致。
 - 通知 tab：没有推送和未读计数时，列表的排序和徽章是否仍然清楚。
 
+### 话题胶囊栏：chat header 的玻璃胶囊（2026-10-04，`emulator-5554`，`nativedo-topic-capsules`，已登录 @example_user）
+
+- 话题页的动作栏改成 12.10.5 聊天的 header：`ActionBar.setupGlass(factory, BlurredBackgroundProviderImpl.topPanelChatActivity(...))`
+  画左（返回）、中、右（菜单）三个胶囊（`ActionBar.java` 210-255、2219-2270），栏本身 `setAddToContainer(false)`、
+  透明、`BackDrawable`（`ChatActivity` 3678-3686），加在本屏自己的 content view 上浮在帖列表之上；列表顶部留栏的
+  实测高度 + 4dp（`ChatActivity` 11947-11952），帖子从胶囊下穿过。中胶囊是 `ChatAvatarContainer` 的 glass 模式
+  （`ChatActivity` 4134-4162、4224）：标题、副标题「分类 · N 回复」（放得下才带回复数）、以及楼主头像（与行同一套
+  `DiscourseAvatars` 合成用户 + 按路径交给 ImageReceiver）；点中胶囊开楼主的资料页。右胶囊是聊天那种 overflow
+  （`ic_ab_other`，`ChatActivity` 4281），里面 书签 / 复制链接 / 在浏览器打开 三项（上游图标 `msg_fave` / `msg_link` /
+  `msg_openin`）。话题内搜索没有容易的现成路径，这次没做。
+- 设备检查（覆盖安装 `-r -t`，未卸载未清数据，仍登录 @example_user；APK SHA-256 `8122c3f7…` 与设备 `base.apk` 一致）：
+  - 顶部与滚动：三个胶囊各自独立（左圆、中胶囊、右圆），标题按上游的渐变在胶囊右缘截断；滚动时帖子卡片从胶囊下
+    穿过并被胶囊盖住（`03-topic-top`、`04-topic-scrolled`）。
+  - 菜单：`⋮` 打开 书签 / 复制链接 / 在浏览器打开（`06-menu-open`）。书签点一下变成「取消书签」（站点
+    `PUT /t/2981926/bookmark.json`，写前先取 `/session/csrf`，两次写都 200，见 `logcat-session.txt`），再点一次
+    恢复「书签」，账号状态改回原样（`07-menu-bookmarked`、`08-menu-unbookmarked`）。复制链接把
+    `https://linux.do/t/topic/2981926` 放进剪贴板，系统剪贴板浮层确认（`09-copy-link`）。在浏览器打开进的是内置
+    浏览器（`ArticleViewer` 的 X + 标题/URL + 展开箭头 + 菜单），页面已登录渲染（`10-browser`）。
+  - 中胶囊点按：打开了楼主「狐狸汉克 / @foxhank」的资料页（`05-op-profile-from-capsule`），与点帖子头像同一个屏幕。
+  - 不回归：长按帖子菜单五项照旧（`19-longpress-menu`）；左滑开回复框并带上 `@hotowg`，附件条同时出现
+    （`20-swipe-reply`）；帖子里的图仍进 `PhotoViewer`（`31-photoviewer-dark`）；输入框聚焦、光标在（`11`/`12`）。
+  - 夜间：设置 → 外观 → Switch to Night Mode 后，三个胶囊在深色底上清楚可辨（深色玻璃、白色图标与标题），列表照旧
+    从胶囊下穿过（`28-topic-dark`、`29-topic-dark-scrolled`）；验证后切回白天（`32-light-restored`）。
+- **这台模拟器是 LOW perf 档**：`SharedConfig.chatBlurEnabled()` 为假，provider 走上游自己的无模糊分支
+  （`BlurredBackgroundProviderImpl.topPanelChatActivity` 172-175），胶囊是不透明的 `key_chat_topPanelBackground`
+  （夜间 `key_actionBarDefault`）；像素采样确认白天填充是纯白、描边也是白，所以白底列表上胶囊边界主要靠投影与
+  背景内容衬托，视觉判读在「看得到/看不到轮廓」之间摇摆——这是上游无模糊分支的原样，不是本片改出来的差异。
+  真机上带模糊/液态玻璃的外观本片未验证。
+- 构建与测试：`:nativedo:assembleDebug -Pandroid.injected.build.abi=arm64-v8a` 通过（本 worktree 的
+  `TMessagesProj_Modules/media`、`lib/jlatexmath` 从设备 worktree 拷入，arm64 `libtmessages.49.so` 用设备 worktree
+  的构建产物、排除两个 CMake 任务）；同 HEAD `:nativedo:testDebugUnitTest` 32 类 94 项全过（0 失败、0 error、
+  0 skipped）。没有改 `apps/android/telegram` 子树，vendor-guard 不涉及。
+- 未验证/观察：真机模糊与液态玻璃（本机选不到）；夜间下只看了胶囊与列表的对比度，没有重跑菜单与回复；logcat 的
+  crash buffer 为空，唯一一条 ANR 记录（16:36）早于本次安装（16:50）。证据在 `.amp/in/artifacts/topic-capsules/`。
+
 ### 一个 cookie jar（2026-10-04，`emulator-5554`，`nativedo-cookie-sync`）
 
 - 模型：`android.webkit.CookieManager` 是唯一的 cookie 存储（登录 WebView、内置浏览器、OkHttp 三方共用）。

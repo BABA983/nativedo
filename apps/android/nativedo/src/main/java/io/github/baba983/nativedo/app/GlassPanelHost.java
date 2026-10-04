@@ -87,6 +87,15 @@ public final class GlassPanelHost {
     }
 
     /**
+     * The raw factory, for an upstream component that builds its own drawables from one - the chat
+     * header's {@code ActionBar.setupGlass} takes the factory itself and makes the back, center and
+     * menu capsules with it.
+     */
+    public BlurredBackgroundDrawableViewFactory getFactory() {
+        return factory;
+    }
+
+    /**
      * Records what is behind the panels. Called from the position root's draw pass, before it draws
      * its children, so a panel samples the content and never itself.
      */
