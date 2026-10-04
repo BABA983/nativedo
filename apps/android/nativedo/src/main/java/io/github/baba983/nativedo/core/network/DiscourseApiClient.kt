@@ -368,6 +368,21 @@ class DiscourseApiClient(
             }
         }
 
+    /**
+     * The reader's bookmark on the topic itself. Discourse creates it through the topic's own
+     * `bookmark` route and takes it back through `remove_bookmarks` (the topic-level undo), so a
+     * client that only knows the topic id needs no bookmark id for either.
+     */
+    suspend fun setTopicBookmark(topicId: Long, bookmarked: Boolean) =
+        runWithSessionBoundary(requiresAuthentication = true) {
+            val csrfToken = service.csrf().csrf
+            if (bookmarked) {
+                service.bookmarkTopic(topicId, csrfToken).close()
+            } else {
+                service.removeTopicBookmarks(topicId, csrfToken).close()
+            }
+        }
+
     /** Sends the reader's selection; the answer carries the poll's new state. */
     suspend fun votePoll(postId: Long, pollName: String, optionIds: List<String>): PostPoll? =
         runWithSessionBoundary(requiresAuthentication = true) {

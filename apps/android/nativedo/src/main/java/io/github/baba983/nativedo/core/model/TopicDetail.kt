@@ -8,6 +8,12 @@ data class TopicDetail(
 
     val posts: List<Post>,
     val participants: List<MentionCandidate> = emptyList(),
+    /** The topic's category (`category_id`); the name comes from the category store. */
+    val categoryId: Int = 0,
+    /** The topic's original poster (`details.created_by`), when the site names one. */
+    val createdBy: MentionCandidate? = null,
+    /** The reader's own topic-level bookmark state (`bookmarked`), like a post's own flag. */
+    val bookmarked: Boolean = false,
     val createdAt: String = "",
     val lastPostedAt: String = "",
     val viewCount: Int = 0,
