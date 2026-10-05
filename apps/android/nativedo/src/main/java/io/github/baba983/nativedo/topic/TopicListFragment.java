@@ -519,7 +519,7 @@ public class TopicListFragment extends BaseFragment
         // paint, so the pill is the capsule Telegram shows under the action bar. It floats over
         // the rows and rides the header's collapse on its own translation - it never takes a band
         // in the list's layout.
-        newTopicsPill = new ChatActionCell(context, false, resourceProvider) {
+        newTopicsPill = new ChatActionCell(context, false, new PillThemeProvider()) {
             @Override
             public boolean isFloating() {
                 return true;
@@ -2893,6 +2893,61 @@ public class TopicListFragment extends BaseFragment
         }
         updateTitle();
         updateNewTopicsPill();
+    }
+
+    /**
+     * The service paint the pill draws with, for a screen that has no chat wallpaper.
+     *
+     * <p>Upstream's floating date is readable because its capsule is a sample of the chat
+     * wallpaper: {@link Theme#applyChatServiceMessageColor} puts the wallpaper bitmap in
+     * {@code chat_actionBackgroundPaint} and forces its alpha to {@code 0xff}
+     * (Theme.java:8749-8759), so the date never shows what passes under it. There is no wallpaper
+     * here: the branch that runs leaves the paint the theme's own translucent
+     * {@code key_chat_serviceBackground} tint (Theme.java:8766-8773), which is picked to sit on a
+     * chat wallpaper. On the day theme that tint still reads over the white window background; on
+     * the dark ones it all but vanishes against the window background and the first row's title
+     * shines through the pill.</p>
+     *
+     * <p>This delegate - the paint source {@code ChatActivity.ThemeDelegate} gives its floating
+     * date (ChatActionCell.getThemedPaint, 3988-3991) - gives the night capsule the same service
+     * colour at the same full alpha the wallpaper branch uses whenever there is no wallpaper to
+     * sample. A wallpaper gradient present keeps the shared paint untouched, and the day theme
+     * keeps its own tint, which its pass on the device checked as correct. The colour is re-read
+     * on every draw, so the pill follows the day/night switch in place.</p>
+     */
+    private static final class PillThemeProvider implements ChatActionCell.ThemeDelegate {
+
+        private final android.graphics.Paint backgroundPaint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+
+        @Override
+        public int getColor(int key) {
+            return Theme.getColor(key);
+        }
+
+        @Override
+        public int getCurrentColor() {
+            return Theme.currentColor;
+        }
+
+        @Override
+        public android.graphics.Paint getPaint(String paintKey) {
+            if (Theme.hasGradientService() || !Theme.isCurrentThemeDark()) {
+                // A wallpaper sample, or the day theme's own tint: what a chat would draw with.
+                return null;
+            }
+            if (!Theme.key_paint_chatActionBackground.equals(paintKey)) {
+                return null;
+            }
+            // The colour the shared service paint would draw, at the alpha the wallpaper branch
+            // forces, so the night capsule covers the row behind it instead of tinting it.
+            backgroundPaint.setColor(Theme.chat_actionBackgroundPaint.getColor() | 0xFF000000);
+            return backgroundPaint;
+        }
+
+        @Override
+        public boolean hasGradientService() {
+            return Theme.hasGradientService();
+        }
     }
 
 }
