@@ -3,6 +3,9 @@ package io.github.baba983.nativedo.app;
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.app.Activity;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.os.Build;
 import android.os.Bundle;
@@ -18,13 +21,15 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 
 import androidx.annotation.NonNull;
+import androidx.core.graphics.ColorUtils;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
-import androidx.core.view.WindowInsetsControllerCompat;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.AnimationNotificationsLocker;
+import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.FileLog;
+import org.telegram.messenger.LiteMode;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.ui.ActionBar.ActionBarLayout;
 import org.telegram.ui.ActionBar.BaseFragment;
@@ -42,6 +47,7 @@ import org.telegram.ui.DialogsActivity;
 import org.telegram.ui.PhotoViewer;
 
 import java.util.ArrayList;
+import java.util.List;
 
 import io.github.baba983.nativedo.auth.LoginWebViewFragment;
 import io.github.baba983.nativedo.auth.SessionStarter;
@@ -82,6 +88,11 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
     private ImageView themeSwitchImageView;
     /** The system-bar colors stay put while the reveal runs, as in upstream's handler. */
     private boolean isNavigationBarColorFrozen;
+    /**
+     * Upstream's power-saver feed (LaunchActivity:380, 412): the battery level drives LiteMode's
+     * preset, and the preset is what the glass (chat blur / liquid glass) reads.
+     */
+    private final LiteMode.BatteryReceiver batteryReceiver = new LiteMode.BatteryReceiver();
     /** Whether the session question has been answered, so a link can be opened right away. */
     private boolean sessionResolved;
     /** The topic a VIEW link asked for, and the floor it named; 0 while there is none. */
@@ -94,7 +105,19 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         setTheme(org.telegram.messenger.R.style.Theme_TMessages);
         super.onCreate(savedInstanceState);
 
-        AndroidUtilities.enableEdgeToEdge(getWindow());
+        // LaunchActivity:729-730, in upstream's order: the window is told to lay out behind the
+        // system bars before the edge-to-edge helper registers the cutout mode and the un-enforced
+        // navigation-bar contrast. The activity overload is the one that also zeroes the
+        // navigation-bar divider.
+        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
+        AndroidUtilities.enableEdgeToEdge(this);
+        if (Build.VERSION.SDK_INT >= 24) {
+            AndroidUtilities.isInMultiwindow = isInMultiWindowMode();
+        }
+        // LaunchActivity:412: the sticky battery broadcast is what LiteMode's power-saver level
+        // (and with it the glass presets) follows while the app is up.
+        registerReceiver(batteryReceiver, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
         AndroidUtilities.checkDisplaySize(this, getResources().getConfiguration());
         Theme.createCommonResources(this);
         Theme.createDialogsResources(this);
@@ -153,6 +176,10 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         // needCloseLastFragment below: a back that would close the last fragment is the activity's
         // own leave, the way upstream's answers it.
         actionBarLayout.setDelegate(this);
+        // LaunchActivity:565-568: the bars follow the fragment the layout now shows. Opening a
+        // screen, closing one or replacing the stack recomputes the status-bar icon tint and the
+        // navigation-bar band from the new top fragment.
+        actionBarLayout.setFragmentStackChangedListener(this::updateSystemBarColors);
         // LaunchActivity:553 loads the chat wallpaper here, so a chat screen can draw it at once.
         Theme.loadWallpaper(true);
 
@@ -181,6 +208,11 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         updateSystemBarColors();
         ViewCompat.requestApplyInsets(contentView);
         NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.needSetDayNightTheme);
+        // LaunchActivity's global observer group: a screen (or a sheet) that changes what the bars
+        // must look like asks for the recompute; the applied-theme notification does the same after
+        // Theme has recoloured everything.
+        NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.needCheckSystemBarColors);
+        NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.didSetNewTheme);
 
         // LaunchActivity:735-849 verbatim in shape. API 34 gets the animation callback (the layout
         // follows the finger: ActionBarLayout.onBackStarted/onBackProgress transform the page and
@@ -386,30 +418,78 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
 
     private void updateSystemBarColors() {
         // While the reveal is running upstream keeps the system-bar colours from before the switch;
-        // recomputing them here would paint the status bar in the new theme before the circle
-        // reaches it.
+        // recomputing them here would paint the bars in the new theme before the circle reaches
+        // them. The reveal itself resets the flag and calls this again when it ends.
         if (isNavigationBarColorFrozen) {
             return;
         }
-        BaseFragment fragment = actionBarLayout.getLastFragment();
-        int navigationColor = fragment != null ? fragment.getNavigationBarColor()
-                : Theme.getColor(Theme.key_windowBackgroundGray);
-        // A sheet above the screen (the in-app browser is one) owns the bar color; upstream's own
-        // checkSystemBarColors carries the same rule.
-        navigationColor = sheetNavigationBarColor(fragment, navigationColor);
-        BaseFragment sheetFragment = actionBarLayout.getSheetFragment(false);
-        if (sheetFragment != null) {
-            navigationColor = sheetNavigationBarColor(sheetFragment, navigationColor);
+        updateSystemBarColors(true, true, true);
+    }
+
+    /**
+     * LaunchActivity's {@code checkSystemBarColors} (1115-1185), for the two bars this shell owns.
+     * {@code useCurrentFragment} is upstream's own flag: when false the navigation bar takes the
+     * window's default gray instead of the top fragment's colour - the notifications the screens
+     * post carry it.
+     */
+    private void updateSystemBarColors(boolean useCurrentFragment, boolean checkStatusBar, boolean checkNavigationBar) {
+        if (actionBarLayout == null || drawerLayoutContainer == null || contentView == null) {
+            return;
         }
-        drawerLayoutContainer.setInternalNavigationBarColor(navigationColor);
-        BottomSheetTabs browserTabs = actionBarLayout.getBottomSheetTabs();
-        if (browserTabs != null) {
-            browserTabs.setNavigationBarColor(navigationColor);
+        BaseFragment fragment = actionBarLayout.getLastFragment();
+        if (fragment != null && (fragment.isRemovingFromStack() || fragment.isInPreviewMode())) {
+            List<BaseFragment> stack = actionBarLayout.getFragmentStack();
+            fragment = stack.size() > 1 ? stack.get(stack.size() - 2) : null;
+        }
+        if (checkStatusBar) {
+            // Upstream's own answer (1120-1146): the top fragment decides, unless a sheet over it
+            // owns the bar (the article viewer says whether its page is light); with no fragment at
+            // all the tint follows the theme's action-bar colour.
+            boolean enable;
+            if (fragment != null) {
+                enable = fragment.isLightStatusBar();
+                if (fragment.getParentLayout() instanceof ActionBarLayout) {
+                    ActionBarLayout layout = (ActionBarLayout) fragment.getParentLayout();
+                    BaseFragment sheetFragment = layout.getSheetFragment(false);
+                    if (sheetFragment != null && sheetFragment.getLastSheet() != null) {
+                        BaseFragment.AttachedSheet sheet = sheetFragment.getLastSheet();
+                        if (sheet.isShown()) {
+                            enable = sheet.isAttachedLightStatusBar();
+                        }
+                    } else if (fragment.sheetsStack != null && !fragment.sheetsStack.isEmpty()) {
+                        BaseFragment.AttachedSheet sheet =
+                                fragment.sheetsStack.get(fragment.sheetsStack.size() - 1);
+                        if (sheet.isShown()) {
+                            enable = sheet.isAttachedLightStatusBar();
+                        }
+                    }
+                }
+            } else {
+                enable = ColorUtils.calculateLuminance(
+                        Theme.getColor(Theme.key_actionBarDefault, null, true)) > 0.7f;
+            }
+            AndroidUtilities.setLightStatusBar(this, enable);
+        }
+        if (checkNavigationBar) {
+            int navigationColor = fragment != null && useCurrentFragment
+                    ? fragment.getNavigationBarColor()
+                    : Theme.getColor(Theme.key_windowBackgroundGray);
+            // A sheet above the screen (the in-app browser is one) owns the bar color; upstream's
+            // own checkSystemBarColors carries the same rule.
+            navigationColor = sheetNavigationBarColor(fragment, navigationColor);
+            BaseFragment sheetFragment = actionBarLayout.getSheetFragment(false);
+            if (sheetFragment != null) {
+                navigationColor = sheetNavigationBarColor(sheetFragment, navigationColor);
+            }
+            drawerLayoutContainer.setInternalNavigationBarColor(navigationColor);
+            BottomSheetTabs browserTabs = actionBarLayout.getBottomSheetTabs();
+            if (browserTabs != null) {
+                browserTabs.setNavigationBarColor(navigationColor);
+            }
+            AndroidUtilities.setLightNavigationBar(this,
+                    AndroidUtilities.computePerceivedBrightness(navigationColor) >= 0.721f);
         }
         contentView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
-        WindowInsetsControllerCompat controller = new WindowInsetsControllerCompat(getWindow(), contentView);
-        controller.setAppearanceLightStatusBars(fragment != null ? fragment.isLightStatusBar() : !Theme.isCurrentThemeDark());
-        controller.setAppearanceLightNavigationBars(AndroidUtilities.computePerceivedBrightness(navigationColor) >= 0.721f);
         // The tab strip belongs to the root fragment, and a theme change has to reach it even while
         // a screen that fragment pushed (the appearance page) is on top: every host in the stack is
         // told, not only the last fragment.
@@ -434,6 +514,24 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
 
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
+        if (id == NotificationCenter.needCheckSystemBarColors) {
+            // LaunchActivity:7555-7558. The screens post their ask with the flag: true means the
+            // navigation bar takes the fragment's own colour, false the window's default gray.
+            if (!isNavigationBarColorFrozen) {
+                updateSystemBarColors(args.length > 0 && (boolean) args[0], true, true);
+            }
+            return;
+        }
+        if (id == NotificationCenter.didSetNewTheme) {
+            // LaunchActivity:7330-7350: a theme change recolours the bars, but the circular reveal
+            // freezes the navigation bar and a running transition owns the screen for now.
+            boolean checkNavigationBarColor = args.length > 1 && (boolean) args[1];
+            if (checkNavigationBarColor && !isNavigationBarColorFrozen
+                    && !actionBarLayout.isTransitionAnimationInProgress()) {
+                updateSystemBarColors(args.length > 2 && (boolean) args[2], true, true);
+            }
+            return;
+        }
         if (id != NotificationCenter.needSetDayNightTheme) {
             return;
         }
@@ -575,6 +673,14 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
     @Override
     protected void onDestroy() {
         NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.needSetDayNightTheme);
+        NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.needCheckSystemBarColors);
+        NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.didSetNewTheme);
+        // LaunchActivity:6857: the sticky battery broadcast is dropped with the activity.
+        try {
+            unregisterReceiver(batteryReceiver);
+        } catch (Exception e) {
+            FileLog.e(e);
+        }
         NativeDoHooks.setBrowserHost(null);
         // LaunchActivity:6886-6894. (Upstream's API-33 branch tests the wrong field at 6891 - the
         // plain callback is the one registered there - so this unregisters the one it registered.)
@@ -598,6 +704,14 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
     @Override
     protected void onResume() {
         super.onResume();
+        // LaunchActivity:6977-6983: the app-wide "in front" flag the viewers read, and the heavy
+        // drawing gate that goes with it, follow the shell's resume.
+        NotificationCenter.getGlobalInstance()
+                .postNotificationName(NotificationCenter.startAllHeavyOperations, 4096);
+        ApplicationLoader.mainInterfacePaused = false;
+        if (Theme.selectedAutoNightType == Theme.AUTO_NIGHT_TYPE_SYSTEM) {
+            Theme.checkAutoNightThemeConditions();
+        }
         if (actionBarLayout != null) {
             actionBarLayout.onResume();
             updateSystemBarColors();
@@ -607,8 +721,48 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
     @Override
     protected void onPause() {
         super.onPause();
+        // LaunchActivity:6732-6733. PhotoViewer's video controls ask this flag before they hide,
+        // and the theme's ambient sensor asks it before it reacts; a value stuck at its default
+        // true would leave the controls on screen and the sensor deaf.
+        NotificationCenter.getGlobalInstance()
+                .postNotificationName(NotificationCenter.stopAllHeavyOperations, 4096);
+        ApplicationLoader.mainInterfacePaused = true;
         if (actionBarLayout != null) {
             actionBarLayout.onPause();
+        }
+    }
+
+    /**
+     * Upstream's activity handles the same configuration set (the manifest keeps this activity
+     * across them), and a rotation must reach the layout math: {@code checkDisplaySize} refreshes
+     * density, display size, refresh rate and the touch slop, {@code resetTabletFlag} lets the
+     * tablet decision be remade. The system auto-night watch is the other winner of a uiMode
+     * change (LaunchActivity:7117-7160).
+     */
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        AndroidUtilities.checkDisplaySize(this, newConfig);
+        AndroidUtilities.setPreferredMaxRefreshRate(getWindow());
+        super.onConfigurationChanged(newConfig);
+        AndroidUtilities.resetTabletFlag();
+        if (Theme.selectedAutoNightType == Theme.AUTO_NIGHT_TYPE_SYSTEM) {
+            Theme.checkAutoNightThemeConditions();
+        }
+    }
+
+    /** LaunchActivity:7147-7152. Upstream's fragments ask this before they lay out a split. */
+    @Override
+    public void onMultiWindowModeChanged(boolean isInMultiWindowMode) {
+        AndroidUtilities.isInMultiwindow = isInMultiWindowMode;
+        super.onMultiWindowModeChanged(isInMultiWindowMode);
+    }
+
+    /** LaunchActivity:8353-8357: the layout passes the low-memory hint to its fragments. */
+    @Override
+    public void onLowMemory() {
+        super.onLowMemory();
+        if (actionBarLayout != null) {
+            actionBarLayout.onLowMemory();
         }
     }
 

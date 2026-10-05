@@ -1080,6 +1080,67 @@ stands, and the upstream component each row is meant to use.
   跟手、圆形揭示下的原地换色、玻璃在滑动中的样子都只有 harness 证据，设备侧没有通过。
   没有改 `apps/android/telegram` 子树，vendor-guard 不涉及。
 
+### 壳的启动态与系统栏：ApplicationLoader 对账、状态栏/导航栏跟随 fragment 与主题（2026-10-05，`emulator-5554` 与真机
+  `449dd25d`，`nativedo-shell-sysbars`，均已登录）
+
+- **ApplicationLoader 对账**（上游 `ApplicationLoader.postInitApplication()` 191-279 逐行，本壳不跑它：它会起
+  tgnet/存储/推送/账号）。缺失且屏幕真会读的三处补在 `NativeDoApplication.loadShellRuntime()`：
+  `LocaleController.getInstance()`（199，每个 cell 的格式化都靠它）、`SharedPrefsHelper.init`（248，
+  `ChatActivityEnterView` 的 WebView 确认位）、`PowerManager.isScreenOn` 初值（239）＋屏幕 on/off 接收者（
+  235-244）——接收者只保留 `ApplicationLoader.isScreenOn` 与 `screenStateChanged` 两个状态，上游
+  `ScreenReceiver` 里暂停/恢复 tgnet 的两行按 hook 约定不跑。继续排除并写明理由：连接性接收者（205-227，唯一做的是刷新
+  `currentNetworkInfo` 并通知 tgnet/`FileLoader`；本客户端读这两样都走 `ApplicationLoader` 的 lazy 路径，且
+  `ForegroundDetector`（`onCreate` 里已建）每次回前台强制刷新）、每账号循环（250-260：
+  UserConfig/MessagesController/ConnectionsManager/SendMessagesHelper/pushStringStatus）、
+  `initPushServices`（262）、`MediaController`（270，所有调用点本来就是 `getInstance()` 懒建）、
+  `ContactsController`/`DownloadController`（272-275）、`BillingController`（277）。
+  `ApplicationLoader.onCreate`（283-366：native libs、`native_setJava`、ForegroundDetector、
+  applicationHandler、`startPushService` 的计划调用）经 `super.onCreate()` 照旧；`loadRuntimeConfig()`（
+  SharedConfig 247 + LiteMode）保持不变。
+- **发布期生命周期**（LaunchActivity 对应行）：`onPause`/`onResume` 现在维护
+  `ApplicationLoader.mainInterfacePaused`（6733/6979；PhotoViewer 的视频控制条在 1039 行读它，卡在默认 `true` 会让
+  控制条永不隐藏）与 `stopAllHeavyOperations`/`startAllHeavyOperations(4096)`（6732/6977）；`onCreate` 注册上游
+  同一份粘性电池广播（412，LiteMode 省电档，`onDestroy` 6857 反注册）；`onConfigurationChanged`（7117-7160 的几何部分：
+  `checkDisplaySize`、`setPreferredMaxRefreshRate`、`resetTabletFlag`、系统自动夜间；Telegram 专有的
+  pip/embed/PhotoViewer/ThemeEditorView 不搬）、`onMultiWindowModeChanged`（7147）、`onLowMemory`（8353
+  ）。上游 LaunchActivity 没有 `onTrimMemory`，因此也没有加。
+- **系统栏对账**（上游行号 → 本壳）：`LaunchActivity:729-730` 的 decor LAYOUT_* 旗标 +
+  `AndroidUtilities.enableEdgeToEdge(this)`（activity 版会顺带把导航栏分隔线归零）搬进
+  `NativeDoActivity.onCreate`；`checkSystemBarColors`（1115-1185）按原判定树重写为
+  `updateSystemBarColors(useCurrentFragment, checkStatusBar, checkNavigationBar)`——正在离场/preview
+  的 fragment 换成前一个、上面有 sheet 时状态栏取 `sheet.isAttachedLightStatusBar()`、
+  `useCurrentFragment=false` 时导航栏用 `key_windowBackgroundGray`、最终用
+  `AndroidUtilities.setLightStatusBar/setLightNavigationBar`（原来的 `WindowInsetsControllerCompat`
+  换成上游这两只，灯标与老 API 的分支都一致）；`setFragmentStackChangedListener`（565-568）让每次 push/pop 重算（原先只在
+  resume 与主题切换时算）；观察 `needCheckSystemBarColors`（7555-7558）与 `didSetNewTheme`（7330-7350，揭示冻结/转场守
+  卫照搬）；揭示快照期间的「系统栏颜色冻结」原样保留。`AndroidManifest` 的 `configChanges` 与
+  `windowSoftInputMode=adjustResize` 本就与上游 activity（210-218）一字不差，IME insets 仍按 contentView→
+  `DrawerLayoutContainer`→`ActionBarLayout` 原样下发，未改接线。
+- 测试：新增 `ShellSystemBarsTest` 两项，钉两个不看截图看不出的失败模式——「状态栏 tint/nav 带跟随栈顶 fragment（含 push/back/主题切换
+  ，揭示中冻结）」与「屏幕 on/off 广播真的进 `ApplicationLoader.isScreenOn`」（不是 flag 回环：off 后必须为假、on 后必须为真）。全量
+  `:nativedo:testDebugUnitTest` 44 类 151 项 **0 失败 0 error 0 skipped**（XML 在
+  `apps/android/nativedo/build/test-results/testDebugUnitTest`）。arm64
+  `:nativedo:assembleDebug -Pandroid.injected.build.abi=arm64-v8a`（预编译 `.so` 放在
+  `jni/arm64-v8a/`，`-x` 两个 CMake 任务）通过，APK 63.5 MB 只含一份 `lib/arm64-v8a/libtmessages.49.so`，
+  SHA-256 `ae57c4e758728d67ce87a6010e2c3cb374a7ec54e205479980ed8f1da3d2e4`；两设备拉回的 `base.apk` 同
+  hash。没改 `apps/android/telegram` 子树；`vendor-guard.sh` 源码检查 OK（`--compile` 不涉及，因为没有子树改动）。
+- 设备（`emulator-5554`，LOW，登录 @example_user）：浅色冷启动与夜间冷启动都整屏协调、状态图标可读（`emu-01`/`emu-05`）；话题页夜间胶囊、状态图标、输入条与
+  手势条下缘无错色带（`emu-09`）；设置、我的两 tab 浅色下图标为深色可读、导航带无错带（`emu-16`/`emu-17`）；三键导航 overlay 打开后按钮可见、带色仍是
+  页面底色（29,39,51），打开与还原（回 gestural）都截了图（`emu-14`/`emu-15`，已还原成 gestural）；新日志两行都能看到：
+  `nativedo runtime config: …` 与 `nativedo shell runtime: screen on = true`。真机 `449dd25d`（HIGH）
+  ：`performance class = HIGH, measured = HIGH, chat blur = true` + `screen on = true`（正是最初「别漏值」
+  问的那半：HIGH 档与模糊都活着）；冷启动浅色可读，强制组件 `am start -n … -a VIEW` 深链打开话题后玻璃胶囊、状态图标、输入条都正常（`phone-01`
+  /`phone-03`）。证据在 `.amp/in/artifacts/shell-sysbars/`（`device-notes.md` 逐张说明）。
+- **移交（不属本片文件）**：首页头（`TopicListFragment` 的浮动 ActionBar 玻璃）在菜单圆形揭示切主题后不换色——切到夜间后 35 秒头部仍是白条、状态图标
+  变白后不可读；切回浅色后头部仍是深条。用改动前 APK（`HEAD~2`，sha `9f1b5b56…`）复现同一现象（`ab-before-dark.png`），所以不是本片改动引入，
+  是 `topic/*` 的换色路径（fragment 观察者的 `actionBar.updateColors()`/enqueue 时序）老问题；冷启动一切正常。请该屏 owner 处
+  理，复现步骤与 A/B 都在证据里。另外四点未验证：① 模拟器 Gboard 点了输入框后 `mInputShown=true` 但 `keyboardView=null`（输入法自身问
+  题，改动前后同样），所以 `adjustResize` 的像素行为只有 manifest/接线级证据，没有键盘弹出的截图；② 真机 HyperOS 禁 `adb input`，夜间、设置
+  /我的、三键/手势切换、键盘只能在模拟器上验；③ 两次 nav overlay 配置变化加连点后出现过一次空白深色窗（无 FATAL/ANR，消息总线仍在跑；force-stop 重启即
+  好），复现条件未定，记在 `device-notes.md`；④ 首页头在任何屏上的「照片从状态栏下穿过时图标要翻色」这类 per-screen 覆盖没有做——四个根页的
+  `isSupportEdgeToEdge`/`drawEdgeNavigationBar` 已有覆盖、状态栏 tint 实测两主题都可读；若话题页要 ChatActivity 那套随壁纸
+  翻色（`ChatActivity:44253` 的形状），应由 `topic/*` owner 在其 fragment 上覆写 `isLightStatusBar()`。
+
 ## Switch plan
 
 Moving the entry point to `:nativedo` and deleting the old stack. Not started; it needs the human's
