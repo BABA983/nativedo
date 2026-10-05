@@ -519,12 +519,15 @@ public class TopicListFragment extends BaseFragment
         // paint, so the pill is the capsule Telegram shows under the action bar. It floats over
         // the rows and rides the header's collapse on its own translation - it never takes a band
         // in the list's layout.
+        //
+        // Upstream's floating date is also not reporting isFloating(): that flag is read only by
+        // drawBackground, and it multiplies the capsule's alpha by three quarters
+        // (ChatActionCell:3496-3505). A chat can afford the translucency because a wallpaper sits
+        // behind the date; this list has none, and at three quarters the first row's white title
+        // showed through the night capsule (the collision on the device). The floating position is
+        // the layout and the translation below, not that flag, so the capsule draws at the
+        // provider's full alpha while the pill still floats over the rows.
         newTopicsPill = new ChatActionCell(context, false, new PillThemeProvider()) {
-            @Override
-            public boolean isFloating() {
-                return true;
-            }
-
             @Override
             public void setTranslationY(float translationY) {
                 if (getTranslationY() != translationY) {
@@ -2911,7 +2914,9 @@ public class TopicListFragment extends BaseFragment
      * <p>This delegate - the paint source {@code ChatActivity.ThemeDelegate} gives its floating
      * date (ChatActionCell.getThemedPaint, 3988-3991) - gives the night capsule the same service
      * colour at the same full alpha the wallpaper branch uses whenever there is no wallpaper to
-     * sample. A wallpaper gradient present keeps the shared paint untouched, and the day theme
+     * sample. The pill does not report {@code isFloating()}, so {@code drawBackground}'s floating
+     * factor (ChatActionCell:3496-3505) never quarters that alpha; the capsule covers the row
+     * behind it. A wallpaper gradient present keeps the shared paint untouched, and the day theme
      * keeps its own tint, which its pass on the device checked as correct. The colour is re-read
      * on every draw, so the pill follows the day/night switch in place.</p>
      */

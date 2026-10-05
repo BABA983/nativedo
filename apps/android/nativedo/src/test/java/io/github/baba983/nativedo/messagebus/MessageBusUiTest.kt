@@ -215,8 +215,10 @@ internal class MessageBusUiTest {
     /**
      * The pill is the chat's own floating date: it floats over the first row instead of taking a
      * band in the list's layout, and the day/night switch keeps it in place. The failure modes: a
-     * pill that pushes the list down (the first row moves when the count arrives) and a switch
-     * that rebuilds the screen (a second pill instance, drawn from scratch).
+     * pill that pushes the list down (the first row moves when the count arrives), a switch that
+     * rebuilds the screen (a second pill instance, drawn from scratch), and - on the night theme -
+     * a translucent capsule the first row shows through (the row's white title crossed the pill's
+     * label on the device).
      */
     @Test
     fun thePillFloatsOverTheFirstRowAndTheThemeSwitchKeepsIt() {
@@ -270,7 +272,7 @@ internal class MessageBusUiTest {
             assertEquals("and keeps it on screen", View.VISIBLE, pill.visibility)
             harness.renderApp("pill-dark")
             val darkCapsule = capsuleFill(pill, Theme.getColor(Theme.key_windowBackgroundWhite))
-            assertCapsuleIsNotSeeThrough("night", darkCapsule, capsuleFill(pill, 0xFFFFFFFF.toInt()))
+            assertCapsuleHidesTheRowBehindIt(darkCapsule, capsuleFill(pill, 0xFFFFFFFF.toInt()))
             assertNotEquals("the capsule's colour follows the switch", lightCapsule, darkCapsule)
         } finally {
             Theme.applyTheme(Theme.getTheme("Blue"), false, false)
@@ -279,22 +281,21 @@ internal class MessageBusUiTest {
     }
 
     /**
-     * The pill floats directly over the first row's title. On the night theme its capsule has to
-     * be the service colour the chat's floating date draws with - the wallpaper branch's opaque
-     * paint - and not the theme's translucent service tint: that tint is picked to sit on a chat
-     * wallpaper, and over this list it let the row shine through the pill (62% of the backdrop's
-     * colour in night mode), which is the collision seen on the device. What is behind may tint
-     * the capsule by no more than the chat's own floating factor, a quarter
-     * (ChatActionCell:3496-3505). The day theme keeps its own tint, so its backdrop is allowed to
-     * read through the way it always has.
+     * The failure mode: the night capsule is translucent, so the first row's white title - the
+     * content the pill floats over - ghosts through it and the two texts collide (the device
+     * showed a bright title stroke crossing the pill's label). Upstream's chat date can be
+     * translucent because a chat hides a wallpaper behind it (ChatActionCell:3496-3505 applies
+     * the floating factor, three quarters); this list has no wallpaper to hide behind, so the
+     * night capsule has to cover what passes under it: the same pixels whether the row behind is
+     * the window background or the title's white. The day theme keeps the theme's own tint.
      */
-    private fun assertCapsuleIsNotSeeThrough(theme: String, overWindow: Int, overWhite: Int) {
-        val backdropSpan = Math.abs(255 - Color.red(Theme.getColor(Theme.key_windowBackgroundWhite)))
+    private fun assertCapsuleHidesTheRowBehindIt(overWindow: Int, overWhite: Int) {
         val influence = Math.abs(Color.red(overWhite) - Color.red(overWindow))
-        println("pill $theme: overWindow=${String.format("0x%08X", overWindow)} overWhite=${String.format("0x%08X", overWhite)} influence=$influence/$backdropSpan")
+        println("night pill capsule: overWindow=${String.format("0x%08X", overWindow)} overWhite=${String.format("0x%08X", overWhite)} influence=$influence/255")
         assertTrue(
-            "the capsule must not let the row behind it define its colour ($theme: $influence of $backdropSpan)",
-            influence * 100 <= backdropSpan * 35,
+            "the night capsule must be opaque so the row behind cannot show through " +
+                "(the row tinted it by $influence of 255)",
+            influence <= 2,
         )
     }
 
