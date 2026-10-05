@@ -5,6 +5,7 @@ import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.os.Build;
@@ -27,6 +28,7 @@ import org.telegram.messenger.SharedConfig;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.ActionBar.ThemeDescription;
 import org.telegram.ui.Cells.ChatActionCell;
 import org.telegram.ui.Cells.DialogCell;
 import org.telegram.ui.Components.CubicBezierInterpolator;
@@ -145,50 +147,73 @@ public class TopicListFragment extends BaseFragment
     /** DialogsActivity.ContentView's own blurBounds (888) and actionBarDefaultPaint (566). */
     private final Rect blurBounds = new Rect();
     private final Paint actionBarDefaultPaint = new Paint();
-    /** The day/night switch recolours the strip, the blur source and the rows in place. */
+    /**
+     * The day/night switch recolours the strip, the blur source and the rows in place. The
+     * fragment's own {@link ThemeDescription}s also reach {@link #updateColors()}; this listener
+     * keeps the recolor working for the notification alone (the appearance page's switch), the
+     * same double wiring upstream keeps.
+     */
     private final org.telegram.messenger.NotificationCenter.NotificationCenterDelegate themeObserver =
             (id, account, args) -> {
                 if (id != org.telegram.messenger.NotificationCenter.needSetDayNightTheme) {
                     return;
                 }
-                if (this.glassHost != null) {
-                    this.glassHost.updateColors();
-                }
-                if (this.tabsView != null) {
-                    this.tabsView.updateColors();
-                }
-                if (this.searchField != null) {
-                    this.searchField.updateColors();
-                }
-                if (this.searchPanel != null) {
-                    this.searchPanel.updateColors();
-                }
-                if (this.newTopicsPill != null) {
-                    // The service paints are shared and the cell reads them at draw time
-                    // (ChatActionCell.drawBackground, 3319-3321); a redraw is the whole recolor.
-                    this.newTopicsPill.invalidate();
-                }
-                // DialogsActivity's theme delegate rebinds its attached DialogCells
-                // (12022-12033); the same rows live here, so the same rebind.
-                if (viewPages != null) {
-                    for (ViewPage page : viewPages) {
-                        refreshPageRows(page);
-                        // The shimmer reads the theme colours at draw time (FlickerLoadingView's
-                        // updateColors is its own onDraw); a redraw is its recolor.
-                        if (page.progressView != null) {
-                            page.progressView.invalidate();
-                        }
-                    }
-                }
-                actionBarDefaultPaint.setColor(getThemedColor(Theme.key_windowBackgroundWhite));
-                if (this.actionBar != null) {
-                    this.actionBar.updateColors();
-                    this.actionBar.invalidate();
-                }
-                if (fragmentView != null) {
-                    fragmentView.invalidate();
-                }
+                updateColors();
             };
+
+    /**
+     * Re-reads every colour this screen paints from the theme - the way DialogsActivity's own
+     * theme delegate does it (12022-12033): the header's band, the bar's glass, the strip, the
+     * search field, the pill, the floating button and the rows, all in place. Called from the
+     * global theme notification and from the shell's theme animation, which applies this
+     * fragment's {@link ThemeDescription}s.
+     */
+    private void updateColors() {
+        if (this.glassHost != null) {
+            this.glassHost.updateColors();
+        }
+        if (this.tabsView != null) {
+            this.tabsView.updateColors();
+        }
+        if (this.searchField != null) {
+            this.searchField.updateColors();
+        }
+        if (this.searchPanel != null) {
+            this.searchPanel.updateColors();
+        }
+        if (this.newTopicsPill != null) {
+            // The service paints are shared and the cell reads them at draw time
+            // (ChatActionCell.drawBackground, 3319-3321); a redraw is the whole recolor.
+            this.newTopicsPill.invalidate();
+        }
+        // The floating button's colours are set once in its own updateColors
+        // (FragmentFloatingButton:150), the way DialogsActivity's delegate refreshes its
+        // floatingButton3 (12077).
+        if (this.startTopicButton != null) {
+            this.startTopicButton.updateColors();
+        }
+        // DialogsActivity's theme delegate rebinds its attached DialogCells
+        // (12022-12033); the same rows live here, so the same rebind.
+        if (viewPages != null) {
+            for (ViewPage page : viewPages) {
+                refreshPageRows(page);
+                // The shimmer reads the theme colours at draw time (FlickerLoadingView's
+                // updateColors is its own onDraw); a redraw is its recolor.
+                if (page.progressView != null) {
+                    page.progressView.invalidate();
+                }
+            }
+        }
+        actionBarDefaultPaint.setColor(getThemedColor(Theme.key_windowBackgroundWhite));
+        if (this.actionBar != null) {
+            this.actionBar.updateColors();
+            this.actionBar.invalidate();
+        }
+        if (fragmentView != null) {
+            fragmentView.invalidate();
+        }
+    }
+
     private FragmentFloatingButton startTopicButton;
     private org.telegram.ui.ActionBar.ActionBarMenuItem tagItem;
     private org.telegram.ui.ActionBar.ActionBarMenuItem clearTagItem;
@@ -405,6 +430,14 @@ public class TopicListFragment extends BaseFragment
         // field (DialogsActivity adds it between the two, 5331-5338, and gives its background up
         // to the frame at 5425).
         actionBar.setDrawBlurBackground(frame);
+        // DialogsActivity's own bar carries no scrim colour of its own - its createActionBar
+        // (3101-3196) never sets a background, so ActionBar.dispatchDraw's own blur rect
+        // (2272-2279) stays off and the frame's band is the header. BaseFragment.createActionBar
+        // leaves this bar with key_actionBarDefault (435), which would draw that rect with a
+        // colour nothing re-reads on a theme switch: the band would keep painting the old theme
+        // while everything under it recolours. Drop it here, where the bar hands the band to the
+        // frame, so the frame's actionBarDefaultPaint is the header, as upstream's is.
+        actionBar.setBackgroundColor(Color.TRANSPARENT);
         frame.addView(actionBar, LayoutHelper.createFrame(
                 LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
@@ -571,6 +604,35 @@ public class TopicListFragment extends BaseFragment
         loadCategories();
         loadTags();
         return fragmentView;
+    }
+
+    /**
+     * DialogsActivity's own theme descriptions, for this screen's surfaces (12041-12180): the
+     * frame's header band is a paint the theme animation writes the new colour into (12136),
+     * and the bar's items, title and selector travel with it (12122-12134). The delegate
+     * recolours the rest of the page in place. The shell's theme animation reaches these through
+     * {@code NativeDoMainTabsActivity.getThemeDescriptions()}, which forwards to its pages the
+     * way {@code ViewPagerActivity}'s does (241-250).
+     */
+    @Override
+    public ArrayList<ThemeDescription> getThemeDescriptions() {
+        ArrayList<ThemeDescription> themeDescriptions = new ArrayList<>();
+
+        themeDescriptions.add(new ThemeDescription(fragmentView, 0, null, actionBarDefaultPaint,
+                null, null, Theme.key_windowBackgroundWhite));
+        themeDescriptions.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_AB_ITEMSCOLOR,
+                null, null, null, null, Theme.key_actionBarDefaultIcon));
+        themeDescriptions.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_AB_TITLECOLOR,
+                null, null, null, null, Theme.key_actionBarDefaultTitle));
+        themeDescriptions.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_AB_SELECTORCOLOR,
+                null, null, null, null, Theme.key_actionBarDefaultSelector));
+
+        ThemeDescription.ThemeDescriptionDelegate delegate = this::updateColors;
+        themeDescriptions.add(new ThemeDescription(null, 0, null, null, null, delegate,
+                Theme.key_windowBackgroundWhite));
+        themeDescriptions.add(new ThemeDescription(null, 0, null, null, null, delegate,
+                Theme.key_dialogBackground));
+        return themeDescriptions;
     }
 
     /**
