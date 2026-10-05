@@ -1267,12 +1267,17 @@ public class ProfileActionsView extends View {
     }
 
     public enum ActionButton {
-        MESSAGE(R.string.ProfileActionsMessage, R.drawable.filled_profile_message_24, R.drawable.outline_profile_message_24),
+        // The buttons this client reaches carry Chinese titles: upstream's resources have no
+        // values-zh in this build, so ProfileActionsMessage/ProfileButtonMute resolve to English.
+        // The icons stay upstream's own; 取消关注 uses upstream's "remove from contacts" mark
+        // (msg_user_remove, the one ProfileActivity's delete-contact row and SelfStoryViewsPage's
+        // StoryDeleteContact use) instead of the door/exit `leave` glyph, which reads as log-out.
+        MESSAGE("私信", R.drawable.filled_profile_message_24, R.drawable.outline_profile_message_24),
         FOLLOW("关注", R.drawable.filled_profile_member_24, R.drawable.outline_profile_member_24),
-        UNFOLLOW("取消关注", R.drawable.leave, R.drawable.leave),
+        UNFOLLOW("取消关注", R.drawable.msg_user_remove, R.drawable.msg_user_remove),
         BOOKMARKS("书签", R.drawable.msg_saved, R.drawable.outline_saved_24),
-        NOTIFICATION_MUTE(R.string.ProfileButtonMute, R.drawable.filled_profile_mute_24, R.drawable.outline_profile_mute_24),
-        NOTIFICATION_UNMUTE(R.string.ProfileButtonUnmute, R.drawable.filled_profile_unmute_24, R.drawable.outline_profile_unmute_24),
+        NOTIFICATION_MUTE("静音", R.drawable.filled_profile_mute_24, R.drawable.outline_profile_mute_24),
+        NOTIFICATION_UNMUTE("取消静音", R.drawable.filled_profile_unmute_24, R.drawable.outline_profile_unmute_24),
         DISCUSS(R.string.ProfileActionsDiscuss, R.drawable.filled_profile_message_24, R.drawable.outline_profile_message_24),
         GIFT(R.string.ProfileActionsGift, R.drawable.gift, R.drawable.input_gift_s),
         SHARE("分享", R.drawable.action_share, R.drawable.msg_share),
@@ -1288,7 +1293,7 @@ public class ProfileActionsView extends View {
         SET_PHOTO(R.string.ProfileActionsEditPhoto2, R.drawable.filled_profile_photo, R.drawable.outline_profile_photo),
         EDIT_USERNAME(R.string.ProfileActionsEditUsername, R.drawable.filled_profile_edit_24, R.drawable.outline_profile_edit_24),
         EDIT_INFO(R.string.ProfileActionsEditInfo, R.drawable.filled_profile_edit_24, R.drawable.outline_profile_edit_24),
-        SETTINGS(R.string.Settings, R.drawable.filled_profile_settings, R.drawable.outline_profile_settings),;
+        SETTINGS("设置", R.drawable.filled_profile_settings, R.drawable.outline_profile_settings),;
 
         final @StringRes int title;
         final CharSequence customTitle;
