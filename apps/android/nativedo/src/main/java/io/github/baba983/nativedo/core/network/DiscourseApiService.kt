@@ -23,7 +23,9 @@ import io.github.baba983.nativedo.core.model.TopicDetail
 import io.github.baba983.nativedo.core.model.TopicListPage
 import io.github.baba983.nativedo.core.model.TopicSummary
 import io.github.baba983.nativedo.core.model.UserActionPage
+import io.github.baba983.nativedo.core.model.UserBadge
 import io.github.baba983.nativedo.core.model.UserProfile
+import io.github.baba983.nativedo.core.model.UserSummary
 import io.github.baba983.nativedo.core.session.SessionUserSummary
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -292,6 +294,40 @@ interface DiscourseApiService {
 
     @GET("u/{username}.json")
     suspend fun profile(@Path("username") username: String): UserProfileResponseDto
+
+    /** `GET /u/{username}/summary.json`: the stats block (likes, days visited, post counts). */
+    @GET("u/{username}/summary.json")
+    suspend fun userSummary(@Path("username") username: String): UserSummaryResponseDto
+
+    /** `GET /user-badges/{username}.json`: the badges granted to the reader, newest first. */
+    @GET("user-badges/{username}.json")
+    suspend fun userBadges(@Path("username") username: String): UserBadgesResponseDto
+
+    /** Follows: the discourse-follow plugin's `PUT /follow/{username}`. */
+    @PUT("follow/{username}.json")
+    suspend fun follow(
+        @Path("username") username: String,
+        @Header("X-CSRF-Token") csrfToken: String,
+    ): ResponseBody
+
+    /** Unfollows: the plugin's `DELETE /follow/{username}`. */
+    @DELETE("follow/{username}.json")
+    suspend fun unfollow(
+        @Path("username") username: String,
+        @Header("X-CSRF-Token") csrfToken: String,
+    ): ResponseBody
+
+    /**
+     * `PUT /u/{username}/notification_level.json`: `mute`, `ignore` or `normal`. The site answers
+     * with the reader's new notification level for that user.
+     */
+    @FormUrlEncoded
+    @PUT("u/{username}/notification_level.json")
+    suspend fun setNotificationLevel(
+        @Path("username") username: String,
+        @Field("notification_level") level: String,
+        @Header("X-CSRF-Token") csrfToken: String,
+    ): ResponseBody
 
     @GET("session/current.json")
     suspend fun currentSession(): CurrentSessionResponseDto
@@ -942,6 +978,86 @@ data class UserDto(
     val acceptedAnswers: Int = 0,
     @SerialName("primary_group_name")
     val primaryGroupName: String? = null,
+    // Optional fields: a public profile the reader may not act on sends none of these.
+    val location: String? = null,
+    val website: String? = null,
+    @SerialName("website_name")
+    val websiteName: String? = null,
+    @SerialName("can_send_private_message_to_user")
+    val canSendPrivateMessage: Boolean = false,
+    @SerialName("can_follow")
+    val canFollow: Boolean = false,
+    @SerialName("is_followed")
+    val isFollowed: Boolean = false,
+    @SerialName("can_mute_user")
+    val canMuteUser: Boolean = false,
+    @SerialName("can_ignore_user")
+    val canIgnoreUser: Boolean = false,
+    val muted: Boolean = false,
+    val ignored: Boolean = false,
+)
+
+@Serializable
+data class UserSummaryResponseDto(
+    @SerialName("user_summary")
+    val userSummary: UserSummaryDto = UserSummaryDto(),
+    /** The badge definitions the summary's own grants refer to; the same join as user-badges. */
+    val badges: List<BadgeDto> = emptyList(),
+)
+
+@Serializable
+data class UserSummaryDto(
+    @SerialName("topic_count")
+    val topicCount: Int = 0,
+    @SerialName("post_count")
+    val postCount: Int = 0,
+    @SerialName("likes_given")
+    val likesGiven: Int = 0,
+    @SerialName("likes_received")
+    val likesReceived: Int = 0,
+    @SerialName("days_visited")
+    val daysVisited: Int = 0,
+    @SerialName("posts_read_count")
+    val postsReadCount: Int = 0,
+    @SerialName("topics_entered")
+    val topicsEntered: Int = 0,
+    @SerialName("bookmark_count")
+    val bookmarkCount: Int = 0,
+    @SerialName("time_read")
+    val timeRead: Int = 0,
+)
+
+@Serializable
+data class UserBadgesResponseDto(
+    @SerialName("user_badges")
+    val userBadges: List<UserBadgeGrantDto> = emptyList(),
+    val badges: List<BadgeDto> = emptyList(),
+)
+
+@Serializable
+data class UserBadgeGrantDto(
+    val id: Long,
+    @SerialName("badge_id")
+    val badgeId: Long = 0,
+    @SerialName("granted_at")
+    val grantedAt: String = "",
+    val count: Int = 1,
+    /** Some payloads (the profile endpoint's own badge block) flatten the definition in. */
+    val name: String? = null,
+    val description: String? = null,
+    val icon: String? = null,
+    @SerialName("image_url")
+    val imageUrl: String? = null,
+)
+
+@Serializable
+data class BadgeDto(
+    val id: Long,
+    val name: String = "",
+    val description: String = "",
+    val icon: String? = null,
+    @SerialName("image_url")
+    val imageUrl: String? = null,
 )
 
 @Serializable
@@ -1221,7 +1337,55 @@ internal fun UserProfileResponseDto.toModel(): UserProfile = UserProfile(
     totalFollowing = user.totalFollowing,
     acceptedAnswers = user.acceptedAnswers,
     primaryGroupName = user.primaryGroupName.orEmpty(),
+    location = user.location.orEmpty(),
+    website = user.website.orEmpty(),
+    websiteName = user.websiteName.orEmpty(),
+    canSendPrivateMessage = user.canSendPrivateMessage,
+    canFollow = user.canFollow,
+    isFollowed = user.isFollowed,
+    canMuteUser = user.canMuteUser,
+    canIgnoreUser = user.canIgnoreUser,
+    muted = user.muted,
+    ignored = user.ignored,
 )
+
+internal fun UserSummaryResponseDto.toModel(): UserSummary = UserSummary(
+    topicCount = userSummary.topicCount,
+    postCount = userSummary.postCount,
+    likesGiven = userSummary.likesGiven,
+    likesReceived = userSummary.likesReceived,
+    daysVisited = userSummary.daysVisited,
+    postsReadCount = userSummary.postsReadCount,
+    topicsEntered = userSummary.topicsEntered,
+    bookmarkCount = userSummary.bookmarkCount,
+    timeRead = userSummary.timeRead,
+)
+
+/**
+ * The badges list joins each grant with its definition by `badge_id`. A payload that already
+ * carries the definition on the grant (the profile endpoint's flattened badge block) is read as
+ * it is; a grant whose definition is missing is dropped rather than drawn as a nameless row.
+ */
+internal fun UserBadgesResponseDto.toModel(): List<UserBadge> {
+    val definitions = badges.associateBy(BadgeDto::id)
+    return userBadges.mapNotNull { grant ->
+        val definition = definitions[grant.badgeId]
+        val name = grant.name?.takeIf(String::isNotBlank) ?: definition?.name.orEmpty()
+        if (name.isBlank()) {
+            return@mapNotNull null
+        }
+        UserBadge(
+            id = grant.id,
+            badgeId = grant.badgeId,
+            name = name,
+            description = (grant.description ?: definition?.description.orEmpty()).plainTextFromHtml(),
+            icon = grant.icon ?: definition?.icon.orEmpty(),
+            imageUrl = grant.imageUrl ?: definition?.imageUrl.orEmpty(),
+            grantedAt = grant.grantedAt,
+            count = grant.count.coerceAtLeast(1),
+        )
+    }
+}
 
 internal fun PostDto.toModel(
     emojiCatalog: Map<String, String> = emptyMap(),

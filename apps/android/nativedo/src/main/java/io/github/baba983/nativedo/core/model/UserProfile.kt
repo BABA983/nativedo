@@ -31,4 +31,20 @@ data class UserProfile(
     val totalFollowing: Int = 0,
     val acceptedAnswers: Int = 0,
     val primaryGroupName: String = "",
+    /** Optional fields the site only sends when the reader may see them. */
+    val location: String = "",
+    val website: String = "",
+    val websiteName: String = "",
+    /**
+     * What the viewed user's own page says the reader may do to them. A profile without any of
+     * these (an anonymous read, or a field the site no longer sends) leaves the action row empty
+     * rather than offering an action that would fail.
+     */
+    val canSendPrivateMessage: Boolean = false,
+    val canFollow: Boolean = false,
+    val isFollowed: Boolean = false,
+    val canMuteUser: Boolean = false,
+    val canIgnoreUser: Boolean = false,
+    val muted: Boolean = false,
+    val ignored: Boolean = false,
 )

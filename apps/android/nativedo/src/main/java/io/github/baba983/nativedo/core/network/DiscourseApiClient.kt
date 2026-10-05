@@ -14,6 +14,8 @@ import io.github.baba983.nativedo.core.model.TopicDetail
 import io.github.baba983.nativedo.core.model.TopicListPage
 import io.github.baba983.nativedo.core.model.TopicSummary
 import io.github.baba983.nativedo.core.model.UserProfile
+import io.github.baba983.nativedo.core.model.UserSummary
+import io.github.baba983.nativedo.core.model.UserBadge
 import io.github.baba983.nativedo.core.model.UploadedFile
 import io.github.baba983.nativedo.core.model.UserActionPage
 import io.github.baba983.nativedo.core.session.LoginRequiredException
@@ -423,6 +425,36 @@ class DiscourseApiClient(
     suspend fun fetchProfile(username: String): UserProfile =
         runWithSessionBoundary {
             service.profile(username).toModel()
+        }
+
+    /** The stats block of `/u/{username}/summary.json`; a hidden summary fails, the screen copes. */
+    suspend fun fetchUserSummary(username: String): UserSummary =
+        runWithSessionBoundary {
+            service.userSummary(username).toModel()
+        }
+
+    /** The badges granted to the reader, `/user-badges/{username}.json`. */
+    suspend fun fetchUserBadges(username: String): List<UserBadge> =
+        runWithSessionBoundary {
+            service.userBadges(username).toModel()
+        }
+
+    /** Follows or unfollows with the discourse-follow plugin's own routes. */
+    suspend fun setUserFollow(username: String, follow: Boolean) =
+        runWithSessionBoundary(requiresAuthentication = true) {
+            val csrfToken = service.csrf().csrf
+            if (follow) {
+                service.follow(username = username, csrfToken = csrfToken).close()
+            } else {
+                service.unfollow(username = username, csrfToken = csrfToken).close()
+            }
+        }
+
+    /** `normal` / `mute` / `ignore`, as `PUT /u/{username}/notification_level.json` names them. */
+    suspend fun setUserNotificationLevel(username: String, level: String) =
+        runWithSessionBoundary(requiresAuthentication = true) {
+            val csrfToken = service.csrf().csrf
+            service.setNotificationLevel(username = username, level = level, csrfToken = csrfToken).close()
         }
 
     suspend fun fetchUserActions(

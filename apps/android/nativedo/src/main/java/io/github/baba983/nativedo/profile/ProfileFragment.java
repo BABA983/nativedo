@@ -2,6 +2,8 @@ package io.github.baba983.nativedo.profile;
 
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
+import android.animation.AnimatorSet;
+import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Canvas;
@@ -21,6 +23,8 @@ import android.widget.FrameLayout;
 import androidx.annotation.NonNull;
 import androidx.core.graphics.ColorUtils;
 import androidx.core.math.MathUtils;
+import androidx.core.view.NestedScrollingParent3;
+import androidx.core.view.NestedScrollingParentHelper;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -41,6 +45,7 @@ import org.telegram.ui.Cells.HeaderCell;
 import org.telegram.ui.Cells.TextDetailCell;
 import org.telegram.ui.Cells.TextInfoPrivacyCell;
 import org.telegram.ui.Components.CubicBezierInterpolator;
+import org.telegram.ui.Components.EmptyTextProgressView;
 import org.telegram.ui.Components.FlickerLoadingView;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.LinkSpanDrawable;
@@ -65,6 +70,8 @@ import io.github.baba983.nativedo.core.di.AppContainer;
 import io.github.baba983.nativedo.core.model.TopicSummary;
 import io.github.baba983.nativedo.feature.topic.data.TopicReadMarks;
 import io.github.baba983.nativedo.core.model.UserProfile;
+import io.github.baba983.nativedo.feature.profile.data.ProfileExtrasRepository;
+import io.github.baba983.nativedo.feature.profile.data.ProfileFeedRepository;
 import io.github.baba983.nativedo.topic.DiscourseAvatars;
 import io.github.baba983.nativedo.topic.DiscourseLoader;
 import io.github.baba983.nativedo.topic.DiscourseRows;
@@ -93,18 +100,42 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
     /** Whether the screen is a shell tab root, which has nothing behind it to go back to. */
     private static final String ARG_ROOT = "root";
 
+    /**
+     * The screen the avatar flies in from: the X of the chat header's avatar in the profile's own
+     * coordinate space. Upstream plays the same animation for a profile opened from the chat header
+     * ({@code playProfileAnimation == 2}, with {@code prevAvatarTranslation} captured through
+     * {@code ViewPositionWatcher.computeXCoordinateInParent}, ProfileActivity.java:10080), and
+     * ProfileActivity:8623-8690 lays the avatar out along the path this argument starts.
+     */
+    private static final String ARG_AVATAR_X = "avatarX";
+
     private static final int TYPE_SECTION = 1;
     private static final int TYPE_DETAIL = 2;
     private static final int TYPE_BIO = 3;
     private static final int TYPE_ACTION = 4;
     /** A row of the reader's own things, which opens a screen of its own. */
     private static final int TYPE_LINK = 5;
+    /** The tab area - the strip and its pages - the last row of the info list. */
+    private static final int TYPE_MEDIA = 6;
 
-    /** The activity stream's own heading, above the rows of the reader's actions. */
-    private static final String ACTION_SECTION = "动态";
+    /** 话题: the topics the reader started (`/user_actions.json?filter=4`). */
+    private static final int TAB_TOPICS = 0;
+    /** 回复: the posts they wrote (`filter=5`). */
+    private static final int TAB_REPLIES = 1;
+    /** 点赞: the posts they liked (`filter=1`). */
+    private static final int TAB_LIKES = 2;
+    /** 书签: the reader's own bookmarks - the site answers this list for nobody else. */
+    private static final int TAB_BOOKMARKS = 3;
+    /** 徽章: the badges the site granted them (`/user-badges/{u}.json`). */
+    private static final int TAB_BADGES = 4;
+    private static final int TAB_COUNT = 5;
 
-    /** How close to the end the list comes before the feed asks the site for more. */
+    /** How close a page's list comes to its end before the next page is asked for. */
     private static final int LOAD_MORE_THRESHOLD = 3;
+
+    /** The profile's own writes: the discourse-follow plugin's route pair (see endpoints.md). */
+    private static final String FOLLOW_LEVEL_MUTED = "mute";
+    private static final String FOLLOW_LEVEL_NORMAL = "normal";
 
     private FrameLayout frameLayout;
     private RecyclerListView listView;
@@ -117,17 +148,44 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
     private final List<Row> rows = new ArrayList<>();
     /** The row of the reader's own bookmarks, or -1 when this is not their own profile. */
     private int bookmarksRow = -1;
-    /** The reader's actions, as the site sent them; the list's rows after the profile's own. */
-    private final List<TopicSummary> actions = new ArrayList<>();
-    private ProfileActivityFeed feed;
-    private boolean loadingActions;
+    /** The row of the tab area, or -1 while the profile has not answered. */
+    private int mediaRow = -1;
+    /** The four actions under the header, upstream's own row (ProfileActivity.java:3880-3973). */
+    private ProfileActionsView actionsView;
+    private boolean actionsBuilt;
+    private ProfileSharedMediaView mediaView;
+    /** One page per tab; the first {@link #pageCount()} entries are in use. */
+    private final TabPageState[] tabPages = new TabPageState[TAB_COUNT];
+    /** The activity streams by filter, one pager each, in the order the tabs ask for them. */
+    private ProfileTabFeed topicsFeed;
+    private ProfileTabFeed repliesFeed;
+    private ProfileTabFeed likesFeed;
     private UserProfile profile;
+    /** The site's own action state, which the buttons flip after a successful write. */
+    private boolean isFollowed;
+    private boolean isMuted;
+    private boolean ownProfile;
     /** The gesture bar the list has to clear; the shell forwards it, this screen pads its end. */
     private int bottomInset;
     /** The site's bio with its cooked tags taken off, which both the head and the bio row draw. */
     private String bioText = "";
     private TLRPC.User avatarUser;
     private AppContainer container;
+    /** Summary stats from `/u/{u}/summary.json`; null until (and if) they arrive. */
+    private io.github.baba983.nativedo.core.model.UserSummary summary;
+
+    // The opening animation, ported from ProfileActivity's `playProfileAnimation`:
+    // 2 is the avatar's flight from the chat header's capsule (ChatAvatarContainer.openProfile
+    // picks it when the tap was on the avatar), 0 is the ordinary transition. Keep upstream's
+    // duration (250 ms), its CubicBezierInterpolator.DEFAULT and its layout path.
+    private int playProfileAnimation;
+    private boolean openAnimationInProgress;
+    private float avatarAnimationProgress;
+    private float prevAvatarTranslation;
+    private int avatarColor;
+    private final float[] backwardInitialValues = new float[4];
+    private boolean allowProfileAnimation = true;
+
 
     // The collapsing header, ported from ProfileActivity: the gooey avatar and the two text views
     // its needLayout() translates and scales as the list scrolls.
@@ -229,6 +287,18 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         return fragment;
     }
 
+    /**
+     * The same screen, opened from the chat header's capsule: {@code avatarX} is the capsule
+     * avatar's X in this screen's own coordinate space, and the avatar flies from there to its
+     * centered rest position exactly as upstream's {@code playProfileAnimation == 2} does
+     * (ChatAvatarContainer.openProfile → {@code setPlayProfileAnimation(2)}).
+     */
+    public static ProfileFragment forUserFromAvatar(String username, String displayName, float avatarX) {
+        ProfileFragment fragment = forUser(username, displayName);
+        fragment.getArguments().putFloat(ARG_AVATAR_X, avatarX);
+        return fragment;
+    }
+
     public ProfileFragment(Bundle args) {
         super(args);
     }
@@ -237,6 +307,11 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
     protected View createView(Context context) {
         final boolean root = getArguments() != null && getArguments().getBoolean(ARG_ROOT, false);
         final boolean hasMainTabs = getArguments() != null && getArguments().getBoolean("hasMainTabs", false);
+        // The avatar's flight is the chat header's animation (ProfileActivity's
+        // `playProfileAnimation == 2`); the ordinary transition is everything else.
+        playProfileAnimation = getArguments() != null && getArguments().containsKey(ARG_AVATAR_X) ? 2 : 0;
+        prevAvatarTranslation = getArguments() == null ? 0f : getArguments().getFloat(ARG_AVATAR_X, 0f);
+        allowProfileAnimation = playProfileAnimation != 0 && !hasMainTabs;
         additionNavigationBarHeight = hasMainTabs ? AndroidUtilities.dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS) : 0;
         // The profile draws behind its own transparent action bar, the way upstream's profile does
         // (ProfileActivity.java:2470-2478), so it keeps its view the whole screen.
@@ -258,18 +333,16 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             }
         });
 
+        actionsView = new ProfileActionsView(context, AndroidUtilities.dp(74));
+        actionsView.setOnActionClickListener(this::onActionClicked);
+        actionsView.setVisibility(View.GONE);
+
         extraHeight = getHeaderExtraHeight();
 
-        frameLayout = new FrameLayout(context) {
-            @Override
-            protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
-                // The head room is settled before the children lay out, so the seeded offset is
-                // what this very pass places the first row with.
-                settleHeaderInList();
-                super.onLayout(changed, left, top, right, bottom);
-                checkListViewScroll();
-            }
-        };
+        // The root of the screen is upstream's NestedFrameLayout (ProfileActivity.java:1710-1810):
+        // the outer list is its child, and while the media row is pinned to the list's top an
+        // upward drag the list cannot take continues into the page's own list.
+        frameLayout = new NestedFrameLayout(context);
 
         // The list's own touch handling is upstream's ClippedListView (ProfileActivity.java:4129-4235):
         // the release either finishes the expansion or snaps the header back to rest, and the
@@ -353,21 +426,12 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         listView.setVerticalScrollBarEnabled(false);
         listView.setClipToPadding(false);
         listView.setPadding(0, getHeaderExtraHeight(), 0, listBottomPadding());
-        listView.setOnItemClickListener((view, position) -> {
-            if (position == bookmarksRow) {
-                presentFragment(new io.github.baba983.nativedo.bookmarks.BookmarksFragment());
-                return;
-            }
-            TopicSummary action = actionAt(position);
-            if (action != null) {
-                presentAction(action);
-            }
-        });
+        // The rows of the info list are text to read; the tappable things are the action row's
+        // buttons and the pages' own rows, each with their own click handling.
         listView.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
             public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
                 checkListViewScroll();
-                loadNextActionsIfNeeded();
             }
         });
         frameLayout.addView(listView, LayoutHelper.createFrame(
@@ -457,6 +521,11 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
 
         frameLayout.addView(avatarContainer2, LayoutHelper.createFrame(
                 LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.START));
+        // The action row rides inside the header container the way ProfileActivity places it
+        // (avatarContainer2.addView(actionsView, createFrame(-1, -1)), ProfileActivity.java:5491);
+        // its Y is what needLayout() moves as the header collapses.
+        avatarContainer2.addView(actionsView, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
         frameLayout.addView(actionBar);
 
         // The shell's insets land on the fragment view the way NativeDoActivity's land on its
@@ -465,6 +534,12 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         ViewCompat.setOnApplyWindowInsetsListener(frameLayout, (view, insets) -> {
             bottomInset = AndroidUtilities.getDefaultWindowInsets(insets, false).bottom;
             listView.setPadding(0, listView.getPaddingTop(), 0, listBottomPadding());
+            // The pages clear the same gesture bar the info list does.
+            for (TabPageState page : tabPages) {
+                if (page != null) {
+                    page.listView.setPadding(0, page.listView.getPaddingTop(), 0, listBottomPadding());
+                }
+            }
             return WindowInsetsCompat.CONSUMED;
         });
 
@@ -532,10 +607,11 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
 
     private void loadProfile() {
         container = NativeDo.container(getParentActivity());
-        feed = new ProfileActivityFeed(container.getProfileFeedRepository(), username());
-        loadActions();
         ProfileLoader.INSTANCE.load(container, username(), loaded -> {
             profile = loaded;
+            isFollowed = loaded.isFollowed();
+            isMuted = loaded.getMuted();
+            ownProfile = isOwnProfile();
             avatarUser = DiscourseAvatars.INSTANCE.user(
                     loaded.getUsername(),
                     loaded.getDisplayName(),
@@ -550,9 +626,12 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                     container.getBaseUrl(),
                     DiscourseAvatars.EXPANDED_SIZE);
             buildRows(loaded);
+            buildActions(loaded);
+            buildMedia();
             notifyRowsChanged();
             bindAvatar();
             fetchAvatar();
+            loadSummary();
             return kotlin.Unit.INSTANCE;
         }, error -> {
             FileLog.e("profile failed", error);
@@ -564,6 +643,25 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             if (progressView != null) {
                 progressView.setVisibility(View.GONE);
             }
+            return kotlin.Unit.INSTANCE;
+        });
+    }
+
+    /**
+     * The stats the profile endpoint does not carry. The summary is drawn as soon as it arrives
+     * (the list re-binds); a site that hides it, or an outage, leaves the fields the profile did
+     * send standing.
+     */
+    private void loadSummary() {
+        ProfileLoader.INSTANCE.loadSummary(container, username(), loaded -> {
+            summary = loaded;
+            if (profile != null) {
+                buildRows(profile);
+                notifyRowsChanged();
+            }
+            return kotlin.Unit.INSTANCE;
+        }, error -> {
+            FileLog.e("profile summary failed", error);
             return kotlin.Unit.INSTANCE;
         });
     }
@@ -640,25 +738,13 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
     }
 
     /**
-     * The screen's rows, in the order it shows them. Every field the site sent and left non-empty
-     * becomes one row; a field the reader's own site profile does not carry is not a row of dashes.
+     * The screen's rows, in the order it shows them: the bio upstream's info block leads with
+     * (ProfileActivity's AboutLinkCell slot), then the reader's fields, then their stats. Every
+     * field the site sent and left non-empty becomes one row; a field it did not send is not a row
+     * of dashes.
      */
     private void buildRows(UserProfile loaded) {
         rows.clear();
-        rows.add(Row.section("资料"));
-        rows.add(Row.detail("信任等级", String.valueOf(loaded.getTrustLevel())));
-        addIfPresent("头衔", loaded.getTitle());
-        addIfPresent("用户组", loaded.getPrimaryGroupName());
-        addIfPresent("加入时间", date(loaded.getCreatedAt()));
-        addIfPresent("最近活跃", date(loaded.getLastSeenAt()));
-        rows.add(Row.section("统计"));
-        addIfPresent("阅读时长", readTime(loaded.getTimeRead()));
-        rows.add(Row.detail("浏览", String.valueOf(loaded.getProfileViewCount())));
-        rows.add(Row.detail("徽章", String.valueOf(loaded.getBadgeCount())));
-        rows.add(Row.detail("得分", String.valueOf(loaded.getGamificationScore())));
-        rows.add(Row.detail("关注者", String.valueOf(loaded.getTotalFollowers())));
-        rows.add(Row.detail("关注中", String.valueOf(loaded.getTotalFollowing())));
-        rows.add(Row.detail("被采纳回复", String.valueOf(loaded.getAcceptedAnswers())));
         // The site sends the bio as cooked HTML; the head and the bio row both draw text, so the
         // tags come off once, here.
         bioText = loaded.getBio() == null ? "" : org.jsoup.Jsoup.parse(loaded.getBio()).text().trim();
@@ -666,7 +752,34 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             rows.add(Row.section("关于我"));
             rows.add(Row.bio(bioText));
         }
-        addOwnRows();
+        rows.add(Row.section("资料"));
+        addIfPresent("用户名", loaded.getUsername());
+        rows.add(Row.detail("信任等级", String.valueOf(loaded.getTrustLevel())));
+        addIfPresent("头衔", loaded.getTitle());
+        addIfPresent("用户组", loaded.getPrimaryGroupName());
+        addIfPresent("所在地", loaded.getLocation());
+        addIfPresent("个人网站", loaded.getWebsiteName().isEmpty() ? loaded.getWebsite() : loaded.getWebsiteName());
+        addIfPresent("加入时间", date(loaded.getCreatedAt()));
+        addIfPresent("最近活跃", date(loaded.getLastSeenAt()));
+        addIfPresent("最后发帖", date(loaded.getLastPostedAt()));
+        rows.add(Row.section("统计"));
+        // The summary's own numbers first: they are the ones the site's profile page shows, and a
+        // summary the reader may not see leaves them out rather than printing zeroes.
+        if (summary != null) {
+            rows.add(Row.detail("话题", String.valueOf(summary.getTopicCount())));
+            rows.add(Row.detail("帖子", String.valueOf(summary.getPostCount())));
+            rows.add(Row.detail("获赞", String.valueOf(summary.getLikesReceived())));
+            rows.add(Row.detail("送出赞", String.valueOf(summary.getLikesGiven())));
+            rows.add(Row.detail("访问天数", String.valueOf(summary.getDaysVisited())));
+            rows.add(Row.detail("阅读帖子", String.valueOf(summary.getPostsReadCount())));
+        }
+        addIfPresent("阅读时长", readTime(loaded.getTimeRead()));
+        rows.add(Row.detail("浏览", String.valueOf(loaded.getProfileViewCount())));
+        rows.add(Row.detail("徽章", String.valueOf(loaded.getBadgeCount())));
+        rows.add(Row.detail("得分", String.valueOf(loaded.getGamificationScore())));
+        rows.add(Row.detail("关注者", String.valueOf(loaded.getTotalFollowers())));
+        rows.add(Row.detail("关注中", String.valueOf(loaded.getTotalFollowing())));
+        rows.add(Row.detail("被采纳回复", String.valueOf(loaded.getAcceptedAnswers())));
         // Upstream separates the rows of a section with a divider, and the last row of each section
         // ends the list's section rather than continuing it.
         for (int index = 0; index < rows.size(); index++) {
@@ -677,21 +790,8 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             Row next = index + 1 < rows.size() ? rows.get(index + 1) : null;
             row.divider = next != null && next.type == TYPE_DETAIL;
         }
-    }
-
-    /**
-     * The reader's own things, which only their own profile lists: the site answers a bookmark list
-     * for the reader themselves and nobody else, so a row that opened it from another reader would
-     * open the reader's own list under someone else's name.
-     */
-    private void addOwnRows() {
-        bookmarksRow = -1;
-        if (!isOwnProfile()) {
-            return;
-        }
-        rows.add(Row.section("我的"));
-        bookmarksRow = rows.size();
-        rows.add(Row.link("书签"));
+        // The tab area is the list's last row; its own row placeholder only exists once its view is
+        // built (buildMedia), so the index is appended there.
     }
 
     private boolean isOwnProfile() {
@@ -710,44 +810,561 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
     }
 
     /**
-     * The reader's activity: the topics they started and the replies they wrote, as one stream
-     * newest first ({@link ProfileActivityFeed} merges the site's two filters). Its rows go after
-     * everything the profile itself says, and the next page arrives as the reader reaches the end of
-     * the list - a profile has no "load more" button on the site either.
+     * The row under the header, from the site's own answer: an action the site did not offer - a
+     * private message it will not deliver, a follow it will not take - is not a button, and the
+     * share action is always there because the profile link always is.
      */
-    private void loadActions() {
-        if (feed == null || loadingActions) {
+    private void buildActions(UserProfile loaded) {
+        if (actionsView == null) {
             return;
         }
-        loadingActions = true;
-            feed.loadMore(() -> {
-            loadingActions = false;
-            List<TopicSummary> merged = feed.actions();
-            actions.clear();
-            actions.addAll(merged);
-            notifyRowsChanged();
+        actionsView.mode = ownProfile ? ProfileActionsView.MODE_MY_PROFILE : ProfileActionsView.MODE_USER;
+        actionsView.beginApplyingActions();
+        if (ownProfile) {
+            actionsView.addBookmarks();
+            actionsView.addSettings();
+            actionsView.addShare();
+        } else {
+            actionsView.set(ProfileActionsView.KEY_MESSAGE, loaded.getCanSendPrivateMessage());
+            actionsView.set(ProfileActionsView.KEY_FOLLOW, loaded.getCanFollow() && !isFollowed);
+            actionsView.set(ProfileActionsView.KEY_UNFOLLOW, loaded.getCanFollow() && isFollowed);
+            actionsView.set(ProfileActionsView.KEY_NOTIFICATION, loaded.getCanMuteUser());
+            actionsView.set(ProfileActionsView.KEY_SHARE, true);
+            actionsView.setNotifications(!isMuted);
+        }
+        actionsView.commitActions();
+        actionsView.setVisibility(View.VISIBLE);
+    }
+
+    /**
+     * What a button does. The writes come back through [ProfileLoader], and a successful one flips
+     * the site's own state before the row is rebuilt - upstream re-applies its actions after a
+     * write the same way (ProfileActivity.java:6911-6916).
+     */
+    private void onActionClicked(int key, float x, float y) {
+        switch (key) {
+            case ProfileActionsView.KEY_MESSAGE:
+                openNewMessage();
+                break;
+            case ProfileActionsView.KEY_FOLLOW:
+                setFollow(true);
+                break;
+            case ProfileActionsView.KEY_UNFOLLOW:
+                setFollow(false);
+                break;
+            case ProfileActionsView.KEY_NOTIFICATION:
+                setMuted(!isMuted);
+                break;
+            case ProfileActionsView.KEY_SHARE:
+                shareProfile();
+                break;
+            case ProfileActionsView.KEY_BOOKMARKS:
+                presentFragment(new io.github.baba983.nativedo.bookmarks.BookmarksFragment());
+                break;
+            case ProfileActionsView.KEY_SETTINGS:
+                presentFragment(new io.github.baba983.nativedo.settings.SettingsFragment());
+                break;
+            default:
+                break;
+        }
+    }
+
+    private void setFollow(boolean follow) {
+        if (container == null || profile == null) {
+            return;
+        }
+        ProfileLoader.INSTANCE.setFollow(container, username(), follow, () -> {
+            isFollowed = follow;
+            if (actionsView != null && profile != null) {
+                actionsView.set(ProfileActionsView.KEY_FOLLOW, profile.getCanFollow() && !isFollowed);
+                actionsView.set(ProfileActionsView.KEY_UNFOLLOW, profile.getCanFollow() && isFollowed);
+            }
+            showBulletin(follow ? "已关注" : "已取消关注", true);
+            return kotlin.Unit.INSTANCE;
+        }, error -> {
+            FileLog.e("follow failed", error);
+            showBulletin("操作失败，请重试", false);
             return kotlin.Unit.INSTANCE;
         });
     }
 
-    /** Asks for the next page once the reader is within a few rows of the end of what is there. */
-    private void loadNextActionsIfNeeded() {
-        if (listView == null || listView.getAdapter() == null || actions.isEmpty()) {
+    private void setMuted(boolean muted) {
+        if (container == null || profile == null) {
             return;
         }
-        LinearLayoutManager manager = (LinearLayoutManager) listView.getLayoutManager();
-        if (manager == null
-                || manager.findLastVisibleItemPosition()
-                < listView.getAdapter().getItemCount() - 1 - LOAD_MORE_THRESHOLD) {
-            return;
-        }
-        loadActions();
+        ProfileLoader.INSTANCE.setMuted(container, username(), muted, () -> {
+            isMuted = muted;
+            if (actionsView != null) {
+                actionsView.setNotifications(!isMuted);
+            }
+            showBulletin(muted ? "已静音" : "已取消静音", true);
+            return kotlin.Unit.INSTANCE;
+        }, error -> {
+            FileLog.e("mute failed", error);
+            showBulletin("操作失败，请重试", false);
+            return kotlin.Unit.INSTANCE;
+        });
     }
 
-    /** The action the row at [position] draws, or null when it is a row of the profile itself. */
-    private TopicSummary actionAt(int position) {
-        int index = position - rows.size();
-        return index >= 1 && index <= actions.size() ? actions.get(index - 1) : null;
+    /**
+     * 私信 opens the site's own composer in the in-app browser: Discourse writes a private message
+     * at `/new-message?username={u}`, and the browser shares this session's cookies, so the page
+     * arrives signed in. The action is only offered while the profile says the reader may send one.
+     */
+    private void openNewMessage() {
+        if (getParentActivity() == null || container == null) {
+            return;
+        }
+        org.telegram.messenger.browser.Browser.openUrl(
+                getParentActivity(),
+                container.getBaseUrl().replaceAll("/+$", "") + "/new-message?username=" + username());
+    }
+
+    /** 分享 hands the profile's site URL to the system share sheet, the clipboard as fallback. */
+    private void shareProfile() {
+        if (getParentActivity() == null) {
+            return;
+        }
+        String url = profileUrl();
+        android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_SEND);
+        intent.setType("text/plain");
+        intent.putExtra(android.content.Intent.EXTRA_TEXT, url);
+        try {
+            getParentActivity().startActivity(
+                    android.content.Intent.createChooser(intent, null));
+        } catch (Exception e) {
+            FileLog.e(e);
+            org.telegram.messenger.AndroidUtilities.addToClipboard(url);
+            showBulletin("链接已复制", true);
+        }
+    }
+
+    private String profileUrl() {
+        String base = container == null ? "" : container.getBaseUrl().replaceAll("/+$", "");
+        return base + "/u/" + username();
+    }
+
+    private void showBulletin(String text, boolean success) {
+        try {
+            org.telegram.ui.Components.BulletinFactory factory =
+                    org.telegram.ui.Components.BulletinFactory.of(this);
+            if (success) {
+                factory.createSuccessBulletin(text).show();
+            } else {
+                factory.createErrorBulletin(text).show();
+            }
+        } catch (Exception e) {
+            FileLog.e(e);
+        }
+    }
+
+
+    // ---------------------------------------------------------------------------------------------
+    // The tab area, ported from SharedMediaLayout's mechanism: a strip, a pager, and one
+    // Discourse page per site list. The pages are RecyclerListViews of our own; nothing here
+    // touches Telegram's own media loading.
+    // ---------------------------------------------------------------------------------------------
+
+    /** The tabs in the order the strip shows them; 书签 is the reader's own list only. */
+    private static final int[] OWN_TABS = {TAB_TOPICS, TAB_REPLIES, TAB_LIKES, TAB_BOOKMARKS, TAB_BADGES};
+    private static final int[] OTHER_TABS = {TAB_TOPICS, TAB_REPLIES, TAB_LIKES, TAB_BADGES};
+
+    /** The site pages `/u/{u}/bookmarks.json` twenty at a time. */
+    private static final int BOOKMARK_PAGE_SIZE = 20;
+
+    private int pageCount() {
+        return (ownProfile ? OWN_TABS : OTHER_TABS).length;
+    }
+
+    private int tabAt(int index) {
+        int[] tabs = ownProfile ? OWN_TABS : OTHER_TABS;
+        return index >= 0 && index < tabs.length ? tabs[index] : TAB_TOPICS;
+    }
+
+    private CharSequence tabTitle(int tab) {
+        switch (tab) {
+            case TAB_REPLIES:
+                return "回复";
+            case TAB_LIKES:
+                return "点赞";
+            case TAB_BOOKMARKS:
+                return "书签";
+            case TAB_BADGES:
+                return "徽章";
+            default:
+                return "话题";
+        }
+    }
+
+    private String emptyText(int tab) {
+        switch (tab) {
+            case TAB_REPLIES:
+                return "还没有回复";
+            case TAB_LIKES:
+                return "还没有点赞";
+            case TAB_BOOKMARKS:
+                return "还没有书签";
+            case TAB_BADGES:
+                return "还没有徽章";
+            default:
+                return "还没有话题";
+        }
+    }
+
+    /**
+     * Builds the tab area and appends it to the info list. Called once the profile - and with it
+     * whether this is the reader's own screen - is known.
+     */
+    private void buildMedia() {
+        if (mediaView != null || frameLayout == null || listView == null) {
+            return;
+        }
+        mediaView = new ProfileSharedMediaView(frameLayout.getContext(), resourceProvider,
+                new ProfileSharedMediaView.Delegate() {
+                    @Override
+                    public int getTabCount() {
+                        return pageCount();
+                    }
+
+                    @Override
+                    public CharSequence getTabTitle(int index) {
+                        return tabTitle(tabAt(index));
+                    }
+
+                    @Override
+                    public View onCreatePageView(int index) {
+                        return pageState(tabAt(index)).root;
+                    }
+
+                    @Override
+                    public void onPageSelected(int index) {
+                        pageState(tabAt(index)).loadFirstIfNeeded();
+                    }
+
+                    @Override
+                    public void onPageReselected(int index) {
+                        TabPageState state = tabPages[tabAt(index)];
+                        if (state != null) {
+                            state.listView.smoothScrollToPosition(0);
+                        }
+                    }
+                });
+        mediaView.buildTabs();
+        mediaRow = rows.size();
+        rows.add(Row.media());
+        pageState(TAB_TOPICS).loadFirstIfNeeded();
+    }
+
+    private TabPageState pageState(int tab) {
+        if (tabPages[tab] == null) {
+            tabPages[tab] = new TabPageState(tab);
+        }
+        return tabPages[tab];
+    }
+
+    /** The strip's current page list, which is where a pinned scroll goes (see NestedFrameLayout). */
+    private RecyclerListView currentPageList() {
+        if (mediaView == null) {
+            return null;
+        }
+        int tab = mediaView.getCurrentTab();
+        return tab >= 0 && tab < tabPages.length && tabPages[tab] != null
+                ? tabPages[tab].listView
+                : null;
+    }
+
+    private ProfileTabFeed feedFor(int tab) {
+        switch (tab) {
+            case TAB_REPLIES:
+                if (repliesFeed == null) {
+                    repliesFeed = new ProfileTabFeed(
+                            container.getProfileFeedRepository(), username(), ProfileFeedRepository.FILTER_REPLIES);
+                }
+                return repliesFeed;
+            case TAB_LIKES:
+                if (likesFeed == null) {
+                    likesFeed = new ProfileTabFeed(
+                            container.getProfileFeedRepository(), username(), ProfileExtrasRepository.FILTER_LIKES);
+                }
+                return likesFeed;
+            default:
+                if (topicsFeed == null) {
+                    topicsFeed = new ProfileTabFeed(
+                            container.getProfileFeedRepository(), username(), ProfileFeedRepository.FILTER_TOPICS);
+                }
+                return topicsFeed;
+        }
+    }
+
+    /**
+     * One page: its own list, its own shimmer while the first page is in flight, and the site's
+     * empty answer when there is nothing. The list keeps the strip's height as its top padding,
+     * the way SharedMediaLayout pads its page lists (SharedMediaLayout.java:3100).
+     */
+    private class TabPageState {
+
+        final int tab;
+        final FrameLayout root;
+        final RecyclerListView listView;
+        final FlickerLoadingView flicker;
+        final EmptyTextProgressView empty;
+        final MediaRowsAdapter adapter;
+        final List<Object> items = new ArrayList<>();
+
+        int offset;
+        boolean loading;
+        boolean finished;
+        boolean firstLoaded;
+        final java.util.Set<String> avatarRequests = new java.util.HashSet<>();
+
+        TabPageState(int tab) {
+            this.tab = tab;
+            Context context = frameLayout.getContext();
+            root = new FrameLayout(context);
+
+            listView = new RecyclerListView(context);
+            listView.setLayoutManager(new LinearLayoutManager(context));
+            adapter = new MediaRowsAdapter(this);
+            listView.setAdapter(adapter);
+            listView.setVerticalScrollBarEnabled(false);
+            listView.setClipToPadding(false);
+            listView.setPadding(0, AndroidUtilities.dp(ProfileSharedMediaView.PAGE_TOP_PADDING_DP), 0, listBottomPadding());
+            listView.setOnItemClickListener((view, position) -> {
+                Object item = position >= 0 && position < items.size() ? items.get(position) : null;
+                if (item instanceof TopicSummary) {
+                    presentAction((TopicSummary) item);
+                } else if (item instanceof io.github.baba983.nativedo.core.model.Bookmark) {
+                    openBookmark((io.github.baba983.nativedo.core.model.Bookmark) item);
+                }
+            });
+            listView.addOnScrollListener(new RecyclerView.OnScrollListener() {
+                @Override
+                public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
+                    loadMoreIfNeeded();
+                }
+            });
+
+            flicker = new FlickerLoadingView(context);
+            flicker.setViewType(FlickerLoadingView.DIALOG_CELL_TYPE);
+            flicker.setPaddingTop(AndroidUtilities.dp(ProfileSharedMediaView.PAGE_TOP_PADDING_DP));
+            flicker.setVisibility(View.GONE);
+
+            empty = new EmptyTextProgressView(context);
+            empty.setText(emptyText(tab));
+            empty.showTextView();
+            empty.setVisibility(View.GONE);
+            // The view consumes touches in its own constructor; a page with nothing to show has
+            // nothing to tap, but the swipe between pages must stay possible.
+            empty.setOnTouchListener(null);
+            empty.setClickable(false);
+
+            root.addView(listView, LayoutHelper.createFrame(
+                    LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+            root.addView(flicker, LayoutHelper.createFrame(
+                    LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+            root.addView(empty, LayoutHelper.createFrame(
+                    LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        }
+
+        void loadFirstIfNeeded() {
+            if (firstLoaded) {
+                return;
+            }
+            firstLoaded = true;
+            loadPage();
+        }
+
+        void loadMoreIfNeeded() {
+            if (loading || finished || items.isEmpty()) {
+                return;
+            }
+            LinearLayoutManager manager = (LinearLayoutManager) listView.getLayoutManager();
+            if (manager == null
+                    || manager.findLastVisibleItemPosition()
+                    < adapter.getItemCount() - 1 - LOAD_MORE_THRESHOLD) {
+                return;
+            }
+            loadPage();
+        }
+
+        void loadPage() {
+            if (loading || finished || container == null) {
+                return;
+            }
+            loading = true;
+            updateLoadingState();
+            switch (tab) {
+                case TAB_BOOKMARKS: {
+                    final int page = offset;
+                    ProfileLoader.INSTANCE.loadBookmarks(container, username(), page, loaded -> {
+                        loading = false;
+                        offset = page + 1;
+                        finished = loaded.size() < BOOKMARK_PAGE_SIZE;
+                        items.addAll(loaded);
+                        adapter.notifyDataSetChanged();
+                        updateLoadingState();
+                        return kotlin.Unit.INSTANCE;
+                    }, error -> {
+                        loading = false;
+                        finished = true;
+                        FileLog.e("profile bookmarks failed", error);
+                        updateLoadingState();
+                        return kotlin.Unit.INSTANCE;
+                    });
+                    break;
+                }
+                case TAB_BADGES: {
+                    ProfileLoader.INSTANCE.loadBadges(container, username(), loaded -> {
+                        loading = false;
+                        finished = true;
+                        items.addAll(loaded);
+                        adapter.notifyDataSetChanged();
+                        updateLoadingState();
+                        return kotlin.Unit.INSTANCE;
+                    }, error -> {
+                        loading = false;
+                        finished = true;
+                        FileLog.e("profile badges failed", error);
+                        updateLoadingState();
+                        return kotlin.Unit.INSTANCE;
+                    });
+                    break;
+                }
+                default: {
+                    final ProfileTabFeed feed = feedFor(tab);
+                    feed.load(() -> {
+                        loading = false;
+                        finished = !feed.hasMore();
+                        items.clear();
+                        items.addAll(feed.rows());
+                        adapter.notifyDataSetChanged();
+                        updateLoadingState();
+                        return kotlin.Unit.INSTANCE;
+                    });
+                    break;
+                }
+            }
+        }
+
+        void updateLoadingState() {
+            boolean hasRows = !items.isEmpty();
+            flicker.setVisibility(loading && !hasRows ? View.VISIBLE : View.GONE);
+            empty.setVisibility(!loading && !hasRows && firstLoaded ? View.VISIBLE : View.GONE);
+        }
+    }
+
+    /** A page's rows: the site's topics, the reader's bookmarks and their badges. */
+    private class MediaRowsAdapter extends RecyclerListView.SelectionAdapter {
+
+        private final TabPageState state;
+
+        MediaRowsAdapter(TabPageState state) {
+            this.state = state;
+        }
+
+        @NonNull
+        @Override
+        public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+            Context context = parent.getContext();
+            if (viewType == TYPE_DETAIL) {
+                TextDetailCell cell = new TextDetailCell(context, resourceProvider, true, true);
+                cell.setLayoutParams(new RecyclerView.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                return new RecyclerListView.Holder(cell);
+            }
+            // A row of the activity pages is a topic, so it is the row the topic list draws.
+            DialogCell cell = new DialogCell(null, context, false, false, currentAccount, resourceProvider);
+            cell.setLayoutParams(new RecyclerView.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, AndroidUtilities.dp(72)));
+            return new RecyclerListView.Holder(cell);
+        }
+
+        @Override
+        public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
+            Object item = position < state.items.size() ? state.items.get(position) : null;
+            if (holder.itemView instanceof TextDetailCell) {
+                if (item instanceof io.github.baba983.nativedo.core.model.UserBadge) {
+                    io.github.baba983.nativedo.core.model.UserBadge badge =
+                            (io.github.baba983.nativedo.core.model.UserBadge) item;
+                    boolean divider = position + 1 < state.items.size()
+                            && state.items.get(position + 1) instanceof io.github.baba983.nativedo.core.model.UserBadge;
+                    ((TextDetailCell) holder.itemView).setTextAndValue(
+                            badge.getName(), date(badge.getGrantedAt()), divider);
+                }
+                return;
+            }
+            DialogCell cell = (DialogCell) holder.itemView;
+            if (item instanceof io.github.baba983.nativedo.core.model.Bookmark) {
+                bindBookmark(cell, (io.github.baba983.nativedo.core.model.Bookmark) item);
+            } else if (item instanceof TopicSummary) {
+                TopicSummary action = (TopicSummary) item;
+                cell.setDialog(DiscourseRows.topicRow(
+                        action, TopicReadMarks.INSTANCE.isReadInFull(action.getId())));
+                ImageLocation avatar = avatarUser == null
+                        ? null
+                        : DiscourseAvatars.INSTANCE.imageLocation(avatarUser);
+                if (avatar != null) {
+                    cell.avatarImage.setImage(
+                            avatar, "50_50", cell.avatarImage.getDrawable(), null, avatarUser, 0);
+                }
+            }
+        }
+
+        /** A bookmark draws the post's author, fetched the way BookmarksFragment fetches it. */
+        private void bindBookmark(DialogCell cell, io.github.baba983.nativedo.core.model.Bookmark bookmark) {
+            cell.setDialog(DiscourseRows.bookmarkRow(bookmark));
+            if (bookmark.getAuthorUsername().isEmpty() || container == null) {
+                return;
+            }
+            TLRPC.User author = DiscourseAvatars.INSTANCE.user(
+                    bookmark.getAuthorUsername(),
+                    bookmark.getAuthorDisplayName(),
+                    bookmark.getAuthorAvatarTemplate(),
+                    container.getBaseUrl());
+            ImageLocation avatar = DiscourseAvatars.INSTANCE.imageLocation(author);
+            if (avatar != null) {
+                cell.avatarImage.setImage(avatar, "50_50", cell.avatarImage.getDrawable(), null, author, 0);
+            }
+            String url = DiscourseAvatars.INSTANCE.url(
+                    bookmark.getAuthorAvatarTemplate(), container.getBaseUrl(), DiscourseAvatars.DEFAULT_SIZE);
+            if (url != null && !DiscourseAvatars.INSTANCE.isCached(author)
+                    && state.avatarRequests.add(bookmark.getAuthorUsername())) {
+                DiscourseLoader.INSTANCE.cacheAvatar(container, url, author, () -> {
+                    if (state.listView.getAdapter() != null) {
+                        state.adapter.notifyDataSetChanged();
+                    }
+                    return kotlin.Unit.INSTANCE;
+                });
+            }
+        }
+
+        @Override
+        public int getItemViewType(int position) {
+            return position < state.items.size()
+                    && state.items.get(position) instanceof io.github.baba983.nativedo.core.model.UserBadge
+                    ? TYPE_DETAIL
+                    : TYPE_ACTION;
+        }
+
+        @Override
+        public int getItemCount() {
+            return state.items.size();
+        }
+
+        @Override
+        public boolean isEnabled(RecyclerView.ViewHolder holder) {
+            return !(holder.itemView instanceof TextDetailCell);
+        }
+    }
+
+    /** A bookmark opens the topic it is in, at the floor the post is on. */
+    private void openBookmark(io.github.baba983.nativedo.core.model.Bookmark bookmark) {
+        if (bookmark.getPostNumber() <= 0) {
+            presentFragment(TopicFragment.forTopic(bookmark.getTopicId(), bookmark.getTitle()));
+            return;
+        }
+        presentFragment(TopicFragment.forFloor(
+                bookmark.getTopicId(), bookmark.getTitle(), bookmark.getPostNumber()));
     }
 
     private void notifyRowsChanged() {
@@ -756,6 +1373,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             listView.getAdapter().notifyDataSetChanged();
         }
     }
+
 
     /**
      * The list carries the header's height as its own top padding, and the first row is seeded
@@ -770,6 +1388,17 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         final int paddingTop = listView.getMeasuredWidth() + getActionsExtraHeight();
         if (listView.getPaddingTop() != paddingTop) {
             listView.setPadding(0, paddingTop, 0, listBottomPadding());
+        }
+        // The tab area is one row as tall as the list's own viewport: that is what lets it pin
+        // itself to the list's top and scroll its pages inside. Upstream keeps the same relation
+        // (ProfileActivity.java:8006-8008 hands sharedMediaLayout the list's visible height).
+        if (mediaView != null) {
+            int mediaHeight = Math.max(0, listView.getMeasuredHeight() - listBottomPadding());
+            ViewGroup.LayoutParams params = mediaView.getLayoutParams();
+            if (params != null && params.height != mediaHeight) {
+                params.height = mediaHeight;
+                mediaView.setLayoutParams(params);
+            }
         }
         // The shimmer draws its rows from below the header too, the way DialogsActivity keeps its
         // progress view under its own top panel (2093-2095).
@@ -828,18 +1457,14 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
                     return new RecyclerListView.Holder(cell);
                 }
-                case TYPE_LINK: {
-                    org.telegram.ui.Cells.TextSettingsCell cell = new org.telegram.ui.Cells.TextSettingsCell(context, resourceProvider);
-                    cell.setLayoutParams(new RecyclerView.LayoutParams(
+                case TYPE_MEDIA: {
+                    // The tab area is a row of the info list the way SharedMediaLayout is a row of
+                    // ProfileActivity's own list (ProfileActivity.java:10824, 14360): its height is
+                    // set to the list's visible height in settleHeaderInList, so it can pin itself
+                    // to the list's top and its pages then scroll inside it.
+                    mediaView.setLayoutParams(new RecyclerView.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-                    return new RecyclerListView.Holder(cell);
-                }
-                case TYPE_ACTION: {
-                    // An action is a topic, so its row is the row the topic list draws.
-                    DialogCell cell = new DialogCell(null, context, false, false, currentAccount, resourceProvider);
-                    cell.setLayoutParams(new RecyclerView.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT, AndroidUtilities.dp(72)));
-                    return new RecyclerListView.Holder(cell);
+                    return new RecyclerListView.Holder(mediaView);
                 }
                 default: {
                     TextDetailCell cell = new TextDetailCell(context, resourceProvider, true, true);
@@ -860,23 +1485,6 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                 ((HeaderCell) holder.itemView).setText(row.label);
             } else if (holder.itemView instanceof TextInfoPrivacyCell) {
                 ((TextInfoPrivacyCell) holder.itemView).setText(row.value);
-            } else if (holder.itemView instanceof DialogCell) {
-                // An action is drawn as the topic it happened in: its title, the excerpt the site
-                // computed, and when it happened. The picture is the reader's own, the one row and
-                // head share.
-                DialogCell cell = (DialogCell) holder.itemView;
-                cell.setDialog(DiscourseRows.topicRow(
-                        row.action, TopicReadMarks.INSTANCE.isReadInFull(row.action.getId())));
-                ImageLocation avatar = avatarUser == null
-                        ? null
-                        : DiscourseAvatars.INSTANCE.imageLocation(avatarUser);
-                if (avatar != null) {
-                    cell.avatarImage.setImage(
-                            avatar, "50_50", cell.avatarImage.getDrawable(), null, avatarUser, 0);
-                }
-            } else if (holder.itemView instanceof org.telegram.ui.Cells.TextSettingsCell) {
-                ((org.telegram.ui.Cells.TextSettingsCell) holder.itemView)
-                        .setTextAndValue(row.label, null, true);
             } else if (holder.itemView instanceof TextDetailCell) {
                 // Upstream's own convention, as `ProfileActivity`'s info block uses it: the cell's
                 // first argument is the answer and lands in its 16 dp line, the second is the field's
@@ -886,13 +1494,8 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             }
         }
 
-        /** The screen's rows: what the profile says, then the reader's own actions. */
         private Row rowAt(int position) {
-            if (position < rows.size()) {
-                return rows.get(position);
-            }
-            int index = position - rows.size();
-            return index == 0 ? Row.section(ACTION_SECTION) : Row.action(actions.get(index - 1));
+            return rows.get(position);
         }
 
         @Override
@@ -902,23 +1505,24 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
 
         @Override
         public int getItemCount() {
-            return rows.size() + (actions.isEmpty() ? 0 : actions.size() + 1);
+            return rows.size();
         }
 
         @Override
         public boolean isEnabled(RecyclerView.ViewHolder holder) {
-            // Only an action is a link to somewhere; the profile's own rows are text to read.
-            return holder.itemView instanceof DialogCell;
+            // The info rows are text to read; the tappable things are the action row's buttons and
+            // the pages' own rows, each with their own click handling.
+            return false;
         }
     }
 
     /**
-     * The header's own height above the list, as upstream's profile computes it
-     * (ProfileActivity.java:6036-6056). The action row Telegram draws under the header - call,
-     * video, mute - is left out, which is why the actions height is zero and the header needs 168.
+     * The action row's own height, upstream's `dp(74)` (ProfileActivity.java:6033-6039): it is the
+     * room the list leaves between the header and the first info row, and what the pull-down
+     * expansion's thresholds are measured against.
      */
     private int getActionsExtraHeight() {
-        return 0;
+        return AndroidUtilities.dp(74);
     }
 
     private int getHeaderOnlyExtraHeight() {
@@ -1057,10 +1661,12 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                 pullUpProgress = 1.0f - diff;
 
                 final float nameScale = 1.0f + 0.12f * diff;
-                avatarContainer.setScaleX(avatarScale);
-                avatarContainer.setScaleY(avatarScale);
-                fixAvatarImageInCenter();
-                avatarContainer.setTranslationY((float) Math.ceil(avatarY));
+                if (!(openAnimationInProgress && playProfileAnimation == 2)) {
+                    avatarContainer.setScaleX(avatarScale);
+                    avatarContainer.setScaleY(avatarScale);
+                    fixAvatarImageInCenter();
+                    avatarContainer.setTranslationY((float) Math.ceil(avatarY));
+                }
                 final float avatarBottom = (float) Math.floor(endNameY) + (avatarContainer.getHeight() * avatarContainer.getScaleY() + dpf2(8)) * diff;
                 nameY = avatarBottom + dp(1.3f) + dp(7) * diff;
                 onlineY = avatarBottom + dp(24) + (float) Math.floor(11 * AndroidUtilities.density) * diff;
@@ -1089,6 +1695,9 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                 onlineTextView.setTranslationX(onlineX);
                 onlineTextView.setTranslationY(onlineY);
                 updateTextLayoutBasedOnTranslation();
+            }
+            if (openAnimationInProgress && playProfileAnimation == 2) {
+                openAnimationAvatarLayout(newTop);
             }
             if (!textMeasured) {
                 needLayoutText(diff);
@@ -1367,10 +1976,232 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         onlineY = avatarBottom + AndroidUtilities.dp(24) + (float) Math.floor(11 * AndroidUtilities.density) * diff;
     }
 
-    /** updateExtraViews (ProfileActivity.java:8802); the emoji-status and action placements are Telegram-only. */
+    // ---------------------------------------------------------------------------------------------
+    // The opening animation, ProfileActivity's `playProfileAnimation == 2` (9895-10265, and the
+    // layout at 8623-8690): the avatar flies from the chat header's capsule to the big centered
+    // picture, its round corners open, the list fades in under the header and the background
+    // blends to the avatar's average colour. Upstream's 250 ms duration and its
+    // CubicBezierInterpolator.DEFAULT are kept, as is the 50 ms start delay it runs the animator
+    // with (`AndroidUtilities.runOnUIThread(animatorSet::start, 50)`, ProfileActivity.java:10264).
+    // ---------------------------------------------------------------------------------------------
+
+    @Override
+    public AnimatorSet onCustomTransitionAnimation(final boolean isOpen, final Runnable callback) {
+        if (getArguments() != null && getArguments().getBoolean("hasMainTabs", false)) {
+            return null;
+        }
+        if (!(playProfileAnimation != 0 && allowProfileAnimation && !isPulledDown)) {
+            return null;
+        }
+
+        final AnimatorSet animatorSet = new AnimatorSet();
+        animatorSet.setDuration(playProfileAnimation == 2 ? 250 : 180);
+        if (listView != null) {
+            listView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+        }
+
+        if (isOpen) {
+            setAvatarAnimationProgress(0);
+            if (frameLayout != null) {
+                frameLayout.setBackgroundColor(0);
+            }
+            avatarColor = getAverageColor();
+            nameTextView.setTextColor(Color.WHITE);
+            onlineTextView.setTextColor(0xB3FFFFFF);
+            actionBar.setItemsBackgroundColor(Theme.ACTION_BAR_WHITE_SELECTOR_COLOR, false);
+            nameTextView.setAlpha(0.0f);
+            onlineTextView.setAlpha(0.0f);
+
+            ArrayList<Animator> animators = new ArrayList<>();
+            animators.add(ObjectAnimator.ofFloat(this, "avatarAnimationProgress", 0.0f, 1.0f));
+            animators.add(ObjectAnimator.ofFloat(nameTextView, View.ALPHA, 1.0f));
+            animators.add(ObjectAnimator.ofFloat(onlineTextView, View.ALPHA, 1.0f));
+            if (actionsView != null) {
+                actionsView.setAlpha(0.0f);
+                animators.add(ObjectAnimator.ofFloat(actionsView, View.ALPHA, 1.0f));
+            }
+            animatorSet.playTogether(animators);
+        } else {
+            captureBackwardInitialValues();
+            ArrayList<Animator> animators = new ArrayList<>();
+            animators.add(ObjectAnimator.ofFloat(this, "avatarAnimationProgress", 1.0f, 0.0f));
+            animatorSet.playTogether(animators);
+        }
+
+        animatorSet.setInterpolator(playProfileAnimation == 2
+                ? CubicBezierInterpolator.DEFAULT
+                : new android.view.animation.DecelerateInterpolator());
+        animatorSet.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                callback.run();
+            }
+        });
+
+        AndroidUtilities.runOnUIThread(animatorSet::start, 50);
+        return animatorSet;
+    }
+
+    @Override
+    public void onTransitionAnimationStart(boolean isOpen, boolean backward) {
+        super.onTransitionAnimationStart(isOpen, backward);
+        if (isOpen && actionsView != null) {
+            actionsView.startAnimatedActions();
+        }
+        if ((!isOpen && backward || isOpen && !backward) && playProfileAnimation != 0
+                && allowProfileAnimation && !isPulledDown) {
+            openAnimationInProgress = true;
+            if (!isOpen) {
+                captureBackwardInitialValues();
+            }
+        }
+    }
+
+    @Override
+    public void onTransitionAnimationEnd(boolean isOpen, boolean backward) {
+        super.onTransitionAnimationEnd(isOpen, backward);
+        if (openAnimationInProgress) {
+            openAnimationInProgress = false;
+        }
+        if (isOpen && !backward && playProfileAnimation != 0) {
+            if (actionsView != null) {
+                actionsView.setParentExpanded(0);
+            }
+            restoreTransitionColors();
+            checkListViewScroll();
+            needLayout(true);
+        } else if (!isOpen && listView != null) {
+            listView.setAlpha(1f);
+        }
+    }
+
+    /** setAvatarAnimationProgress (ProfileActivity.java:9797-9835) */
+    @androidx.annotation.Keep
+    public void setAvatarAnimationProgress(float progress) {
+        avatarAnimationProgress = currentExpandAnimatorValue = progress;
+        if (actionsView != null) {
+            actionsView.setParentExpanded(progress);
+        }
+        if (listView != null) {
+            listView.setAlpha(progress);
+            listView.setTranslationX(dp(48) - dp(48) * progress);
+        }
+        // The background under the header blends from the chat screen's colour - transparent, so
+        // the screen behind shows through - to the avatar's average colour.
+        int color = avatarColor != 0 ? avatarColor : getThemedColor(Theme.key_windowBackgroundWhite);
+        int from = androidx.core.graphics.ColorUtils.setAlphaComponent(getThemedColor(Theme.key_actionBarDefault), 0);
+        if (topView != null) {
+            topView.setTransitionColor(androidx.core.graphics.ColorUtils.blendARGB(from, color, progress));
+        }
+        if (nameTextView != null) {
+            nameTextView.setTextColor(androidx.core.graphics.ColorUtils.blendARGB(
+                    getThemedColor(Theme.key_profile_title), Color.WHITE, progress));
+            onlineTextView.setTextColor(androidx.core.graphics.ColorUtils.blendARGB(
+                    getThemedColor(Theme.key_actionBarDefaultSubtitle), 0xB3FFFFFF, progress));
+        }
+        updateActionsPosition();
+        needLayout(true);
+    }
+
+    private void restoreTransitionColors() {
+        if (topView != null) {
+            topView.setTransitionColor(0);
+        }
+        if (nameTextView == null) {
+            return;
+        }
+        nameTextView.setTextColor(getThemedColor(Theme.key_profile_title));
+        onlineTextView.setTextColor(getThemedColor(Theme.key_actionBarDefaultSubtitle));
+        actionBar.setItemsColor(getThemedColor(Theme.key_actionBarDefaultIcon), false);
+        actionBar.setItemsBackgroundColor(getThemedColor(Theme.key_avatar_actionBarSelectorBlue), false);
+        if (listView != null) {
+            listView.setAlpha(1f);
+            listView.setTranslationX(0f);
+        }
+    }
+
+    /**
+     * The avatar along the flight path, ProfileActivity.java:8623-8690 with the Telegram-only
+     * overlays (stories, gifts, the time item, the emoji status) left out: it starts as the 42 dp
+     * capsule picture at the header avatar's X and grows to 138% of the 100 dp frame as its round
+     * corners open to the full-width square.
+     */
+    private void openAnimationAvatarLayout(float newTop) {
+        float avX = prevAvatarTranslation;
+        float avY = (actionBar.getOccupyStatusBar() ? AndroidUtilities.statusBarHeight : 0)
+                + ActionBar.getCurrentActionBarHeight() / 2.0f
+                - 21 * AndroidUtilities.density
+                + actionBar.getTranslationY();
+
+        avatarScale = lerp(42, 138, avatarAnimationProgress) / 100f;
+        pullUpProgress = 0.0f;
+
+        avatarImage.setRoundRadiusForExpand(
+                (int) AndroidUtilities.lerp(getSmallAvatarRoundRadius(), 0f, avatarAnimationProgress));
+        avatarContainer.setTranslationX(AndroidUtilities.lerp(avX, 0, avatarAnimationProgress));
+        avatarContainer.setTranslationY(AndroidUtilities.lerp((float) Math.ceil(avY), 0f, avatarAnimationProgress));
+        avatarContainer.setScaleX(avatarScale);
+        avatarContainer.setScaleY(avatarScale);
+        avatarImage.setBlurRadiusProgressForExpand(avatarAnimationProgress, avatarScale, true);
+
+        final FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) avatarContainer.getLayoutParams();
+        params.width = (int) lerp(dpf2(100), listView.getMeasuredWidth() / avatarScale, avatarAnimationProgress);
+        params.height = (int) lerp(dpf2(100), (extraHeight + newTop) / avatarScale, avatarAnimationProgress);
+        avatarContainer.requestLayout();
+        fixAvatarImageInCenter();
+
+        // The title keeps the scale the flight ends at, pivoted from its base, the way upstream's
+        // collapsing copy does (nameTextView[1].setPivotY(measuredHeight), 1.38f).
+        nameTextView.setPivotY(nameTextView.getMeasuredHeight());
+        nameTextView.setScaleX(AndroidUtilities.lerp(1f, 1.38f, avatarAnimationProgress));
+        nameTextView.setScaleY(AndroidUtilities.lerp(1f, 1.38f, avatarAnimationProgress));
+    }
+
+    private void captureBackwardInitialValues() {
+        backwardInitialValues[0] = avatarScale;
+        backwardInitialValues[1] = avatarContainer == null ? 0f : avatarContainer.getTranslationX();
+        backwardInitialValues[2] = avatarContainer == null ? 0f : avatarContainer.getTranslationY();
+        backwardInitialValues[3] = actionsView == null ? 1f : actionsView.getAlpha();
+    }
+
+    /** The avatar's own average colour, as ProfileActivity.java:10268-10273 reads it. */
+    private int getAverageColor() {
+        try {
+            if (avatarImage != null && avatarImage.getImageReceiver().getBitmap() != null) {
+                return AndroidUtilities.calcBitmapColor(avatarImage.getImageReceiver().getBitmap());
+            }
+        } catch (Exception e) {
+            FileLog.e(e);
+        }
+        return 0;
+    }
+
+    /** updateExtraViews (ProfileActivity.java:8802-8817); the emoji-status and action placements are Telegram-only. */
     private void updateExtraViews(float newTop) {
         if (topView != null) {
             topView.invalidate();
+        }
+        updateActionsPosition();
+    }
+
+    /** updateActionsPosition (ProfileActivity.java:11198-11230); the call and music actions are Telegram-only. */
+    private void updateActionsPosition() {
+        if (actionsView == null || listView == null) {
+            return;
+        }
+        final int newTop = (actionBar.getOccupyStatusBar() ? AndroidUtilities.statusBarHeight : 0)
+                + ActionBar.getCurrentActionBarHeight();
+        actionsView.isOpeningLayout = openAnimationInProgress;
+        if (openAnimationInProgress && playProfileAnimation == 2 && avatarContainer != null) {
+            float vh = avatarContainer.getHeight() * avatarContainer.getScaleY();
+            actionsView.clipHeight = avatarContainer.getY() + vh;
+            actionsView.setAlpha(avatarAnimationProgress);
+            actionsView.updatePosition(listView.getMeasuredWidth(), AndroidUtilities.dp(74));
+        } else {
+            actionsView.clipHeight = -1;
+            float bottom = extraHeight + newTop;
+            float height = Math.min(AndroidUtilities.dp(74), bottom - newTop);
+            actionsView.updatePosition(bottom - height, height);
         }
     }
 
@@ -1408,15 +2239,23 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
 
     /**
      * Upstream's header backdrop (ProfileActivity.java:1214), the view that paints the screen's
-     * background over the rows scrolling under the header. Its peer-color gradient is left out.
+     * background over the rows scrolling under the header. Its peer-color gradient is left out;
+     * during the opening animation it carries the blend from the chat's header colour to the
+     * avatar's average colour (ProfileActivity.java:9820-9832).
      */
     private class TopView extends FrameLayout {
 
         private final Paint paint = new Paint();
+        private int transitionColor;
 
         public TopView(Context context) {
             super(context);
             setWillNotDraw(false);
+        }
+
+        void setTransitionColor(int color) {
+            transitionColor = color;
+            invalidate();
         }
 
         @Override
@@ -1425,46 +2264,124 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             final float v = height + extraHeight;
             final int y1 = (int) v;
             if (y1 != 0) {
-                paint.setColor(getThemedColor(Theme.key_windowBackgroundWhite));
+                paint.setColor(transitionColor != 0 ? transitionColor : getThemedColor(Theme.key_windowBackgroundWhite));
                 canvas.drawRect(0, 0, getMeasuredWidth(), y1, paint);
             }
         }
     }
 
-    /** One row of the screen. */
+    /**
+     * The root of the screen, upstream's {@code NestedFrameLayout}
+     * (ProfileActivity.java:1710-1810): while the tab area is pinned to the list's top, a drag the
+     * outer list cannot take is handed to the visible page's own list, so the pages scroll the way
+     * SharedMediaLayout's do.
+     */
+    private class NestedFrameLayout extends FrameLayout implements NestedScrollingParent3 {
+
+        private final NestedScrollingParentHelper nestedScrollingParentHelper =
+                new NestedScrollingParentHelper(this);
+
+        NestedFrameLayout(Context context) {
+            super(context);
+        }
+
+        @Override
+        protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
+            // The head room is settled before the children lay out, so the seeded offset is
+            // what this very pass places the first row with.
+            settleHeaderInList();
+            super.onLayout(changed, left, top, right, bottom);
+            checkListViewScroll();
+        }
+
+        @Override
+        public boolean onStartNestedScroll(@NonNull View child, @NonNull View target, int axes, int type) {
+            return mediaView != null && axes == ViewCompat.SCROLL_AXIS_VERTICAL;
+        }
+
+        @Override
+        public void onNestedScrollAccepted(@NonNull View child, @NonNull View target, int axes, int type) {
+            nestedScrollingParentHelper.onNestedScrollAccepted(child, target, axes, type);
+        }
+
+        @Override
+        public void onStopNestedScroll(@NonNull View target, int type) {
+            nestedScrollingParentHelper.onStopNestedScroll(target, type);
+        }
+
+        @Override
+        public void onNestedScroll(@NonNull View target, int dxConsumed, int dyConsumed,
+                                   int dxUnconsumed, int dyUnconsumed, int type, @NonNull int[] consumed) {
+            // ProfileActivity.NestedFrameLayout.onNestedScroll: an upward drag the outer list
+            // cannot take continues into the page's list while the tab area is pinned.
+            RecyclerListView pageList = currentPageList();
+            if (pageList != null && mediaView != null && mediaView.getTop() <= 0) {
+                consumed[1] = dyUnconsumed;
+                pageList.scrollBy(0, dyUnconsumed);
+            }
+        }
+
+        @Override
+        public void onNestedScroll(@NonNull View target, int dxConsumed, int dyConsumed,
+                                   int dxUnconsumed, int dyUnconsumed, int type) {
+            // The Parent3 overload above is the one the platform calls.
+        }
+
+        @Override
+        public void onNestedPreScroll(@NonNull View target, int dx, int dy, @NonNull int[] consumed, int type) {
+            // ProfileActivity.NestedFrameLayout.onNestedPreScroll: a drag down the pinned tab area
+            // returns its page to the top before the outer list scrolls back up.
+            if (mediaView == null || listView == null) {
+                return;
+            }
+            int top = mediaView.getTop();
+            if (dy > 0 && top <= 0) {
+                RecyclerListView pageList = currentPageList();
+                if (pageList != null) {
+                    LinearLayoutManager manager = (LinearLayoutManager) pageList.getLayoutManager();
+                    int pos = manager == null ? RecyclerView.NO_POSITION : manager.findFirstVisibleItemPosition();
+                    if (pos != RecyclerView.NO_POSITION) {
+                        View holder = manager.findViewByPosition(pos);
+                        int childTop = holder != null ? holder.getTop() : -1;
+                        int paddingTop = pageList.getPaddingTop();
+                        if (childTop != paddingTop || pos != 0) {
+                            consumed[1] = dy;
+                            pageList.scrollBy(0, dy);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /** One row of the info list. */
     private static class Row {
         final int type;
         final String label;
         final String value;
-        /** The action an action row draws; null for every other row. */
-        final TopicSummary action;
         boolean divider;
 
-        private Row(int type, String label, String value, TopicSummary action) {
+        private Row(int type, String label, String value) {
             this.type = type;
             this.label = label;
             this.value = value;
-            this.action = action;
         }
 
         static Row section(String label) {
-            return new Row(TYPE_SECTION, label, null, null);
+            return new Row(TYPE_SECTION, label, null);
         }
 
         static Row detail(String label, String value) {
-            return new Row(TYPE_DETAIL, label, value, null);
+            return new Row(TYPE_DETAIL, label, value);
         }
 
         static Row bio(String text) {
-            return new Row(TYPE_BIO, null, text, null);
+            return new Row(TYPE_BIO, null, text);
         }
 
-        static Row link(String label) {
-            return new Row(TYPE_LINK, label, null, null);
-        }
-
-        static Row action(TopicSummary action) {
-            return new Row(TYPE_ACTION, null, null, action);
+        static Row media() {
+            return new Row(TYPE_MEDIA, null, null);
         }
     }
 }
+
