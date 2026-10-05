@@ -246,6 +246,19 @@ stands, and the upstream component each row is meant to use.
 
 每一项都是手感或真站点的疑问，orb 只能定正确性（golden 与 E2E），定不了这些。
 
+### 资料页转场与折叠栏修复（2026-10-05，`emulator-5554`，`nativedo-profile-polish`，已登录 @example_user）
+
+- 开屏落地的跳变：旧实现在飞行中把头像钉在操作栏中线上（`avY`），动画结束才由 `needLayout` 换成折叠页头的静止位（`statusBar + abH - 21dp`）——设备 5x 慢放里最后一帧头像从 `(410,139)` 跳到 `(414,211)`（约 72px，gold 区域检测）。现在 `openAnimationAvatarLayout` 的 Y 也从 `ceil(avY)` 插值到静止位（上游 `ProfileActivity:8657-8661` 插到方块 (0,0)，本站终点是折叠页头），名字/状态沿头像下缘一起落（`avatarBottom` 的 `avatarAnimationProgress` 项，8752-8755）。设备重放：`(397,202)→(410,209)→(414,211)` 连续；harness 落地帧与静止渲染同一 rect（474,106-758,392）。证据 `after/open/capafter/cap1..7`、`after/flight-0_0..1_0`、`before/open/capbefore/cap3..5`。
+- 胶囊画两遍：转场时下游页（话题）的操作栏子视图不再绘制（`previousActionBar.setSkipDrawChild(true)`，上游 `ProfileActivity:9940`），动画结束/取消/`onFragmentDestroy` 恢复（`10227-10236`）。设备帧里话题胶囊只剩玻璃壳、里面无头像无标题，屏上只有一个飞行头像（`after/open/.../cap1`，对照 `before/open/.../cap1` 的两个头像）。
+- 反向飞行：新增 `backwardAnimationLayout`（上游 8193-8290 的移植：捕获头像 scale/X/Y、标题 scale/Y/X/宽度、动作条 alpha 共 14 槽），关闭时头像回 42dp 胶囊位、标题缩回胶囊标题线并淡出（本站标题文字与话题标题不同，故不留在栏上）。同时把从不清理的 `listView` 硬件层在动画结束清掉（上游 10227）。`open=false` 的 swipe-commit 仍不播反向飞行（`onSlideAnimationEnd` 直接出栈，与上游一致）。
+- swipe-back 拖拽帧：资料页此前是透明的（开屏 `frameLayout.setBackgroundColor(0)` 后不再恢复），拖拽时话题的行与图片从资料页行间透出（判据：修复前 `(450,1700)` 是 `(17,17,19)` 的话题黑图，修复后为白）。现在 info 列表与每个 tab 页列表自带 `windowBackgroundWhite` 页面底色（上游 `ProfileActivity:4223` 同样在自己的列表上设底色），拖拽卡片是整块不透明面；提交后话题带胶囊整屏回来（`after/swipe/d1..d4`、`u1..u5`）。`checkListViewScroll` 补上上游的 `allowProfileAnimation = extraHeight > getActionsExtraHeight()`：读过页头之后不再播反向飞行。
+- 折叠栏标题：`needLayoutText` 的宽度用手上 109/47 的开动画常量、`minimizedX` 的开动画分支、`avatarBottom` 的进度项、expandAnimator 运行时不重设位移——`ProfileActivity.needLayout` 的对应项照搬。静止 1.12、全折叠 1.0 的字号缩放与上游公式一致（设备量：静止字高 37px、栏内 32px，比值 0.86≈1/1.12）。
+- 动作条：私信／静音／取消静音／设置 改中文（上游 `values` 无 zh，旧实现渲染 Message/Mute/Settings）；取消关注 的图标从 `leave.xml`（出门箭头，像退出登录）换成上游「移除联系人」的 `msg_user_remove`（`SelfStoryViewsPage` 的 StoryDeleteContact 与 `ProfileActivity` 删除联系人行用它）。`after/swipe/d4` 帧可见 私信／取消关注／分享 与新人形移除去图标。
+- tab 行带：strip 只有标签宽，页行在它两侧透出（旧截图 `16-final-tab-topics` 的 'Sep 18' 与 `…次 Pr…` 压在 tab 行上，被误读成第 5 个被裁的 tab）。`ProfileSharedMediaView` 在 pager 与 strip 之间加一条整行底色；自己的资料页 5 个 tab（话题/回复/点赞/书签/徽章）完整可见（`after/scroll/own-tabs`、`after/dark2-tabs`）。
+- 夜间：设置→外观→Switch to Night Mode 后检查顶部/中途/tabs；修掉 band 与 strip 仍是白底（新加 `applyThemeColors`/`updateColors` 在 `needSetDayNightTheme` 时重读主题色），修后 `after/dark2-tabs` 整行深色、标签可读；日间恢复 `after/day-check`。
+- 未验证/未复测：真机（`449dd25d`）未装本片 APK；反向飞行的设备逐帧没拍成（harness 用例钉布局与恢复）；页面列表拖到底的最后一行 padding（与 wave2 已验证的 info 列表同表达式，本次没滚到长页底部）；`Message→私信` 的措辞是自定（上游无对应中文）。
+- 构建与测试：`lockf /tmp/nativedo-gradle.lock …:nativedo:assembleDebug -Pandroid.injected.build.abi=arm64-v8a`（排除两个 CMake 任务）通过；设备帧产自两次安装的包（落地面修复 `5b2ea7f1…`、strip 底色修复 `a3eef89a…`，`install -r -t` 均 Success，锁外复读的 base.apk sha 已是别的片子装的包）。`:nativedo:testDebugUnitTest` **162 项 0 失败 0 error 0 skipped**，其中新增 `ProfileTransitionTest` 3 项（落地 rect 与静止 rect 一致、取消的飞行交还话题页头、折叠边界处标题缩放无台阶）。证据在 `.amp/in/artifacts/profile-polish/{before,after}`；未改 `apps/android/telegram` 子树。
+
 ### 资料页改版：胶囊开屏动画、动作条与站点 tabs（2026-10-05，`emulator-5554`，`nativedo-profile-redesign`，已登录 @example_user）
 
 - 打开动画：中心胶囊的点按把胶囊头像在资料页坐标系里的 X（`ViewPositionWatcher.computeXCoordinateInParent`，上游 `ProfileActivity:10080` 同一手法）交给 `ProfileFragment.forUserFromAvatar`；页面按 `ProfileActivity` 的 `playProfileAnimation == 2`（250ms、`CubicBezierInterpolator.DEFAULT`、50ms 延迟启动）让头像从 42dp 的胶囊圆图长到页头 96dp 的静止大头像、圆角保持 50dp（本站落在折叠态页头，Telegram 落在展开态，其余常量与曲线照搬），列表 0→1 淡入并从左侧 48dp 归位，页头底色由透明白混到头像平均色（`AndroidUtilities.calcBitmapColor`）。点帖子头像与 我的 tab 仍走普通转场（`playProfileAnimation == 0`）。设备：话题页点胶囊进 Neo 的资料页，logcat `present fragment ProfileFragment args=Bundle[{avatarX=204.0, username=neo…}]`（`02-profile-from-capsule`）；本 AVD 的 `screenrecord` 仍冻结（两次尝试仅 1–2 帧，与既有记录一致），动效以 harness 的 `profile-open-from-capsule` 渲染 + 状态断言为证。
