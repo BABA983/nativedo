@@ -3,13 +3,9 @@ package io.github.baba983.nativedo.settings;
 import android.content.Context;
 import android.view.View;
 
-import androidx.annotation.NonNull;
-
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
-import org.telegram.ui.ActionBar.Theme;
-import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalRecyclerView;
 

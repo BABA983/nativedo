@@ -282,6 +282,20 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
         }
     }
 
+    /**
+     * The rows are read again whenever this page comes back to the front, the way upstream's own
+     * settings pages re-run their adapters in {@code onResume}: a choice can also be flipped in a
+     * hosted screen this page pushed (the appearance page's In-App Browser row writes the same
+     * stored choice as the 链接 row here), and the row must not keep showing the old state.
+     */
+    @Override
+    public void onResume() {
+        super.onResume();
+        if (listView != null && listView.adapter != null) {
+            listView.adapter.update(true);
+        }
+    }
+
     /** The page reaches the bottom of the window itself; the shell must not reserve the bar. */
     @Override
     public boolean isSupportEdgeToEdge() {

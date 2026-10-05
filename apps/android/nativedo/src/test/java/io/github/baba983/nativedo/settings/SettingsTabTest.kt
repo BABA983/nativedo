@@ -3,7 +3,6 @@ package io.github.baba983.nativedo.settings
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
-import androidx.recyclerview.widget.LinearLayoutManager
 import io.github.baba983.nativedo.app.NativeDo
 import io.github.baba983.nativedo.app.NativeDoActivity
 import io.github.baba983.nativedo.core.di.AppContainer

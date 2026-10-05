@@ -982,8 +982,8 @@ data class UserOptionDto(
     val newTopicDurationMinutes: Int? = null,
     @SerialName("allow_private_messages")
     val allowPrivateMessages: Boolean? = null,
-    @SerialName("hide_profile_and_presence")
-    val hideProfileAndPresence: Boolean? = null,
+    @SerialName("hide_profile")
+    val hideProfile: Boolean? = null,
 )
 
 /** `PUT /u/{username}.json` answers `{"success":"OK",...}` and the updated user. */
@@ -1001,7 +1001,7 @@ internal fun UserPreferencesResponseDto.toModel(): UserPreferences? {
         autoTrackTopicsAfterMsecs = option.autoTrackTopicsAfterMsecs ?: 300000,
         newTopicDurationMinutes = option.newTopicDurationMinutes ?: 2880,
         allowPrivateMessages = option.allowPrivateMessages ?: true,
-        hideProfileAndPresence = option.hideProfileAndPresence ?: false,
+        hideProfile = option.hideProfile ?: false,
     )
 }
 

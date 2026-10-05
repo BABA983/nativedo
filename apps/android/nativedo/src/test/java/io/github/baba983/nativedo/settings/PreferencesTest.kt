@@ -109,7 +109,7 @@ internal class PreferencesTest {
         println("preferences: writes = " + site.requestBodiesFor("u/baba.json"))
         assertTrue(
             "the write carries the site's own field name and encoding",
-            site.requestBodyFor("u/baba.json")!!.contains("hide_profile_and_presence=true"),
+            site.requestBodyFor("u/baba.json")!!.contains("hide_profile=true"),
         )
         assertEquals(
             "and the token the site asks writes for",

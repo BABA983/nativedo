@@ -30,9 +30,12 @@ data class UserPreferences(
     /** `allow_private_messages`: other users may send the reader private messages. */
     val allowPrivateMessages: Boolean = true,
     /**
-     * `hide_profile_and_presence`: profile and online presence hidden from other users. The model
-     * also carries `hide_profile` and `hide_presence`; this is the combined value the site's own
-     * profile page writes, and the one the client's single switch follows.
+     * `hide_profile`: the site's own profile switch, literally "hide my public profile and
+     * presence". Discourse's `UserUpdater::OPTION_ATTR` accepts `hide_profile` (and
+     * `hide_presence`), and the `hide_profile_and_presence` column the serializer also carries is
+     * derived from those two by a model callback - writing the combined field directly is
+     * silently filtered out, so the client writes `hide_profile` the way the site's own
+     * preferences page does.
      */
-    val hideProfileAndPresence: Boolean = false,
+    val hideProfile: Boolean = false,
 )

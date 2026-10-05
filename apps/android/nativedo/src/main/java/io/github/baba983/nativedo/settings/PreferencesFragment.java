@@ -4,19 +4,12 @@ import android.content.Context;
 import android.content.DialogInterface;
 import android.view.View;
 
-import androidx.annotation.NonNull;
-import androidx.recyclerview.widget.RecyclerView;
-
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLog;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
-import org.telegram.ui.ActionBar.Theme;
-import org.telegram.ui.Cells.TextCheckCell;
 import org.telegram.ui.Components.FlickerLoadingView;
-import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.UItem;
-import org.telegram.ui.Components.UniversalAdapter;
 import org.telegram.ui.Components.UniversalRecyclerView;
 
 import java.util.ArrayList;
@@ -203,7 +196,7 @@ public class PreferencesFragment extends BaseFragment {
         } else {
             items.add(UItem.asHeader("资料"));
             items.add(UItem.asCheck(ROW_HIDE_PROFILE, "隐藏公开资料与在线状态")
-                    .setChecked(preferences.getHideProfileAndPresence()));
+                    .setChecked(preferences.getHideProfile()));
             items.add(UItem.asShadow("开启后其他用户看不到你的资料页，也看不到你是否在线；网页版「偏好设置 → 个人资料」是同一个开关。"));
 
             items.add(UItem.asHeader("私信"));
@@ -241,7 +234,7 @@ public class PreferencesFragment extends BaseFragment {
                                             preferences.getAutoTrackTopicsAfterMsecs(),
                                             preferences.getNewTopicDurationMinutes(),
                                             preferences.getAllowPrivateMessages(),
-                                            preferences.getHideProfileAndPresence()));
+                                            preferences.getHideProfile()));
                             return kotlin.Unit.INSTANCE;
                         });
                 break;
@@ -252,7 +245,7 @@ public class PreferencesFragment extends BaseFragment {
                                 preferences.getAutoTrackTopicsAfterMsecs(),
                                 preferences.getNewTopicDurationMinutes(),
                                 preferences.getAllowPrivateMessages(),
-                                preferences.getHideProfileAndPresence()));
+                                preferences.getHideProfile()));
                 break;
             case ROW_REPLY_LEVEL:
                 choose("回复话题时", REPLY_LEVEL_VALUES, REPLY_LEVEL_LABELS,
@@ -263,7 +256,7 @@ public class PreferencesFragment extends BaseFragment {
                                             preferences.getAutoTrackTopicsAfterMsecs(),
                                             preferences.getNewTopicDurationMinutes(),
                                             preferences.getAllowPrivateMessages(),
-                                            preferences.getHideProfileAndPresence()));
+                                            preferences.getHideProfile()));
                             return kotlin.Unit.INSTANCE;
                         });
                 break;
@@ -276,7 +269,7 @@ public class PreferencesFragment extends BaseFragment {
                                             preferences.getNotificationLevelWhenReplying(), value,
                                             preferences.getNewTopicDurationMinutes(),
                                             preferences.getAllowPrivateMessages(),
-                                            preferences.getHideProfileAndPresence()));
+                                            preferences.getHideProfile()));
                             return kotlin.Unit.INSTANCE;
                         });
                 break;
@@ -289,12 +282,12 @@ public class PreferencesFragment extends BaseFragment {
                                             preferences.getNotificationLevelWhenReplying(),
                                             preferences.getAutoTrackTopicsAfterMsecs(), value,
                                             preferences.getAllowPrivateMessages(),
-                                            preferences.getHideProfileAndPresence()));
+                                            preferences.getHideProfile()));
                             return kotlin.Unit.INSTANCE;
                         });
                 break;
             case ROW_HIDE_PROFILE:
-                flipBoolean(!preferences.getHideProfileAndPresence(), "hide_profile_and_presence",
+                flipBoolean(!preferences.getHideProfile(), "hide_profile",
                         checked -> new UserPreferences(preferences.getLikeNotificationFrequency(),
                                 preferences.getNotifyOnLinkedPosts(),
                                 preferences.getNotificationLevelWhenReplying(),
@@ -309,7 +302,7 @@ public class PreferencesFragment extends BaseFragment {
                                 preferences.getNotificationLevelWhenReplying(),
                                 preferences.getAutoTrackTopicsAfterMsecs(),
                                 preferences.getNewTopicDurationMinutes(), checked,
-                                preferences.getHideProfileAndPresence()));
+                                preferences.getHideProfile()));
                 break;
         }
     }
