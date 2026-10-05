@@ -91,6 +91,7 @@ internal class ProfileRedesignTest {
     @Test
     fun theTopicHeaderCapsuleFliesTheAvatarIntoTheAuthorsProfile() {
         site.serveFixture("u/baba.json", "user-profile.json")
+        site.serveFixture("u/baba/summary.json", "user-summary.json")
         site.serveImage("user_avatar/linux.do/baba/96/1.png", magentaPng(96, 96))
         site.serveCooked(TOPIC_ID, "<p>你好。</p>")
 
@@ -153,6 +154,9 @@ internal class ProfileRedesignTest {
             actionsPage(filter, offset)
         }
         site.serveFixture("u/baba.json", "user-profile.json")
+        // The summary arrives after the tab area is built and rebuilds the info rows: the tab row
+        // has to survive that rebuild, or the reader loses the tabs the moment the stats land.
+        site.serveFixture("u/baba/summary.json", "user-summary.json")
 
         harness.bootApp()
         harness.await("the topic list to load") { listRowCount() == 2 }
@@ -160,6 +164,8 @@ internal class ProfileRedesignTest {
         harness.await("the profile's first tab") {
             site.queriesFor("user_actions.json").any { it.contains("filter=4") && it.contains("offset=0") }
         }
+        harness.await("the summary to land") { site.requestPaths.contains("u/baba/summary.json") }
+        harness.idleClock(100)
         // The tab area is the info list's last row: scrolling to it is what binds and measures it,
         // the same thing the reader does to reach the tabs.
         val list = listView() ?: throw AssertionError("no list on screen")

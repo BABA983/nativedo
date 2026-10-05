@@ -121,9 +121,9 @@ internal class ProfileScreenTest {
         // is what the reader does to reach them. The stats section sits under the info rows now
         // that the head is the collapsing header and the tab area closes the list.
         assertEquals("the score the site sent", "2731", scrollToDetail("得分"))
-        assertEquals("the followers the site sent", "340", detailValue("关注者"))
+        assertEquals("the followers the site sent", "340", scrollToDetail("关注者"))
         assertEquals("seconds read as hours", "79 小时", scrollToDetail("阅读时长"))
-        assertEquals("the views the site sent", "97", detailValue("浏览"))
+        assertEquals("the views the site sent", "97", scrollToDetail("浏览"))
         assertEquals("the accepted answers the site sent", "18", scrollToDetail("被采纳回复"))
 
         harness.await("the avatar to be fetched") {
@@ -258,7 +258,7 @@ internal class ProfileScreenTest {
             list.scrollToPosition(position)
             harness.layoutApp()
             detailValue(label)?.let { return it }
-            position += 3
+            position += 1
         }
         return detailValue(label)
     }

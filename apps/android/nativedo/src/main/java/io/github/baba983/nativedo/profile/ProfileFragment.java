@@ -790,8 +790,13 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             Row next = index + 1 < rows.size() ? rows.get(index + 1) : null;
             row.divider = next != null && next.type == TYPE_DETAIL;
         }
-        // The tab area is the list's last row; its own row placeholder only exists once its view is
-        // built (buildMedia), so the index is appended there.
+        // The tab area is the list's last row, and it is re-appended here whenever the rows are
+        // rebuilt (a late summary read rebuilds them): a rows list without it would leave the
+        // already-built tab area unreachable below the last stat row.
+        if (mediaView != null) {
+            mediaRow = rows.size();
+            rows.add(Row.media());
+        }
     }
 
     private boolean isOwnProfile() {
@@ -1062,8 +1067,13 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                     }
                 });
         mediaView.buildTabs();
-        mediaRow = rows.size();
-        rows.add(Row.media());
+        // The row the info list holds; settleHeaderInList gives it the list's visible height. The
+        // rows are rebuilt here so the row is appended by the one place that knows the order.
+        mediaView.setLayoutParams(new RecyclerView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        if (profile != null) {
+            buildRows(profile);
+        }
         pageState(TAB_TOPICS).loadFirstIfNeeded();
     }
 
@@ -1474,8 +1484,10 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                     // ProfileActivity's own list (ProfileActivity.java:10824, 14360): its height is
                     // set to the list's visible height in settleHeaderInList, so it can pin itself
                     // to the list's top and its pages then scroll inside it.
-                    mediaView.setLayoutParams(new RecyclerView.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                    if (mediaView.getLayoutParams() == null) {
+                        mediaView.setLayoutParams(new RecyclerView.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                    }
                     return new RecyclerListView.Holder(mediaView);
                 }
                 default: {

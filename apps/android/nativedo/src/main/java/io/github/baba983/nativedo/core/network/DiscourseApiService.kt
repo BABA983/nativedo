@@ -1656,7 +1656,9 @@ internal fun UserActionsResponseDto.toModel(): UserActionPage = UserActionPage(
                 lastPostedAt = action.createdAt,
                 categoryId = action.categoryId,
                 lastPosterUsername = action.username,
-                excerpt = action.excerpt,
+                // The site computes some excerpts from the post's cooked HTML; a row draws one
+                // line of text, so the markup comes off the same way a bookmark's excerpt does.
+                excerpt = action.excerpt.plainTextFromHtml(),
                 targetPostNumber = action.postNumber?.takeIf { it > 0 },
                 targetPostId = action.postId?.takeIf { it > 0 },
                 rowIdentity = action.activityRowIdentity(),
