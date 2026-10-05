@@ -108,6 +108,14 @@ public class TopicFragment extends BaseFragment {
     private org.telegram.ui.Components.ChatAvatarContainer avatarContainer;
     /** The bar's blur source; the post list is the content it records. */
     private io.github.baba983.nativedo.app.GlassPanelHost glassHost;
+    /**
+     * ChatActivity's own top and bottom blur band ({@code chatActivityFadeView},
+     * ChatActivity.java:6969-6973): the status bar and the bar's gaps show the recorded content
+     * through a fading glass strip instead of raw text scrolling by.
+     */
+    private org.telegram.ui.Components.chat.layouts.ChatActivityFadeView fadeView;
+    /** The system's bottom inset, from [onInsets]; the composer sits inside it. */
+    private int bottomInset;
     /** The topic as last read; the capsule and the bookmark item draw from it. */
     private TopicDetail topicDetail;
     /** The topic's original poster, as the synthetic user the rows also draw. */
@@ -158,6 +166,14 @@ public class TopicFragment extends BaseFragment {
                 }
                 if (glassHost != null) {
                     glassHost.updateColors();
+                    // Every view that draws from the source holds a cached frame until it is
+                    // invalidated, the capsules' bar included.
+                    glassHost.invalidateAttachedViews();
+                }
+                if (fadeView != null) {
+                    // ChatActivity is rebuilt on a theme change and builds the band again; this
+                    // screen is not rebuilt, so its band is told the way the capsules are.
+                    fadeView.updateColors();
                 }
                 if (actionBar != null) {
                     actionBar.updateColors();
@@ -399,6 +415,13 @@ public class TopicFragment extends BaseFragment {
             public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
                 maybeLoadNextPage();
                 reportViewport();
+                if (glassHost != null) {
+                    // What the band and the capsules draw is recorded from the list each frame,
+                    // and a view keeps the frame it was last recorded with until it is told to
+                    // redraw: ChatActivity's chat list drives invalidateAllGlassAttachedViews
+                    // from its own scroll invalidation (6792/6872 -> 46715).
+                    glassHost.invalidateAttachedViews();
+                }
                 if (reporter != null) {
                     // Scrolling is what tells the dwell clock the reader is still reading; without
                     // it a topic left open on a desk would count as read time.
@@ -427,7 +450,24 @@ public class TopicFragment extends BaseFragment {
         // both clear: the top padding is the bar's measured height (the status bar is already in
         // it), the same term ChatActivity's own list padding adds (11947-11952).
         updateListPadding();
+        // ChatActivity builds the glass source before anything else in the screen (2620-2661) and
+        // hands the same factory to the bar's capsules and to the fade band below (6969-6973).
+        glassHost = new io.github.baba983.nativedo.app.GlassPanelHost(listView, contentView);
+        // The wallpaper chain is part of what a capsule samples (ChatActivity's navbar source draws
+        // the wallpaper under the posts); the frame owns that view and hands it over here.
+        glassHost.setBackgroundView(contentView.backgroundView);
         contentView.addView(listView, org.telegram.ui.Components.LayoutHelper.createFrame(
+                org.telegram.ui.Components.LayoutHelper.MATCH_PARENT,
+                org.telegram.ui.Components.LayoutHelper.MATCH_PARENT));
+        // ChatActivity's own fade band (6969-6973): added right after the list, so the posts scroll
+        // behind it and every overlay - composer, progress, bar - draws over it. Its two zones draw
+        // what the source recorded as a band that fades out towards the list, so the status bar and
+        // the bar's own gaps show blurred content instead of raw text, the way a chat's header does.
+        fadeView = new org.telegram.ui.Components.chat.layouts.ChatActivityFadeView(context);
+        fadeView.setup(glassHost.getFactory());
+        fadeView.setFadeHeightTop(AndroidUtilities.dp(48));
+        fadeView.setFadeHeightBottom(AndroidUtilities.dp(48));
+        contentView.addView(fadeView, org.telegram.ui.Components.LayoutHelper.createFrame(
                 org.telegram.ui.Components.LayoutHelper.MATCH_PARENT,
                 org.telegram.ui.Components.LayoutHelper.MATCH_PARENT));
         attachStrip = createAttachStrip(context);
@@ -518,15 +558,17 @@ public class TopicFragment extends BaseFragment {
                 org.telegram.ui.Components.LayoutHelper.MATCH_PARENT,
                 Gravity.TOP | Gravity.LEFT, 52, 0, 52, 0));
         actionBar.createMenu().bringToFront();
-        glassHost = new io.github.baba983.nativedo.app.GlassPanelHost(listView, contentView);
-        // The wallpaper chain is part of what a capsule samples (ChatActivity's navbar source draws
-        // the wallpaper under the posts); the frame owns that view and hands it over here.
-        glassHost.setBackgroundView(contentView.backgroundView);
         actionBar.setupGlass(
                 glassHost.getFactory(),
                 org.telegram.ui.Components.blur3.drawable.color.impl.BlurredBackgroundProviderImpl
                         .topPanelChatActivity(resourceProvider));
         contentView.addView(actionBar);
+        // ChatActivityFragmentView.onLayout re-reads the fade zone on every layout (18627); the
+        // bar's measured height follows the status bar inset, so the zone is re-read with it.
+        contentView.addOnLayoutChangeListener((view, left, top, right, bottom,
+                oldLeft, oldTop, oldRight, oldBottom) -> checkUi_topFade());
+        checkUi_topFade();
+        checkUi_BlurHeight();
 
         // Upstream's selection, wired the way ChatActivity wires it: the overlay is a child of the
         // content view, the message list is its parent (that is where a handle's coordinates are
@@ -579,6 +621,9 @@ public class TopicFragment extends BaseFragment {
         view.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
             updateComposerActions();
             placeAttachStrip(v.getHeight());
+            // ChatActivity re-reads its bottom fade zone when the input's height changes
+            // (checkUi_inputIslandHeight, 46388-46403).
+            checkUi_BlurHeight();
         });
         composer = view;
         return view;
@@ -676,11 +721,48 @@ public class TopicFragment extends BaseFragment {
         if (listView == null) {
             return;
         }
-        int barHeight = actionBar != null && actionBar.getMeasuredHeight() > 0
+        listPaddingTop = AndroidUtilities.dp(4) + actionBarHeight();
+        applyListPadding();
+        checkUi_topFade();
+        checkUi_BlurHeight();
+    }
+
+    /** The bar's measured height; before the first layout its resting one, as upstream reads it. */
+    private int actionBarHeight() {
+        return actionBar != null && actionBar.getMeasuredHeight() > 0
                 ? actionBar.getMeasuredHeight()
                 : org.telegram.ui.ActionBar.ActionBar.getCurrentActionBarHeight() + AndroidUtilities.statusBarHeight;
-        listPaddingTop = AndroidUtilities.dp(4) + barHeight;
-        applyListPadding();
+    }
+
+    /**
+     * ChatActivity.checkUi_topFade (46433-46450): the top zone the fading band covers. Upstream
+     * adds the bar's measured height, a dp(7-6) for its bottom edge, the pinned panel and the
+     * search/tag strips; this screen's header is only the bar, so the bar is the whole zone.
+     */
+    private void checkUi_topFade() {
+        if (fadeView == null) {
+            return;
+        }
+        float fadeHeight = actionBarHeight();
+        fadeHeight += AndroidUtilities.dp(7 - 6);
+        fadeView.setFadeZoneTop((int) fadeHeight);
+    }
+
+    /**
+     * ChatActivity.checkUi_BlurHeight (46406-46411): the bottom zone, the composer plus the dp(7)
+     * above its top edge and the dp(9) below it. Upstream adds the animation's bottom inset
+     * because its content view is full screen; here the frame ends where the composer does (the
+     * window resizes for the keyboard, and the composer carries the navigation bar's own space),
+     * so the composer's measured height is that whole bottom band.
+     */
+    private void checkUi_BlurHeight() {
+        if (fadeView == null) {
+            return;
+        }
+        int composerHeight = composer != null && composer.getMeasuredHeight() > 0
+                ? composer.getMeasuredHeight()
+                : AndroidUtilities.dp(44) + bottomInset;
+        fadeView.setFadeZoneBottom(composerHeight + AndroidUtilities.dp(9) + AndroidUtilities.dp(7));
     }
 
     /** Writes the list's paddings from what the bar and the composer need, together. */
@@ -703,6 +785,7 @@ public class TopicFragment extends BaseFragment {
     @Override
     public void onInsets(int left, int top, int right, int bottom) {
         super.onInsets(left, top, right, bottom);
+        bottomInset = bottom;
         updateListPadding();
     }
 
