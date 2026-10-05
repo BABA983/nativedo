@@ -371,6 +371,28 @@ public class NativeDoMainTabsActivity extends ViewPagerActivity {
         return POSITION_TOPICS;
     }
 
+    /**
+     * MainTabsActivity:781-793 verbatim in shape: on any page but the first the back is the tab
+     * host's, and it goes to the first page - at commit only, so a gesture that starts here shows
+     * no page animation (the layout's own size check keeps it from starting one) and a cancelled
+     * gesture changes nothing. On the first page the host takes no back, which lets the root's
+     * back reach the shell and end in the system's own finish.
+     */
+    @Override
+    public boolean onBackPressed(boolean invoked) {
+        final boolean result = super.onBackPressed(invoked);
+        if (result) {
+            final int startPosition = getStartPosition();
+            if (viewPager.getCurrentPosition() != startPosition) {
+                if (invoked) {
+                    viewPager.scrollToPosition(startPosition);
+                }
+                return false;
+            }
+        }
+        return result;
+    }
+
     @Override
     protected void onViewPagerScrollEnd() {
         if (tabsView != null) {

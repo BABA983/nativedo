@@ -10,15 +10,20 @@ import android.view.View;
 import android.view.ViewAnimationUtils;
 import android.view.ViewGroup;
 import android.view.Window;
+import android.window.BackEvent;
+import android.window.OnBackAnimationCallback;
+import android.window.OnBackInvokedCallback;
 import android.window.OnBackInvokedDispatcher;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 
+import androidx.annotation.NonNull;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.AnimationNotificationsLocker;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.ui.ActionBar.ActionBarLayout;
@@ -28,10 +33,12 @@ import org.telegram.ui.ActionBar.BottomSheetTabsOverlay;
 import org.telegram.ui.ActionBar.DrawerLayoutContainer;
 import org.telegram.ui.ActionBar.INavigationLayout;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.ArticleViewer;
 import org.telegram.ui.Components.Easings;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.LineProgressView;
 import org.telegram.ui.DialogsActivity;
+import org.telegram.ui.PhotoViewer;
 
 import java.util.ArrayList;
 
@@ -51,7 +58,8 @@ import io.github.baba983.nativedo.hooks.NativeDoHooks;
  * {@link NativeDoMainTabsActivity}, presented as the root fragment the way upstream presents its
  * own {@code MainTabsActivity}.</p>
  */
-public class NativeDoActivity extends Activity implements NotificationCenter.NotificationCenterDelegate {
+public class NativeDoActivity extends Activity implements NotificationCenter.NotificationCenterDelegate,
+        INavigationLayout.INavigationLayoutDelegate {
 
     private ActionBarLayout actionBarLayout;
     /** Upstream's browser hands its minimized pages to its host's overlay; this is that view. */
@@ -59,6 +67,13 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
     private LineProgressView sessionProgress;
     private DrawerLayoutContainer drawerLayoutContainer;
     private FrameLayout contentView;
+    /**
+     * The back callbacks, held as {@link Object} exactly as upstream's {@code LaunchActivity} holds
+     * them (870-871): the API-33 and API-34 types only exist on those platforms, so neither is a
+     * field type the class can name everywhere.
+     */
+    private Object onBackAnimationCallback;
+    private Object onBackInvokedCallback;
     /**
      * The day/night circular reveal's snapshot, the way upstream's {@code LaunchActivity} draws it:
      * the old look in an {@link ImageView} over (or under) the layout while a circular clip animates.
@@ -133,6 +148,10 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
             }
         };
         actionBarLayout.setFragmentStack(new ArrayList<>());
+        // LaunchActivity:552. The one answer this shell takes from the delegate is
+        // needCloseLastFragment below: a back that would close the last fragment is the activity's
+        // own leave, the way upstream's answers it.
+        actionBarLayout.setDelegate(this);
         // LaunchActivity:553 loads the chat wallpaper here, so a chat screen can draw it at once.
         Theme.loadWallpaper(true);
 
@@ -162,9 +181,117 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         ViewCompat.requestApplyInsets(contentView);
         NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.needSetDayNightTheme);
 
-        if (Build.VERSION.SDK_INT >= 33) {
+        // LaunchActivity:735-849 verbatim in shape. API 34 gets the animation callback (the layout
+        // follows the finger: ActionBarLayout.onBackStarted/onBackProgress transform the page and
+        // onBackCancelled/onBackInvoked end or undo it); API 33 gets the plain callback, which pops
+        // on invoke only. The 34 callback starts the layout lazily on the first progressed event,
+        // because Android delivers onBackStarted before it knows whether the gesture will commit.
+        // No tablet branch: this host has one actionBarLayout. The checks LaunchActivity's
+        // onBackPressed(boolean) makes before any of this (sheets, PhotoViewer, ArticleViewer) are
+        // below, adapted to the consumers this app has.
+        if (Build.VERSION.SDK_INT >= 34) {
+            if (onBackAnimationCallback == null) {
+                onBackAnimationCallback = new OnBackAnimationCallback() {
+                    private AnimationNotificationsLocker locker = new AnimationNotificationsLocker();
+                    private boolean locked;
+
+                    private boolean started = false;
+                    private boolean invoked = false;
+
+                    @Override
+                    public void onBackInvoked() {
+                        invoked = true;
+                        if (locked) {
+                            locker.unlock();
+                            locked = false;
+                        }
+
+                        if (!onBackPressed(true))
+                            return;
+                        if (actionBarLayout != null) {
+                            actionBarLayout.onBackInvoked();
+                        } else {
+                            onBackPressed();
+                        }
+                    }
+
+                    @Override
+                    public void onBackStarted(@NonNull BackEvent backEvent) {
+                        started = true;
+                        invoked = false;
+                        predictiveBackStarted = false;
+                    }
+
+                    private void onBackStartedInternal(BackEvent backEvent) {
+                        if (!onBackPressed(false)) return;
+                        if (actionBarLayout != null) {
+                            boolean started = actionBarLayout.onBackStarted(backEvent.getTouchX(), backEvent.getTouchY());
+                            if (started && !locked) {
+                                locker.lock();
+                                locked = true;
+                            }
+                        }
+                    }
+
+                    private static final float LAZY_START = 0.015f;
+                    private boolean predictiveBackStarted;
+                    private boolean predictiveBackInvoked;
+
+                    @Override
+                    public void onBackProgressed(@NonNull BackEvent backEvent) {
+                        if (started && invoked) return;
+
+                        final float progress = backEvent.getProgress();
+                        if (!predictiveBackStarted && progress > LAZY_START) {
+                            predictiveBackStarted = true;
+                            onBackStartedInternal(backEvent);
+                        }
+
+                        final float fixedProgress = Math.max(0, progress - LAZY_START) / (1 - LAZY_START);
+
+                        if (actionBarLayout != null) {
+                            actionBarLayout.onBackProgress(fixedProgress);
+                        }
+                    }
+
+                    @Override
+                    public void onBackCancelled() {
+                        started = false;
+                        invoked = false;
+                        if (locked) {
+                            locker.unlock();
+                            locked = false;
+                        }
+
+                        if (actionBarLayout != null) {
+                            actionBarLayout.onBackCancelled();
+                        }
+                    }
+                };
+            }
             getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
-                    OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::onBackPressed);
+                    OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+                    (OnBackAnimationCallback) onBackAnimationCallback
+            );
+        } else if (Build.VERSION.SDK_INT >= 33) {
+            if (onBackInvokedCallback == null) {
+                onBackInvokedCallback = new OnBackInvokedCallback() {
+                    @Override
+                    public void onBackInvoked() {
+                        if (!onBackPressed(true))
+                            return;
+                        if (actionBarLayout != null) {
+                            actionBarLayout.onBackInvoked();
+                        } else {
+                            onBackPressed();
+                        }
+                    }
+                };
+            }
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                    OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+                    (OnBackInvokedCallback) onBackInvokedCallback
+            );
         }
 
         if (savedInstanceState == null) {
@@ -448,6 +575,17 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
     protected void onDestroy() {
         NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.needSetDayNightTheme);
         NativeDoHooks.setBrowserHost(null);
+        // LaunchActivity:6886-6894. (Upstream's API-33 branch tests the wrong field at 6891 - the
+        // plain callback is the one registered there - so this unregisters the one it registered.)
+        if (Build.VERSION.SDK_INT >= 34) {
+            if (onBackAnimationCallback instanceof OnBackAnimationCallback) {
+                getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback((OnBackAnimationCallback) onBackAnimationCallback);
+            }
+        } else if (Build.VERSION.SDK_INT >= 33) {
+            if (onBackInvokedCallback instanceof OnBackInvokedCallback) {
+                getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback((OnBackInvokedCallback) onBackInvokedCallback);
+            }
+        }
         super.onDestroy();
     }
 
@@ -588,22 +726,62 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         actionBarLayout.presentFragment(fragment, true);
     }
 
+    /**
+     * Back on the activity goes through the same consumers upstream's {@code LaunchActivity}
+     * consults, then the layout: it is the layout that pops a fragment, closes a sheet or animates
+     * the predictive-back gesture to its end (LaunchActivity:8300-8320).
+     */
     @Override
     public void onBackPressed() {
-        if (browserTabsOverlay != null && browserTabsOverlay.isOpen) {
-            browserTabsOverlay.onBackPressed();
+        if (!onBackPressed(true)) {
             return;
         }
-        if (actionBarLayout != null && actionBarLayout.getFragmentStack().size() > 1) {
+        if (actionBarLayout != null) {
             actionBarLayout.onBackPressed();
-            return;
+        } else {
+            super.onBackPressed();
         }
-        // The root screen can take the back before the app leaves: the home screen's search is
-        // closed by it (BaseFragment.onBackPressed answers false when it has taken it).
-        BaseFragment last = actionBarLayout == null ? null : actionBarLayout.getLastFragment();
-        if (last != null && !last.onBackPressed(true)) {
-            return;
+    }
+
+    /**
+     * Whether this back belongs to the layout at all, and - with {@code invoked} - the doing of it.
+     * LaunchActivity:8322-8355, with the consumers this host actually has: the browser's minimized
+     * tabs overlay takes the back first, then the full-screen viewers. {@code invoked == false} is
+     * the gesture-start question ("would you consume this?"), so nothing may be dismissed then; a
+     * viewer that answers false stops the page from starting its predictive-back shrink.
+     */
+    public boolean onBackPressed(boolean invoked) {
+        if (browserTabsOverlay != null && browserTabsOverlay.isOpen) {
+            if (invoked) browserTabsOverlay.onBackPressed();
+            return false;
         }
-        super.onBackPressed();
+        // Telegram-only consumers of upstream's list (passcode, secret media, the sticker viewer,
+        // the debug drawer) are absent here; every viewer this client can show is asked, in
+        // upstream's own order.
+        if (PhotoViewer.hasInstance() && PhotoViewer.getInstance().isVisible()) {
+            if (invoked) PhotoViewer.getInstance().closePhoto(true, false);
+            return false;
+        }
+        if (ArticleViewer.hasInstance() && ArticleViewer.getInstance().isVisible()) {
+            if (invoked) ArticleViewer.getInstance().close(true, false);
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * The way upstream's non-tablet branch leaves the app (LaunchActivity:8694-8714): closing the
+     * last fragment is {@code finish()}, not an empty layout. The back callback reaches this
+     * through {@code ActionBarLayout.onBackInvoked() -> onBackPressed() -> closeLastFragment()},
+     * so at the root the gesture hands the back to the system's own finish - and the system's
+     * back-to-home animation - instead of a pop this shell has nothing to reveal behind.
+     */
+    @Override
+    public boolean needCloseLastFragment(INavigationLayout layout) {
+        if (layout.getFragmentStack().size() <= 1) {
+            finish();
+            return false;
+        }
+        return true;
     }
 }
