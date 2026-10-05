@@ -46,6 +46,8 @@ import okhttp3.mockwebserver.MockResponse
  *    reader's tab and place in the list are lost;
  *  * a category tap replaces the list in place instead of sliding the page pair: no indicator
  *    animation, no second page, and coming back to the first tab re-reads and loses it;
+ *  * the header stays where it was through a swipe and jumps 48dp in one frame when the pair
+ *    swaps (the field appearing only at the end instead of travelling with the finger);
  *  * the root pager takes the horizontal swipe while the list still has a category to slide to
  *    (and does not take it when the strip is at the end it belongs to).</p>
  */
@@ -321,7 +323,90 @@ internal class HomeCategoryPagerTest {
         harness.assertNoTelegramSideEffects()
     }
 
+    /**
+     * The header follows the pair while a category swipe moves it: the field's collapse offset
+     * travels from where the reader left the list to the offset the page coming in keeps, so the
+     * field fades/slides in with the finger and the swap at the end has nothing left to change.
+     * The failure this pins: the offset standing still for the whole drag and jumping 48dp in one
+     * frame when the pages swap.
+     */
+    @Test
+    fun theHeaderFollowsACategorySwipeToTheIncomingPagesOffset() {
+        harness.bootApp()
+        harness.await("the all-topics feed to load") { rowCount() == 30 }
+        harness.await("the site's categories to arrive as tabs") { tabIds().size == 5 }
+        val fragment = fragment()
+        val frame = fragment.fragmentView
+        val list = shownList() ?: throw AssertionError("no topic list on screen")
+        list.scrollBy(0, AndroidUtilities.dp(600f))
+        harness.drawApp()
+        val field = fragmentField("searchField") as View
+        val collapsed = offset()
+        assertTrue("the list really is collapsed", collapsed < -AndroidUtilities.dp(30f))
+        assertTrue("and the field left with it", field.alpha < 0.01f)
+
+        // The swipe itself, sampled between moves: the header has to move with the finger, one
+        // way, with no single frame carrying the whole travel.
+        val startY = harness.height * 0.45f
+        val fromX = harness.width * 0.85f
+        val toX = harness.width * 0.15f
+        fun event(action: Int, x: Float, time: Long): MotionEvent =
+            MotionEvent.obtain(0L, time, action, x, startY, 0)
+        val samples = mutableListOf<Float>()
+        var midFieldAlpha = -1f
+        frame.dispatchTouchEvent(event(MotionEvent.ACTION_DOWN, fromX, 0))
+        harness.idle()
+        val steps = 8
+        for (step in 1..steps) {
+            val x = fromX + (toX - fromX) * step / steps
+            frame.dispatchTouchEvent(event(MotionEvent.ACTION_MOVE, x, step * 16L))
+            harness.idle()
+            samples += offset()
+            if (step == steps / 2) {
+                midFieldAlpha = field.alpha
+                harness.renderAppFrame("home-motion-category-swipe-mid")
+            }
+        }
+        frame.dispatchTouchEvent(event(MotionEvent.ACTION_UP, toX, steps * 16L + 16L))
+        harness.idle()
+
+        assertTrue(
+            "the swipe starts without moving the header",
+            samples.first() >= collapsed - 1f,
+        )
+        assertTrue("the header moves with the swipe's first steps", samples[1] > collapsed)
+        for (index in 1 until samples.size) {
+            assertTrue(
+                "the header travels one way only",
+                samples[index] >= samples[index - 1] - 1f,
+            )
+        }
+        val travelled = samples.last() - collapsed
+        val biggestStep = (1 until samples.size).maxOf { samples[it] - samples[it - 1] }
+        assertTrue("no single frame carries the whole travel", biggestStep <= travelled * 0.5f)
+        assertTrue("halfway in, the field is half-visible", midFieldAlpha > 0.05f && midFieldAlpha < 0.95f)
+        val released = offset()
+        assertTrue(
+            "the release does not jump the header either",
+            released >= samples.last() - 1f && released < 1f,
+        )
+
+        harness.idleClock(600)
+        harness.await("the settled category page") { shownLists().size == 1 && rowCount() == 20 }
+        harness.drawApp()
+        assertTrue(
+            "the header landed on the incoming page's own offset",
+            offset() > -AndroidUtilities.dp(1f),
+        )
+        assertTrue("and the field is back at its rest", field.alpha > 0.99f)
+        assertEquals("the swipe landed on the next category", tabIds()[1], strip()!!.currentTabId)
+        harness.assertNoTelegramSideEffects()
+    }
+
     // ------------------------------------------------------------------ helpers
+
+    /** The header's collapse offset, the value the field and the strip are drawn from. */
+    private fun offset(): Float = fragmentField("scrollYOffset") as Float
 
     /** A finger's horizontal drag, dispatched the way the window's would be. */
     private fun drag(view: View, fromX: Float, toX: Float) {

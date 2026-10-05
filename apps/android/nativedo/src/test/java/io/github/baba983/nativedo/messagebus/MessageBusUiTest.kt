@@ -145,28 +145,38 @@ internal class MessageBusUiTest {
         harness.assertNoTelegramSideEffects()
     }
 
-    /** A screen refresh (coming back to the list) is the reader asking for what is there now. */
+    /**
+     * Coming back to the list is not a refresh of it. The pill's count is the reader's own until
+     * they act on it (the tap above), which is the only place the count is cleared from; a return
+     * from a topic reads nothing and leaves the count where it was. The failure this pins: a
+     * return that reads the feed again, which loses the rows the reader came back to and hands
+     * them a count they never asked to have reset.
+     */
     @Test
-    fun aScreenRefreshClearsTheCount() {
+    fun aReturnToTheListDoesNotRefreshItOrClearTheCount() {
         servePollResponses(batch(newTopic(topicId = 901, categoryId = 2)))
 
         harness.bootApp()
         harness.await("the topic list to load") { rowCount() == 2 }
         harness.await("the bus to count a new topic") { pillText() == "1 个新话题" }
+        harness.drawApp()
 
         val feedReads = site.requestPaths.count { it == "latest.json" }
         val page = harness.visibleFragment() as NativeDoMainTabsActivity.TabPage
         page.onParentBecameVisible()
-        harness.await("the refresh's feed") {
-            site.requestPaths.count { it == "latest.json" } > feedReads
-        }
-        harness.await("the pill to clear") {
-            harness.idleClock(120)
-            pill().visibility != View.VISIBLE
-        }
+        harness.idleClock(200)
+        harness.drawApp()
+
+        assertEquals(
+            "the return reads nothing",
+            feedReads,
+            site.requestPaths.count { it == "latest.json" },
+        )
+        assertEquals("and the count is still the reader's", "1 个新话题", pillText())
         assertTrue(
-            "a refresh resets the tracking state",
-            NativeDo.container(harness.context).messageBusSession.incomingTopics.value.isEmpty,
+            "the reader has not acted, so the bus still counts it",
+            NativeDo.container(harness.context).messageBusSession.incomingTopics.value
+                .countForCategory(2) == 1,
         )
         harness.assertNoTelegramSideEffects()
     }

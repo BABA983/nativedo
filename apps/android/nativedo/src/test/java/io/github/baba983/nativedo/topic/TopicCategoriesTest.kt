@@ -118,7 +118,7 @@ internal class TopicCategoriesTest {
         assertEquals(
             "and the head of the list was only read once, at boot",
             1,
-            site.requestPaths.count { it == "latest.json" },
+            site.queriesFor("latest.json").count { it.contains("page=0") },
         )
         harness.drawApp()
         harness.idleClock(400)

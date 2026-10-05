@@ -14,6 +14,11 @@
     <string name="app_browser_download_failed">下载失败</string>
     <string name="topic_list_failed">没能读到话题列表\n点一下重试</string>
     <!--
+      A page after the first that did not arrive. The footer below the last row carries it, and
+      the tap reads that page again rather than the whole list.
+    -->
+    <string name="topic_list_more_failed">没能读到更多话题\n点一下重试</string>
+    <!--
       A topic that did not arrive. The line says which kind of failure it was, because the tap
       does a different thing for each: a challenge or a lost session opens the login WebView, a
       refusal or an outage just asks again.

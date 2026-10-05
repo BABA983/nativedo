@@ -107,7 +107,8 @@ public class TopicListFragment extends BaseFragment
     /** The strip's side margin, as upstream's floating panel has it. */
     private static final int TAB_STRIP_MARGIN_DP = 4;
 
-    /** DialogsActivity's own animator ids for the two factors this screen also animates (304-305). */
+    /** DialogsActivity's own animator ids for the three factors this screen also animates (303-305). */
+    private static final int ANIMATOR_ID_SEARCH_VISIBLE = 1;
     private static final int ANIMATOR_ID_SHADOW_VISIBLE = 4;
     private static final int ANIMATOR_ID_SEARCH_BUTTON_VISIBLE = 5;
 
@@ -209,6 +210,13 @@ public class TopicListFragment extends BaseFragment
     private AnimatorSet newTopicsPillAnimation;
     /** The pill's feed from the message bus, detached when the screen is destroyed. */
     private MessageBusHandle incomingTopicsObserver;
+    /**
+     * The reader's own finished-topic mark, while this screen is alive to re-bind a row for it
+     * ({@link TopicReadMarks#addListener}): the mark lands when the topic screen is destroyed,
+     * which is before this screen is resumed, so a rebind that waited for the resume would keep
+     * the badge the reader has just cleared.
+     */
+    private kotlin.jvm.functions.Function1<Long, kotlin.Unit> readMarkListener;
     /** What the pill currently counts; nulls name no category, so all of them count. */
     private IncomingTopics incomingTopics = new IncomingTopics();
     /**
@@ -218,8 +226,20 @@ public class TopicListFragment extends BaseFragment
     private float scrollYOffset;
     /** DialogsActivity's invalidateScrollY (348): recompute the offset once per draw after a scroll. */
     private boolean invalidateScrollY = true;
+    /**
+     * The offset the current category slide started from. The slide's own progress moves the
+     * header from it to the offset the page coming to the front keeps (see
+     * {@link #followSlideWithPanelOffset()}), so the field and the strip travel with the swipe
+     * instead of jumping when the pair swaps at the end.
+     */
+    private float slideStartScrollYOffset;
     /** DialogsActivity's animatorShadowVisible (313, 4605-4606): the shadow under the header's edge. */
     private final BoolAnimator animatorShadowVisible = new BoolAnimator(ANIMATOR_ID_SHADOW_VISIBLE,
+            this, CubicBezierInterpolator.EASE_OUT_QUINT, 350);
+    /** DialogsActivity's animatorSearchVisible (307, 7464): the search's own 350 ms factor. The
+     * field's slot, the strip's departure, the bar's items and the search capsule all read it;
+     * searchAnimationProgress is the 200/180 ms animation of the two sides themselves. */
+    private final BoolAnimator animatorSearchVisible = new BoolAnimator(ANIMATOR_ID_SEARCH_VISIBLE,
             this, CubicBezierInterpolator.EASE_OUT_QUINT, 350);
     /** DialogsActivity's animatorSearchButtonVisible (317, 14054): the bar's search icon's factor. */
     private final BoolAnimator animatorSearchButtonVisible = new BoolAnimator(ANIMATOR_ID_SEARCH_BUTTON_VISIBLE,
@@ -274,6 +294,9 @@ public class TopicListFragment extends BaseFragment
         actionBar.setAddToContainer(false);
         actionBar.setCastShadows(false);
         actionBar.setClipContent(true);
+        // The title lives in the bar's own container, as DialogsActivity gives its own bar
+        // (3172): the search fades and shrinks that container while it takes the bar over.
+        actionBar.setUseContainerForTitles();
         actionBar.setTitle("linux.do");
         // The page carries its own bar: inside the tab host the bar belongs to the page's screen,
         // and the strip (a sibling of the pager) draws over the pages, never under them.
@@ -389,7 +412,17 @@ public class TopicListFragment extends BaseFragment
         // icon (3220-3250, field at 3279-3300), in the same frame (48dp wide margins 7/7 at
         // 5337-5339, its top set against the bar's own measured height at 1148-1160). Tapping it
         // is what opens the search; its close button is what leaves it.
-        searchField = new org.telegram.ui.Components.FragmentSearchField(context, resourceProvider);
+        searchField = new org.telegram.ui.Components.FragmentSearchField(context, resourceProvider) {
+            // DialogsActivity's own field (3281-3286): a field the list has scrolled away is
+            // not there to be touched.
+            @Override
+            public boolean dispatchTouchEvent(MotionEvent ev) {
+                if (ev.getAction() == MotionEvent.ACTION_DOWN && getAlpha() < 0.25f) {
+                    return false;
+                }
+                return super.dispatchTouchEvent(ev);
+            }
+        };
         searchField.setPadding(AndroidUtilities.dp(4), AndroidUtilities.dp(4),
                 AndroidUtilities.dp(4), AndroidUtilities.dp(4));
         searchField.setPivotX(0);
@@ -509,6 +542,16 @@ public class TopicListFragment extends BaseFragment
             incomingTopicsObserver.close();
             incomingTopicsObserver = null;
         }
+        // The topic screen's finished-mark lands while this screen is behind it (its destroy runs
+        // before this screen's resume), so the row is re-bound from the mark itself.
+        if (readMarkListener != null) {
+            TopicReadMarks.INSTANCE.removeListener(readMarkListener);
+        }
+        readMarkListener = topicId -> {
+            refreshPageRows(currentPage());
+            return kotlin.Unit.INSTANCE;
+        };
+        TopicReadMarks.INSTANCE.addListener(readMarkListener);
         incomingTopicsObserver = container.getMessageBusSession().observeIncomingTopics(topics -> {
             this.incomingTopics = topics;
             updateNewTopicsPill();
@@ -551,6 +594,20 @@ public class TopicListFragment extends BaseFragment
         public ViewPage(Context context) {
             super(context);
         }
+
+        /**
+         * DialogsActivity.ViewPage.setTranslationX (434-450): a page's own movement is where the
+         * slide is noticed. Upstream re-points the strip's indicator from here; this screen's
+         * header offset is what follows the same progress, so the field and the strip travel with
+         * the pair instead of jumping when it swaps.
+         */
+        @Override
+        public void setTranslationX(float translationX) {
+            if (getTranslationX() != translationX) {
+                super.setTranslationX(translationX);
+                followSlideWithPanelOffset();
+            }
+        }
     }
 
     /** One category's feed as the reader left it: its items, its place, its loading state. */
@@ -563,6 +620,12 @@ public class TopicListFragment extends BaseFragment
         boolean loaded;
         boolean loading;
         boolean failed;
+        /** The page number the next page's route is asked for; the first answer is page 0. */
+        int nextPage = 1;
+        /** Whether the last answer carried a {@code more_topics_url}: another page follows. */
+        boolean hasMore;
+        boolean loadingMore;
+        boolean moreFailed;
         /** Where the reader was: the first visible row and its offset under the list's top. */
         int scrollPosition;
         int scrollOffset;
@@ -668,9 +731,11 @@ public class TopicListFragment extends BaseFragment
 
             @Override
             public void onScrolled(RecyclerView recyclerView, int dx, int dy) {
-                // DialogsActivity's onScrolled (4522-4524): the draw pass recomputes the top
+                // DialogsActivity's own listener (4521): a scroll is where the next page is asked
+                // for. DialogsActivity's onScrolled (4522-4524): the draw pass recomputes the top
                 // panel's offset from the list's own position, and the frame is the view whose
                 // draw pass that is - a child's own scroll does not redraw it.
+                checkListLoad(page);
                 invalidateScrollY = true;
                 if (fragmentView != null) {
                     fragmentView.invalidate();
@@ -719,7 +784,7 @@ public class TopicListFragment extends BaseFragment
         page.emptyView.setOnClickListener(view -> {
             if (page.feed != null) {
                 page.feed.failed = false;
-                requestFeed(page, page.feed, false);
+                requestFeed(page, page.feed);
             }
         });
         page.addView(page.listView, LayoutHelper.createFrame(
@@ -765,38 +830,44 @@ public class TopicListFragment extends BaseFragment
         }
         updatePageState(page);
         if (!feed.loaded && !feed.loading && !feed.failed) {
-            requestFeed(page, feed, false);
+            requestFeed(page, feed);
         }
     }
 
     /**
-     * Reads {@code feed} from the site. The page that asked may not be the one showing the feed
-     * when the site answers - a slide can move on first - so the answer is written into the feed
-     * and the page is bound again only if it still shows that feed.
+     * Reads {@code feed}'s first page from the site. The page that asked may not be the one showing
+     * the feed when the site answers - a slide can move on first - so the answer is written into
+     * the feed and the page is bound again only if it still shows that feed. The answer's
+     * {@code topic_list.more_topics_url} is what says another page exists.
      */
-    private void requestFeed(ViewPage page, CategoryFeed feed, boolean clearIncomingWhenLoaded) {
+    private void requestFeed(ViewPage page, CategoryFeed feed) {
         final int generation = ++feed.generation;
         feed.loading = true;
         feed.failed = false;
+        // A first page restarts the paging: whatever was loaded behind it is a different list.
+        feed.loadingMore = false;
+        feed.moreFailed = false;
+        feed.hasMore = false;
+        feed.nextPage = 1;
         updatePageState(page);
         container = NativeDo.container(getParentActivity());
-        DiscourseLoader.INSTANCE.feed(container, categoryOf(feed.tabId), selectedTag,
-                loaded -> {
+        DiscourseLoader.INSTANCE.feed(container, categoryOf(feed.tabId), selectedTag, 0,
+                loadedPage -> {
                     if (feed.generation != generation) {
                         return kotlin.Unit.INSTANCE;
                     }
+                    final List<TopicSummary> loaded = loadedPage.getTopics();
                     feed.loading = false;
                     feed.loaded = true;
                     feed.failed = false;
                     feed.topics.clear();
                     feed.topics.addAll(loaded);
+                    feed.hasMore = hasMoreTopics(loadedPage);
                     feed.authors.clear();
                     for (TopicSummary topic : loaded) {
                         // The site has caught up with a topic this device had only reported: the
                         // feed is the only thing the row is drawn from again.
                         TopicReadMarks.INSTANCE.siteAgrees(topic.getId(), topic.getUnreadCount());
-                    }
-                    for (TopicSummary topic : loaded) {
                         feed.authors.add(DiscourseRows.topicAuthor(topic, container.getBaseUrl()));
                     }
                     if (page.feed == feed) {
@@ -810,12 +881,6 @@ public class TopicListFragment extends BaseFragment
                         fragmentView.invalidate();
                     }
                     fetchAvatars(feed);
-                    // A refresh the reader asked for (the screen came back to the front) makes
-                    // the listed topics the new baseline: what the pill counted has been shown.
-                    // A filter change does not.
-                    if (clearIncomingWhenLoaded && container != null) {
-                        container.getMessageBusSession().clearIncomingTopics();
-                    }
                     return kotlin.Unit.INSTANCE;
                 },
                 error -> {
@@ -832,13 +897,103 @@ public class TopicListFragment extends BaseFragment
                 });
     }
 
-    /** Re-reads the page in front's feed, the way {@code onParentBecameVisible} asks. */
-    private void refreshCurrentFeed(boolean clearIncomingWhenLoaded) {
+    /**
+     * One more page of {@code feed}, appended where the reader is reading it. The site's
+     * {@code more_topics_url} is only a flag here - the route and the page number it belongs to
+     * are already known - and the page it names is asked for by number, the way Discourse's own
+     * client pages ({@code /latest.json?page=1}, the contract's own route). One read at a time:
+     * {@code loadingMore} and the generation are the guard, a duplicate topic id never doubles a
+     * row, and an answer without a {@code more_topics_url} ends the list.
+     */
+    private void requestMore(ViewPage page, CategoryFeed feed) {
+        final int generation = feed.generation;
+        final int pageNumber = feed.nextPage;
+        feed.loadingMore = true;
+        feed.moreFailed = false;
+        page.adapter.notifyDataSetChanged();
+        DiscourseLoader.INSTANCE.feed(container, categoryOf(feed.tabId), selectedTag, pageNumber,
+                loadedPage -> {
+                    if (feed.generation != generation) {
+                        return kotlin.Unit.INSTANCE;
+                    }
+                    feed.loadingMore = false;
+                    feed.nextPage = pageNumber + 1;
+                    feed.hasMore = hasMoreTopics(loadedPage);
+                    for (TopicSummary topic : loadedPage.getTopics()) {
+                        if (hasTopic(feed, topic.getId())) {
+                            continue;
+                        }
+                        TopicReadMarks.INSTANCE.siteAgrees(topic.getId(), topic.getUnreadCount());
+                        feed.topics.add(topic);
+                        feed.authors.add(DiscourseRows.topicAuthor(topic, container.getBaseUrl()));
+                    }
+                    if (page.feed == feed) {
+                        page.adapter.notifyDataSetChanged();
+                    }
+                    fetchAvatars(feed);
+                    return kotlin.Unit.INSTANCE;
+                },
+                error -> {
+                    if (feed.generation != generation) {
+                        return kotlin.Unit.INSTANCE;
+                    }
+                    feed.loadingMore = false;
+                    feed.moreFailed = true;
+                    FileLog.e("topic list page failed", error);
+                    if (page.feed == feed) {
+                        page.adapter.notifyDataSetChanged();
+                    }
+                    return kotlin.Unit.INSTANCE;
+                });
+    }
+
+    /** Whether the site said another page follows this one ({@code more_topics_url} present). */
+    private static boolean hasMoreTopics(io.github.baba983.nativedo.core.model.TopicListPage page) {
+        String more = page.getMoreTopicsUrl();
+        return more != null && !more.isEmpty();
+    }
+
+    /**
+     * DialogsActivity.checkListLoad (7794-7850): the next page is read when the last row the
+     * reader can see is inside the feed's last ten, and never while the pair is sliding (the
+     * incoming page's position is not the reader's yet) or while a read is already running. The
+     * page is the one that scrolled, as upstream passes its own ViewPage.
+     */
+    private void checkListLoad(ViewPage page) {
+        if (page == null || page.feed == null || page.layoutManager == null) {
+            return;
+        }
+        if (isPageSlideInProgress() || searching) {
+            return;
+        }
+        final CategoryFeed feed = page.feed;
+        if (!feed.loaded || feed.loading || feed.loadingMore || feed.moreFailed || !feed.hasMore) {
+            return;
+        }
+        final int lastVisibleItem = page.layoutManager.findLastVisibleItemPosition();
+        if (lastVisibleItem != RecyclerView.NO_POSITION
+                && lastVisibleItem >= feed.topics.size() - 10) {
+            requestMore(page, feed);
+        }
+    }
+
+    /** Whether a topic id is already one of the feed's rows, so a page cannot double it. */
+    private static boolean hasTopic(CategoryFeed feed, long topicId) {
+        for (TopicSummary topic : feed.topics) {
+            if (topic.getId() == topicId) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Re-reads the page in front's feed, for a read the reader asked for. */
+    private void refreshCurrentFeed() {
         final ViewPage page = currentPage();
         if (page == null || page.feed == null) {
             return;
         }
-        requestFeed(page, page.feed, clearIncomingWhenLoaded);
+        requestFeed(page, page.feed);
     }
 
     /** Keeps where the reader is in the page's feed, so coming back finds them there. */
@@ -944,6 +1099,10 @@ public class TopicListFragment extends BaseFragment
             feed.loaded = false;
             feed.loading = false;
             feed.failed = false;
+            feed.hasMore = false;
+            feed.loadingMore = false;
+            feed.moreFailed = false;
+            feed.nextPage = 1;
             feed.topics.clear();
             feed.authors.clear();
             feed.scrollPosition = 0;
@@ -1025,6 +1184,8 @@ public class TopicListFragment extends BaseFragment
             getParent().requestDisallowInterceptTouchEvent(true);
             maybeStartTracking = false;
             startedTracking = true;
+            // The slide starts where the header stands; its frames move it to the incoming page.
+            slideStartScrollYOffset = scrollYOffset;
             startedTrackingX = (int) (ev.getX() + additionalOffset);
             actionBar.setEnabled(false);
             tabsView.setEnabled(false);
@@ -1112,6 +1273,8 @@ public class TopicListFragment extends BaseFragment
                     startedTracking = true;
                     startedTrackingPointerId = ev.getPointerId(0);
                     startedTrackingX = (int) ev.getX();
+                    // A hand on a pair that is still moving: the header continues from where it is.
+                    slideStartScrollYOffset = scrollYOffset;
                     if (animatingForward) {
                         if (startedTrackingX < viewPages[0].getMeasuredWidth() + viewPages[0].getTranslationX()) {
                             additionalOffset = viewPages[0].getTranslationX();
@@ -1144,6 +1307,8 @@ public class TopicListFragment extends BaseFragment
                     tabsAnimationInProgress = false;
                 } else if (ev != null && ev.getAction() == MotionEvent.ACTION_DOWN) {
                     additionalOffset = 0;
+                    // A fresh gesture starts the header where it stands.
+                    slideStartScrollYOffset = scrollYOffset;
                 }
                 if (ev != null && ev.getAction() == MotionEvent.ACTION_DOWN && !startedTracking && !maybeStartTracking && tabsView.getVisibility() == View.VISIBLE) {
                     startedTrackingPointerId = ev.getPointerId(0);
@@ -1269,6 +1434,10 @@ public class TopicListFragment extends BaseFragment
                                     }
                                 }
                                 viewPages[1].setVisibility(View.GONE);
+                                // The pair has come to rest: the header takes the offset of the
+                                // page that stayed in front (the one that just took it, when the
+                                // slide landed).
+                                updateScrollYOffsetFromList();
                                 tabsAnimationInProgress = false;
                                 maybeStartTracking = false;
                                 actionBar.setEnabled(true);
@@ -1300,24 +1469,29 @@ public class TopicListFragment extends BaseFragment
             glassHost.record();
             // DialogsActivity.ContentView.dispatchDraw (957-1006): the offset the top panel follows
             // is recomputed from the list itself, once per draw after a scroll. The search takes
-            // the list's place, so the panel rests while it is up (onSearchExpand, 3343-3345).
-            if (invalidateScrollY && !searching) {
+            // the list's place, so the panel rests while it is up (onSearchExpand, 3343-3345), and
+            // a pair that is sliding owns the offset frame by frame (followSlideWithPanelOffset).
+            if (invalidateScrollY && !searching && !isPageSlideInProgress()) {
                 invalidateScrollY = false;
                 updateScrollYOffsetFromList();
             }
-            // 1081-1087: the field follows the offset; checkUi_searchFieldVisibility (14036-14056)
-            // fades it out over the same distance and hands the bar its search icon. While the
-            // search is up the field and the strip rest where they are (its pager sits below
-            // them), so the offset they follow is lerped away by the search's own progress.
+            // 1081-1087: the field follows the offset and travels into the bar as the search takes
+            // the screen; checkUi_searchFieldVisibility (14036-14056) fades it out over the same
+            // distance and hands the bar its search icon.
             final float panelOffset = AndroidUtilities.lerp(scrollYOffset, 0f, searchAnimationProgress);
             updateSearchFieldVisibility();
             if (searchField != null) {
-                searchField.setTranslationY(panelOffset + getSearchFieldAdditionOffset());
+                searchField.setTranslationY(searchFieldTranslation());
             }
-            // updateContextViewPosition (6560-6596): the strip follows the same offset, lifted by
-            // the field's own rest offset while the field is visible.
+            // updateContextViewPosition (6560-6596): the strip follows the same offset, is pushed
+            // down by the search capsule's own height as the search opens, and is lifted by the
+            // field's rest offset while the field is visible.
             if (tabsView != null) {
-                tabsView.setTranslationY(panelOffset - AndroidUtilities.dp(4) * searchFieldAlpha());
+                final float searchTabsHeight = searchPanel == null
+                        ? 0f : AndroidUtilities.dp(org.telegram.ui.DialogsActivity.SEARCH_TABS_HEIGHT);
+                tabsView.setTranslationY(scrollYOffset
+                        + searchTabsHeight * searchAnimationProgress
+                        - AndroidUtilities.dp(4) * searchFieldAlpha());
             }
             // The new-topics pill hangs under the strip, so it rides the same offset: it stays
             // where the strip's lower edge is while the header collapses.
@@ -1379,34 +1553,90 @@ public class TopicListFragment extends BaseFragment
     /**
      * DialogsActivity.ContentView.dispatchDraw (957-1006): the header's offset is read from the
      * list itself - how far its first row has gone past the list's own padding - and clamped to
-     * the field's height. The scroll listener only says that a recompute is due.
+     * the field's height. The same reading answers for either page of the pair, which is what a
+     * slide needs while it moves.
      */
+    private float computeScrollYOffset(RecyclerListView view) {
+        if (view == null) {
+            return 0;
+        }
+        final int maxScrollYOffset = AndroidUtilities.dp(org.telegram.ui.DialogsActivity.SEARCH_FIELD_HEIGHT);
+        RecyclerView.ViewHolder holder = view.findViewHolderForLayoutPosition(0);
+        if (holder != null) {
+            float visiblePartAfterScroll = view.getPaddingTop() - holder.itemView.getY();
+            if (visiblePartAfterScroll >= 0) {
+                float newTranslation = -visiblePartAfterScroll;
+                if (newTranslation < -maxScrollYOffset) {
+                    return -maxScrollYOffset;
+                } else if (newTranslation > 0) {
+                    return 0;
+                }
+                return newTranslation;
+            }
+            return 0;
+        } else if (view.getAdapter() == null || view.getAdapter().getItemCount() == 0) {
+            // An empty list has no row the panel could stand aside for; upstream's null holder is
+            // a first row scrolled out of the list, and an empty feed is not that.
+            return 0;
+        }
+        return -maxScrollYOffset;
+    }
+
+    /** The page in front's offset, the way its own draw pass reads it. */
     private void updateScrollYOffsetFromList() {
         if (listView == null || fragmentView == null) {
             return;
         }
-        final int maxScrollYOffset = AndroidUtilities.dp(org.telegram.ui.DialogsActivity.SEARCH_FIELD_HEIGHT);
-        RecyclerView.ViewHolder holder = listView.findViewHolderForLayoutPosition(0);
-        if (holder != null) {
-            float visiblePartAfterScroll = listView.getPaddingTop() - holder.itemView.getY();
-            if (visiblePartAfterScroll >= 0) {
-                float newTranslation = -visiblePartAfterScroll;
-                if (newTranslation < -maxScrollYOffset) {
-                    newTranslation = -maxScrollYOffset;
-                } else if (newTranslation > 0) {
-                    newTranslation = 0;
-                }
-                setScrollY(newTranslation);
-            } else {
-                setScrollY(0);
-            }
-        } else if (listView.getAdapter() == null || listView.getAdapter().getItemCount() == 0) {
-            // An empty list has no row the panel could stand aside for; upstream's null holder is
-            // a first row scrolled out of the list, and an empty feed is not that.
-            setScrollY(0);
-        } else {
-            setScrollY(-maxScrollYOffset);
+        setScrollY(computeScrollYOffset(listView));
+    }
+
+    /** The offset a page keeps: its laid-out list's own, or the place {@link #preparePage} put it. */
+    private float pagePanelOffset(ViewPage page) {
+        if (page == null || page.listView == null) {
+            return 0;
         }
+        if (page.listView.getChildCount() == 0 && page.feed != null) {
+            // Not laid out yet (a page that has just arrived): the place preparePage restored is
+            // what the draw pass will read from it once it is.
+            if (page.feed.scrollPosition > 0) {
+                return -AndroidUtilities.dp(org.telegram.ui.DialogsActivity.SEARCH_FIELD_HEIGHT);
+            }
+            return MathUtils.clamp(-page.feed.scrollOffset,
+                    -AndroidUtilities.dp(org.telegram.ui.DialogsActivity.SEARCH_FIELD_HEIGHT), 0f);
+        }
+        return computeScrollYOffset(page.listView);
+    }
+
+    /** Whether the pair is moving between pages right now. */
+    private boolean isPageSlideInProgress() {
+        return startedTracking || tabsAnimationInProgress
+                || (tabsView != null && tabsView.isAnimatingIndicator());
+    }
+
+    /**
+     * The header follows the page coming to the front while the pair slides: at the slide's
+     * progress the offset sits between where the slide started and the offset that page keeps.
+     * The field, the strip and the pill read {@link #scrollYOffset}, so they travel with the swipe
+     * - the field fades in when the incoming page is at its top - and the swap at the end has
+     * nothing left to change.
+     *
+     * <p>DialogsActivity's switchToCurrentSelectedMode (6827) instead puts the incoming page's
+     * list at the offset the header already has, because its lists are in memory when a tab is
+     * tapped; a feed here is read over the network and may land at the top after the tap, so the
+     * offset is what moves to meet the page instead of the page being moved to meet the offset.</p>
+     */
+    private void followSlideWithPanelOffset() {
+        if (viewPages == null || viewPages[1] == null || viewPages[1].getVisibility() != View.VISIBLE
+                || searching || !isPageSlideInProgress()) {
+            return;
+        }
+        final float width = viewPages[0].getMeasuredWidth();
+        if (width <= 0) {
+            return;
+        }
+        final float progress = 1f - Math.min(1f, Math.abs(viewPages[1].getTranslationX()) / width);
+        setScrollY(AndroidUtilities.lerp(
+                slideStartScrollYOffset, pagePanelOffset(viewPages[1]), progress));
     }
 
     /** DialogsActivity.setScrollY (8918-8940): the one value the header's views read. */
@@ -1420,8 +1650,9 @@ public class TopicListFragment extends BaseFragment
     }
 
     /**
-     * checkUi_searchFieldVisibility (14036-14056): the field fades out over the offset's own
-     * distance, and the bar's search icon comes up once it is gone.
+     * checkUi_searchFieldVisibility (14036-14056): the field is on while the search animator or
+     * the list's own offset says so; over the offset's own distance it fades out, and the bar's
+     * search icon comes up once it is gone.
      */
     private void updateSearchFieldVisibility() {
         if (searchField == null) {
@@ -1430,7 +1661,7 @@ public class TopicListFragment extends BaseFragment
         final float alphaByScrollOffset = 1f - MathUtils.clamp(
                 -scrollYOffset / (float) AndroidUtilities.dp(org.telegram.ui.DialogsActivity.SEARCH_FIELD_HEIGHT),
                 0f, 1f);
-        final float alpha = Math.max(searchAnimationProgress, alphaByScrollOffset);
+        final float alpha = Math.max(animatorSearchVisible.getFloatValue(), alphaByScrollOffset);
         searchField.setAlpha(alpha);
         searchField.setVisibility(alpha > 0 ? View.VISIBLE : View.GONE);
         animatorSearchButtonVisible.setValue(alpha <= 0.01f, true);
@@ -1442,12 +1673,28 @@ public class TopicListFragment extends BaseFragment
     }
 
     /**
-     * DialogsActivity.getSearchFieldAdditionOffset (1624-1626) is -4dp at rest; upstream lifts the
-     * field by its own height while the search takes the bar's place. This screen's search keeps
-     * the field where it is (the pager sits below it), so the rest offset is the whole of it.
+     * DialogsActivity.getSearchFieldAdditionOffset (1624-1626): -4dp at rest, the field's own
+     * height once the search is up - the bar's slot, which the field takes over.
      */
     private float getSearchFieldAdditionOffset() {
-        return -AndroidUtilities.dp(4);
+        return -AndroidUtilities.lerp(AndroidUtilities.dp(4),
+                AndroidUtilities.dp(org.telegram.ui.DialogsActivity.SEARCH_FIELD_HEIGHT),
+                animatorSearchVisible.getFloatValue());
+    }
+
+    /**
+     * ContentView.dispatchDraw's own field translation (1081-1087), which is what the animated
+     * search uses: from the rest slot ({@code scrollYOffset - 4dp}) up to the bar itself
+     * ({@code -48dp}) as searchAnimationProgress runs. The two ends are the numbers
+     * {@link #getSearchFieldAdditionOffset()} calculates, so the settled state reads that helper.
+     */
+    private float searchFieldTranslation() {
+        final float searchFieldHeight = AndroidUtilities.dp(org.telegram.ui.DialogsActivity.SEARCH_FIELD_HEIGHT);
+        if (searchAnimationProgress == 0f && !animatorSearchVisible.getValue()) {
+            return scrollYOffset + getSearchFieldAdditionOffset();
+        }
+        return AndroidUtilities.lerp(scrollYOffset - AndroidUtilities.dp(4),
+                -searchFieldHeight, searchAnimationProgress);
     }
 
     /** checkUi_itemSearchVisibility (14119-14128): the bar's search icon is up once the field is gone. */
@@ -1510,8 +1757,19 @@ public class TopicListFragment extends BaseFragment
 
     @Override
     public void onFactorChanged(int id, float factor, float fraction, FactorAnimator callee) {
-        if (id == ANIMATOR_ID_SHADOW_VISIBLE) {
-            // DialogsActivity (13835-13839): the shadow is this screen's own draw pass.
+        if (id == ANIMATOR_ID_SEARCH_VISIBLE) {
+            // DialogsActivity (13844-13851): one factor drives what the bar shows, what the field
+            // looks like and where the panels sit.
+            checkUi_menuItems();
+            updateSearchFieldVisibility();
+            checkUi_filterTabsVisible();
+            checkUi_searchFiltersVisibility();
+            checkUi_searchFieldStyle();
+            if (fragmentView != null) {
+                fragmentView.invalidate();
+            }
+        } else if (id == ANIMATOR_ID_SHADOW_VISIBLE) {
+            // DialogsActivity (13857-13860): the shadow is this screen's own draw pass.
             if (fragmentView != null) {
                 fragmentView.invalidate();
             }
@@ -1520,13 +1778,78 @@ public class TopicListFragment extends BaseFragment
         }
     }
 
+    /** checkUi_menuItems (14168-14177): the bar's items leave as the search takes the bar over. */
+    private void checkUi_menuItems() {
+        final float factor = 1f - animatorSearchVisible.getFloatValue();
+        FragmentFloatingButton.setAnimatedVisibility(tagItem, factor);
+        FragmentFloatingButton.setAnimatedVisibility(clearTagItem,
+                selectedTag == null ? 0f : factor);
+        FragmentFloatingButton.setAnimatedVisibility(optionsItem, factor);
+        updateSearchBarItem();
+    }
+
+    /** checkUi_filterTabsVisible (13990-14010): the strip leaves by 1 - the search's factor. */
+    private void checkUi_filterTabsVisible() {
+        if (tabsView == null) {
+            return;
+        }
+        final float factor = 1f - animatorSearchVisible.getFloatValue();
+        tabsView.setAlpha(factor);
+        final float s = AndroidUtilities.lerp(0.98f, 1f, factor);
+        tabsView.setScaleX(s);
+        tabsView.setScaleY(s);
+        tabsView.setVisibility(stripHasTabs && factor > 0 ? View.VISIBLE : View.GONE);
+    }
+
+    /** checkUi_searchFiltersVisibility (13927-13939): the search's pill capsule arrives by it. */
+    private void checkUi_searchFiltersVisibility() {
+        if (searchPanel != null) {
+            searchPanel.setTabsVisibility(animatorSearchVisible.getFloatValue());
+        }
+    }
+
+    /** checkUi_searchFieldStyle (14058-14060): the field puts its glass on with the search. */
+    private void checkUi_searchFieldStyle() {
+        if (searchField != null) {
+            searchField.setBlurredBackgroundVisibility(animatorSearchVisible.getFloatValue());
+        }
+    }
+
+    /**
+     * The action bar's own title leaves as the search takes the screen: DialogsActivity's
+     * updateStoriesViewAlpha (1659-1694) fades and shrinks the titles container by
+     * {@code 1 - clamp(searchAnimationProgress * 2)} - the first half of the search's own
+     * animation, around a base at the left of the bar. (There are no stories here; this is the
+     * block's action-bar half.)
+     */
+    private void updateTitlesContainerVisibility() {
+        if (actionBar == null || actionBar.getTitlesContainer() == null) {
+            return;
+        }
+        final float factorSearch = MathUtils.clamp(searchAnimationProgress * 2f, 0f, 1f);
+        final float containersAlpha = 1f - factorSearch;
+        final android.view.View titles = actionBar.getTitlesContainer();
+        titles.setPivotY(AndroidUtilities.statusBarHeight);
+        titles.setPivotX(AndroidUtilities.dp(20));
+        final float s = 0.4f + 0.6f * containersAlpha;
+        titles.setScaleY(s);
+        titles.setScaleX(s);
+        titles.setAlpha(containersAlpha);
+        titles.setVisibility(containersAlpha > 0 ? android.view.View.VISIBLE : android.view.View.INVISIBLE);
+    }
+
     @Override
     public void onFragmentDestroy() {
-        // The pill's feed and the strip's own theme listener do not outlive the screen: a destroyed
-        // page leaves no listener behind that would draw into a dead view.
+        // The pill's feed, the strip's own theme listener and the reader's read-mark listener do
+        // not outlive the screen: a destroyed page leaves no listener behind that would draw into
+        // a dead view.
         if (incomingTopicsObserver != null) {
             incomingTopicsObserver.close();
             incomingTopicsObserver = null;
+        }
+        if (readMarkListener != null) {
+            TopicReadMarks.INSTANCE.removeListener(readMarkListener);
+            readMarkListener = null;
         }
         org.telegram.messenger.NotificationCenter.getGlobalInstance().removeObserver(
                 themeObserver, org.telegram.messenger.NotificationCenter.needSetDayNightTheme);
@@ -1701,7 +2024,7 @@ public class TopicListFragment extends BaseFragment
         if (listView != null) {
             listView.scrollToPosition(0);
         }
-        refreshCurrentFeed(false);
+        refreshCurrentFeed();
     }
 
     /**
@@ -1813,22 +2136,21 @@ public class TopicListFragment extends BaseFragment
     }
 
     /**
-     * A feed that has already been read is read again when the reader comes back to the screen: the
-     * site is what knows how much of a topic is still unread, and a topic just read is exactly what
-     * changed. The tab host only calls this when the reader returns to the screen (a topic was
-     * closed, or the app came back to the front) - a tab switch does not reload anything.
+     * The screen is the reader's again after a topic (or the app) was in front of it. Telegram's
+     * chat list does not read the site again here - its rows are updated in place
+     * (DialogsActivity.onResume, 7029-7036, and onBecomeFullyVisible, 7353) - so neither does this
+     * list: the rows on screen are re-bound from what is already in hand, which is what picks up a
+     * topic the reader has just finished ({@link TopicReadMarks}, the same mark the topic screen
+     * sets) without a request. A read is something the reader asks for: the first load, the retry
+     * on a failed page, the new-topics pill's tap, and the day/night switch's own path.
      *
-     * <p>This is the reader saying "show me what is there now", so the topics the refresh answers
-     * with stop being news. A filter change (a page prepared for another tab) is not a refresh:
-     * it is the same site state through a narrower window, so the counts the reader has not seen do
-     * not vanish.</p>
+     * <p>A topic read only partway has no local signal on this screen - the feed's own
+     * {@code unread_posts} is the site's answer, and the topic screen's floor position is not kept
+     * here - so such a row keeps the count the feed gave it until the next read.</p>
      */
     @Override
     public void onParentBecameVisible() {
-        final ViewPage page = currentPage();
-        if (page != null && page.feed != null && page.feed.loaded) {
-            refreshCurrentFeed(true);
-        }
+        refreshPageRows(currentPage());
     }
 
     /** A second tap on the reader's tab: the list goes back to its top. */
@@ -1920,6 +2242,10 @@ public class TopicListFragment extends BaseFragment
             return;
         }
         searching = show;
+        // DialogsActivity.showSearch (7464): the search's own 350 ms factor runs beside the
+        // 200/180 ms animation of the two sides; the field's slot, the strip, the bar's items and
+        // the search capsule all read it.
+        animatorSearchVisible.setValue(show, true);
         // The pill's count is the reader's own, but while the search pager is up it must not float
         // over it: updateNewTopicsPill reads `searching`, so it hides on open and comes back on
         // close.
@@ -1934,7 +2260,6 @@ public class TopicListFragment extends BaseFragment
             // and the panel records its own page for the blur.
             glassHost.setRecordingEnabled(false);
             searchPanel.clear();
-            setActionBarForSearch(true);
             if (getParentActivity() instanceof io.github.baba983.nativedo.app.NativeDoActivity) {
                 ((io.github.baba983.nativedo.app.NativeDoActivity) getParentActivity()).setSearchOpen(true);
             }
@@ -1947,7 +2272,9 @@ public class TopicListFragment extends BaseFragment
             searchField.setCloseButtonVisible(false);
             glassHost.setRecordingEnabled(true);
             searchPanel.clear();
-            setActionBarForSearch(false);
+            // The title was only faded out while the search was up; the feed it names may have
+            // moved on behind the search.
+            updateTitle();
             // The offset is read from the list again, so the panel comes back where the list
             // actually is (ContentView.dispatchDraw, 957-1006).
             invalidateScrollY = true;
@@ -2019,48 +2346,22 @@ public class TopicListFragment extends BaseFragment
     }
 
     /**
-     * One value drives everything that is not the two sides themselves, the way DialogsActivity's
-     * searchAnimationProgress does: the strip leaves by {@code 1 - searchVisible}
-     * (checkUi_filterTabsVisible, 13990-14010), the search's pill tabs arrive from 0.98 of their
-     * size (checkUi_searchFiltersVisibility, 13927-13947), the field puts its glass on
-     * (checkUi_searchFieldStyle, 14050), and the compose button leaves with the list.
+     * One value drives the two sides and the title, the way DialogsActivity's
+     * searchAnimationProgress does. Everything else that moves with the search - the strip, the
+     * search's pill capsule, the field's glass, the bar's items - reads animatorSearchVisible
+     * (checkUi_filterTabsVisible 13990-14010, checkUi_searchFiltersVisibility 13927-13947,
+     * checkUi_searchFieldStyle 14058, checkUi_menuItems 14168-14177's item half).
      */
     private void setSearchAnimationProgress(float progress) {
         searchAnimationProgress = progress;
-        tabsView.setAlpha(1f - progress);
-        updateStripVisibility();
-        if (searchPanel != null) {
-            searchPanel.setTabsVisibility(progress);
-        }
-        searchField.setBlurredBackgroundVisibility(progress);
         FragmentFloatingButton.setAnimatedVisibility(startTopicButton, 1f - progress);
+        updateTitlesContainerVisibility();
         // The field's own alpha and the bar's search icon follow the search the same way they
         // follow the list (checkUi_searchFieldVisibility, 14036-14056), and the strip's own
         // translation reads the field's alpha, so the frame is drawn again.
         updateSearchFieldVisibility();
         if (fragmentView != null) {
             fragmentView.invalidate();
-        }
-    }
-
-    /** The strip is up when the categories arrived and the search has not taken over. */
-    private void updateStripVisibility() {
-        tabsView.setVisibility(
-                stripHasTabs && searchAnimationProgress < 1f ? View.VISIBLE : View.GONE);
-    }
-
-    /** The bar belongs to the list while it is up; the search carries its own close button. */
-    private void setActionBarForSearch(boolean searching) {
-        if (tagItem != null) {
-            tagItem.setVisibility(searching ? View.GONE : View.VISIBLE);
-        }
-        if (clearTagItem != null) {
-            clearTagItem.setVisibility(searching || selectedTag == null ? View.GONE : View.VISIBLE);
-        }
-        if (searching) {
-            actionBar.setTitle("");
-        } else {
-            updateTitle();
         }
     }
 
@@ -2097,7 +2398,7 @@ public class TopicListFragment extends BaseFragment
             // so the indicator and the page pair animate the same way. A category already in
             // front is read again - the search asked for it, which is a statement of its own.
             if (viewPages[0].selectedType == category.getId()) {
-                refreshCurrentFeed(false);
+                refreshCurrentFeed();
                 return;
             }
             final int position = categoryTabPosition(category.getId());
@@ -2148,7 +2449,7 @@ public class TopicListFragment extends BaseFragment
         }
         tabsView.finishAddingTabs(false);
         stripHasTabs = !categories.isEmpty();
-        updateStripVisibility();
+        checkUi_filterTabsVisible();
         checkUi_pillTop();
     }
 
@@ -2165,7 +2466,8 @@ public class TopicListFragment extends BaseFragment
      * different list.
      */
     private void updateTitle() {
-        // While the search is open the bar carries nothing: the field is the title.
+        // While the search is open the title is faded out by the search's own progress
+        // (updateTitlesContainerVisibility); its text waits for the fade to bring it back.
         if (searching) {
             return;
         }
@@ -2247,9 +2549,9 @@ public class TopicListFragment extends BaseFragment
 
     /** What the tag filter looks like: the tag in the title, and the way out of it in the bar. */
     private void updateTagActions() {
-        if (clearTagItem != null) {
-            clearTagItem.setVisibility(selectedTag == null || searching ? View.GONE : View.VISIBLE);
-        }
+        // The clear item is up while a tag is in hand and the search has not taken the bar; its
+        // alpha and visibility belong to the search fade (checkUi_menuItems).
+        checkUi_menuItems();
         updateTitle();
     }
 
@@ -2277,6 +2579,11 @@ public class TopicListFragment extends BaseFragment
 
     private class TopicListAdapter extends RecyclerListView.SelectionAdapter {
 
+        /** One topic row. */
+        private static final int VIEW_TYPE_TOPIC = 0;
+        /** The page's footer: the loading shimmer, or the tap that reads the page again. */
+        private static final int VIEW_TYPE_MORE = 1;
+
         /** The page this adapter binds rows for; its feed is the data. */
         private final ViewPage page;
 
@@ -2287,6 +2594,12 @@ public class TopicListFragment extends BaseFragment
         @NonNull
         @Override
         public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+            if (viewType == VIEW_TYPE_MORE) {
+                MoreFooterCell footer = new MoreFooterCell(parent.getContext());
+                footer.setLayoutParams(new RecyclerView.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                return new RecyclerListView.Holder(footer);
+            }
             DialogCell cell = new DialogCell(null, parent.getContext(), false, false, currentAccount, resourceProvider);
             cell.setLayoutParams(new RecyclerView.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, AndroidUtilities.dp(72)));
@@ -2295,18 +2608,85 @@ public class TopicListFragment extends BaseFragment
 
         @Override
         public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
+            if (getItemViewType(position) == VIEW_TYPE_MORE) {
+                bindMoreFooter((MoreFooterCell) holder.itemView, page, page.feed);
+                return;
+            }
             bindRow((DialogCell) holder.itemView, page, position);
         }
 
         @Override
+        public int getItemViewType(int position) {
+            return page.feed != null && position >= page.feed.topics.size()
+                    ? VIEW_TYPE_MORE : VIEW_TYPE_TOPIC;
+        }
+
+        @Override
         public int getItemCount() {
-            return page.feed == null ? 0 : page.feed.topics.size();
+            if (page.feed == null) {
+                return 0;
+            }
+            return page.feed.topics.size() + (showsMoreFooter(page.feed) ? 1 : 0);
         }
 
         @Override
         public boolean isEnabled(RecyclerView.ViewHolder holder) {
-            return true;
+            return getItemViewType(holder.getAdapterPosition()) != VIEW_TYPE_MORE
+                    || (page.feed != null && page.feed.moreFailed);
         }
+    }
+
+    /**
+     * DialogsAdapter's own footer while a page is being read (its VIEW_TYPE_FLICKER, 1786-1792):
+     * one single-cell {@link FlickerLoadingView} of the chat list's row type. It doubles as the
+     * page's retry: a read that did not arrive swaps the shimmer for the sentence and takes the
+     * tap itself.
+     */
+    private class MoreFooterCell extends FrameLayout {
+
+        final FlickerLoadingView shimmer;
+        final android.widget.TextView failure;
+
+        MoreFooterCell(Context context) {
+            super(context);
+            shimmer = new FlickerLoadingView(context);
+            shimmer.setIsSingleCell(true);
+            shimmer.setViewType(FlickerLoadingView.DIALOG_CELL_TYPE);
+            addView(shimmer, LayoutHelper.createFrame(
+                    LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER));
+            failure = new android.widget.TextView(context);
+            failure.setGravity(Gravity.CENTER);
+            failure.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 14);
+            failure.setTextColor(getThemedColor(Theme.key_windowBackgroundWhiteGrayText2));
+            failure.setText(R.string.topic_list_more_failed);
+            failure.setVisibility(GONE);
+            // One row's own height, in dp (LayoutHelper's sizes are dp, the cell's own params are
+            // pixels), so the line sits where the row it replaces would.
+            addView(failure, LayoutHelper.createFrame(
+                    LayoutHelper.MATCH_PARENT, 72, Gravity.CENTER));
+        }
+    }
+
+    /** Whether the feed has a next page being read, or one that failed to arrive. */
+    private static boolean showsMoreFooter(CategoryFeed feed) {
+        return feed.hasMore && (feed.loadingMore || feed.moreFailed);
+    }
+
+    /** The footer's own state: the shimmer while the page is on its way, the line when it is not. */
+    private void bindMoreFooter(MoreFooterCell footer, ViewPage page, CategoryFeed feed) {
+        if (feed == null) {
+            return;
+        }
+        footer.shimmer.setVisibility(feed.moreFailed ? View.GONE : View.VISIBLE);
+        footer.failure.setVisibility(feed.moreFailed ? View.VISIBLE : View.GONE);
+        footer.failure.setTextColor(getThemedColor(Theme.key_windowBackgroundWhiteGrayText2));
+        footer.setOnClickListener(feed.moreFailed ? view -> {
+            if (feed.moreFailed && !feed.loadingMore) {
+                feed.moreFailed = false;
+                page.adapter.notifyDataSetChanged();
+                requestMore(page, feed);
+            }
+        } : null);
     }
 
     /**
@@ -2405,6 +2785,9 @@ public class TopicListFragment extends BaseFragment
         incoming.setVisibility(View.VISIBLE);
         incoming.setTranslationX(viewPages[0].getMeasuredWidth());
         animatingForward = forward;
+        // The header travels from where it stands to the incoming page's own offset while the
+        // strip's indicator animation runs (followSlideWithPanelOffset).
+        slideStartScrollYOffset = scrollYOffset;
         // The tab and the count in front of the reader change with the tap, before the new feed
         // lands; the slide's end re-says them from the page that took the front.
         selectedTabId = tabId;
@@ -2425,7 +2808,12 @@ public class TopicListFragment extends BaseFragment
         }
         selectCurrentPage(viewPages[0]);
         animatingForward = true;
-        // The header reads its offset from the page in front, and that page just changed.
+        // The header reads its offset from the page in front, which is the page that just arrived:
+        // the slide's own end is that page's offset, so nothing moves at the swap. The page that
+        // arrived may already stand at its feed's end, so the next page is asked for as upstream
+        // does when a filter switch lands (3661).
+        updateScrollYOffsetFromList();
+        checkListLoad(viewPages[0]);
         invalidateScrollY = true;
         if (fragmentView != null) {
             fragmentView.invalidate();

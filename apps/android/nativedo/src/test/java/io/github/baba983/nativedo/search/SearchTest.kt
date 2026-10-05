@@ -27,6 +27,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.ApplicationLoader
 import org.telegram.ui.Cells.ChatMessageCell
 import org.telegram.ui.Components.FlickerLoadingView
@@ -207,6 +208,97 @@ internal class SearchTest {
         harness.assertNoTelegramSideEffects()
     }
 
+    /**
+     * The field's own slot. DialogsActivity's search takes the bar over: the field travels up by
+     * its own height while the bar's title fades out, and closing sends it back down where the
+     * list keeps it. The failure this pins: the search opening while the field stays at the slot
+     * the list gave it - the pager then starts under a field that never left the list, and the
+     * bar's title stays where the field's glass should be.
+     */
+    @Test
+    fun theSearchFieldTravelsIntoTheBarAndComesBack() {
+        harness.bootApp()
+        harness.await("the topic list to load") { rowCount() == 2 }
+        harness.drawApp()
+        val field = searchField() ?: throw AssertionError("no search field")
+        val bar = actionBar() ?: throw AssertionError("no action bar")
+        val titles = bar.titlesContainer ?: throw AssertionError("the bar has no titles container")
+
+        // At rest the field hangs below the bar's lower edge, over the list's first row.
+        assertTrue(
+            "the field rests below the bar",
+            field.top + field.translationY + field.height >
+                bar.bottom + AndroidUtilities.dp(20f),
+        )
+        assertEquals("and the bar carries its title", 1f, titles.alpha, 0.01f)
+
+        val rest = field.translationY
+        field.editText.performClick()
+        // Step the open animation frame by frame. The field's slot is written by the draw pass
+        // (ContentView.dispatchDraw), so each sample is a bounded draw; the failure being pinned
+        // is a field that is still at its rest slot while the search page is arriving.
+        var onTheWayUp = false
+        repeat(8) { step ->
+            harness.idle(2)
+            harness.renderAppFrame(
+                if (step == 3) "search-field-mid-open" else "search-field-open-steps",
+                maxTasks = 2,
+            )
+            val translation = field.translationY
+            val bottom = field.top + translation + field.height
+            if (translation < rest - AndroidUtilities.dp(2f) &&
+                bottom > bar.bottom + AndroidUtilities.dp(4f)
+            ) {
+                onTheWayUp = true
+            }
+        }
+        assertTrue("the field was seen between its rest slot and the bar", onTheWayUp)
+        harness.idleClock(400)
+        harness.renderApp("search-field-open")
+
+        // Open: the field's own lower edge is at the bar's lower edge - it is in the bar.
+        assertTrue(
+            "the field has moved into the bar",
+            field.top + field.translationY + field.height <=
+                bar.bottom + AndroidUtilities.dp(4f),
+        )
+        assertTrue(
+            "the bar's title has left",
+            titles.alpha < 0.01f || titles.visibility != View.VISIBLE,
+        )
+
+        // The close button is the field's own x: it comes back down and the title returns.
+        val closeIcon = FragmentSearchField::class.java
+            .getDeclaredField("closeIcon").apply { isAccessible = true }
+            .get(field) as android.widget.ImageView
+        val open = field.translationY
+        closeIcon.performClick()
+        var onTheWayDown = false
+        repeat(8) { step ->
+            harness.idle(2)
+            harness.renderAppFrame(
+                if (step == 3) "search-field-mid-close" else "search-field-close-steps",
+                maxTasks = 2,
+            )
+            val translation = field.translationY
+            if (translation > open + AndroidUtilities.dp(2f) &&
+                translation < rest - AndroidUtilities.dp(2f)
+            ) {
+                onTheWayDown = true
+            }
+        }
+        assertTrue("the field was seen between the bar and its rest slot", onTheWayDown)
+        harness.idleClock(400)
+        harness.renderApp("search-field-closed")
+        assertTrue(
+            "closing puts the field back below the bar",
+            field.top + field.translationY + field.height >
+                bar.bottom + AndroidUtilities.dp(20f),
+        )
+        assertEquals("and the title is back", 1f, titles.alpha, 0.01f)
+        harness.assertNoTelegramSideEffects()
+    }
+
     /** The field on the home screen, the way the reader reaches it: a tap. */
     private fun openSearch() {
         val field = searchField()!!
@@ -233,6 +325,11 @@ internal class SearchTest {
 
     private fun searchPanel(): SearchPanel? =
         firstView(android.R.id.content) { it is SearchPanel } as SearchPanel?
+
+    /** The list screen's own action bar, the parent the field travels into. */
+    private fun actionBar(): org.telegram.ui.ActionBar.ActionBar? =
+        firstView(android.R.id.content) { it is org.telegram.ui.ActionBar.ActionBar }
+            as org.telegram.ui.ActionBar.ActionBar?
 
     private fun firstView(id: Int, matches: (View) -> Boolean): View? {
         val root = harness.activity.findViewById<ViewGroup>(id) ?: return null

@@ -15,8 +15,28 @@ object TopicReadMarks {
 
     private val readInFull = ConcurrentHashMap.newKeySet<Long>()
 
+    /**
+     * Screens that draw rows for these topics: the mark is set the moment a topic screen closes
+     * (its own `leaveTopic`), and a list that is already on screen behind it has to take the
+     * badge off right then. A screen that only re-read its rows when it came back to the front
+     * would race that close: the revealed screen's own resume happens before the closed screen's
+     * destroy.
+     */
+    private val listeners = java.util.concurrent.CopyOnWriteArrayList<(Long) -> Unit>()
+
+    fun addListener(listener: (Long) -> Unit) {
+        listeners.add(listener)
+    }
+
+    fun removeListener(listener: (Long) -> Unit) {
+        listeners.remove(listener)
+    }
+
     fun markReadInFull(topicId: Long) {
         readInFull.add(topicId)
+        for (listener in listeners) {
+            listener(topicId)
+        }
     }
 
     fun isReadInFull(topicId: Long): Boolean = readInFull.contains(topicId)

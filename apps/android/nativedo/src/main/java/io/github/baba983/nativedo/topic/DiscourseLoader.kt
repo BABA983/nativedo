@@ -123,18 +123,21 @@ object DiscourseLoader {
     }
 
     /**
-     * The topic list's feed for what the reader has chosen: nothing, a category, a tag, or both -
-     * one call, because which route that is is the site's business and not the screen's.
+     * One page of the topic list's feed for what the reader has chosen: nothing, a category, a
+     * tag, or both - one call, because which route that is is the site's business and not the
+     * screen's. The whole page is handed back, because its `topic_list.more_topics_url` is what
+     * says whether another page follows.
      */
     fun feed(
         container: AppContainer,
         category: io.github.baba983.nativedo.core.model.CategorySummary?,
         tag: io.github.baba983.nativedo.core.model.Tag?,
-        onLoaded: (List<TopicSummary>) -> Unit,
+        page: Int,
+        onLoaded: (io.github.baba983.nativedo.core.model.TopicListPage) -> Unit,
         onFailed: (Throwable) -> Unit,
     ) {
         scope.launch {
-            runCatching { container.discourseApiClient.fetchFeed(category, tag).topics }
+            runCatching { container.discourseApiClient.fetchFeed(category, tag, page) }
                 .onSuccess(onLoaded)
                 .onFailure(onFailed)
         }
