@@ -22,6 +22,8 @@ import org.telegram.ui.Components.chat.ViewPositionWatcher;
 import java.util.ArrayList;
 import java.util.List;
 
+import me.vkryl.core.reference.ReferenceList;
+
 /**
  * The blur/glass background of a floating panel, in one reusable place on our side.
  *
@@ -57,6 +59,13 @@ public final class GlassPanelHost {
     private final @Nullable BlurredBackgroundSourceRenderNode renderNode;
     private final BlurredBackgroundDrawableViewFactory factory;
     private final ViewPositionWatcher positionWatcher;
+    /**
+     * The views that drew a panel from this source. A view's display list is cached, so a panel
+     * keeps the frame it was last recorded with until it is told to redraw - ChatActivity keeps
+     * its own list of glass-attached views for exactly that ({@code glassAttachedViews},
+     * ChatActivity.java:2653/46715) and every {@code factory.create(view)} registers here.
+     */
+    private final ReferenceList<View> attachedViews = new ReferenceList<>();
     /** The drawables made from this source, so a colour change reaches all of them. */
     private final List<BlurredBackgroundDrawable> drawables = new ArrayList<>();
     private boolean recordingEnabled = true;
@@ -84,6 +93,7 @@ public final class GlassPanelHost {
         }
         factory = new BlurredBackgroundDrawableViewFactory(renderNode != null ? renderNode : colorSource);
         factory.setSourceRootView(positionWatcher, positionRoot);
+        factory.setLinkedViewsRef(attachedViews);
         factory.setLiquidGlassEffectAllowed(LiteMode.isEnabled(LiteMode.FLAG_LIQUID_GLASS));
     }
 
@@ -161,6 +171,18 @@ public final class GlassPanelHost {
     /** Stops recording while no panel is visible, and starts again when one returns. */
     public void setRecordingEnabled(boolean enabled) {
         recordingEnabled = enabled;
+    }
+
+    /**
+     * Invalidates every view that draws one of this source's panels - the ones given to
+     * {@link #createPanel} and the ones an upstream component built from {@link #getFactory}
+     * (the bar's capsules, the fade band). ChatActivity drives the same call from its chat
+     * list's scroll invalidation ({@code invalidateAllGlassAttachedViews}, 46715, called from
+     * 6792/6872 and 47143): without it a panel keeps the frame it was last recorded with,
+     * because the view's display list is cached until it is invalidated.
+     */
+    public void invalidateAttachedViews() {
+        factory.invalidateAllLinkedViews();
     }
 
     /** Re-reads the theme colours, for the day/night switch. */

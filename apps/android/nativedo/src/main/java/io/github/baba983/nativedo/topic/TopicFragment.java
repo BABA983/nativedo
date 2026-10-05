@@ -55,6 +55,13 @@ public class TopicFragment extends BaseFragment {
     private static final String ARG_TOPIC_ID = "topic_id";
     private static final String ARG_TOPIC_TITLE = "topic_title";
     private static final String ARG_FLOOR = "floor";
+    /**
+     * The author a row already drew when it opened this screen. The capsule can show the same
+     * picture before the topic is read, instead of an empty spot until {@code /t/{id}.json}
+     * answers.
+     */
+    private static final String ARG_AUTHOR_USERNAME = "author_username";
+    private static final String ARG_AUTHOR_AVATAR_TEMPLATE = "author_avatar_template";
 
     /**
      * How many posts one page of a long topic asks for. Discourse servers the ids of the whole
@@ -108,6 +115,14 @@ public class TopicFragment extends BaseFragment {
     private org.telegram.ui.Components.ChatAvatarContainer avatarContainer;
     /** The bar's blur source; the post list is the content it records. */
     private io.github.baba983.nativedo.app.GlassPanelHost glassHost;
+    /**
+     * ChatActivity's own top and bottom blur band ({@code chatActivityFadeView},
+     * ChatActivity.java:6969-6973): the status bar and the bar's gaps show the recorded content
+     * through a fading glass strip instead of raw text scrolling by.
+     */
+    private org.telegram.ui.Components.chat.layouts.ChatActivityFadeView fadeView;
+    /** The system's bottom inset, from [onInsets]; the composer sits inside it. */
+    private int bottomInset;
     /** The topic as last read; the capsule and the bookmark item draw from it. */
     private TopicDetail topicDetail;
     /** The topic's original poster, as the synthetic user the rows also draw. */
@@ -158,6 +173,14 @@ public class TopicFragment extends BaseFragment {
                 }
                 if (glassHost != null) {
                     glassHost.updateColors();
+                    // Every view that draws from the source holds a cached frame until it is
+                    // invalidated, the capsules' bar included.
+                    glassHost.invalidateAttachedViews();
+                }
+                if (fadeView != null) {
+                    // ChatActivity is rebuilt on a theme change and builds the band again; this
+                    // screen is not rebuilt, so its band is told the way the capsules are.
+                    fadeView.updateColors();
                 }
                 if (actionBar != null) {
                     actionBar.updateColors();
@@ -215,12 +238,40 @@ public class TopicFragment extends BaseFragment {
     }
 
     /**
+     * The same screen, opened from a row that already knows who wrote the topic: the capsule shows
+     * that author's picture at once, and the answer from the site only rebinds when it names a
+     * different person. A row without an author (a notification, a bookmark) keeps the plain
+     * [forTopic].
+     */
+    public static TopicFragment forTopic(
+            long topicId, String title, String authorUsername, String authorAvatarTemplate) {
+        TopicFragment fragment = forTopic(topicId, title);
+        if (authorUsername != null && !authorUsername.isEmpty()) {
+            fragment.getArguments().putString(ARG_AUTHOR_USERNAME, authorUsername);
+            if (authorAvatarTemplate != null && !authorAvatarTemplate.isEmpty()) {
+                fragment.getArguments().putString(ARG_AUTHOR_AVATAR_TEMPLATE, authorAvatarTemplate);
+            }
+        }
+        return fragment;
+    }
+
+    /**
      * The same screen, opened on one floor of the topic: a feed row and a search result both point
      * at the post they are about, not at the top of a thread that may be hundreds of floors long.
      * A floor the site does not give is the topic's first one.
      */
     public static TopicFragment forFloor(long topicId, String title, Integer floor) {
         TopicFragment fragment = forTopic(topicId, title);
+        if (floor != null && floor > 0) {
+            fragment.getArguments().putInt(ARG_FLOOR, floor);
+        }
+        return fragment;
+    }
+
+    /** [forFloor], with the author the row already drew (see [forTopic]'s four-argument form). */
+    public static TopicFragment forFloor(
+            long topicId, String title, Integer floor, String authorUsername, String authorAvatarTemplate) {
+        TopicFragment fragment = forTopic(topicId, title, authorUsername, authorAvatarTemplate);
         if (floor != null && floor > 0) {
             fragment.getArguments().putInt(ARG_FLOOR, floor);
         }
@@ -399,6 +450,13 @@ public class TopicFragment extends BaseFragment {
             public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
                 maybeLoadNextPage();
                 reportViewport();
+                if (glassHost != null) {
+                    // What the band and the capsules draw is recorded from the list each frame,
+                    // and a view keeps the frame it was last recorded with until it is told to
+                    // redraw: ChatActivity's chat list drives invalidateAllGlassAttachedViews
+                    // from its own scroll invalidation (6792/6872 -> 46715).
+                    glassHost.invalidateAttachedViews();
+                }
                 if (reporter != null) {
                     // Scrolling is what tells the dwell clock the reader is still reading; without
                     // it a topic left open on a desk would count as read time.
@@ -427,7 +485,24 @@ public class TopicFragment extends BaseFragment {
         // both clear: the top padding is the bar's measured height (the status bar is already in
         // it), the same term ChatActivity's own list padding adds (11947-11952).
         updateListPadding();
+        // ChatActivity builds the glass source before anything else in the screen (2620-2661) and
+        // hands the same factory to the bar's capsules and to the fade band below (6969-6973).
+        glassHost = new io.github.baba983.nativedo.app.GlassPanelHost(listView, contentView);
+        // The wallpaper chain is part of what a capsule samples (ChatActivity's navbar source draws
+        // the wallpaper under the posts); the frame owns that view and hands it over here.
+        glassHost.setBackgroundView(contentView.backgroundView);
         contentView.addView(listView, org.telegram.ui.Components.LayoutHelper.createFrame(
+                org.telegram.ui.Components.LayoutHelper.MATCH_PARENT,
+                org.telegram.ui.Components.LayoutHelper.MATCH_PARENT));
+        // ChatActivity's own fade band (6969-6973): added right after the list, so the posts scroll
+        // behind it and every overlay - composer, progress, bar - draws over it. Its two zones draw
+        // what the source recorded as a band that fades out towards the list, so the status bar and
+        // the bar's own gaps show blurred content instead of raw text, the way a chat's header does.
+        fadeView = new org.telegram.ui.Components.chat.layouts.ChatActivityFadeView(context);
+        fadeView.setup(glassHost.getFactory());
+        fadeView.setFadeHeightTop(AndroidUtilities.dp(48));
+        fadeView.setFadeHeightBottom(AndroidUtilities.dp(48));
+        contentView.addView(fadeView, org.telegram.ui.Components.LayoutHelper.createFrame(
                 org.telegram.ui.Components.LayoutHelper.MATCH_PARENT,
                 org.telegram.ui.Components.LayoutHelper.MATCH_PARENT));
         attachStrip = createAttachStrip(context);
@@ -518,15 +593,17 @@ public class TopicFragment extends BaseFragment {
                 org.telegram.ui.Components.LayoutHelper.MATCH_PARENT,
                 Gravity.TOP | Gravity.LEFT, 52, 0, 52, 0));
         actionBar.createMenu().bringToFront();
-        glassHost = new io.github.baba983.nativedo.app.GlassPanelHost(listView, contentView);
-        // The wallpaper chain is part of what a capsule samples (ChatActivity's navbar source draws
-        // the wallpaper under the posts); the frame owns that view and hands it over here.
-        glassHost.setBackgroundView(contentView.backgroundView);
         actionBar.setupGlass(
                 glassHost.getFactory(),
                 org.telegram.ui.Components.blur3.drawable.color.impl.BlurredBackgroundProviderImpl
                         .topPanelChatActivity(resourceProvider));
         contentView.addView(actionBar);
+        // ChatActivityFragmentView.onLayout re-reads the fade zone on every layout (18627); the
+        // bar's measured height follows the status bar inset, so the zone is re-read with it.
+        contentView.addOnLayoutChangeListener((view, left, top, right, bottom,
+                oldLeft, oldTop, oldRight, oldBottom) -> checkUi_topFade());
+        checkUi_topFade();
+        checkUi_BlurHeight();
 
         // Upstream's selection, wired the way ChatActivity wires it: the overlay is a child of the
         // content view, the message list is its parent (that is where a handle's coordinates are
@@ -579,6 +656,9 @@ public class TopicFragment extends BaseFragment {
         view.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
             updateComposerActions();
             placeAttachStrip(v.getHeight());
+            // ChatActivity re-reads its bottom fade zone when the input's height changes
+            // (checkUi_inputIslandHeight, 46388-46403).
+            checkUi_BlurHeight();
         });
         composer = view;
         return view;
@@ -676,11 +756,48 @@ public class TopicFragment extends BaseFragment {
         if (listView == null) {
             return;
         }
-        int barHeight = actionBar != null && actionBar.getMeasuredHeight() > 0
+        listPaddingTop = AndroidUtilities.dp(4) + actionBarHeight();
+        applyListPadding();
+        checkUi_topFade();
+        checkUi_BlurHeight();
+    }
+
+    /** The bar's measured height; before the first layout its resting one, as upstream reads it. */
+    private int actionBarHeight() {
+        return actionBar != null && actionBar.getMeasuredHeight() > 0
                 ? actionBar.getMeasuredHeight()
                 : org.telegram.ui.ActionBar.ActionBar.getCurrentActionBarHeight() + AndroidUtilities.statusBarHeight;
-        listPaddingTop = AndroidUtilities.dp(4) + barHeight;
-        applyListPadding();
+    }
+
+    /**
+     * ChatActivity.checkUi_topFade (46433-46450): the top zone the fading band covers. Upstream
+     * adds the bar's measured height, a dp(7-6) for its bottom edge, the pinned panel and the
+     * search/tag strips; this screen's header is only the bar, so the bar is the whole zone.
+     */
+    private void checkUi_topFade() {
+        if (fadeView == null) {
+            return;
+        }
+        float fadeHeight = actionBarHeight();
+        fadeHeight += AndroidUtilities.dp(7 - 6);
+        fadeView.setFadeZoneTop((int) fadeHeight);
+    }
+
+    /**
+     * ChatActivity.checkUi_BlurHeight (46406-46411): the bottom zone, the composer plus the dp(7)
+     * above its top edge and the dp(9) below it. Upstream adds the animation's bottom inset
+     * because its content view is full screen; here the frame ends where the composer does (the
+     * window resizes for the keyboard, and the composer carries the navigation bar's own space),
+     * so the composer's measured height is that whole bottom band.
+     */
+    private void checkUi_BlurHeight() {
+        if (fadeView == null) {
+            return;
+        }
+        int composerHeight = composer != null && composer.getMeasuredHeight() > 0
+                ? composer.getMeasuredHeight()
+                : AndroidUtilities.dp(44) + bottomInset;
+        fadeView.setFadeZoneBottom(composerHeight + AndroidUtilities.dp(9) + AndroidUtilities.dp(7));
     }
 
     /** Writes the list's paddings from what the bar and the composer need, together. */
@@ -703,6 +820,7 @@ public class TopicFragment extends BaseFragment {
     @Override
     public void onInsets(int left, int top, int right, int bottom) {
         super.onInsets(left, top, right, bottom);
+        bottomInset = bottom;
         updateListPadding();
     }
 
@@ -763,6 +881,9 @@ public class TopicFragment extends BaseFragment {
         // is the same moment (ChatActivity:9197).
         showProgressView(bubbles.isEmpty());
         container = NativeDo.container(getParentActivity());
+        // The row that opened this screen already knew who wrote the topic: the capsule shows that
+        // author, and the picture the row drew, before anything is read.
+        bindTopicAuthorFromArguments();
         reporter = DiscourseLoader.INSTANCE.readReporter(container, topicId);
         int floor = getArguments() == null ? 0 : getArguments().getInt(ARG_FLOOR, 0);
         if (floor > 0) {
@@ -777,6 +898,10 @@ public class TopicFragment extends BaseFragment {
         retryAction = () -> loadTopic(topicId);
         DiscourseLoader.INSTANCE.topic(container, topicId, null, detail -> {
             int position = reporter.start(detail);
+            // The head answer's header is bound even when its posts are not: a resumed read loads
+            // a window next, and an answer that leaves details out must not leave the capsule
+            // without the author an earlier answer named.
+            bindHeader(detail);
             if (position > 1 && !carriesFloor(detail, position)) {
                 loadWindow(position, position);
                 return kotlin.Unit.INSTANCE;
@@ -814,14 +939,7 @@ public class TopicFragment extends BaseFragment {
         updateBookmarkMenuItem();
         // The site's own title is the authoritative one; a link that named no title gets it here,
         // and it goes into the center capsule the way a chat's title does.
-        if (avatarContainer != null) {
-            String loadedTitle = detail.getTitle();
-            if (loadedTitle != null && !loadedTitle.trim().isEmpty()) {
-                avatarContainer.setTitle(loadedTitle.trim());
-            }
-            bindTopicAuthor(detail);
-            bindSubtitle(detail);
-        }
+        bindHeader(detail);
         streamPostIds = detail.getStreamPostIds();
         reporter.start(detail);
         bind(detail);
@@ -860,22 +978,70 @@ public class TopicFragment extends BaseFragment {
         }
         io.github.baba983.nativedo.core.model.MentionCandidate author = detail.getCreatedBy();
         if (author == null || author.getUsername().isEmpty()) {
+            // An answer that names no author (a windowed page can leave details out) must not
+            // leave the capsule empty when an earlier answer already named one.
             return;
         }
-        topicAuthor = DiscourseAvatars.INSTANCE.user(
-                author.getUsername(),
-                author.getDisplayName(),
-                author.getAvatarTemplate(),
-                container.getBaseUrl());
-        // The container's avatar ask goes through MessagesController's own user table, so the
-        // synthetic user is registered there first (the rows do the same when they bind).
-        MessagesController.getInstance(currentAccount).putUser(topicAuthor, true);
-        avatarContainer.setUserAvatar(topicAuthor);
+        bindTopicAuthorUser(
+                DiscourseAvatars.INSTANCE.user(
+                        author.getUsername(),
+                        author.getDisplayName(),
+                        author.getAvatarTemplate(),
+                        container.getBaseUrl()),
+                author.getAvatarTemplate());
+    }
+
+    /** The author a row handed over, bound before the topic is read; see [ARG_AUTHOR_USERNAME]. */
+    private void bindTopicAuthorFromArguments() {
+        if (avatarContainer == null || container == null || getArguments() == null) {
+            return;
+        }
+        String username = getArguments().getString(ARG_AUTHOR_USERNAME);
+        if (username == null || username.isEmpty()) {
+            return;
+        }
+        String template = getArguments().getString(ARG_AUTHOR_AVATAR_TEMPLATE, "");
+        if (template == null) {
+            template = "";
+        }
+        // The same synthetic user the list row drew (same username, same template), so the file
+        // the row's own download put on disk is the file this capsule is handed below.
+        bindTopicAuthorUser(
+                DiscourseAvatars.INSTANCE.user(username, "", template, container.getBaseUrl()),
+                template);
+    }
+
+    /**
+     * One author on the capsule. The synthetic user's id comes from the username alone, so a row
+     * and this screen that name the same person build the same user and the same file: a second
+     * bind for the same person keeps the picture that is already drawn instead of resetting the
+     * spot to the initials. Only a different author is re-asked from the site.
+     */
+    private void bindTopicAuthorUser(TLRPC.User user, String avatarTemplate) {
+        if (avatarContainer == null || user == null) {
+            return;
+        }
+        boolean sameAuthor = topicAuthor != null && topicAuthor.id == user.id;
+        topicAuthor = user;
+        if (!sameAuthor) {
+            // The container's avatar ask goes through MessagesController's own user table, so the
+            // synthetic user is registered there first (the rows do the same when they bind).
+            MessagesController.getInstance(currentAccount).putUser(user, true);
+            avatarContainer.setUserAvatar(user);
+        }
+        // The file the row already downloaded, handed to the receiver by path; a same-author bind
+        // keeps the picture that is drawn instead of resetting the spot to the initials.
         bindAuthorAvatarImage();
+        if (container == null) {
+            return;
+        }
         String url = DiscourseAvatars.INSTANCE.url(
-                author.getAvatarTemplate(), container.getBaseUrl(), DiscourseAvatars.DEFAULT_SIZE);
-        if (url != null && !DiscourseAvatars.INSTANCE.isCached(topicAuthor)) {
-            DiscourseLoader.INSTANCE.cacheAvatar(container, url, topicAuthor, () -> {
+                avatarTemplate, container.getBaseUrl(), DiscourseAvatars.DEFAULT_SIZE);
+        if (url != null && !DiscourseAvatars.INSTANCE.isCached(user)) {
+            // The row that opened this screen already asked for this file; this call answers at
+            // once when the file is on disk, and a row's download still in flight is the same
+            // request the second caller would make.
+            DiscourseLoader.INSTANCE.cacheAvatar(container, url, user, () -> {
                 bindAuthorAvatarImage();
                 return kotlin.Unit.INSTANCE;
             });
@@ -887,14 +1053,39 @@ public class TopicFragment extends BaseFragment {
         if (avatarContainer == null || topicAuthor == null) {
             return;
         }
+        org.telegram.ui.Components.BackupImageView avatarView = avatarContainer.getAvatarImageView();
+        if (avatarView == null) {
+            return;
+        }
+        // A picture is here or is being read (the same guard a row's hand-over uses): re-setting
+        // it would clear the spot back to the initials until the loader delivered it again.
+        if (avatarView.getImageReceiver().getBitmap() != null
+                || avatarView.getImageReceiver().getImageDrawable() != null) {
+            return;
+        }
         ImageLocation location = DiscourseAvatars.INSTANCE.imageLocation(topicAuthor);
         if (location == null) {
             return;
         }
-        org.telegram.ui.Components.BackupImageView avatarView = avatarContainer.getAvatarImageView();
-        if (avatarView != null) {
-            avatarView.setImage(location, "50_50", avatarView.getImageReceiver().getDrawable(), topicAuthor);
+        avatarView.setImage(location, "50_50", avatarView.getImageReceiver().getDrawable(), topicAuthor);
+    }
+
+    /**
+     * The capsule's own two lines and its author, from one answer: the title (the site's own is
+     * authoritative over the link's), the topic author, and the category/reply subtitle. Called
+     * for every answer the site gives, including the head answer whose posts a resumed read
+     * throws away in favour of a window.
+     */
+    private void bindHeader(TopicDetail detail) {
+        if (avatarContainer == null) {
+            return;
         }
+        String loadedTitle = detail.getTitle();
+        if (loadedTitle != null && !loadedTitle.trim().isEmpty()) {
+            avatarContainer.setTitle(loadedTitle.trim());
+        }
+        bindTopicAuthor(detail);
+        bindSubtitle(detail);
     }
 
     /**
@@ -907,20 +1098,20 @@ public class TopicFragment extends BaseFragment {
             return;
         }
         if (container == null || detail.getCategoryId() <= 0) {
-            setCapsuleSubtitle(null);
+            setCapsuleSubtitle(null, detail);
             return;
         }
         DiscourseLoader.INSTANCE.categoryName(container, detail.getCategoryId(), name -> {
-            setCapsuleSubtitle(name);
+            setCapsuleSubtitle(name, detail);
             return kotlin.Unit.INSTANCE;
         });
     }
 
-    private void setCapsuleSubtitle(String categoryName) {
+    private void setCapsuleSubtitle(String categoryName, TopicDetail detail) {
         if (avatarContainer == null) {
             return;
         }
-        int replies = topicDetail == null ? 0 : Math.max(0, topicDetail.getTotalPosts() - 1);
+        int replies = detail == null ? 0 : Math.max(0, detail.getTotalPosts() - 1);
         String subtitle = categoryName == null || categoryName.isEmpty() ? null : categoryName;
         if (replies > 0) {
             String count = replies + " 回复";
