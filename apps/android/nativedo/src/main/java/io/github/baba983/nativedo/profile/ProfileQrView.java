@@ -37,7 +37,7 @@ import java.util.Map;
  * The QR card, ported from {@code QrActivity}'s {@code QrView} (QrActivity.java:928-1420): the
  * white rounded card with its shadow, the QR in Telegram's own drawing style, the
  * {@code @username} line under it, and the blank circle in the QR's middle where upstream draws
- * the plane logo - here the reader's own avatar when it is on disk.
+ * the plane logo (left white: the plane is Telegram's).
  *
  * <p>The QR itself is {@code TelegramQRCodeWriter.encode}'s own drawing loop
  * (TelegramQRCodeWriter.java:61-194): zxing's {@code Encoder} through reflection (zxing is
@@ -60,14 +60,7 @@ public class ProfileQrView extends View {
     private final String username;
     private Bitmap backgroundBitmap;
     private Bitmap contentBitmap;
-    /** The picture drawn in the QR's centre blank; null leaves it white. */
-    private Bitmap centerBitmap;
-    /** The centre blank's radius in the content bitmap, from the writer's own imageSize. */
-    private float centerRadius;
-    private int centerX;
-    private int centerY;
     private final Paint contentPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
-    private final Paint centerPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
 
     public ProfileQrView(Context context, String link, String username) {
         super(context);
@@ -78,12 +71,6 @@ public class ProfileQrView extends View {
     /** The link the QR encodes; the screen test pins it. */
     public String getLink() {
         return link;
-    }
-
-    /** The reader's own picture for the middle of the code, once it is decoded. */
-    public void setCenterBitmap(Bitmap bitmap) {
-        centerBitmap = bitmap;
-        invalidate();
     }
 
     @Override
@@ -191,12 +178,9 @@ public class ProfileQrView extends View {
         }
         canvas.drawBitmap(qrBitmap, left, qrTop, contentPaint);
 
-        // QrActivity.java:1355-1361: the middle mark, sized by the writer's own imageSize. Upstream
-        // paints a solid circle here and draws the plane logo over it; this card draws the reader's
-        // avatar when it has one and leaves the writer's blank white otherwise.
-        centerRadius = imageSize * 0.5f;
-        centerX = (int) (left + qrBitmap.getWidth() * 0.5f);
-        centerY = (int) (qrTop + qrBitmap.getWidth() * 0.5f);
+        // QrActivity.java:1355-1361: upstream paints a solid circle in the middle of the code and
+        // draws the plane logo over it. This card leaves the writer's own centre blank white: the
+        // plane is Telegram's, and a linux.do reader has no mark to put there.
 
         if (staticLayout != null) {
             float xTranslate = (canvas.getWidth() - staticLayout.getWidth()) * 0.5f;
@@ -381,16 +365,6 @@ public class ProfileQrView extends View {
         }
         if (contentBitmap != null) {
             canvas.drawBitmap(contentBitmap, 0f, 0f, contentPaint);
-        }
-        if (centerBitmap != null && !centerBitmap.isRecycled() && centerRadius > 0) {
-            float half = centerBitmap.getWidth() * 0.5f;
-            canvas.save();
-            canvas.translate(centerX - half, centerY - half);
-            android.graphics.Path clip = new android.graphics.Path();
-            clip.addCircle(half, half, centerRadius, android.graphics.Path.Direction.CW);
-            canvas.clipPath(clip);
-            canvas.drawBitmap(centerBitmap, 0f, 0f, centerPaint);
-            canvas.restore();
         }
     }
 }

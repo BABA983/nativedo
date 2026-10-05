@@ -176,11 +176,6 @@ public class ProfileQrFragment extends BaseFragment {
         ImageLocation avatar = DiscourseAvatars.INSTANCE.imageLocation(avatarUser);
         if (avatar != null) {
             avatarView.setImage(avatar, "84_84", avatarView.getImageReceiver().getDrawable(), avatarUser);
-            // The same picture the card shows above it goes into the QR's own centre blank
-            // (QrActivity draws the plane logo there; a linux.do card has no plane).
-            if (qrView != null) {
-                qrView.setCenterBitmap(avatarView.getImageReceiver().getBitmap());
-            }
         }
     }
 }
