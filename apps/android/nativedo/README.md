@@ -1167,10 +1167,16 @@ stands, and the upstream component each row is meant to use.
   ：`performance class = HIGH, measured = HIGH, chat blur = true` + `screen on = true`（正是最初「别漏值」
   问的那半：HIGH 档与模糊都活着）；冷启动浅色可读，强制组件 `am start -n … -a VIEW` 深链打开话题后玻璃胶囊、状态图标、输入条都正常（`phone-01`
   /`phone-03`）。证据在 `.amp/in/artifacts/shell-sysbars/`（`device-notes.md` 逐张说明）。
-- **移交（不属本片文件）**：首页头（`TopicListFragment` 的浮动 ActionBar 玻璃）在菜单圆形揭示切主题后不换色——切到夜间后 35 秒头部仍是白条、状态图标
-  变白后不可读；切回浅色后头部仍是深条。用改动前 APK（`HEAD~2`，sha `9f1b5b56…`）复现同一现象（`ab-before-dark.png`），所以不是本片改动引入，
-  是 `topic/*` 的换色路径（fragment 观察者的 `actionBar.updateColors()`/enqueue 时序）老问题；冷启动一切正常。请该屏 owner 处
-  理，复现步骤与 A/B 都在证据里。另外四点未验证：① 模拟器 Gboard 点了输入框后 `mInputShown=true` 但 `keyboardView=null`（输入法自身问
+- **首页头换色：移交项已修（`nativedo-home-theme` 片，2026-10-05）**：上一片把「菜单圆形揭示切主题后首页头不换色」当 `topic/*` 观察者时序
+  问题移交（`emu-04`/`emu-06`/`emu-07`）；实际那条白条不是 frame 的带子，而是 `ActionBar` **自己**的 scrim：`BaseFragment.createActionBar`（435）把
+  `key_actionBarDefault` 写进 `actionBarColor`，`ActionBar.dispatchDraw`（2272-2279）用它画一条盖在 frame 的 `actionBarDefaultPaint` 之上的矩形，换主题时没人重读它
+  （`actionBar.updateColors()` 只管玻璃 drawable）；上游 `DialogsActivity.createActionBar`（3101）从不设背景，带子只有 frame 一条。修法：`TopicListFragment` 在
+  `setDrawBlurBackground(frame)` 之后把 bar 自身颜色清成透明（带子归 frame），并按 `DialogsActivity:12122-12136` 的同形补上 `getThemeDescriptions()`
+  （`actionBarDefaultPaint` 与 bar 的 items/title/selector 走主题动画，delegate 原地重上色、含 `startTopicButton.updateColors()`）；宿主经
+  `ViewPagerActivity:241-250` 转发各页描述，揭示与外观页两条路都到。设备（`emulator-5554`，LOW，登录 @example_user）：菜单切夜间后 3 秒 / 30 秒头部都是 `#1d2733`、
+  标题与状态图标白色可读；切回浅色 3 秒 / 20 秒都是 `#ffffff`；设置、我的两 tab 与话题页夜间无残留（`09`/`10`/`08`）；话题页菜单只有书签/复制链接/在浏览器打开，
+  没有日夜行，切不到（`12`）。证据在 `.amp/in/artifacts/home-theme/`（`device-notes.md` 逐张说明）；JVM 侧新增 `HomeHeaderThemeTest`（切换后渲染的头部带子必须等于主题色、
+  标题色跟随、视图不重建；修前渲染的头部带子仍是旧色）。另外四点未验证：① 模拟器 Gboard 点了输入框后 `mInputShown=true` 但 `keyboardView=null`（输入法自身问
   题，改动前后同样），所以 `adjustResize` 的像素行为只有 manifest/接线级证据，没有键盘弹出的截图；② 真机 HyperOS 禁 `adb input`，夜间、设置
   /我的、三键/手势切换、键盘只能在模拟器上验；③ 两次 nav overlay 配置变化加连点后出现过一次空白深色窗（无 FATAL/ANR，消息总线仍在跑；force-stop 重启即
   好），复现条件未定，记在 `device-notes.md`；④ 首页头在任何屏上的「照片从状态栏下穿过时图标要翻色」这类 per-screen 覆盖没有做——四个根页的
