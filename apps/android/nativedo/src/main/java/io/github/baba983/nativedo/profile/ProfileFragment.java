@@ -828,9 +828,13 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             actionsView.set(ProfileActionsView.KEY_MESSAGE, loaded.getCanSendPrivateMessage());
             actionsView.set(ProfileActionsView.KEY_FOLLOW, loaded.getCanFollow() && !isFollowed);
             actionsView.set(ProfileActionsView.KEY_UNFOLLOW, loaded.getCanFollow() && isFollowed);
+            // The mute action is only offered when the site says the reader may mute this user;
+            // setNotifications also gives it its Mute/Unmute label from the current state.
             actionsView.set(ProfileActionsView.KEY_NOTIFICATION, loaded.getCanMuteUser());
+            if (loaded.getCanMuteUser()) {
+                actionsView.setNotifications(!isMuted);
+            }
             actionsView.set(ProfileActionsView.KEY_SHARE, true);
-            actionsView.setNotifications(!isMuted);
         }
         actionsView.commitActions();
         actionsView.setVisibility(View.VISIBLE);
@@ -839,9 +843,10 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
     /**
      * What a button does. The writes come back through [ProfileLoader], and a successful one flips
      * the site's own state before the row is rebuilt - upstream re-applies its actions after a
-     * write the same way (ProfileActivity.java:6911-6916).
+     * write the same way (ProfileActivity.java:6911-6916). Package-visible so a screen test can
+     * press the button the view draws.
      */
-    private void onActionClicked(int key, float x, float y) {
+    void onActionClicked(int key, float x, float y) {
         switch (key) {
             case ProfileActionsView.KEY_MESSAGE:
                 openNewMessage();
@@ -2203,6 +2208,14 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             float height = Math.min(AndroidUtilities.dp(74), bottom - newTop);
             actionsView.updatePosition(bottom - height, height);
         }
+    }
+
+    /**
+     * Whether the header's action row currently shows [key] (one of [ProfileActionsView]'s KEY_*):
+     * the observable answer to what the site said this reader may do.
+     */
+    boolean hasAction(int key) {
+        return actionsView != null && actionsView.hasAction(key);
     }
 
     /** updateGooey (ProfileActivity.java:6009); the topic and stories branches are Telegram-only. */

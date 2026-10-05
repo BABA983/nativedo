@@ -705,6 +705,17 @@ public class ProfileActionsView extends View {
         return mode == MODE_CHANNEL || mode == MODE_GROUP;
     }
 
+    /**
+     * Whether [key] is one of the actions the row currently shows. A screen's action row is built
+     * from what the site allows, so what it offers is the observable part of that decision.
+     */
+    boolean hasAction(int key) {
+        if (mode == MODE_MY_PROFILE) {
+            return find(key) != null;
+        }
+        return allAvailableActions.contains(key);
+    }
+
     private void updateNotification(Action notificationAction, boolean animated) {
         if (animated) {
             if (isNotificationsEnabled) {

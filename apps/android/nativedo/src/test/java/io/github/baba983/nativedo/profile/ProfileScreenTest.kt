@@ -115,20 +115,16 @@ internal class ProfileScreenTest {
             detailValue("信任等级") == "3"
         }
         assertEquals("the handle the site sent", "baba", author.username)
-        assertEquals("the joined date", "2024-05-26", detailValue("加入时间"))
+        assertEquals("the joined date", "2024-05-26", scrollToDetail("加入时间"))
         assertEquals("the title the site sent", "活跃用户", detailValue("头衔"))
-        assertEquals("the score the site sent", "2731", detailValue("得分"))
-        assertEquals("the followers the site sent", "340", detailValue("关注者"))
         // A list binds the rows that are on screen: the fields below the fold need a scroll, which
-        // is what the reader does to reach them. The screen itself starts at the "资料" section now
-        // that the head is the collapsing header and not a list row.
-        listView()?.scrollToPosition(7)
-        harness.layoutApp()
-        assertEquals("seconds read as hours", "79 小时", detailValue("阅读时长"))
+        // is what the reader does to reach them. The stats section sits under the info rows now
+        // that the head is the collapsing header and the tab area closes the list.
+        assertEquals("the score the site sent", "2731", scrollToDetail("得分"))
+        assertEquals("the followers the site sent", "340", detailValue("关注者"))
+        assertEquals("seconds read as hours", "79 小时", scrollToDetail("阅读时长"))
         assertEquals("the views the site sent", "97", detailValue("浏览"))
-        listView()?.scrollToPosition(13)
-        harness.layoutApp()
-        assertEquals("the accepted answers the site sent", "18", detailValue("被采纳回复"))
+        assertEquals("the accepted answers the site sent", "18", scrollToDetail("被采纳回复"))
 
         harness.await("the avatar to be fetched") {
             site.recordedRequests.any { it.contains(avatarPath) }
@@ -182,9 +178,7 @@ internal class ProfileScreenTest {
             harness.idle()
             assertEquals("no photo was delivered yet", 0,
                 magentaPixels(harness.renderApp("profile-avatar-pending")))
-            listView()?.scrollToPosition(13)
-            harness.layoutApp()
-            assertEquals("the header is offscreen", "18", detailValue("被采纳回复"))
+            assertEquals("the header is offscreen", "18", scrollToDetail("被采纳回复"))
             release.countDown()
             val author = DiscourseAvatars.user("baba", "Baba", "/$path", site.baseUrl)
             harness.await("the delayed avatar to land on disk") { DiscourseAvatars.isCached(author) }
@@ -251,6 +245,22 @@ internal class ProfileScreenTest {
             }
         }
         return null
+    }
+
+    /**
+     * The value of [label] after scrolling the list to where the row is bound. The fields below
+     * the fold are not bound until the list reaches them, which is what a reader does to read them.
+     */
+    private fun scrollToDetail(label: String): String? {
+        val list = listView() ?: return null
+        var position = 0
+        while (position < list.adapter!!.itemCount) {
+            list.scrollToPosition(position)
+            harness.layoutApp()
+            detailValue(label)?.let { return it }
+            position += 3
+        }
+        return detailValue(label)
     }
 
     /** The author upstream's own tap hands over: the sender of the floor's message. */
