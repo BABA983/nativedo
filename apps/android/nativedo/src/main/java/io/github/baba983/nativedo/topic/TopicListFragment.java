@@ -1066,6 +1066,12 @@ public class TopicListFragment extends BaseFragment
                 if (position != RecyclerView.NO_POSITION) {
                     bindRow((DialogCell) child, page, position);
                 }
+            } else if (child instanceof MoreFooterCell) {
+                // The footer's shimmer reads its colours at draw time (FlickerLoadingView's own
+                // updateColors); the retry line's colour is set when it is bound, so the switch
+                // re-sets it here.
+                ((MoreFooterCell) child).failure.setTextColor(
+                        getThemedColor(Theme.key_windowBackgroundWhiteGrayText2));
             }
         }
     }
