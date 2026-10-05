@@ -34,13 +34,15 @@ live that keep tgnet and Telegram's database switched off.
 ## The upstream lines
 
 `git diff --stat <subtree-merge> -- apps/android/telegram/TMessagesProj apps/android/telegram/settings.gradle`
-reports 12 upstream files, 23 inserted lines (18 of them replace the upstream line they sit on):
+reports 12 upstream files, 25 inserted lines (19 of them replace the upstream line they sit on):
 `ConnectionsManager.init` and `ConnectionsManager.isTestBackend` return early while the hooks are off,
 `MessagesStorage.openDatabase` does the same, `RichMessageLayout` asks whether a file this client
 fetches itself is still on its way (the media block's loading condition) and hands the block's own
 cancel button to it, `MessagesController.isWebBrowserOpenInApp` asks the hook before it reads Telegram's
-server setting, `LaunchActivity.getLastFragment` / `getSafeLastFragment` fall back to this client's
-shell where `LaunchActivity` itself would answer, `Browser.openInTelegramBrowser` takes the minimized
+server setting and `MessagesController.isWebBrowserInAppEnabled` / `toggleWebBrowserInAppEnabled` ask
+and flip the shell's stored choice (so the hosted chat-settings screen's InappBrowser row works here),
+`LaunchActivity.getLastFragment` / `getSafeLastFragment` fall back to this client's shell where
+`LaunchActivity` itself would answer, `Browser.openInTelegramBrowser` takes the minimized
 browser tabs from the hook, `ActionBarLayout` hands a fresh `BottomSheetTabs` to the host's overlay,
 and `BottomSheetTabs`, `ArticleViewer` and `BottomSheetTabDialog` look the host up the same way for a
 sheet's dismiss, its navigation bar, its close button and the article lookup that is skipped while

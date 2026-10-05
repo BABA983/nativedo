@@ -260,6 +260,47 @@ public final class NativeDoHooks {
     }
 
     /**
+     * The write-back for the toggles that live in upstream's hosted screens ({@code ThemeActivity}'s
+     * InappBrowser row, {@code WebBrowserSettings}): this client's settings module registers how to
+     * persist the flip, and the hosted row goes through it. Null while a real Telegram host runs,
+     * where the upstream server setting is the source of truth and must keep being written.
+     */
+    private static volatile Runnable webBrowserToggleHandler;
+
+    public static void setWebBrowserToggleHandler(Runnable handler) {
+        webBrowserToggleHandler = handler;
+    }
+
+    /**
+     * Upstream's {@code MessagesController.isWebBrowserInAppEnabled}, answered by this shell when
+     * it hosts the app: the reader's stored choice, not Telegram's server-delivered setting.
+     * Returns [upstream] when no shell is hosting, so a real Telegram host reads its own value.
+     */
+    public static boolean isWebBrowserInAppEnabled(boolean upstream) {
+        if (browserHost == null) {
+            return upstream;
+        }
+        return webBrowserOpenInApp;
+    }
+
+    /**
+     * The flip behind that getter. True means the shell handled it (the registered handler
+     * persisted the new value); false tells upstream to run its own account-setting path.
+     */
+    public static boolean toggleWebBrowserInAppEnabled() {
+        if (browserHost == null) {
+            return false;
+        }
+        Runnable handler = webBrowserToggleHandler;
+        if (handler != null) {
+            handler.run();
+        } else {
+            setWebBrowserOpenInAppEnabled(!webBrowserOpenInApp);
+        }
+        return true;
+    }
+
+    /**
      * Whether a URL opens in the in-app browser.
      *
      * <p>Upstream decides this from {@code MessagesController.webBrowserSettings}, a

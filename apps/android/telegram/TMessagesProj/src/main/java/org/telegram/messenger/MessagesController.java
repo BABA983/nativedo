@@ -25216,7 +25216,7 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public boolean isWebBrowserInAppEnabled() {
-        return webBrowserSettings != null && !webBrowserSettings.open_external_browser;
+        return io.github.baba983.nativedo.hooks.NativeDoHooks.isWebBrowserInAppEnabled(webBrowserSettings != null && !webBrowserSettings.open_external_browser); // NativeDo: the shell's stored choice answers while it hosts the app
     }
 
     public boolean isWebBrowserOpenInApp(String url) {
@@ -25484,6 +25484,7 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public void toggleWebBrowserInAppEnabled() {
+        if (io.github.baba983.nativedo.hooks.NativeDoHooks.toggleWebBrowserInAppEnabled()) return; // NativeDo: the shell persists its own stored choice
         if (webBrowserSettings != null) {
             updateWebBrowserSettings(!webBrowserSettings.open_external_browser, webBrowserSettings.display_close_button);
         }
