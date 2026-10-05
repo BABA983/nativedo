@@ -1164,6 +1164,69 @@ stands, and the upstream component each row is meant to use.
   `isSupportEdgeToEdge`/`drawEdgeNavigationBar` 已有覆盖、状态栏 tint 实测两主题都可读；若话题页要 ChatActivity 那套随壁纸
   翻色（`ChatActivity:44253` 的形状），应由 `topic/*` owner 在其 fragment 上覆写 `isLightStatusBar()`。
 
+### 设置页：把 Telegram 的设置项尽量搬过来（2026-10-05，`emulator-5554`，`nativedo-settings-port`，已登录 @example_user）
+
+- 主列表按上游 `SettingsActivity` 的骨架重排：头部还是上游的常量（120dp 容器、90dp 头像、22sp/13sp 两行），
+  第二行是「@用户名 · 信任等级 N」——信任等级不在会话快照里，进页时读一次自己的 `/u/{u}.json`，失败只留用户名；
+  行组按上游的顺序、图标与渐变格（`SettingCell.Factory` + `IconBackgroundColors` + `settings_chat/privacy/
+  sounds/data/power/devices/ask/faq/features/policy`），底部是上游样式的版本页脚（`NativeDo v0.1.0 (1)`）。
+  原有行全部保留：外观→主题、链接→在应用内打开链接、我的→书签、账号→打开验证页/设备码登录/退出登录；
+  新增 隐私、通知、数据与存储→存储使用、省电，以及帮助（关于 linux.do/常见问题/服务条款/隐私政策）。
+- 托管（a）两页真的会改这个客户端：
+  - `ThemeActivity(THEME_TYPE_BASIC)`（外观）：正文字号写 `SharedConfig.fontSize`，本客户端的帖子正文走
+    `rich_message` → `RichMessageLayout`，它自带「`fontSize != SharedConfig.fontSize` 就重建排版」那一路，
+    所以字号真会作用到帖子上；「Animations」「Send by Enter」也是上游读的同一份偏好。
+  - `LiteModeSettingsActivity`（省电）：它的 flags 正是本壳读的 `LiteMode`（`GlassPanelHost` 的模糊、
+    `NativeDoMainTabsActivity` 的液态玻璃、`TopicListFragment` 的压缩）。
+  - 外观页的 In-App Browser 行以前是死的（它读写 Telegram 服务器设置）。新增两处一行 hook 后，
+    `MessagesController.isWebBrowserInAppEnabled/toggleWebBrowserInAppEnabled` 在这个壳里问/翻
+    `LinkOpenSettings` 的存储：设备上把那行关掉，`nativedo_settings.xml` 落成 `open_links_in_app=false`，
+    主列表对应行重开后为关，点回后为开、存储也为 true。设置页另外在 `onResume` 重跑一次 adapter
+    （上游自己的子页同样在 onResume 重读），从外观页返回时行不会留在旧值——这条是设备上先看到旧勾选态
+    （`27`）才补的。
+- 原生页（c）两屏（`PreferencesFragment`）：上游的通知/隐私页全是 Telegram 账号（`ContactsController`、
+  blocked peers、账号 RPC），没有可托管的东西；linux.do 真正能改的是 `GET /u/{u}.json` 的 `user_option`，
+  于是用上游的 `UniversalRecyclerView` 画出来：通知屏 = 点赞通知（like_notification_frequency 的四个站点
+  枚举）、有人引用或提及时通知我（notify_on_linked_posts）、回复话题时（notification_level_when_replying
+  的 3/2/1）、自动跟踪（auto_track_topics_after_msecs 的九个站点值）、新话题的判定
+  （new_topic_duration_minutes 的 -1/-2/分钟）；隐私屏 = 隐藏公开资料与在线状态（写 `hide_profile`，站点
+  自己的开关就是它；组合列由站点回调派生）、允许用户给我发私信（allow_private_messages）。写是
+  `PUT /u/{u}.json` 的顶层表单字段 + `X-CSRF-Token`（`UserUpdater::OPTION_ATTR` 是权威字段表），失败时
+  开关弹回并显示站点给的原因。契约与 fixture 已同步：`contracts/discourse/endpoints.md`、
+  `fixtures/discourse/user-preferences.json`。
+- 数据与存储（c+）：没有托管 `CacheControlActivity`——它的按文件删除会写 Telegram 的 `FilePathDatabase`
+  （托管就会建一个空库，违反「不建 Telegram 数据库」），所以 `StorageFragment` 用同一批 `FileLoader` 目录
+  自己量、自己清（图片/视频、文件、其他缓存；`drafts` 目录跳过，与上游清理一致）。设备上量出 68.2 MB
+  （图片/视频 15.9 MB、其他 52.3 MB），清理释放 68.2 MB 后三个数字归零，登录态与站点读都还在。
+- 帮助区（c）：关于/常见问题/服务条款/隐私政策指向站点自己的 `/about`、`/faq`、`/tos`、`/privacy`，经
+  `Browser.openUrl` 进本应用的内置浏览器（设备上 `/faq` 落到站点的 `/guidelines`，标题「准则 - LINUX DO」）。
+- 语言：跳过（d）。上游的语言页应用语言要经 tgnet 下 langpack（本客户端没有），只有内置英文能落地，而这个
+  客户端自己的文案是中文资源，切过去只会得到混排；它同时带着 Telegram 的翻译开关与 premium 提示。
+- 设备（覆盖安装 `-r -t`，未卸载/未清数据；证据 SHA-256：`a5a0c43d…`、`cc1ef00b…`、最终 `a66fa79a…`）：
+  - 主列表浅色/夜间、滚动、帮助区与版本页脚：`01`–`04`、`31`–`33`（夜间切回日间无残留）。
+  - 通知屏读出 @example_user 的真实值：点赞通知「首次及每日摘要」、引用/提及开、回复话题时「跟踪话题」、自动跟踪
+    「5 分钟后」、新话题「2 天内的」（`logcat`：`NativeDoPreferences event=loaded fields=7`）。
+  - 真实写入与恢复（同一场次内）：`notify_on_linked_posts` 关→读回→开；`hide_profile` 开→读回→关；
+    `allow_private_messages` 关→读回→开。结束时页面回读 `hide=false`、`allow_private_messages=true`，
+    与开始时一致（`23`）。
+  - **现场发现并修掉**：第一版写的是 `hide_profile_and_presence=true`（本地模型当时的命名）。站点回
+    `success:OK` 但下一次读仍是 false——该字段不在 `UserUpdater::OPTION_ATTR` 里，会被静默滤掉；改成站点
+    自己开关写的 `hide_profile` 后生效（`14`/`15`），契约里已写明这个坑。
+  - 另一个观察：linux.do 对 `/u/{u}.json` 的读会滞后（写成功后 7s 读到旧值，34s–2.5min 后才见新值；写响应里
+    的 `user_option` 回显也不反映本次写入），验收按「写→等→再读」的节奏做；这不是本客户端的行为。
+  - 存储：`21`/`22`（清前 68.2 MB → 清后 0 KB 与「已释放 68.2 MB」）；清理后头像按需重下（`28` 里先回到
+    首字母 D，随后恢复）。
+  - 省电 `24`（上游 Power Usage 整页可用）；外观 In-App Browser 行 `26` 关、主列表行 `28` 关 → `29` 开
+    （结束恢复为开）；FAQ 内置浏览器 `30`。全程 crash buffer 为空、无 FATAL。
+- 构建与测试：`:nativedo:testDebugUnitTest` 48 类 161 项 0 失败（新增 `PreferencesTest` 钉「被站点拒绝的写入
+  要把开关弹回并给出站点消息」，`StorageTest` 钉「清缓存不动 cookie 与身份」）；arm64 `:nativedo:assembleDebug`
+  通过，APK SHA-256 `a66fa79aa9509224b0aeccb11ccfdf4716e25db7ac99dffd9dea72212e256395`（设备拉回同哈希）。
+  上游行：`MessagesController` 两处一行 hook（记在「The upstream lines」）。
+- 未验证/限制：外观页里 Telegram 服务器驱动的子页（`WebBrowserSettings` 的关闭按钮/例外列表）不落值
+  （tgnet 关着，只有那两个一行的开关是活的）；`DataSettingsActivity` 的自动下载/autoplay 跳过——本客户端
+  媒体是按需自己取的，不读 `DownloadController`；通知屏不做邮件摘要、免打扰时段与 muted 列表；信任等级是
+  打开设置页那一刻的值；清理缓存后图片/头像要重下。
+
 ## Switch plan
 
 Moving the entry point to `:nativedo` and deleting the old stack. Not started; it needs the human's
