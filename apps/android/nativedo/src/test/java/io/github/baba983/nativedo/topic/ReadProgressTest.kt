@@ -149,18 +149,25 @@ internal class ReadProgressTest {
         harness.layoutApp()
         harness.renderApp("read-progress-topic")
 
-        // The reader goes back to the list. The topic they have read in full draws no badge there,
-        // and the site's own answer - which the list is read again for - agrees.
+        // The reader goes back to the list. A return is not a refresh: the feed's head is not read
+        // again, and the topic they have read in full drops its badge on the row that is already
+        // there - the reader's own read-mark, taken as the topic screen closes, is what the row is
+        // bound from.
+        val headReadsBefore = site.queriesFor("latest.json").count { it.contains("page=0") }
         leaveTheTopic()
-        harness.await("the list to be read again") { site.queriesFor("latest.json").size >= 2 }
+        harness.idleClock(600)
+        harness.layoutApp()
+        harness.drawApp()
+        assertEquals(
+            "the return did not read the feed's head again",
+            headReadsBefore,
+            site.queriesFor("latest.json").count { it.contains("page=0") },
+        )
         assertEquals(
             "the topic the reader finished is not unread any more",
             0,
-            (topicList() ?: throw AssertionError("the list went away")).rows().first().unreadCount,
+            rowUnread(0),
         )
-        // The list is drawn once it is the screen in front again, not while it is still arriving.
-        harness.idleClock(600)
-        harness.layoutApp()
         harness.renderApp("read-progress-list")
         harness.assertNoTelegramSideEffects()
     }
@@ -370,6 +377,17 @@ internal class ReadProgressTest {
 
     /** The tab host's topic list, which is the page the shell is showing while no topic is open. */
     private fun topicList(): TopicListFragment? = harness.visibleFragment() as? TopicListFragment
+
+    /** The unread count the list's row at [position] was last bound with. */
+    private fun rowUnread(position: Int): Int {
+        val list = contentListOf(harness.activity) ?: throw AssertionError("no list to read a row from")
+        val cell = list.findViewHolderForAdapterPosition(position)?.itemView
+            ?: throw AssertionError("the list drew no row at $position")
+        val dialog = org.telegram.ui.Cells.DialogCell::class.java
+            .getDeclaredField("customDialog").apply { isAccessible = true }
+            .get(cell) as org.telegram.ui.Cells.DialogCell.CustomDialog
+        return dialog.unread_count
+    }
 
     private fun fragments(): List<Any> {
         val shell = harness.activity as io.github.baba983.nativedo.app.NativeDoActivity

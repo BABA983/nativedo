@@ -93,8 +93,14 @@ public class SearchPanel extends FrameLayout {
      */
     private static final int SEARCH_DELAY_MS = 300;
 
-    /** The pill capsule's top edge: the search field stands above it, 2dp up the screen. */
-    private static final int TABS_TOP_DP = DialogsActivity.SEARCH_FIELD_HEIGHT - 2;
+    /**
+     * The pill capsule's top edge: the bar's own lower edge, where DialogsActivity lays its search
+     * capsule (4717; its onLayout 1286-1290 puts that child at {@code actionBar.getMeasuredHeight()}).
+     * This container's own top is that edge already - the topic list puts the search container at
+     * the bar's measured height - so the capsule starts at 0 there, right under the field's open
+     * slot.
+     */
+    private static final int TABS_TOP_DP = 0;
     private static final int TABS_HEIGHT_DP = DialogsActivity.SEARCH_TABS_HEIGHT;
 
     private final Theme.ResourcesProvider resourcesProvider;
@@ -509,12 +515,12 @@ public class SearchPanel extends FrameLayout {
             adapter = new PageAdapter(kind);
             listView.setAdapter(adapter);
             listView.setVerticalScrollBarEnabled(false);
-            // The pill capsule floats over the rows the way the home strip does: the pages keep the
-            // search field's height and the capsule's as padding, so the first row starts under
-            // them and the rows scroll beneath (DialogsActivity's own search page padding,
-            // 14014-14026).
-            listView.setPadding(0, AndroidUtilities.dp(
-                    DialogsActivity.SEARCH_FIELD_HEIGHT + TABS_HEIGHT_DP) + AndroidUtilities.dp(4),
+            // The pill capsule floats over the rows the way the home strip does: the pages keep
+            // the capsule's height as padding (plus the 4dp the field's own blur reaches below
+            // its bounds), so the first row starts under it and the rows scroll beneath
+            // (DialogsActivity's own search page padding, 14014-14026; the bar's height is the
+            // container's own top here).
+            listView.setPadding(0, AndroidUtilities.dp(TABS_HEIGHT_DP) + AndroidUtilities.dp(4),
                     0, AndroidUtilities.dp(4));
             listView.setOnItemClickListener((view, position) -> adapter.open(position));
 

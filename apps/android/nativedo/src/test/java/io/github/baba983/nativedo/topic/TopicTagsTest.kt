@@ -123,7 +123,9 @@ internal class TopicTagsTest {
 
         clickMenuItem(TopicListFragment.CLEAR_TAG_ITEM)
         harness.await("the unfiltered feed") {
-            site.requestPaths.count { it == "latest.json" } == 2
+            // The head of the feed, not a later page of it: one read at boot and one when the
+            // tag was dropped.
+            site.queriesFor("latest.json").count { it.contains("page=0") } == 2
         }
         harness.await("the list to hold it again") { rowCount() == 2 }
         assertEquals(
@@ -182,7 +184,8 @@ internal class TopicTagsTest {
 
         clickMenuItem(TopicListFragment.CLEAR_TAG_ITEM)
         harness.await("the category on its own again") {
-            site.queriesFor("c/develop/4/l/latest.json").size == 2
+            // The category's head, not a later page of it: one read at the tab, one at the drop.
+            site.queriesFor("c/develop/4/l/latest.json").count { it.contains("page=0") } == 2
         }
         assertEquals(
             "dropping the tag keeps the category",
