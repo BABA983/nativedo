@@ -1,5 +1,6 @@
 package io.github.baba983.nativedo.messagebus
 
+import android.graphics.Color
 import android.view.MotionEvent
 import android.view.View
 import io.github.baba983.nativedo.app.NativeDo
@@ -21,6 +22,7 @@ import io.github.baba983.nativedo.harness.shadows.ShadowUtilities
 import java.util.concurrent.atomic.AtomicInteger
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -250,6 +252,7 @@ internal class MessageBusUiTest {
                     && pillLocation[1] + pill.height > rowLocation[1],
         )
         harness.renderApp("pill-light")
+        val lightCapsule = capsuleFill(pill, Theme.getColor(Theme.key_windowBackgroundWhite))
 
         val toDark = !Theme.isCurrentThemeDark()
         NotificationCenter.getGlobalInstance().postNotificationName(
@@ -266,10 +269,48 @@ internal class MessageBusUiTest {
             assertSame("the switch keeps the pill's own view", pill, fragmentField("newTopicsPill"))
             assertEquals("and keeps it on screen", View.VISIBLE, pill.visibility)
             harness.renderApp("pill-dark")
+            val darkCapsule = capsuleFill(pill, Theme.getColor(Theme.key_windowBackgroundWhite))
+            assertCapsuleIsNotSeeThrough("night", darkCapsule, capsuleFill(pill, 0xFFFFFFFF.toInt()))
+            assertNotEquals("the capsule's colour follows the switch", lightCapsule, darkCapsule)
         } finally {
             Theme.applyTheme(Theme.getTheme("Blue"), false, false)
             DialogsActivity.switchingTheme = false
         }
+    }
+
+    /**
+     * The pill floats directly over the first row's title. On the night theme its capsule has to
+     * be the service colour the chat's floating date draws with - the wallpaper branch's opaque
+     * paint - and not the theme's translucent service tint: that tint is picked to sit on a chat
+     * wallpaper, and over this list it let the row shine through the pill (62% of the backdrop's
+     * colour in night mode), which is the collision seen on the device. What is behind may tint
+     * the capsule by no more than the chat's own floating factor, a quarter
+     * (ChatActionCell:3496-3505). The day theme keeps its own tint, so its backdrop is allowed to
+     * read through the way it always has.
+     */
+    private fun assertCapsuleIsNotSeeThrough(theme: String, overWindow: Int, overWhite: Int) {
+        val backdropSpan = Math.abs(255 - Color.red(Theme.getColor(Theme.key_windowBackgroundWhite)))
+        val influence = Math.abs(Color.red(overWhite) - Color.red(overWindow))
+        println("pill $theme: overWindow=${String.format("0x%08X", overWindow)} overWhite=${String.format("0x%08X", overWhite)} influence=$influence/$backdropSpan")
+        assertTrue(
+            "the capsule must not let the row behind it define its colour ($theme: $influence of $backdropSpan)",
+            influence * 100 <= backdropSpan * 35,
+        )
+    }
+
+    /** The capsule fill the pill draws over [backdrop], sampled above its text line. */
+    private fun capsuleFill(pill: ChatActionCell, backdrop: Int): Int {
+        val path = ChatActionCell::class.java.getDeclaredField("backgroundPath").apply { isAccessible = true }
+            .get(pill) as android.graphics.Path
+        val rect = android.graphics.RectF()
+        path.computeBounds(rect, true)
+        val bitmap = android.graphics.Bitmap.createBitmap(
+            pill.width.coerceAtLeast(1), pill.height.coerceAtLeast(1), android.graphics.Bitmap.Config.ARGB_8888,
+        )
+        val canvas = android.graphics.Canvas(bitmap)
+        canvas.drawColor(backdrop)
+        pill.draw(canvas)
+        return bitmap.getPixel(rect.centerX().toInt(), (rect.top + 8).toInt())
     }
 
     // ------------------------------------------------------------------------------------------

@@ -575,17 +575,30 @@ public class NativeDoMainTabsActivity extends ViewPagerActivity {
     }
 
     public void updateColors() {
-        iBlur3SourceColor.setColor(getThemedColor(Theme.key_windowBackgroundWhite));
+        // MainTabsActivity.blur3_updateFadeColors (1206-1211): the fade view draws the window
+        // background the pager currently shows, blended by the page position, not one fixed key.
+        iBlur3SourceColor.setColor(getEstBackgroundColor());
         if (tabsViewBackground != null) {
             tabsViewBackground.updateColors();
+        }
+        // Upstream's blur3_invalidateBlur (MainTabsActivity:1197-1205) refreshes the render node
+        // it set up in its constructor; this host records the pages into the source itself on
+        // every content draw (createContentView.dispatchDraw), so the invalidation below is what
+        // it needs and no renderer setup is involved.
+        if (fadeView != null) {
+            fadeView.invalidate();
+        }
+        // MainTabsActivity.blur3_updateColors (1214-1231): the strip's capsule is this view's own
+        // background, recorded in its display list, so the switch has to repaint the view - the
+        // drawable's updateColors alone would only change a colour nothing re-records. Upstream
+        // calls both, and this is the line whose absence left the capsule light on the device.
+        if (tabsView != null) {
+            tabsView.invalidate();
         }
         if (tabs != null) {
             for (GlassTabView tab : tabs) {
                 tab.updateColorsLottie();
             }
-        }
-        if (fadeView != null) {
-            fadeView.invalidate();
         }
         if (contentView != null) {
             contentView.invalidate();
