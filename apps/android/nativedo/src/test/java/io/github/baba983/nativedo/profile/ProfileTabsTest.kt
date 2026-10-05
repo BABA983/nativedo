@@ -258,6 +258,9 @@ internal class ProfileTabsTest {
         assertNotNull("the pin starts the media header animation", pinAnimator)
         assertTrue("the media header animation runs", pinAnimator!!.isRunning)
         harness.idleClock(300)
+        // The counter's text arrives with the animator's first frame; this is the layout pass that
+        // measures it (the harness draws only what was laid out since the last pass).
+        harness.layoutApp()
         assertEquals(
             "the header animation reached its end",
             1.0f,
@@ -275,6 +278,20 @@ internal class ProfileTabsTest {
             Theme.getColor(Theme.key_player_actionBarTitle),
             nameView.getTextColor(),
         )
+        // The harness draws only what a layout pass measured; the counter's width arrives with its
+        // text (set while the header animates), and no pass reaches it here. Measure it the way a
+        // pass would, so the pinned frame shows the subtitle line it is responsible for.
+        if (mediaCounter.measuredWidth == 0) {
+            mediaCounter.forceLayout()
+            mediaCounter.measure(
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+                View.MeasureSpec.makeMeasureSpec(mediaCounter.measuredHeight.coerceAtLeast(1), View.MeasureSpec.EXACTLY),
+            )
+            mediaCounter.layout(
+                mediaCounter.left, mediaCounter.top,
+                mediaCounter.left + mediaCounter.measuredWidth, mediaCounter.top + mediaCounter.measuredHeight,
+            )
+        }
         harness.renderApp("profile-media-header-pinned")
 
         // Scrolling back down: the state reverses through the same animation. The scroll stops on a

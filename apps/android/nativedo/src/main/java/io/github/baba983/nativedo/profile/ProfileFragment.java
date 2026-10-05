@@ -1947,6 +1947,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                         nameTextView.setTranslationY(newTop + h - getActionsExtraHeight() - dpf2(30f) - nameTextView.getBottom());
                         onlineTextView.setTranslationX(dpf2(16f) - onlineTextView.getLeft());
                         onlineTextView.setTranslationY(newTop + h - getActionsExtraHeight() - dpf2(10f) - onlineTextView.getBottom());
+                        syncMediaCounterFromOnline();
                     }
                 } else {
                     if (isPulledDown) {
@@ -1960,6 +1961,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                         nameTextView.setTranslationY(nameY);
                         onlineTextView.setTranslationX(onlineX);
                         onlineTextView.setTranslationY(onlineY);
+                        syncMediaCounterFromOnline();
                     }
                 }
             } else {
@@ -2011,6 +2013,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                     nameTextView.setTranslationY(nameY);
                     onlineTextView.setTranslationX(onlineX);
                     onlineTextView.setTranslationY(onlineY);
+                    syncMediaCounterFromOnline();
                 }
                 updateTextLayoutBasedOnTranslation();
             }
@@ -2275,6 +2278,15 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         fixAvatarImageInCenter();
         avatarContainer.requestLayout();
         topView.invalidate();
+    }
+
+    /** The counter rides the status line's own slot (ProfileActivity.java:8272-8278). */
+    private void syncMediaCounterFromOnline() {
+        if (mediaCounterTextView == null || onlineTextView == null) {
+            return;
+        }
+        mediaCounterTextView.setTranslationX(onlineTextView.getTranslationX());
+        mediaCounterTextView.setTranslationY(onlineTextView.getTranslationY());
     }
 
     /** refreshNameAndOnlineY (ProfileActivity.java:8884); the media counter is left out. */
