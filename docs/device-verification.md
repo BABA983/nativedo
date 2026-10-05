@@ -1812,3 +1812,45 @@ At 14:21 the single-jar build's first cold start found the server had deleted `_
 client with its own stale copy. The single-jar build cleared the site's cookies and stopped at
 the login gate (screenshot `20`) with an empty crash buffer; per the device rules no login was
 attempted. The verdict above (13:43-13:54) stands for the pass itself.
+
+## Profile redesign pass: capsule flight, action row, tabs (2026-10-05, `emulator-5554`, `nativedo-profile-redesign`, signed in @example_user)
+
+Opening from the topic header's capsule: the capsule avatar's X in the profile's own coordinate
+space is measured with `ViewPositionWatcher.computeXCoordinateInParent` (the same call upstream
+makes at `ProfileActivity.java:10080`) and carried in the fragment's arguments; logcat confirms
+`present fragment ProfileFragment args=Bundle[{avatarX=204.0, username=neo, displayName=Neo}]`.
+The screen plays upstream's `playProfileAnimation == 2` (250 ms, `CubicBezierInterpolator.DEFAULT`,
+the 50 ms start delay) with the avatar flying from the capsule's 42 dp picture to the header's
+96 dp rest size (`02-profile-from-capsule`, the round avatar, name and `@handle` landed centered;
+`harness/profile-open-from-capsule.png` is the settled render, and `ProfileRedesignTest` asserts
+the seeded X, the 0 -> 1 progress and the landed user). The AVD's `screenrecord` stayed frozen for
+a second pass (2 frames in `profile-open2.mp4`, 1 in `profile-open.mp4`), the same limitation the
+earlier passes recorded; the two mp4s and the still sequence are kept as evidence.
+
+Action row: on Neo's profile the row shows Message / 取消关注 / 分享 (the account already follows
+Neo, so the site's `is_followed` puts the unfollow label on the button) - `04-profile-scrolled2`
+and `02-profile-from-capsule`; on @example_user's own profile it shows 书签 / 设置 / 分享
+(`15-own-profile`). The four actions are offered only when `/u/{u}.json` says they exist
+(`can_send_private_message_to_user`, `can_follow`/`is_followed`, `can_mute_user`/`muted`); the
+follow and mute writes were exercised against `FakeDiscourseSite` only (no writes to real accounts
+from the device).
+
+Sections and stats: real linux.do numbers for Neo - 话题 649, 帖子 21254, 获赞 620454, 送出赞 3629,
+访问天数 993, 阅读帖子 1631688, 阅读时长 3155 小时, 浏览 383640, 徽章 63, 得分 783474, 关注者 12456
+(`04-profile-scrolled2`) - from `/u/{u}/summary.json` joined with the profile endpoint.
+
+Tabs: 话题 / 回复 / 点赞 / 徽章 for another reader (书签 additionally on one's own profile), the
+strip pinned at the list's top with the page's rows scrolling under it. 话题 shows the site's
+topics with `user_actions.json?filter=4` (`16-final-tab-topics`; the last APK also strips the
+cooked HTML some excerpts carry), 徽章 shows `/user-badges/{u}.json` grants with dates
+(`14-tab-badges`).
+
+One device-only defect was found and fixed in the pass: a summary arriving after the tab area was
+built rebuilt the info rows without the tab row, which made the tabs unreachable (the list ended
+at 被采纳回复); `buildRows` now re-appends the tab row whenever the tab view exists, and the
+harness tab test serves the summary fixture so the ordering is pinned. The first two holds ran the
+pre-fix APK; the final hold reinstalled the fixed build (APK sha256 `9f7f3cb6…`, matching the
+device's `base.apk`) and re-verified the tab pages.
+
+Suite: 43 classes / 153 tests green. Evidence: `.amp/in/artifacts/profile-redesign/`
+(screenshots `00`-`16`, both mp4 attempts, `ui*.xml`, `harness/`).
