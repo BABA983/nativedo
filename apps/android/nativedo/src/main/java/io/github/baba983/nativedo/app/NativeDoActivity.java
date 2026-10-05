@@ -37,6 +37,7 @@ import org.telegram.ui.ArticleViewer;
 import org.telegram.ui.Components.Easings;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.LineProgressView;
+import org.telegram.ui.ContentPreviewViewer;
 import org.telegram.ui.DialogsActivity;
 import org.telegram.ui.PhotoViewer;
 
@@ -755,9 +756,13 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
             if (invoked) browserTabsOverlay.onBackPressed();
             return false;
         }
-        // Telegram-only consumers of upstream's list (passcode, secret media, the sticker viewer,
-        // the debug drawer) are absent here; every viewer this client can show is asked, in
-        // upstream's own order.
+        // Telegram-only consumers of upstream's list (passcode, secret media, the debug drawer)
+        // are absent here; every viewer this client can show is asked, in upstream's own order
+        // (ContentPreviewViewer, PhotoViewer, ArticleViewer).
+        if (ContentPreviewViewer.hasInstance() && ContentPreviewViewer.getInstance().isVisible()) {
+            if (invoked) ContentPreviewViewer.getInstance().closeWithMenu();
+            return false;
+        }
         if (PhotoViewer.hasInstance() && PhotoViewer.getInstance().isVisible()) {
             if (invoked) PhotoViewer.getInstance().closePhoto(true, false);
             return false;
