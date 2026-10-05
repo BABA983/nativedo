@@ -2388,7 +2388,8 @@ public class TopicListFragment extends BaseFragment
         @Override
         public void openTopic(TopicSummary topic) {
             presentFragment(TopicFragment.forFloor(
-                    topic.getId(), topic.getTitle(), topic.getTargetPostNumber()));
+                    topic.getId(), topic.getTitle(), topic.getTargetPostNumber(),
+                    topic.getAuthorUsername(), topic.getAuthorAvatarTemplate()));
         }
 
         @Override
@@ -2461,8 +2462,12 @@ public class TopicListFragment extends BaseFragment
 
     private void presentTopic(TopicSummary topic) {
         if (getParentActivity() instanceof io.github.baba983.nativedo.app.NativeDoActivity) {
+            // The row already downloaded the author's picture: its user and template go to the
+            // topic screen, so the center capsule is bound before the topic is read.
             ((io.github.baba983.nativedo.app.NativeDoActivity) getParentActivity())
-                    .present(TopicFragment.forTopic(topic.getId(), topic.getTitle()));
+                    .present(TopicFragment.forTopic(
+                            topic.getId(), topic.getTitle(),
+                            topic.getAuthorUsername(), topic.getAuthorAvatarTemplate()));
         }
     }
 
