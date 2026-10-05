@@ -149,10 +149,20 @@ public class ProfileSharedMediaView extends FrameLayout {
             }
         });
 
+        // The band under the strip: the pages' rows scroll under the strip (their lists keep its
+        // height as their top padding), and the strip itself is only as wide as its tabs - beyond
+        // it a row's date would show through in the strip row. The band is that row's own surface
+        // across the whole width, the way upstream's tab bar draws its own glass across the row it
+        // pins in (SharedMediaLayout.java:3743-3751).
+        View tabRowSurface = new View(context);
+        tabRowSurface.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite, resourcesProvider));
+
         // The pager goes in first and the strip over it: the strip is the pinned surface the
         // pages scroll under (upstream adds it after the pages, SharedMediaLayout.java:3751).
         addView(pager, LayoutHelper.createFrame(
                 LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.LEFT));
+        addView(tabRowSurface, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT, STRIP_HEIGHT_DP, Gravity.TOP | Gravity.LEFT));
         addView(tabStrip, LayoutHelper.createFrame(
                 LayoutHelper.WRAP_CONTENT,
                 STRIP_HEIGHT_DP,
