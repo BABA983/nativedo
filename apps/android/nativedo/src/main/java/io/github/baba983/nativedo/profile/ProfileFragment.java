@@ -183,8 +183,24 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
     private float avatarAnimationProgress;
     private float prevAvatarTranslation;
     private int avatarColor;
-    private final float[] backwardInitialValues = new float[4];
+    /**
+     * captureBackwardInitialValues (ProfileActivity.java:8155-8191): what the close animation
+     * travels back to. Upstream keeps sixteen slots; this screen keeps the ones its own views
+     * have - the avatar (scale, X, Y), the action row's alpha, the title's scale/Y/X and the
+     * online line's Y/X (upstream's [7]-[13]).
+     */
+    private final float[] backwardInitialValues = new float[14];
+    /** The list offset the close started from; backwardAnimationLayout's diff is read against it. */
+    private float backwardTransitionFromExtraHeight;
     private boolean allowProfileAnimation = true;
+    /** Whether the fragment is being opened (upstream's {@code isFragmentOpened = isOpen}). */
+    private boolean isFragmentOpened;
+    /**
+     * The screen below, when it is a topic: during the profile's flight its action bar's children
+     * - the capsule avatar and the title - are not drawn, the way upstream hides the chat header's
+     * ({@code previousActionBar.setSkipDrawChild(true)}, ProfileActivity.java:9940/10229).
+     */
+    private org.telegram.ui.ActionBar.ActionBar previousTransitionActionBar;
 
 
     // The collapsing header, ported from ProfileActivity: the gooey avatar and the two text views
@@ -425,6 +441,12 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         listView.setAdapter(new ProfileAdapter());
         listView.setVerticalScrollBarEnabled(false);
         listView.setClipToPadding(false);
+        // ProfileActivity.java:4223 sets the same surface on its own list; the screen keeps one
+        // because the open animation makes the fragment view itself transparent
+        // (`fragmentView.setBackgroundColor(0)`, ProfileActivity.java:9986) and only restores the
+        // cover through what the list and the header paint themselves. Without it a later
+        // swipe-back drag shows the topic through the profile's rows.
+        listView.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundWhite));
         listView.setPadding(0, getHeaderExtraHeight(), 0, listBottomPadding());
         // The rows of the info list are text to read; the tappable things are the action row's
         // buttons and the pages' own rows, each with their own click handling.
@@ -555,6 +577,12 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
     public void onFragmentDestroy() {
         org.telegram.messenger.NotificationCenter.getGlobalInstance().removeObserver(
                 themeObserver, org.telegram.messenger.NotificationCenter.needSetDayNightTheme);
+        // A flight torn down mid-way (the host destroyed) must not leave the topic's header
+        // hidden: the animator's own end listener restores it otherwise.
+        if (previousTransitionActionBar != null) {
+            previousTransitionActionBar.setSkipDrawChild(false);
+            previousTransitionActionBar = null;
+        }
         super.onFragmentDestroy();
     }
 
@@ -1150,6 +1178,9 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             listView.setAdapter(adapter);
             listView.setVerticalScrollBarEnabled(false);
             listView.setClipToPadding(false);
+            // The same page surface the info list carries: the pager area's own rows scroll over
+            // it, and the fragment view behind has no background of its own after the flight.
+            listView.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundWhite));
             listView.setPadding(0, AndroidUtilities.dp(ProfileSharedMediaView.PAGE_TOP_PADDING_DP), 0, listBottomPadding());
             listView.setOnItemClickListener((view, position) -> {
                 Object item = position >= 0 && position < items.size() ? items.get(position) : null;
@@ -1597,6 +1628,12 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         if (extraHeight != newOffset) {
             extraHeight = newOffset;
             topView.invalidate();
+            // checkListViewScroll (ProfileActivity.java:8041-8044): a profile the reader has
+            // scrolled past its header no longer plays the avatar flight on the way out - the
+            // avatar's rest is no longer where the flight began.
+            if (playProfileAnimation != 0) {
+                allowProfileAnimation = extraHeight > getActionsExtraHeight();
+            }
             needLayout(true);
         }
     }
@@ -1608,7 +1645,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         boolean textMeasured = false;
 
         FrameLayout.LayoutParams layoutParams;
-        if (listView != null) {
+        if (listView != null && !openAnimationInProgress) {
             layoutParams = (FrameLayout.LayoutParams) listView.getLayoutParams();
             if (layoutParams.topMargin != newTop) {
                 layoutParams.topMargin = newTop;
@@ -1619,6 +1656,13 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         if (avatarContainer != null) {
             listView.setTopGlowOffset((int) extraHeight);
             listView.setOverScrollMode(extraHeight > getHeaderExtraHeight() && extraHeight < listView.getMeasuredWidth() + getActionsExtraHeight() - newTop ? View.OVER_SCROLL_NEVER : View.OVER_SCROLL_ALWAYS);
+        }
+
+        // needLayout (ProfileActivity.java:8389-8392): while the profile is on its way out, the
+        // header follows the recorded backward path instead of the scroll-driven one.
+        if (avatarContainer != null && !isFragmentOpened && openAnimationInProgress) {
+            backwardAnimationLayout();
+            return;
         }
 
         final int headerExtraHeight = getHeaderExtraHeight();
@@ -1691,10 +1735,16 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                     fixAvatarImageInCenter();
                     avatarContainer.setTranslationY((float) Math.ceil(avatarY));
                 }
-                final float avatarBottom = (float) Math.floor(endNameY) + (avatarContainer.getHeight() * avatarContainer.getScaleY() + dpf2(8)) * diff;
+                // needLayout (ProfileActivity.java:8752-8755): the title's ride down from the
+                // action bar follows the avatar's own growth while the flight is running.
+                final float avatarBottom = (float) Math.floor(endNameY) + (avatarContainer.getHeight() * avatarContainer.getScaleY() + dpf2(8)) * (openAnimationInProgress ? avatarAnimationProgress : diff);
                 nameY = avatarBottom + dp(1.3f) + dp(7) * diff;
                 onlineY = avatarBottom + dp(24) + (float) Math.floor(11 * AndroidUtilities.density) * diff;
-                final float minimizedX = -dpf2(42 + 4);
+                // needLayout (ProfileActivity.java:8756): while the flight is running the title
+                // starts where the capsule's own title was (its left edge is the avatar's + 48dp).
+                final float minimizedX = openAnimationInProgress && playProfileAnimation == 2
+                        ? prevAvatarTranslation - dp(109) + dp(48)
+                        : -dpf2(42 + 4);
 
                 int viewportWidth = listView.getMeasuredWidth();
                 // Upstream runs this over two copies of the text; the one that collapses with the
@@ -1714,10 +1764,12 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                 nameX = AndroidUtilities.lerp(minimizedX, nameX, diff);
                 onlineX = AndroidUtilities.lerp(minimizedX, onlineX, diff);
 
-                nameTextView.setTranslationX(nameX);
-                nameTextView.setTranslationY(nameY);
-                onlineTextView.setTranslationX(onlineX);
-                onlineTextView.setTranslationY(onlineY);
+                if (expandAnimator == null || !expandAnimator.isRunning()) {
+                    nameTextView.setTranslationX(nameX);
+                    nameTextView.setTranslationY(nameY);
+                    onlineTextView.setTranslationX(onlineX);
+                    onlineTextView.setTranslationY(onlineY);
+                }
                 updateTextLayoutBasedOnTranslation();
             }
             if (openAnimationInProgress && playProfileAnimation == 2) {
@@ -1748,10 +1800,10 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         }
 
         int viewWidth = AndroidUtilities.isTablet() ? AndroidUtilities.dp(490) : AndroidUtilities.displaySize.x;
-        // Upstream adds 48 dp for each action-bar item it may show (search, edit, call, video);
-        // this screen's bar carries the back button only, so those counts stay zero.
-        int extra = 0;
-        int buttonsWidth = AndroidUtilities.dp(47 + 8 + (40 + extra));
+        // needLayoutText (ProfileActivity.java:8958-8961): during the flight the title is laid
+        // out as wide as the action-bar copy upstream keeps behind it (109dp of chrome), not as
+        // the narrow collapsed bar.
+        int buttonsWidth = AndroidUtilities.dp((openAnimationInProgress ? 109 : 47) + 8 + 40);
         int minOnlineWidth = viewWidth - buttonsWidth;
         int minWidth = (int) (minOnlineWidth / (startWidth != 0 ? 1f : minScale));
         int maxOnlineWidth = startWidth != 0 ? startWidth : viewWidth - AndroidUtilities.dp(18) * 2;
@@ -2018,6 +2070,22 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             return null;
         }
 
+        // ProfileActivity.java:9931-9942: the screen below keeps its action bar, but the bar's
+        // children - the chat header's avatar and title, here the topic's capsule - are not drawn
+        // while the profile's avatar is on its way: the one flying copy is the only one seen.
+        previousTransitionActionBar = null;
+        if (getParentLayout() != null && getParentLayout().getFragmentStack() != null
+                && getParentLayout().getFragmentStack().size() >= 2) {
+            BaseFragment previous = getParentLayout().getFragmentStack()
+                    .get(getParentLayout().getFragmentStack().size() - 2);
+            if (previous instanceof TopicFragment) {
+                previousTransitionActionBar = previous.getActionBar();
+            }
+        }
+        if (previousTransitionActionBar != null) {
+            previousTransitionActionBar.setSkipDrawChild(true);
+        }
+
         final AnimatorSet animatorSet = new AnimatorSet();
         animatorSet.setDuration(playProfileAnimation == 2 ? 250 : 180);
         if (listView != null) {
@@ -2049,6 +2117,15 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             captureBackwardInitialValues();
             ArrayList<Animator> animators = new ArrayList<>();
             animators.add(ObjectAnimator.ofFloat(this, "avatarAnimationProgress", 1.0f, 0.0f));
+            // ProfileActivity.java:10163-10166: the copy that travels is the one the reader sees;
+            // upstream fades its header copy ([1]) out while its bar copy ([0]) fades in. This
+            // screen keeps one copy, and it is the header's: it leaves with the flight (the topic's
+            // own title comes back when the capsule's bar is drawn again).
+            animators.add(ObjectAnimator.ofFloat(nameTextView, View.ALPHA, 0.0f));
+            animators.add(ObjectAnimator.ofFloat(onlineTextView, View.ALPHA, 0.0f));
+            if (actionsView != null) {
+                animators.add(ObjectAnimator.ofFloat(actionsView, View.ALPHA, 0.0f));
+            }
             animatorSet.playTogether(animators);
         }
 
@@ -2058,6 +2135,15 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         animatorSet.addListener(new AnimatorListenerAdapter() {
             @Override
             public void onAnimationEnd(Animator animation) {
+                // ProfileActivity.java:10227-10236: the hardware layer and the hidden header go
+                // back as the flight lands, in both directions.
+                if (listView != null) {
+                    listView.setLayerType(View.LAYER_TYPE_NONE, null);
+                }
+                if (previousTransitionActionBar != null) {
+                    previousTransitionActionBar.setSkipDrawChild(false);
+                    previousTransitionActionBar = null;
+                }
                 callback.run();
             }
         });
@@ -2069,6 +2155,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
     @Override
     public void onTransitionAnimationStart(boolean isOpen, boolean backward) {
         super.onTransitionAnimationStart(isOpen, backward);
+        isFragmentOpened = isOpen;
         if (isOpen && actionsView != null) {
             actionsView.startAnimatedActions();
         }
@@ -2084,6 +2171,15 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
     @Override
     public void onTransitionAnimationEnd(boolean isOpen, boolean backward) {
         super.onTransitionAnimationEnd(isOpen, backward);
+        // The animator's own end listener restores these; a cancelled flight ends here instead
+        // (the layout calls the callback after a cancel too), so the previous screen is whole.
+        if (listView != null) {
+            listView.setLayerType(View.LAYER_TYPE_NONE, null);
+        }
+        if (previousTransitionActionBar != null) {
+            previousTransitionActionBar.setSkipDrawChild(false);
+            previousTransitionActionBar = null;
+        }
         if (openAnimationInProgress) {
             openAnimationInProgress = false;
         }
@@ -2153,13 +2249,15 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
 
     /**
      * The avatar along the flight path, ProfileActivity.java:8623-8690 adapted to this screen's end
-     * state: the picture starts as the capsule's 42 dp round avatar at the capsule's own X and
-     * grows to the header's 96 dp rest scale, its container travelling to the centered position
-     * the collapsed header sits at (~ProfileActivity's `avatarContainer.setTranslationX(
-     * lerp(avX, 0, avatarAnimationProgress))`, whose 0 is that centered position in the expanded
-     * end state Telegram lands in; this screen lands in the collapsed one, so the target is
-     * fixAvatarImageInCenter()'s X). Telegram-only overlays (stories, gifts, the emoji status, the
-     * time/community items) are left out.
+     * state: the picture starts as the capsule's 42 dp round avatar at the capsule's own X and Y
+     * (the capsule sits at the action bar's centre, which is where this screen's own bar has it)
+     * and grows to the header's 96 dp rest scale, its container travelling to the centered rest
+     * position the collapsed header sits at. Upstream's end state is the full-width square
+     * (translation (0, 0), scale 138/100, container grown past the viewport); this screen lands in
+     * the collapsed header, so both targets are that header's own rest geometry. The title and the
+     * status ride just under the avatar's growing bottom edge, exactly as upstream's second title
+     * copy does through the {@code avatarAnimationProgress} term of its needLayout(). Telegram-only
+     * overlays (stories, gifts, the emoji status, the time/community items) are left out.
      */
     private void openAnimationAvatarLayout(float newTop) {
         float avX = prevAvatarTranslation;
@@ -2178,19 +2276,123 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         avatarContainer.setScaleY(avatarScale);
 
         float restX = listView.getMeasuredWidth() / 2f - (params.width * avatarScale * 0.5f);
+        // The rest Y is the collapsed header's own avatarY (needLayout's `startY` at diff == 1):
+        // the top of the 100dp frame below the action bar. Upstream interpolates Y to its end
+        // state (0, the top of the square); this screen's end state is that rest position.
+        final int statusBar = actionBar.getOccupyStatusBar() ? AndroidUtilities.statusBarHeight : 0;
+        float restY = (float) Math.ceil(statusBar + ActionBar.getCurrentActionBarHeight()
+                - dp(21) + actionBar.getTranslationY());
         avatarContainer.setTranslationX(AndroidUtilities.lerp(avX, restX, avatarAnimationProgress));
-        avatarContainer.setTranslationY((float) Math.ceil(avY));
+        avatarContainer.setTranslationY(AndroidUtilities.lerp((float) Math.ceil(avY), restY, avatarAnimationProgress));
         avatarContainer.requestLayout();
 
         avatarImage.setRoundRadiusForExpand(getSmallAvatarRoundRadius());
         avatarImage.setBlurRadiusProgressForExpand(avatarAnimationProgress, avatarScale, false);
+
+        // needLayout (ProfileActivity.java:8752-8755): the title starts where the capsule's own
+        // title was and rides the avatar's bottom edge down to its rest place below the picture.
+        final float diff = calculateHeaderExtraDiff();
+        float endNameY = statusBar
+                + ActionBar.getCurrentActionBarHeight() / 2f * (1f + diff)
+                - dp(21)
+                + actionBar.getTranslationY();
+        final float avatarBottom = (float) Math.floor(endNameY)
+                + (avatarContainer.getHeight() * avatarContainer.getScaleY() + dpf2(8)) * avatarAnimationProgress;
+        final float nameX = this.nameX;
+        final float onlineX = this.onlineX;
+        nameTextView.setTranslationX(nameX);
+        nameTextView.setTranslationY(avatarBottom + dp(1.3f) + dp(7) * diff);
+        onlineTextView.setTranslationX(onlineX);
+        onlineTextView.setTranslationY(avatarBottom + dp(24) + (float) Math.floor(11 * AndroidUtilities.density) * diff);
+    }
+
+    /**
+     * backwardAnimationLayout (ProfileActivity.java:8193-8290): the reverse of the flight, driven
+     * by the values captured when the close began. The avatar travels from wherever the header
+     * rested (scale, X, Y) back to the capsule's 42 dp spot, and the title and status slide back
+     * toward the capsule's own title line, losing their scale on the way. Upstream's Telegram-only
+     * overlays (stories, gifts, the rating) and its second title copy are left out.
+     */
+    private void backwardAnimationLayout() {
+        if (expandAnimator != null && expandAnimator.isRunning()) {
+            expandAnimator.cancel();
+        }
+        // The animator's progress is the diff upstream reads off the ramping extraHeight
+        // (`extraHeight = initialAnimationExtraHeight * progress`, ProfileActivity.java:9853).
+        final float backwardDiff = Utilities.clamp01(avatarAnimationProgress);
+        if (backwardDiff <= 0) {
+            return;
+        }
+        final float backwardDiffHalf = (backwardDiff - 0.5f) / 0.5f;
+        final int statusBar = actionBar.getOccupyStatusBar() ? AndroidUtilities.statusBarHeight : 0;
+
+        float startAvatarY = statusBar
+                + ActionBar.getCurrentActionBarHeight() / 2f
+                - dp(21)
+                + actionBar.getTranslationY();
+
+        avatarScale = lerp(42f / 100f, backwardInitialValues[0], backwardDiff);
+        avatarX = lerp(prevAvatarTranslation, backwardInitialValues[1], backwardDiff);
+        avatarY = lerp(startAvatarY, backwardInitialValues[2], backwardDiff);
+        pullUpProgress = lerp(backwardInitialValues[11], 0f, backwardDiff);
+        avatarContainer.setScaleX(avatarScale);
+        avatarContainer.setScaleY(avatarScale);
+        avatarContainer.setTranslationX(avatarX);
+        avatarContainer.setTranslationY(avatarY);
+        avatarImage.setAlpha(1f);
+        avatarContainer.setAlpha(1f);
+
+        final float minEndNameY = statusBar
+                + ActionBar.getCurrentActionBarHeight() / 2f
+                - 21 * AndroidUtilities.density
+                + actionBar.getTranslationY();
+        final float minNameY = (float) Math.floor(minEndNameY) + dp(1.3f);
+        final float minOnlineY = minNameY + dpf2(22.7f);
+
+        float nameScale = lerp(1f, backwardInitialValues[7], backwardDiff);
+        nameY = AndroidUtilities.lerp(minNameY, backwardInitialValues[8], backwardDiff);
+        onlineY = AndroidUtilities.lerp(minOnlineY, backwardInitialValues[9], backwardDiff);
+        float nameX = lerp(prevAvatarTranslation - dp(109) + dp(48), backwardInitialValues[12], backwardDiff);
+        float onlineX = lerp(prevAvatarTranslation - dp(109) + dp(48), backwardInitialValues[13], backwardDiff);
+
+        nameTextView.setTranslationX(nameX);
+        nameTextView.setTranslationY(nameY);
+        onlineTextView.setTranslationX(onlineX);
+        onlineTextView.setTranslationY(onlineY);
+        nameTextView.setScaleX(nameScale);
+        nameTextView.setScaleY(nameScale);
+        this.nameX = nameX;
+        this.onlineX = onlineX;
+
+        final int newTop = statusBar + ActionBar.getCurrentActionBarHeight();
+        updateExtraViews(newTop);
+        needLayoutText(backwardDiff, (int) backwardInitialValues[10], true);
+
+        if (actionsView != null) {
+            actionsView.setAlpha(AndroidUtilities.lerp(0, backwardInitialValues[3], backwardDiffHalf));
+        }
     }
 
     private void captureBackwardInitialValues() {
+        backwardTransitionFromExtraHeight = extraHeight;
         backwardInitialValues[0] = avatarScale;
         backwardInitialValues[1] = avatarContainer == null ? 0f : avatarContainer.getTranslationX();
         backwardInitialValues[2] = avatarContainer == null ? 0f : avatarContainer.getTranslationY();
         backwardInitialValues[3] = actionsView == null ? 1f : actionsView.getAlpha();
+        // ProfileActivity.java:8168-8174: the title's scale, its Y and the online line's Y, the
+        // width it was laid out with, where the pull-up left the gooey, and the X both titles
+        // were translated to - the values backwardAnimationLayout() lerps away from.
+        if (nameTextView == null || onlineTextView == null) {
+            return;
+        }
+        backwardInitialValues[7] = nameTextView.getScaleX();
+        backwardInitialValues[8] = nameTextView.getTranslationY();
+        backwardInitialValues[9] = onlineTextView.getTranslationY();
+        backwardInitialValues[10] = nameTextView.getLayoutParams() == null
+                ? 0f : nameTextView.getLayoutParams().width;
+        backwardInitialValues[11] = pullUpProgress;
+        backwardInitialValues[12] = nameTextView.getTranslationX();
+        backwardInitialValues[13] = onlineTextView.getTranslationX();
     }
 
     /** The avatar's own average colour, as ProfileActivity.java:10268-10273 reads it. */
