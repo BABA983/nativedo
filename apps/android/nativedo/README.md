@@ -275,13 +275,15 @@ stands, and the upstream component each row is meant to use.
 - 设备证据（覆盖安装 `-r -t`，未卸载/未清数据，`pm path` 拉回的 `base.apk` 与构建产物同 SHA-256
   `377ea844c7f520472e4f9fd00b0c5543725cd04311ce37fce4aa53be7529f887`；修法第一版是 `b22d4d25…`，两版都装过）：
   浅色冷启动（`12`/`13`：胶囊是主题自己的淡色，tab 条浅色）、菜单切夜间 4s/30s（`14`/`15`：胶囊
-  `#2F3B4A`、tab 条 `#202E3D`，白字可读、`App…` 那层的标题被胶囊盖住）、切回浅色 4s/20s（`16`/`17`：
+  `#2F3B4A`、tab 条 `#202E3D`；**这一句当时写「`App…` 那层的标题被胶囊盖住」是错的**——`#2F3B4A` 正是
+  `0.75` 系数乘过的过渡色，第一行的白标题仍从剩下的 25% 透明里透出来；真正的补刀见下一节）、切回浅色 4s/20s（`16`/`17`：
   胶囊 4s 时是 `#B2B7BD` 的过渡色、20s 后回 `#C9D6C9`，tab 条 `#FFFFFF`）、夜间另三页（`19` 通知、
   `08` 设置、`09` 我的：页底/行/动作行/tab 条一致），结束时停在浅色（`18`/`20`）。crash buffer 空、
   无 FATAL/ANR，app 的 `databases/` 里没有 `cache4.db`。
 - 测试：`MessageBusUiTest.thePillFloatsOverTheFirstRowAndTheThemeSwitchKeepsIt` 补「夜间胶囊不能被身后的行
   描色」（把胶囊单独画在窗口底色与白底上，背景的影响不得超过聊天浮动日期自己的 0.25 系数；修前
-  140/226 = 62%，修后 57/226），并保留「切换前后同一实例、颜色确实跟着主题变」；新增
+  140/226 = 62%，修后 57/226）。**这个 0.25 的门太松，57/226 仍是渲染上看得出的透色**，真正的门见下一节；
+  并保留「切换前后同一实例、颜色确实跟着主题变」；新增
   `NightModeTest.theTabCapsuleFollowsTheDayNightSwitchInPlace`（双向切换：调色板颜色变、画胶囊的 view 被
   要求重绘、strip 与四个 tab 都是同一实例；去掉 `tabsView.invalidate()` 或去掉胶囊 delegate 时各自失败，
   两条都做过回退验证）。全量 `:nativedo:testDebugUnitTest` 51 类 166 项 0 失败 0 error 0 skipped；
@@ -290,6 +292,40 @@ stands, and the upstream component each row is meant to use.
 - 未验证/移交：通知 badge 需要非零计数才画得出来（这台账号三个计数都是 0），只有「0 不画 badge」；
   `profile/*`（另一 agent 的文件）夜间看起来跟着主题走（`09` 的资料页头/动作行/tab 行/「我的」tab 条），
   未改动其文件；真机 `449dd25d` 不在本轮设备里。
+
+### 夜间胶囊补刀：`isFloating()` 的 0.75 系数让上一版仍透色（2026-10-05，`emulator-5554`，`spike/full-telegram-subtree`，已登录 @example_user）
+
+- 上一版把 delegate 的画笔压成满 alpha 了，但没盖住：胶囊是 `ChatActionCell` 的 floating date，
+  `drawBackground` 对 `isFloating()` 的 cell 会把画笔 alpha 再乘 `0.75`（`ChatActionCell.java:3496-3505`）。
+  于是夜间胶囊实测 `#2F3B49`（`0.75×#354251 + 0.25×#1d2733`），盖在首行白标题上时是 `#67717C`——白标题
+  笔画从剩下的 25% 透明里清楚透出（复核帧 `.amp/in/artifacts/wave6/02-home-dark.png`、`02-pill-crop.png`）。
+- 修法：`TopicListFragment` 的胶囊不再覆写 `isFloating()`。那个 flag 只被 `drawBackground` 一处读（就是
+  那个 0.75）；「浮在列表上方」是布局与 `setTranslationY` 给的，不经它。去掉后 delegate 的满 alpha 才真正
+  落成不透明；胶囊形状、150ms 淡入淡出、位置都不动，也没有把行挤下去。
+- 失败模式测试（先写、先红后绿）：`MessageBusUiTest.thePillFloatsOverTheFirstRowAndTheThemeSwitchKeepsIt`
+  的断言改成命名失败模式的 `assertCapsuleHidesTheRowBehindIt`——把胶囊分别画在窗口底色与纯白上，要求两次
+  采样同色（不透明），而不是上一版「不超过 0.25 系数」的松门。修前 `overWindow=#2E3B49 / overWhite=#67717C`
+  （influence 57/255）→ 失败；修后 `overWindow=overWhite=#354251`（0/255）→ 通过。
+- 构建与测试：`:nativedo:testDebugUnitTest` 全量 **52 类 169 项 0 失败 0 error 0 skipped**；arm64
+  `:nativedo:assembleDebug -Pandroid.injected.build.abi=arm64-v8a` 通过，APK SHA-256
+  `bbb69f85fa1f69fbf1b0c6d4817ce0a696a2a42abf182411e3af256f1b0d70d7`。没有改 `apps/android/telegram` 子树。
+- 设备（`emulator-5554`，`install -r -t` 覆盖，未卸载/未清数据，@example_user 未动）：夜间首行胶囊填充就是
+  `#354251`（胶囊区 8926 个纯填充像素），旧版透色的两个特征色 `#2E3B49`/`#67717C` 在胶囊区 0 像素；白标签
+  「8 个新话题」清楚，首行白标题在胶囊边缘断开、没有笔画进到填充里（`dev-01-home-dark.png`、
+  `dev-01-row-dark.png`、`dev-01-pill-zoom-dark.png`）。浅色主题（`dev-06-home-light.png`）走的是主题自己的
+  染色（delegate 只在夜间接管），去掉 0.75 后比上一版略实，但仍是半透明：首行深色标题还会从填充里淡透、
+  白标签对比偏低。这是题面没点名的旧样子，本轮没把白天的染色也改成不透明——那会在「夜间切回白天、壁纸色
+  尚未重载」的窗口里闪一枚深色胶囊（原因见上一节），据实记录。结束时设备停在浅色。
+- 证据在 `.amp/in/artifacts/night-final/`。
+
+### 二维码可扫性：设备截图用 ZXing 真解码（2026-10-05，`emulator-5554`，已登录 @example_user）
+
+- 上一节留下「本机没有解码器，没有真扫」。本轮用 Gradle 缓存里的 `com.google.zxing:core:3.5.4` 写了个小
+  解码器（自实现 `LuminanceSource` + `HybridBinarizer`）对设备截图原图解码：`dev-03-qr-dark.png` **解出
+  `https://linux.do/u/example_user`**（`plain` 与 `TRY_HARDER` 两条路都过）；harness 渲染的 `profile-qr.png` 同样解出
+  `http://localhost:<port>/u/baba`。所以 `ProfileQrView` 的中心留白没有破坏码（EC-M 容错吸收了那 ~5.8% 的
+  模块），生成逻辑未改。局限：紧裁剪（去掉白卡留白）会让 zxing 找不到定位图形——码本身 `MARGIN=0`，靠白卡
+  当静区；真实相机扫描未验证。
 
 ### 资料页转场与折叠栏修复（2026-10-05，`emulator-5554`，`nativedo-profile-polish`，已登录 @example_user）
 
@@ -335,7 +371,7 @@ stands, and the upstream component each row is meant to use.
 - harness（`ProfileTabsTest` 3 项）：自己的 tab 顶左是 QR、点开链接是 `/u/<username>`，pushed 资料页仍是返回箭头；手指滑 pager 时指示条中途在两条之间（读 `indicatorX` 与 tab 中心比较）、松手后 tab/pager/请求三者一致；pin 边界开、滚回关，两向都经由 `headerAnimatorSet`（不是直接赋值）。`ProfileRedesignTest.clickTab` 改成等 320ms 动画落定，`scrollPageToEnd` 在 harness 里补一次 pager 的 measure/layout（harness 从 content view 起只重测请求过布局的子树）。
 - 构建与测试：`:nativedo:testDebugUnitTest` 全量 **168 项 0 失败 0 error 0 skipped**；`:nativedo:assembleDebug -Pandroid.injected.build.abi=arm64-v8a`（排除两个 CMake 任务）通过，APK SHA-256 `50c3b9089f7c629ba3f28cbc80b52c854ad2c3ae0c4671998d2c7522276c8a82`（63.7 MB）。没有改 `apps/android/telegram` 子树。
 - 设备（`emulator-5554`，`install -r -t` 覆盖，未卸载未清数据，@example_user 的登录态未动）：`dev-03-own-top` 我的 tab 顶左 QR 图标；`dev-04-qr`/`dev-12-dark-qr` 二维码页（日/夜，绿底/深底、白卡、`@example_user`、头像）；`dev-05-strip-top` pin 住后的媒体头（标题 example_user + 小字 话题）与玻璃条；`dev-06-tab-slide-mid` 点 回复 的慢放中帧（指示条在话题/回复之间、回复页正滑入）；`dev-07-replies-tab` 落定后回复页真实行；`dev-08-strip-rest` 滚回后条回到行内；`dev-09-pin-mid`/`dev-10-pinned` 顶上去的过程与 pin 住（行从玻璃下穿过）；`dev-11-dark-pinned` 夜间同上；`dev-13-back-to-day` 切回日间（设备留在日间）。harness 留存帧：`profile-qr`、`profile-media-header-pinned`（标题+话题小字+条）、`profile-media-header-rest`。证据在 `.amp/in/artifacts/profile-tabs/`。
-- 未验证：真机（`449dd25d`）没装本片；二维码的可扫性没有在手机上真扫（本机没有解码器，链接由 harness 断言、码由同一链接生成）；手指横滑时指示条跟手只有 harness 帧，设备上只拍了点 tab 的慢放中帧；`mediaCounterTextView` 的宽度在 harness 里要靠补一次测量（真机走正常 traversal）。
+- 未验证：真机（`449dd25d`）没装本片；二维码的可扫性已补验（见「二维码可扫性」一节，设备截图用 ZXing 解出 `https://linux.do/u/example_user`）；手指横滑时指示条跟手只有 harness 帧，设备上只拍了点 tab 的慢放中帧；`mediaCounterTextView` 的宽度在 harness 里要靠补一次测量（真机走正常 traversal）。
 
 ### 话题顶部的渐隐模糊带与胶囊头像先绑定（2026-10-05，`emulator-5554` 与真机 `449dd25d`）
 
