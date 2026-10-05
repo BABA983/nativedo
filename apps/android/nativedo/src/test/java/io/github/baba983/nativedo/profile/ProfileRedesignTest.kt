@@ -299,7 +299,9 @@ internal class ProfileRedesignTest {
         return profile.hasAction(ProfileActionsView.KEY_SHARE) || profile.hasAction(ProfileActionsView.KEY_BOOKMARKS)
     }
 
-    /** Taps the strip's tab at [index], the way a reader does. */
+    /** Taps the strip's tab at [index], the way a reader does, and lets the page slide settle
+     * (a tab tap runs the pager's own 320 ms animation; the page it lands on is what a page's
+     * stream is read from). */
     private fun clickTab(strip: ScrollSlidingTextTabStrip, index: Int) {
         val tabsContainer = strip.getChildAt(0) as? ViewGroup
             ?: throw AssertionError("the strip has no tab container")
@@ -307,6 +309,7 @@ internal class ProfileRedesignTest {
             ?: throw AssertionError("the strip has no tab $index")
         tab.performClick()
         harness.idle()
+        harness.idleClock(400)
         harness.layoutApp()
     }
 
@@ -321,9 +324,29 @@ internal class ProfileRedesignTest {
         val page = media.pager.getViewPages()?.getOrNull(0) ?: return
         val list = (page as? ViewGroup)?.getChildAt(0) as? RecyclerListView ?: return
         val count = list.adapter?.itemCount ?: return
+        // A page the pager just added may not have been measured by the harness's layout path:
+        // the harness lays out from the activity's content view, which re-measures only what
+        // requested layout, and the profile list swallows the pager's request while it is in its
+        // own layout. Lay the pager (and with it the page and its list) out the way the platform
+        // would, then scroll: the list consumes the deferred position in that layout pass.
+        val pager = media.pager
+        forcePagerLayout(pager)
         list.scrollToPosition(count - 1)
-        harness.layoutApp()
+        forcePagerLayout(pager)
         harness.idle()
+    }
+
+    /** Measures and lays the pager out at its own size, which lays its pages out with it. */
+    private fun forcePagerLayout(pager: android.view.View) {
+        if (pager.measuredWidth <= 0 || pager.measuredHeight <= 0) {
+            return
+        }
+        pager.forceLayout()
+        pager.measure(
+            View.MeasureSpec.makeMeasureSpec(pager.measuredWidth, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(pager.measuredHeight, View.MeasureSpec.EXACTLY),
+        )
+        pager.layout(pager.left, pager.top, pager.right, pager.bottom)
     }
 
     /** One `user_actions.json` page: twenty rows on the first page, five on the second. */

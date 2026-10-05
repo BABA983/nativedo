@@ -3,16 +3,22 @@ package io.github.baba983.nativedo.profile;
 import static org.telegram.messenger.AndroidUtilities.dp;
 
 import android.content.Context;
+import android.graphics.Canvas;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.FrameLayout;
 
 import androidx.annotation.NonNull;
 
+import org.telegram.messenger.Utilities;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.ScrollSlidingTextTabStrip;
 import org.telegram.ui.Components.ViewPagerFixed;
+import org.telegram.ui.Components.blur3.drawable.BlurredBackgroundDrawable;
+import org.telegram.ui.Components.blur3.drawable.color.impl.BlurredBackgroundProviderImpl;
+
+import io.github.baba983.nativedo.app.GlassPanelHost;
 
 /**
  * The profile's tab area.
@@ -66,10 +72,12 @@ public class ProfileSharedMediaView extends FrameLayout {
     private final Theme.ResourcesProvider resourcesProvider;
     private final ScrollSlidingTextTabStrip tabStrip;
     private final ViewPagerFixed pager;
-    /** The surface under the strip; its colour follows the theme (see {@link #updateColors()}). */
-    private View tabRowSurface;
+    /** The strip's blur source: the pages it floats over. */
+    private final GlassPanelHost glassHost;
     private int currentTab = -1;
     private boolean tabsBuilt;
+    /** Whether the strip is pinned under the action bar (the media header's own state). */
+    private boolean pinnedToTop;
 
     public ProfileSharedMediaView(@NonNull Context context, Theme.ResourcesProvider resourcesProvider, @NonNull Delegate delegate) {
         super(context);
@@ -86,10 +94,46 @@ public class ProfileSharedMediaView extends FrameLayout {
         tabStrip.setUseMinimalWidth(true);
         tabStrip.setPadding(0, dp(7), 0, dp(7));
         tabStrip.setClipToPadding(false);
-        // The strip sits over the pages, and a page's rows scroll under it: it needs a surface of
-        // its own. Upstream draws its blur3 glass here (SharedMediaLayout.java:3743-3749); this
-        // screen keeps the theme's own background so the rows behind it do not show through.
-        tabStrip.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite, resourcesProvider));
+        pager = new ViewPagerFixed(context, resourcesProvider) {
+            @Override
+            protected long getManualScrollDuration() {
+                // A tap switches pages the way SharedMediaLayout's does: its strip's own 320 ms
+                // (animationDuration = 320, SharedMediaLayout.java:4403), with the pages sliding
+                // under the same clock.
+                return 320;
+            }
+
+            @Override
+            public void onTabAnimationUpdate(boolean manual) {
+                followStripWithPager();
+            }
+
+            @Override
+            protected void onTabPageSelected(int position, boolean forward) {
+                selectPagerTab(position);
+            }
+
+            @Override
+            protected void onItemSelected(View currentPage, View oldPage, int position, int oldPosition) {
+                // A finger swipe committed (ViewPagerFixed.swapViews calls this): the strip follows
+                // the pager onto the page it landed on, and the page's own stream is asked for.
+                selectPagerTab(position);
+            }
+        };
+        // The strip's own surface is upstream's blur3 glass (SharedMediaLayout.java:3740-3750):
+        // a rounded capsule over the pages, not a flat band. Upstream's factory is this client's
+        // GlassPanelHost, the same one the home strip and the topic capsules use; on a device whose
+        // blur is off it falls back to the provider's flat colour, exactly as upstream's own
+        // provider does.
+        glassHost = new GlassPanelHost(pager, this);
+        BlurredBackgroundDrawable stripBackground = glassHost.createPanel(
+                tabStrip, BlurredBackgroundProviderImpl.topPanel(resourcesProvider));
+        stripBackground.setRadius(dp(18));
+        stripBackground.setPadding(dp(6.666f));
+        // Upstream draws no flat background under the strip; the glass is the surface
+        // (SharedMediaLayout.java:3748-3750: setBackground(null) + setBlurredBackground).
+        tabStrip.setBackground(null);
+        tabStrip.setBlurredBackground(stripBackground);
         tabStrip.setOpen(false);
         tabStrip.setDelegate(new ScrollSlidingTextTabStrip.ScrollSlidingTabStripDelegate() {
             @Override
@@ -98,7 +142,10 @@ public class ProfileSharedMediaView extends FrameLayout {
                     return;
                 }
                 currentTab = pageId;
-                pager.setPosition(pageId);
+                // A tap slides the page pair the way upstream's pages slide under its strip
+                // (SharedMediaLayout's onPageScrolled translates the two pages); the pager's own
+                // clock is the strip's 320 ms (getManualScrollDuration above).
+                pager.scrollToPosition(pageId);
                 delegate.onPageSelected(pageId);
             }
 
@@ -111,21 +158,10 @@ public class ProfileSharedMediaView extends FrameLayout {
 
             @Override
             public void onPageScrolled(float progress) {
-                // The pager runs its own swipe animation; the indicator follows on settle.
+                // The pager owns the clock here, so the strip follows it (followStripWithPager);
+                // upstream's pages are the ones that follow this callback.
             }
         });
-
-        pager = new ViewPagerFixed(context) {
-            @Override
-            protected void onTabPageSelected(int position, boolean forward) {
-                if (currentTab == position) {
-                    return;
-                }
-                currentTab = position;
-                tabStrip.selectTabWithId(position, 1f);
-                delegate.onPageSelected(position);
-            }
-        };
         pager.setAdapter(new ViewPagerFixed.Adapter() {
             @Override
             public int getItemCount() {
@@ -153,20 +189,10 @@ public class ProfileSharedMediaView extends FrameLayout {
             }
         });
 
-        // The band under the strip: the pages' rows scroll under the strip (their lists keep its
-        // height as their top padding), and the strip itself is only as wide as its tabs - beyond
-        // it a row's date would show through in the strip row. The band is that row's own surface
-        // across the whole width, the way upstream's tab bar draws its own glass across the row it
-        // pins in (SharedMediaLayout.java:3743-3751).
-        tabRowSurface = new View(context);
-        tabRowSurface.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite, resourcesProvider));
-
         // The pager goes in first and the strip over it: the strip is the pinned surface the
         // pages scroll under (upstream adds it after the pages, SharedMediaLayout.java:3751).
         addView(pager, LayoutHelper.createFrame(
                 LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.LEFT));
-        addView(tabRowSurface, LayoutHelper.createFrame(
-                LayoutHelper.MATCH_PARENT, STRIP_HEIGHT_DP, Gravity.TOP | Gravity.LEFT));
         addView(tabStrip, LayoutHelper.createFrame(
                 LayoutHelper.WRAP_CONTENT,
                 STRIP_HEIGHT_DP,
@@ -199,6 +225,67 @@ public class ProfileSharedMediaView extends FrameLayout {
         }
     }
 
+    /**
+     * The pager moved onto [position]: the strip follows it exactly and the page's own stream is
+     * asked for. Called from a tap's {@code onTabPageSelected} (the strip has already animated
+     * itself there, upstream's own way) and from a finger swipe's committed {@code onItemSelected}.
+     */
+    private void selectPagerTab(int position) {
+        if (position < 0 || position >= delegate.getTabCount() || position == currentTab) {
+            return;
+        }
+        currentTab = position;
+        tabStrip.selectTabWithId(position, 1f);
+        delegate.onPageSelected(position);
+    }
+
+    /**
+     * The strip follows the pager while a swipe is in flight - the indicator slides between the two
+     * tabs and their text colours interpolate - the way upstream's pages follow its strip
+     * ({@code SharedMediaLayout} translates the pages in the strip's own {@code onPageScrolled}).
+     * Here the pager owns the clock, so the strip is driven from it: the fraction is how far the
+     * pager's animated position has come from the tab it is on toward the tab it is heading to - as
+     * soon as the drag starts, so the indicator moves with the finger, and back to 0 when the drag
+     * is cancelled.
+     */
+    private void followStripWithPager() {
+        if (tabStrip.getTabsCount() < 2) {
+            return;
+        }
+        View[] pages = pager.getViewPages();
+        if (pages == null || pages.length < 2 || pages[1] == null) {
+            return;
+        }
+        final int current = pager.getCurrentPosition();
+        final int next = pager.getNextPosition();
+        if (next == current || next < 0 || next >= tabStrip.getTabsCount()) {
+            return;
+        }
+        final float p = pager.getPositionAnimated();
+        final float frac = Utilities.clamp(Math.abs(p - current) / Math.abs(next - current), 1f, 0f);
+        tabStrip.selectTabWithId(next, frac);
+    }
+
+    /** The media header's pinned state, upstream's {@code sharedMediaLayout.setPinnedToTop}. */
+    public void setPinnedToTop(boolean pinnedToTop) {
+        this.pinnedToTop = pinnedToTop;
+    }
+
+    public boolean isPinnedToTop() {
+        return pinnedToTop;
+    }
+
+    @Override
+    protected void dispatchDraw(Canvas canvas) {
+        // The strip's glass samples the pages under it, so its source has to be recorded in the
+        // same pass that draws them (upstream's {@code SharedMediaLayout.drawListForBlur} does the
+        // same for its strip's background).
+        if (glassHost != null) {
+            glassHost.record();
+        }
+        super.dispatchDraw(canvas);
+    }
+
     public int getCurrentTab() {
         return currentTab;
     }
@@ -212,18 +299,12 @@ public class ProfileSharedMediaView extends FrameLayout {
         return pager;
     }
 
-    /** The day/night switch: the band's surface and the strip re-read the theme's colours. */
+    /** The day/night switch: the strip's glass and its tabs re-read the theme's colours. */
     public void updateColors() {
         if (tabStrip == null) {
             return;
         }
-        int surface = Theme.getColor(Theme.key_windowBackgroundWhite, resourcesProvider);
-        if (tabRowSurface != null) {
-            tabRowSurface.setBackgroundColor(surface);
-        }
-        // The strip's own surface is ours (upstream draws its glass here), so it is re-applied
-        // with the band's; updateColors() only re-resolves the tabs' text, line and selector.
-        tabStrip.setBackgroundColor(surface);
+        glassHost.updateColors();
         tabStrip.updateColors();
     }
 }

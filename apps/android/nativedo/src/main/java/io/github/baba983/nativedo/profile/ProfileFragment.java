@@ -19,6 +19,7 @@ import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 import android.view.animation.Interpolator;
 import android.widget.FrameLayout;
+import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.core.graphics.ColorUtils;
@@ -212,6 +213,52 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
     private ProfileGooeyView avatarGooey;
     private SimpleTextView nameTextView;
     private LinkSpanDrawable.ClickableSmallTextView onlineTextView;
+    /**
+     * The media counter (ProfileActivity.java:5655-5668): the line that takes the status line's
+     * place under the name while the tab strip is pinned - upstream's {@code mediaCounterTextView},
+     * in the same slot and size, drawn from {@code key_player_actionBarSubtitle}. Upstream fills it
+     * with the current tab's count; here it carries the tab the reader is on.
+     */
+    private TextView mediaCounterTextView;
+    // The media header, ported from ProfileActivity.setMediaHeaderVisible (7802-7950) and its
+    // ACTIONBAR_HEADER_PROGRESS property (7713-7800): when the tab area pins under the action bar
+    // the bar takes the shared-media state - the title and item colours interpolate to the
+    // player/action-mode pair, the status line hands over to the tab counter, the strip opens and
+    // the shadow recedes - with upstream's 150 ms and CubicBezierInterpolator.DEFAULT.
+    private AnimatorSet headerAnimatorSet;
+    private AnimatorSet headerShadowAnimatorSet;
+    private float mediaHeaderAnimationProgress;
+    private boolean mediaHeaderVisible;
+    private float headerShadowAlpha = 1.0f;
+    private final org.telegram.ui.Components.AnimationProperties.FloatProperty<ProfileFragment> ACTIONBAR_HEADER_PROGRESS =
+            new org.telegram.ui.Components.AnimationProperties.FloatProperty<ProfileFragment>("mediaHeaderAnimationProgress") {
+                @Override
+                public void setValue(ProfileFragment object, float value) {
+                    mediaHeaderAnimationProgress = value;
+                    applyMediaHeaderColors();
+                }
+
+                @Override
+                public Float get(ProfileFragment object) {
+                    return mediaHeaderAnimationProgress;
+                }
+            };
+    /** HEADER_SHADOW (ProfileActivity.java:760-771): the shadow under the media header. */
+    private final org.telegram.ui.Components.AnimationProperties.FloatProperty<ProfileFragment> HEADER_SHADOW =
+            new org.telegram.ui.Components.AnimationProperties.FloatProperty<ProfileFragment>("headerShadow") {
+                @Override
+                public void setValue(ProfileFragment object, float value) {
+                    headerShadowAlpha = value;
+                    if (topView != null) {
+                        topView.invalidate();
+                    }
+                }
+
+                @Override
+                public Float get(ProfileFragment object) {
+                    return headerShadowAlpha;
+                }
+            };
     /** The list's offset from the header's rest position; 0 when the header is fully collapsed. */
     private float extraHeight;
     private float pullUpProgress;
@@ -293,9 +340,9 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
 
     /**
      * The reader's own profile as a shell tab root: the same screen, but there is nothing behind it
-     * to go back to, so it draws no back button - upstream's own profile tab does the same
-     * ({@code ProfileActivity}'s {@code hasMainTabs} draws the back button only when it is a step,
-     * not a root).
+     * to go back to. Upstream's own profile tab is the same state ({@code hasMainTabs}): its back
+     * button becomes the QR button for the account's own link (ProfileActivity.java:2480-2491),
+     * which is what this screen shows there.
      */
     public static ProfileFragment forRoot(String username, String displayName) {
         ProfileFragment fragment = forUser(username, displayName);
@@ -322,7 +369,6 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
 
     @Override
     protected View createView(Context context) {
-        final boolean root = getArguments() != null && getArguments().getBoolean(ARG_ROOT, false);
         final boolean hasMainTabs = getArguments() != null && getArguments().getBoolean("hasMainTabs", false);
         // The avatar's flight is the chat header's animation (ProfileActivity's
         // `playProfileAnimation == 2`); the ordinary transition is everything else.
@@ -337,7 +383,23 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         actionBar.setForceSkipTouches(true);
         actionBar.setItemsBackgroundColor(getThemedColor(Theme.key_avatar_actionBarSelectorBlue), false);
         actionBar.setItemsColor(getThemedColor(Theme.key_actionBarDefaultIcon), false);
-        if (!root) {
+        if (hasMainTabs) {
+            // Upstream's own profile tab turns the back button into the QR button
+            // (ProfileActivity.java:2480-2491): the same BackDrawable slot, the QR glyph in it,
+            // the header's own colour filter on the image (upstream re-applies it from its
+            // setItemsColor override, 2459-2460/2439-2446 - ActionBar.setItemsColor recolours a
+            // vector drawable the same way, so the icon follows every header animation), and the
+            // tap opens the QR screen for the profile's own link.
+            actionBar.setBackButtonDrawable(new org.telegram.ui.ActionBar.BackDrawable(false));
+            actionBar.getBackButton().setTranslationX(dp(2));
+            actionBar.backButtonImageView.setContentDescription(
+                    org.telegram.messenger.LocaleController.getString(R.string.QrCode));
+            actionBar.backButtonImageView.setImageResource(R.drawable.outline_header_qr_24);
+            actionBar.backButtonImageView.setColorFilter(
+                    getThemedColor(Theme.key_actionBarDefaultIcon), android.graphics.PorterDuff.Mode.SRC_IN);
+            actionBar.getBackButton().setOnClickListener(v -> presentFragment(ProfileQrFragment.forProfile(
+                    username(), displayName(), profile == null ? null : profile.getAvatarTemplate(), profileUrl())));
+        } else {
             actionBar.setBackButtonImage(R.drawable.ic_ab_back);
         }
         actionBar.setAllowOverlayTitle(true);
@@ -455,6 +517,12 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             @Override
             public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
                 checkListViewScroll();
+                // ProfileActivity.java:5783: the tab area's own pinned state, which upstream hands
+                // to its SharedMediaLayout (it drives the fast-scroll halo there; here it is the
+                // state the harness pins and the strip's own bookkeeping).
+                if (mediaView != null) {
+                    mediaView.setPinnedToTop(mediaView.getTop() <= 0);
+                }
             }
         });
         frameLayout.addView(listView, LayoutHelper.createFrame(
@@ -535,6 +603,19 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         onlineTextView.setText("@" + username());
         avatarContainer2.addView(onlineTextView, LayoutHelper.createFrame(
                 LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.LEFT | Gravity.TOP, 105, -2, 4, 0));
+
+        // The counter line the media header hands the status line over to, in upstream's own slot
+        // (ProfileActivity.java:5655-5668: key_player_actionBarSubtitle, 13.5 dp, 109.33 left).
+        mediaCounterTextView = new TextView(context);
+        mediaCounterTextView.setTextColor(getThemedColor(Theme.key_player_actionBarSubtitle));
+        mediaCounterTextView.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, AndroidUtilities.dp(13.5f));
+        mediaCounterTextView.setSingleLine(true);
+        mediaCounterTextView.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        mediaCounterTextView.setGravity(Gravity.LEFT);
+        mediaCounterTextView.setAlpha(0.0f);
+        mediaCounterTextView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        avatarContainer2.addView(mediaCounterTextView, LayoutHelper.createFrame(
+                LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.LEFT | Gravity.TOP, 109.33f, -2, 8, 0));
 
         // Upstream's release animator (ProfileActivity.java:5791-5815): the fraction it reports is
         // what carries the avatar, the round radius and the two titles between the two layouts.
@@ -1085,6 +1166,15 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                     @Override
                     public void onPageSelected(int index) {
                         pageState(tabAt(index)).loadFirstIfNeeded();
+                        // updateSelectedMediaTabText (ProfileActivity.java:8048): the counter line
+                        // follows the tab the reader is on.
+                        updateSelectedMediaTabText();
+                        // The pager added the incoming page inside its own touch of the tree; the
+                        // row above it (the list) swallows layout requests while it is mid-layout,
+                        // so the screen's own root asks for the pass that measures the new page.
+                        if (frameLayout != null) {
+                            frameLayout.requestLayout();
+                        }
                     }
 
                     @Override
@@ -1129,6 +1219,12 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         if (mediaView != null) {
             mediaView.updateColors();
         }
+        // ProfileActivity.updateColors (11964-11978) re-applies the media header's own pair after
+        // the theme's colors changed: the header keeps the state it is in.
+        if (mediaCounterTextView != null) {
+            mediaCounterTextView.setTextColor(getThemedColor(Theme.key_player_actionBarSubtitle));
+        }
+        applyMediaHeaderColors();
     }
 
     /** The strip's current page list, which is where a pinned scroll goes (see NestedFrameLayout). */
@@ -1189,7 +1285,13 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         TabPageState(int tab) {
             this.tab = tab;
             Context context = frameLayout.getContext();
+            // The pager adds a page with whatever LayoutParams it finds on it (ViewPagerFixed's
+            // updateViewForIndex calls a bare addView), and a page without any would measure to
+            // zero - the page fills the pager, the way the pages are laid out in the pager's own
+            // screens.
             root = new FrameLayout(context);
+            root.setLayoutParams(LayoutHelper.createFrame(
+                    LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
 
             listView = new RecyclerListView(context);
             listView.setLayoutManager(new LinearLayoutManager(context));
@@ -1644,6 +1746,19 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             newOffset = top;
         }
 
+        // ProfileActivity.java:8024-8036: the tab area is pinned once its row reaches the list's
+        // top; that is where the action bar turns into the shared-media header, and where it turns
+        // back when the reader scrolls down again.
+        boolean mediaHeaderVisible;
+        boolean searchVisible = actionBar.isSearchFieldVisible();
+        if (mediaRow != -1 && !searchVisible) {
+            RecyclerView.ViewHolder mediaHolder = listView.findViewHolderForAdapterPosition(mediaRow);
+            mediaHeaderVisible = mediaHolder != null && mediaHolder.itemView.getTop() <= 0;
+        } else {
+            mediaHeaderVisible = searchVisible;
+        }
+        setMediaHeaderVisible(mediaHeaderVisible);
+
         if (extraHeight != newOffset) {
             extraHeight = newOffset;
             topView.invalidate();
@@ -1654,6 +1769,114 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                 allowProfileAnimation = extraHeight > getActionsExtraHeight();
             }
             needLayout(true);
+        }
+    }
+
+    /**
+     * setMediaHeaderVisible (ProfileActivity.java:7802-7950): the action bar's shared-media state,
+     * entered when the tab area pins under it and left when the reader scrolls back down. Upstream
+     * swaps its call/video/edit/other items for the media search and options items; this screen has
+     * no such items, so what is ported is the rest of the state: the title and item colours
+     * interpolate (the ACTIONBAR_HEADER_PROGRESS property above), the status line hands over to the
+     * tab counter, the strip opens (its padding and shadow), and the header's shadow recedes and
+     * returns. Upstream's clocks: 150 ms with CubicBezierInterpolator.DEFAULT for the state, 100 ms
+     * for the shadow's return.
+     */
+    private void setMediaHeaderVisible(boolean visible) {
+        if (mediaHeaderVisible == visible || mediaView == null || onlineTextView == null || mediaCounterTextView == null) {
+            return;
+        }
+        mediaHeaderVisible = visible;
+        if (headerAnimatorSet != null) {
+            headerAnimatorSet.cancel();
+        }
+        if (headerShadowAnimatorSet != null) {
+            headerShadowAnimatorSet.cancel();
+        }
+        updateSelectedMediaTabText();
+
+        ArrayList<Animator> animators = new ArrayList<>();
+        animators.add(ObjectAnimator.ofFloat(this, ACTIONBAR_HEADER_PROGRESS, visible ? 1.0f : 0.0f));
+        animators.add(ObjectAnimator.ofFloat(onlineTextView, View.ALPHA, visible ? 0.0f : 1.0f));
+        animators.add(ObjectAnimator.ofFloat(mediaCounterTextView, View.ALPHA, visible ? 1.0f : 0.0f));
+        mediaView.getTabStrip().setOpen(visible);
+        if (visible) {
+            animators.add(ObjectAnimator.ofFloat(this, HEADER_SHADOW, 0.0f));
+        }
+
+        headerAnimatorSet = new AnimatorSet();
+        headerAnimatorSet.playTogether(animators);
+        headerAnimatorSet.setInterpolator(CubicBezierInterpolator.DEFAULT);
+        headerAnimatorSet.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                if (headerAnimatorSet != null && !mediaHeaderVisible) {
+                    // ProfileActivity.java:7905-7920: the shadow comes back on its own, over 100 ms.
+                    headerShadowAnimatorSet = new AnimatorSet();
+                    headerShadowAnimatorSet.playTogether(
+                            ObjectAnimator.ofFloat(ProfileFragment.this, HEADER_SHADOW, 1.0f));
+                    headerShadowAnimatorSet.setDuration(100);
+                    headerShadowAnimatorSet.addListener(new AnimatorListenerAdapter() {
+                        @Override
+                        public void onAnimationEnd(Animator animation) {
+                            headerShadowAnimatorSet = null;
+                        }
+                    });
+                    headerShadowAnimatorSet.start();
+                }
+                headerAnimatorSet = null;
+            }
+
+            @Override
+            public void onAnimationCancel(Animator animation) {
+                headerAnimatorSet = null;
+            }
+        });
+        headerAnimatorSet.setDuration(150);
+        headerAnimatorSet.start();
+    }
+
+    /**
+     * The ACTIONBAR_HEADER_PROGRESS body (ProfileActivity.java:7713-7800) and what upstream's
+     * updateColors re-applies after a theme switch (11964-11978): the title and the bar's items
+     * blend from the profile's own pair to the player/action-mode pair. The verified/premium
+     * pieces of upstream's body have no linux.do counterpart.
+     */
+    private void applyMediaHeaderColors() {
+        if (nameTextView == null || actionBar == null) {
+            return;
+        }
+        final int c = AndroidUtilities.getOffsetColor(
+                getThemedColor(Theme.key_profile_title),
+                getThemedColor(Theme.key_player_actionBarTitle),
+                mediaHeaderAnimationProgress, 1.0f);
+        nameTextView.setTextColor(ColorUtils.blendARGB(c, Color.WHITE, currentExpandAnimatorValue));
+
+        actionBar.setItemsColor(AndroidUtilities.getOffsetColor(
+                getThemedColor(Theme.key_actionBarDefaultIcon),
+                getThemedColor(Theme.key_actionBarActionModeDefaultIcon),
+                mediaHeaderAnimationProgress, 1.0f), false);
+        actionBar.setItemsBackgroundColor(AndroidUtilities.getOffsetColor(
+                getThemedColor(Theme.key_avatar_actionBarSelectorBlue),
+                getThemedColor(Theme.key_actionBarActionModeDefaultSelector),
+                mediaHeaderAnimationProgress, 1.0f), false);
+        if (topView != null) {
+            topView.invalidate();
+        }
+    }
+
+    /**
+     * updateSelectedMediaTabText (ProfileActivity.java:8048-8130): the line under the name while
+     * the media header is showing. Upstream writes the selected tab's count ("Photos, Videos");
+     * this screen's tabs are the site's activity kinds, so the counter carries the tab's own name.
+     */
+    private void updateSelectedMediaTabText() {
+        if (mediaView == null || mediaCounterTextView == null) {
+            return;
+        }
+        final int tab = mediaView.getCurrentTab();
+        if (tab >= 0) {
+            mediaCounterTextView.setText(tabTitle(tabAt(tab)));
         }
     }
 
@@ -1724,6 +1947,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                         nameTextView.setTranslationY(newTop + h - getActionsExtraHeight() - dpf2(30f) - nameTextView.getBottom());
                         onlineTextView.setTranslationX(dpf2(16f) - onlineTextView.getLeft());
                         onlineTextView.setTranslationY(newTop + h - getActionsExtraHeight() - dpf2(10f) - onlineTextView.getBottom());
+                        syncMediaCounterFromOnline();
                     }
                 } else {
                     if (isPulledDown) {
@@ -1737,6 +1961,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                         nameTextView.setTranslationY(nameY);
                         onlineTextView.setTranslationX(onlineX);
                         onlineTextView.setTranslationY(onlineY);
+                        syncMediaCounterFromOnline();
                     }
                 }
             } else {
@@ -1788,6 +2013,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                     nameTextView.setTranslationY(nameY);
                     onlineTextView.setTranslationX(onlineX);
                     onlineTextView.setTranslationY(onlineY);
+                    syncMediaCounterFromOnline();
                 }
                 updateTextLayoutBasedOnTranslation();
             }
@@ -2018,12 +2244,26 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         nameTextView.setTranslationY(Math.max(minNameY, nameTextViewY));
         onlineTextView.setTranslationX(onlineTextViewX);
         onlineTextView.setTranslationY(Math.max(minOnlineY, onlineTextViewY));
+        // ProfileActivity.java:6362-6363: the counter rides the status line's own slot.
+        mediaCounterTextView.setTranslationX(onlineTextView.getTranslationX());
+        mediaCounterTextView.setTranslationY(onlineTextView.getTranslationY());
 
         // Over the picture the two lines go white, and the back arrow with them, the way upstream
-        // fades them on the big picture (ProfileActivity.java:6379-6391).
-        nameTextView.setTextColor(ColorUtils.blendARGB(getThemedColor(Theme.key_profile_title), Color.WHITE, value));
+        // fades them on the big picture (ProfileActivity.java:6379-6391); with the media header up
+        // the title's base comes from its own blend (upstream 11978).
+        nameTextView.setTextColor(ColorUtils.blendARGB(
+                ColorUtils.blendARGB(
+                        getThemedColor(Theme.key_profile_title),
+                        getThemedColor(Theme.key_player_actionBarTitle),
+                        mediaHeaderAnimationProgress),
+                Color.WHITE, value));
         onlineTextView.setTextColor(ColorUtils.blendARGB(getThemedColor(Theme.key_actionBarDefaultSubtitle), 0xB3FFFFFF, value));
-        actionBar.setItemsColor(ColorUtils.blendARGB(getThemedColor(Theme.key_actionBarDefaultIcon), Color.WHITE, value), false);
+        actionBar.setItemsColor(ColorUtils.blendARGB(
+                AndroidUtilities.getOffsetColor(
+                        getThemedColor(Theme.key_actionBarDefaultIcon),
+                        getThemedColor(Theme.key_actionBarActionModeDefaultIcon),
+                        mediaHeaderAnimationProgress, 1.0f),
+                Color.WHITE, value), false);
 
         if (extraHeight > getHeaderOnlyExtraHeight()) {
             nameTextView.setPivotY(AndroidUtilities.lerp(0, nameTextView.getMeasuredHeight(), value));
@@ -2038,6 +2278,15 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         fixAvatarImageInCenter();
         avatarContainer.requestLayout();
         topView.invalidate();
+    }
+
+    /** The counter rides the status line's own slot (ProfileActivity.java:8272-8278). */
+    private void syncMediaCounterFromOnline() {
+        if (mediaCounterTextView == null || onlineTextView == null) {
+            return;
+        }
+        mediaCounterTextView.setTranslationX(onlineTextView.getTranslationX());
+        mediaCounterTextView.setTranslationY(onlineTextView.getTranslationY());
     }
 
     /** refreshNameAndOnlineY (ProfileActivity.java:8884); the media counter is left out. */
@@ -2323,6 +2572,8 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         nameTextView.setTranslationY(avatarBottom + dp(1.3f) + dp(7) * diff);
         onlineTextView.setTranslationX(onlineX);
         onlineTextView.setTranslationY(avatarBottom + dp(24) + (float) Math.floor(11 * AndroidUtilities.density) * diff);
+        mediaCounterTextView.setTranslationX(onlineX);
+        mediaCounterTextView.setTranslationY(onlineTextView.getTranslationY());
     }
 
     /**
@@ -2378,6 +2629,8 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         nameTextView.setTranslationY(nameY);
         onlineTextView.setTranslationX(onlineX);
         onlineTextView.setTranslationY(onlineY);
+        mediaCounterTextView.setTranslationX(onlineX);
+        mediaCounterTextView.setTranslationY(onlineY);
         nameTextView.setScaleX(nameScale);
         nameTextView.setScaleY(nameScale);
         this.nameX = nameX;
