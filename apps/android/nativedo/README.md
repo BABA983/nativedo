@@ -248,6 +248,49 @@ stands, and the upstream component each row is meant to use.
 
 每一项都是手感或真站点的疑问，orb 只能定正确性（golden 与 E2E），定不了这些。
 
+### 夜间修复：新话题胶囊与玻璃 tab 条（2026-10-05，`emulator-5554`，`nativedo-night-fix`，已登录 @example_user）
+
+- 症状一：夜间的「N 个新话题」胶囊几乎没有底色，胶囊里的白字与第一行的白标题叠在一起（旧证据 `home-theme/04-late-dark.png`）。
+  根因：胶囊是 `ChatActionCell`（`ChatActivity:7043-7100` 的 floating date），底是共享的
+  `chat_actionBackgroundPaint`。上游能读是因为聊天有壁纸——`Theme.applyChatServiceMessageColor`
+  把壁纸位图放进画笔并把 alpha 压成 `0xff`（Theme.java:8749-8759），胶囊于是盖住从下面经过的内容；
+  本屏没有壁纸，走的是另一支：主题自己的半透明 `key_chat_serviceBackground` 染色
+  （Theme.java:8766-8773），它是按「坐在壁纸上的日期」调色的。白天主题这支在白底上仍读得出来；
+  夜间（Dark Blue 的 `0x82354251`）贴在 `windowBackgroundWhite`（`#1d2733`）上就几乎消失。
+  修法：`TopicListFragment` 给胶囊一个 `ChatActionCell.ThemeDelegate`——`ChatActivity.ThemeDelegate`
+  给浮动日期提供画笔的同一处（`ChatActionCell.getThemedPaint`，3988-3991）——在「没有壁纸可采样且当前是
+  夜间主题」时，返回 `chat_actionBackgroundPaint` 的颜色 `| 0xFF000000`，即壁纸分支用的同一个满 alpha；
+  白天主题与有壁纸梯度的设备继续用共享画笔（两者各自是设备上验过对的样子）。颜色每次绘制重读，切换不重建视图。
+  只在夜间的原因：共享画笔的更新是壁纸加载的副产物，这个壳里切回白天是异步重载壁纸，画笔会短暂停在
+  夜间色（实测切回 3s 的帧还是旧色，20s 后才回绿）；满 alpha 会把这段窗口放大成「浅色页面上一枚深色胶囊」，
+  所以白天保持主题自己的染色（改动前的样子）。
+- 症状二：底部玻璃 tab 条切夜间后还是浅色（标签已经是白的，白字压白胶囊）。
+  根因：`BlurredBackgroundProviderImpl.mainTabs` 的颜色确实随 `updateColors()` 重读，但胶囊是 `tabsView`
+  自己的 background，录在它的 display list 里；主题切换只更新了 drawable 的颜色，没人让画它的 view 重录，
+  录下来的胶囊就一直停在旧主题。上游 `MainTabsActivity.blur3_updateColors`（1214-1231）在
+  `tabsViewBackground.updateColors()` 旁边就调了 `tabsView.invalidate()`，本宿主补上；同一处理的
+  `blur3_updateFadeColors` 的 `getEstBackgroundColor()`（1206-1211）也照搬。上游的 `blur3_invalidateBlur`
+  在这里不适用：渲染源由 `createContentView.dispatchDraw` 每帧自己录，`BlurredBackgroundSourceRenderNode`
+  没装 renderer，直接调 `updateDisplayListIfNeeded()` 会 NPE（本轮第一次尝试就撞上，已去掉并在注释里写明）。
+- 设备证据（覆盖安装 `-r -t`，未卸载/未清数据，`pm path` 拉回的 `base.apk` 与构建产物同 SHA-256
+  `377ea844c7f520472e4f9fd00b0c5543725cd04311ce37fce4aa53be7529f887`；修法第一版是 `b22d4d25…`，两版都装过）：
+  浅色冷启动（`12`/`13`：胶囊是主题自己的淡色，tab 条浅色）、菜单切夜间 4s/30s（`14`/`15`：胶囊
+  `#2F3B4A`、tab 条 `#202E3D`，白字可读、`App…` 那层的标题被胶囊盖住）、切回浅色 4s/20s（`16`/`17`：
+  胶囊 4s 时是 `#B2B7BD` 的过渡色、20s 后回 `#C9D6C9`，tab 条 `#FFFFFF`）、夜间另三页（`19` 通知、
+  `08` 设置、`09` 我的：页底/行/动作行/tab 条一致），结束时停在浅色（`18`/`20`）。crash buffer 空、
+  无 FATAL/ANR，app 的 `databases/` 里没有 `cache4.db`。
+- 测试：`MessageBusUiTest.thePillFloatsOverTheFirstRowAndTheThemeSwitchKeepsIt` 补「夜间胶囊不能被身后的行
+  描色」（把胶囊单独画在窗口底色与白底上，背景的影响不得超过聊天浮动日期自己的 0.25 系数；修前
+  140/226 = 62%，修后 57/226），并保留「切换前后同一实例、颜色确实跟着主题变」；新增
+  `NightModeTest.theTabCapsuleFollowsTheDayNightSwitchInPlace`（双向切换：调色板颜色变、画胶囊的 view 被
+  要求重绘、strip 与四个 tab 都是同一实例；去掉 `tabsView.invalidate()` 或去掉胶囊 delegate 时各自失败，
+  两条都做过回退验证）。全量 `:nativedo:testDebugUnitTest` 51 类 166 项 0 失败 0 error 0 skipped；
+  arm64 `:nativedo:assembleDebug -Pandroid.injected.build.abi=arm64-v8a` 通过。没有改
+  `apps/android/telegram` 子树，vendor-guard 不涉及。
+- 未验证/移交：通知 badge 需要非零计数才画得出来（这台账号三个计数都是 0），只有「0 不画 badge」；
+  `profile/*`（另一 agent 的文件）夜间看起来跟着主题走（`09` 的资料页头/动作行/tab 行/「我的」tab 条），
+  未改动其文件；真机 `449dd25d` 不在本轮设备里。
+
 ### 资料页转场与折叠栏修复（2026-10-05，`emulator-5554`，`nativedo-profile-polish`，已登录 @example_user）
 
 - 开屏落地的跳变：旧实现在飞行中把头像钉在操作栏中线上（`avY`），动画结束才由 `needLayout` 换成折叠页头的静止位（`statusBar + abH - 21dp`）——设备 5x 慢放里最后一帧头像从 `(410,139)` 跳到 `(414,211)`（约 72px，gold 区域检测）。现在 `openAnimationAvatarLayout` 的 Y 也从 `ceil(avY)` 插值到静止位（上游 `ProfileActivity:8657-8661` 插到方块 (0,0)，本站终点是折叠页头），名字/状态沿头像下缘一起落（`avatarBottom` 的 `avatarAnimationProgress` 项，8752-8755）。设备重放：`(397,202)→(410,209)→(414,211)` 连续；harness 落地帧与静止渲染同一 rect（474,106-758,392）。证据 `after/open/capafter/cap1..7`、`after/flight-0_0..1_0`、`before/open/capbefore/cap3..5`。
