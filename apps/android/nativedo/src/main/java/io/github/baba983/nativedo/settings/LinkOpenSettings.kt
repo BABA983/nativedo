@@ -21,9 +21,16 @@ object LinkOpenSettings {
     /** Without a stored choice, links open in the in-app browser, the behavior this client ships. */
     const val DEFAULT_IN_APP = true
 
-    /** Reads the stored choice and hands it to the browser hook, before any link can be pressed. */
+    /**
+     * Reads the stored choice, hands it to the browser hook, and registers the write-back the
+     * hosted chat-settings screen's InappBrowser row flips: upstream's row asks
+     * [NativeDoHooks.toggleWebBrowserInAppEnabled], which reaches this handler and persists here.
+     * The app calls this once at startup, before any link can be pressed.
+     */
     fun load(context: Context) {
         NativeDoHooks.setWebBrowserOpenInAppEnabled(isInApp(context))
+        val appContext = context.applicationContext
+        NativeDoHooks.setWebBrowserToggleHandler { setInApp(appContext, !isInApp(appContext)) }
     }
 
     fun isInApp(context: Context?): Boolean =

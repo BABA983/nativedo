@@ -14,6 +14,7 @@ import io.github.baba983.nativedo.core.model.TopicDetail
 import io.github.baba983.nativedo.core.model.TopicListPage
 import io.github.baba983.nativedo.core.model.TopicSummary
 import io.github.baba983.nativedo.core.model.UserProfile
+import io.github.baba983.nativedo.core.model.UserPreferences
 import io.github.baba983.nativedo.core.model.UserSummary
 import io.github.baba983.nativedo.core.model.UserBadge
 import io.github.baba983.nativedo.core.model.UploadedFile
@@ -425,6 +426,37 @@ class DiscourseApiClient(
     suspend fun fetchProfile(username: String): UserProfile =
         runWithSessionBoundary {
             service.profile(username).toModel()
+        }
+
+    /**
+     * The reader's own preferences, from the `user_option` half of `GET /u/{username}.json`. The
+     * site fills that object only for the signed-in reader, so an answer without it is not "no
+     * preferences" - it is an answer that cannot be drawn, and the screen says so instead.
+     */
+    suspend fun fetchUserPreferences(username: String): UserPreferences =
+        runWithSessionBoundary {
+            service.userPreferences(username).toModel()
+                ?: throw IOException("GET /u/$username.json answered no user_option")
+        }
+
+    /**
+     * Updates the reader's own preferences with the site's own encoding: each option is a
+     * top-level form field, a boolean the string `"true"`/`"false"`, and the write carries the
+     * session's CSRF token. A refusal keeps the site's message through [readableRefusal].
+     */
+    suspend fun updateUserPreferences(username: String, fields: Map<String, String>) =
+        runWithSessionBoundary(requiresAuthentication = true) {
+            val csrfToken = service.csrf().csrf
+            readableRefusal {
+                val answer = service.updateUserPreferences(
+                    username = username,
+                    fields = fields,
+                    csrfToken = csrfToken,
+                )
+                if (answer.success != "OK") {
+                    throw IOException("PUT /u/$username.json answered ${answer.success}")
+                }
+            }
         }
 
     /** The stats block of `/u/{username}/summary.json`; a hidden summary fails, the screen copes. */

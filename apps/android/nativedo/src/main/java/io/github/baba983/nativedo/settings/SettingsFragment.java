@@ -2,6 +2,7 @@ package io.github.baba983.nativedo.settings;
 
 import android.animation.ValueAnimator;
 import android.content.Context;
+import android.content.pm.PackageInfo;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -19,7 +20,9 @@ import androidx.core.view.WindowInsetsCompat;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.ImageLocation;
+import org.telegram.messenger.browser.Browser;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.AlertDialog;
@@ -33,6 +36,7 @@ import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalRecyclerView;
 import org.telegram.ui.DialogsActivity;
+import org.telegram.ui.LiteModeSettingsActivity;
 import org.telegram.ui.SettingsActivity.SettingCell;
 import org.telegram.ui.ThemeActivity;
 
@@ -68,6 +72,14 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
     private static final int ROW_VERIFY = 4;
     private static final int ROW_DEVICE_LOGIN = 5;
     private static final int ROW_SIGN_OUT = 6;
+    private static final int ROW_NOTIFICATIONS = 7;
+    private static final int ROW_PRIVACY = 8;
+    private static final int ROW_STORAGE = 9;
+    private static final int ROW_POWER = 10;
+    private static final int ROW_HELP_ABOUT = 11;
+    private static final int ROW_HELP_FAQ = 12;
+    private static final int ROW_HELP_TOS = 13;
+    private static final int ROW_HELP_PRIVACY = 14;
 
     /** Upstream's header block: a 120dp avatar container and the two titles, 200dp minus the 12dp
      * the list adds above it ({@code SettingsActivity.fillItems}'s {@code asCustomShadow(topView,
@@ -78,6 +90,8 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
     private String username = "";
     private String displayName = "";
     private String avatarTemplate = "";
+    /** The reader's trust level, once `/u/{username}.json` has answered; -1 until then. */
+    private int trustLevel = -1;
 
     private FrameLayout contentView;
     private UniversalRecyclerView listView;
@@ -87,6 +101,7 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
     private AvatarDrawable avatarDrawable;
     private TextView titleView;
     private TextView subtitleView;
+    private TextView versionView;
     private TLRPC.User avatarUser;
     private int bottomInset;
 
@@ -220,6 +235,15 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
                 LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.FILL_HORIZONTAL));
 
         buildHeader(context);
+        // Upstream's version footer (SettingsActivity's versionView): the same 14dp gray line the
+        // Telegram settings screen ends with, carrying this app's own version.
+        versionView = new TextView(context);
+        versionView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+        versionView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText4));
+        versionView.setPadding(AndroidUtilities.dp(21), AndroidUtilities.dp(10), AndroidUtilities.dp(21), AndroidUtilities.dp(10));
+        versionView.setGravity(Gravity.CENTER);
+        versionView.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector), Theme.RIPPLE_MASK_ALL));
+        versionView.setText(appVersionName());
         // The adapter filled its list before the header existed (the list is built first, as
         // upstream builds it); this is the update that hands it the header, the way upstream
         // SettingsActivity re-runs its adapter at the end of createView.
@@ -255,6 +279,20 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
     public void onParentScrollToTop() {
         if (listView != null) {
             listView.smoothScrollToPosition(0);
+        }
+    }
+
+    /**
+     * The rows are read again whenever this page comes back to the front, the way upstream's own
+     * settings pages re-run their adapters in {@code onResume}: a choice can also be flipped in a
+     * hosted screen this page pushed (the appearance page's In-App Browser row writes the same
+     * stored choice as the 链接 row here), and the row must not keep showing the old state.
+     */
+    @Override
+    public void onResume() {
+        super.onResume();
+        if (listView != null && listView.adapter != null) {
+            listView.adapter.update(true);
         }
     }
 
@@ -305,7 +343,7 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
         subtitleView.setGravity(Gravity.CENTER);
         subtitleView.setSingleLine();
         subtitleView.setEllipsize(TextUtils.TruncateAt.END);
-        subtitleView.setText(username.isEmpty() ? "" : "@" + username);
+        subtitleView.setText(accountSubtitle());
         topView.addView(subtitleView, LayoutHelper.createFrame(
                 LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT,
                 Gravity.CENTER_HORIZONTAL | Gravity.TOP, 0, 168 - 12, 0, 0));
@@ -316,6 +354,36 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
         avatarDrawable.setInfo(avatarUser);
         bindAvatar();
         fetchAvatar();
+        fetchTrustLevel();
+    }
+
+    /** Upstream's account header line: the username, plus the reader's trust level once known. */
+    private String accountSubtitle() {
+        if (username.isEmpty()) {
+            return "";
+        }
+        String subtitle = "@" + username;
+        if (trustLevel >= 0) {
+            subtitle += " · 信任等级 " + trustLevel;
+        }
+        return subtitle;
+    }
+
+    /**
+     * The trust level is not in the session snapshot, so the reader's own profile payload is read
+     * once for it. A failed read leaves the header as it was; the number is decoration, not state.
+     */
+    private void fetchTrustLevel() {
+        if (container == null || username.isEmpty()) {
+            return;
+        }
+        SettingsLoader.INSTANCE.trustLevel(container, username, level -> {
+            trustLevel = level;
+            if (subtitleView != null) {
+                subtitleView.setText(accountSubtitle());
+            }
+            return kotlin.Unit.INSTANCE;
+        });
     }
 
     /** The header's picture once the site's bytes are on disk; the initials stand in until then. */
@@ -341,11 +409,13 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
     }
 
     /**
-     * The rows, in Telegram's grouping: the avatar header, then 外观 (upstream's own appearance
-     * page), 链接 (the in-app browser choice, drawn as {@code WebBrowserSettings} draws it), 我的
-     * (the bookmarks) and 账号 (the verification page and leaving the account). The old 账号 row
-     * that opened the reader's profile is gone: the profile is the 我的 tab of the shell now, and
-     * this page's header already is the account.
+     * The rows, in upstream's order and with upstream's own icon set and gradient squares: 外观
+     * (upstream's chat settings), 链接 (the in-app browser choice, drawn as
+     * {@code WebBrowserSettings} draws it), 隐私 and 通知 (the reader's linux.do options, which
+     * upstream's account-driven pages cannot serve here), 数据与存储 (the caches this app fills),
+     * 省电 (upstream's {@code LiteModeSettingsActivity}), 我的 (the bookmarks), 账号 (the
+     * verification page, the device-code login and leaving the account) and upstream's help
+     * footer, whose rows point at linux.do's own pages.
      */
     private void fillItems(ArrayList<UItem> items) {
         items.add(UItem.asCustomShadow(topView, HEADER_HEIGHT_DP));
@@ -360,6 +430,30 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
         items.add(UItem.asRippleCheck(ROW_OPEN_IN_APP, "在应用内打开链接")
                 .setChecked(LinkOpenSettings.INSTANCE.isInApp(getContext())));
         items.add(UItem.asShadow("关闭后普通链接交给系统的自定义标签页；本站话题链接仍在本应用内打开。"));
+
+        items.add(UItem.asHeader("隐私"));
+        items.add(SettingCell.Factory.of(ROW_PRIVACY,
+                IconBackgroundColors.GREEN.top, IconBackgroundColors.GREEN.bottom,
+                org.telegram.messenger.R.drawable.settings_privacy, "隐私", "资料可见性与私信"));
+        items.add(UItem.asShadow(null));
+
+        items.add(UItem.asHeader("通知"));
+        items.add(SettingCell.Factory.of(ROW_NOTIFICATIONS,
+                IconBackgroundColors.RED.top, IconBackgroundColors.RED.bottom,
+                org.telegram.messenger.R.drawable.settings_sounds, "通知", "点赞、提及与跟踪"));
+        items.add(UItem.asShadow(null));
+
+        items.add(UItem.asHeader("数据与存储"));
+        items.add(SettingCell.Factory.of(ROW_STORAGE,
+                IconBackgroundColors.BLUE_DEEP.top, IconBackgroundColors.BLUE_DEEP.bottom,
+                org.telegram.messenger.R.drawable.settings_data, "存储使用", "缓存占用与清理"));
+        items.add(UItem.asShadow(null));
+
+        items.add(UItem.asHeader("省电"));
+        items.add(SettingCell.Factory.of(ROW_POWER,
+                IconBackgroundColors.ORANGE_DEEP.top, IconBackgroundColors.ORANGE_DEEP.bottom,
+                org.telegram.messenger.R.drawable.settings_power, "省电模式", "模糊与动画的取舍"));
+        items.add(UItem.asShadow(null));
 
         items.add(UItem.asHeader("我的"));
         items.add(SettingCell.Factory.of(ROW_BOOKMARKS,
@@ -376,6 +470,34 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
                 org.telegram.messenger.R.drawable.settings_devices, "设备码登录（实验）", "在站内浏览器里确认授权码"));
         items.add(UItem.asButton(ROW_SIGN_OUT, "退出登录").red());
         items.add(UItem.asShadow(null));
+
+        items.add(UItem.asHeader("帮助"));
+        items.add(SettingCell.Factory.of(ROW_HELP_ABOUT,
+                IconBackgroundColors.ORANGE.top, IconBackgroundColors.ORANGE.bottom,
+                org.telegram.messenger.R.drawable.settings_ask, "关于 linux.do"));
+        items.add(SettingCell.Factory.of(ROW_HELP_FAQ,
+                IconBackgroundColors.BLUE_LIGHT.top, IconBackgroundColors.BLUE_LIGHT.bottom,
+                org.telegram.messenger.R.drawable.settings_faq, "常见问题"));
+        items.add(SettingCell.Factory.of(ROW_HELP_TOS,
+                IconBackgroundColors.PURPLE.top, IconBackgroundColors.PURPLE.bottom,
+                org.telegram.messenger.R.drawable.settings_features, "服务条款"));
+        items.add(SettingCell.Factory.of(ROW_HELP_PRIVACY,
+                IconBackgroundColors.GREEN.top, IconBackgroundColors.GREEN.bottom,
+                org.telegram.messenger.R.drawable.settings_policy, "隐私政策"));
+        items.add(UItem.asShadow(null));
+
+        items.add(UItem.asCustomShadow(versionView));
+    }
+
+    /** The installed app's own version, the way upstream's footer names its build. */
+    private static String appVersionName() {
+        try {
+            PackageInfo info = ApplicationLoader.applicationContext.getPackageManager().getPackageInfo(
+                    ApplicationLoader.applicationContext.getPackageName(), 0);
+            return "NativeDo v" + info.versionName + " (" + info.versionCode + ")";
+        } catch (Exception e) {
+            return "NativeDo";
+        }
     }
 
     private void onClick(UItem item) {
@@ -385,6 +507,16 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
             // The reader's choice; the browser hook reads the same preference on the next link.
             LinkOpenSettings.INSTANCE.setInApp(getContext(), !LinkOpenSettings.INSTANCE.isInApp(getContext()));
             listView.adapter.update(true);
+        } else if (item.id == ROW_PRIVACY) {
+            presentFragment(new PreferencesFragment(PreferencesFragment.MODE_PRIVACY));
+        } else if (item.id == ROW_NOTIFICATIONS) {
+            presentFragment(new PreferencesFragment(PreferencesFragment.MODE_NOTIFICATIONS));
+        } else if (item.id == ROW_STORAGE) {
+            presentFragment(new StorageFragment());
+        } else if (item.id == ROW_POWER) {
+            // Upstream's own power-saving page: its flags are what this shell's blur, liquid glass
+            // and list compression read (SharedConfig/LiteMode), so the page changes this client.
+            presentFragment(new LiteModeSettingsActivity());
         } else if (item.id == ROW_BOOKMARKS) {
             presentFragment(new BookmarksFragment());
         } else if (item.id == ROW_VERIFY) {
@@ -393,7 +525,23 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
             presentFragment(new io.github.baba983.nativedo.auth.device.DeviceLoginFragment());
         } else if (item.id == ROW_SIGN_OUT) {
             confirmSignOut();
+        } else if (item.id == ROW_HELP_ABOUT) {
+            openSitePage("/about");
+        } else if (item.id == ROW_HELP_FAQ) {
+            openSitePage("/faq");
+        } else if (item.id == ROW_HELP_TOS) {
+            openSitePage("/tos");
+        } else if (item.id == ROW_HELP_PRIVACY) {
+            openSitePage("/privacy");
         }
+    }
+
+    /** A linux.do page opened in the app's own browser, the way upstream opens its help pages. */
+    private void openSitePage(String path) {
+        if (getParentActivity() == null || container == null) {
+            return;
+        }
+        Browser.openUrl(getParentActivity(), container.getBaseUrl() + path.substring(1));
     }
 
     /**

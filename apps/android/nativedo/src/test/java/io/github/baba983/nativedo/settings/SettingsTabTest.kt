@@ -95,12 +95,12 @@ internal class SettingsTabTest {
         harness.await("the settings screen") { currentFragmentName(shell) == "SettingsFragment" }
         harness.layoutApp()
         harness.drawApp()
-        val rows = rowTexts()
+        val rows = rowTextsAcrossTheList()
         println("settings: rows = $rows")
         assertTrue("the settings tab is this client's own screen", "外观" in rows)
         assertTrue("and it carries the appearance entry", "主题" in rows)
         assertTrue("the bookmarks entry is kept here as well", "书签" in rows)
-        assertTrue("with the account the session belongs to", rows.any { it == "@baba" })
+        assertTrue("with the account the session belongs to", rows.any { it.startsWith("@baba") })
         assertTrue("and the in-app link choice", "在应用内打开链接" in rows)
         harness.renderApp("settings")
         harness.assertNoTelegramSideEffects()
@@ -277,7 +277,7 @@ internal class SettingsTabTest {
         tapTab(2)
         harness.await("settings") { currentFragmentName(shell) == "SettingsFragment" }
         harness.layoutApp()
-        assertTrue("the account area offers non-destructive recovery", "打开验证页" in rowTexts())
+        assertTrue("the account area offers non-destructive recovery", hasRow("打开验证页"))
         clickNamedRow("打开验证页")
         harness.await("verification WebView") { currentFragmentName(shell) == "LoginWebViewFragment" }
         val web = verificationWebView()
@@ -352,6 +352,40 @@ internal class SettingsTabTest {
         return (0 until list.childCount).flatMap { index -> textsOf(list.getChildAt(index)) }
     }
 
+    /**
+     * The settings list is taller than the window (a 188dp header and eight sections), so no one
+     * viewport shows every row: the test walks the list the way the reader scrolls it and collects
+     * the rows page by page. The walk advances one position at a time - the same stepping the
+     * profile tests use, because a pending `scrollToPosition` is only bound by the next layout.
+     */
+    private fun rowTextsAcrossTheList(): List<String> {
+        val list = contentListOf(harness.activity) ?: return emptyList()
+        val count = list.adapter?.itemCount ?: 0
+        val texts = LinkedHashSet<String>()
+        for (position in 0 until count) {
+            list.scrollToPosition(position)
+            harness.layoutApp()
+            texts += rowTexts()
+        }
+        list.scrollToPosition(0)
+        harness.layoutApp()
+        return texts.toList()
+    }
+
+    /** Whether [label] is a row of the settings list, wherever in the list it sits. */
+    private fun hasRow(label: String): Boolean {
+        val list = contentListOf(harness.activity) ?: return false
+        val count = list.adapter?.itemCount ?: 0
+        for (position in 0 until count) {
+            list.scrollToPosition(position)
+            harness.layoutApp()
+            if (rowTexts().contains(label)) {
+                return true
+            }
+        }
+        return false
+    }
+
     private fun textsOf(view: View): List<String> {
         val texts = viewsUnder(view)
         return texts.filterIsInstance<TextView>().map { it.text.toString() } +
@@ -361,23 +395,23 @@ internal class SettingsTabTest {
                 .mapNotNull { it.text?.toString() }
     }
 
-    /** A tap on the row labelled [label], scrolling the list down when the row is below the fold. */
+    /** A tap on the row labelled [label], scrolling the list row by row when it is below the fold. */
     private fun clickNamedRow(label: String) {
         harness.layoutApp()
         val list = contentListOf(harness.activity) ?: throw AssertionError("the settings list is gone")
-        fun find(): View? = (0 until list.childCount).map { list.getChildAt(it) }
-            .firstOrNull { label in textsOf(it) }
-        var child = find()
-        if (child == null) {
-            // The header makes the list taller than the window; the reader scrolls to the row,
-            // and so does the test.
-            list.scrollToPosition((list.adapter?.itemCount ?: 1) - 1)
+        val count = list.adapter?.itemCount ?: 0
+        for (position in 0 until count) {
+            list.scrollToPosition(position)
             harness.layoutApp()
-            child = find()
+            val child = (0 until list.childCount).map { list.getChildAt(it) }
+                .firstOrNull { label in textsOf(it) }
+            if (child != null) {
+                list.clickItem(child, list.getChildAdapterPosition(child))
+                harness.idle()
+                return
+            }
         }
-        val row = child ?: throw AssertionError("no $label row")
-        list.clickItem(row, list.getChildAdapterPosition(row))
-        harness.idle()
+        throw AssertionError("no $label row")
     }
 
     private fun dialogTexts(dialog: AlertDialog): List<String> =

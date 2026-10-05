@@ -24,4 +24,16 @@ object SettingsLoader {
             onDone()
         }
     }
+
+    /**
+     * The signed-in reader's trust level, read from the reader's own profile payload. The
+     * settings header shows it next to the username the way an account header shows who the
+     * account belongs to; a failed read leaves the header without it rather than showing a zero.
+     */
+    fun trustLevel(container: AppContainer, username: String, onLoaded: (Int) -> Unit) {
+        scope.launch {
+            runCatching { container.discourseApiClient.fetchProfile(username).trustLevel }
+                .onSuccess(onLoaded)
+        }
+    }
 }
