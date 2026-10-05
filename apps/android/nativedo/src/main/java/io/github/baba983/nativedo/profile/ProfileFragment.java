@@ -1169,6 +1169,12 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                         // updateSelectedMediaTabText (ProfileActivity.java:8048): the counter line
                         // follows the tab the reader is on.
                         updateSelectedMediaTabText();
+                        // The pager added the incoming page inside its own touch of the tree; the
+                        // row above it (the list) swallows layout requests while it is mid-layout,
+                        // so the screen's own root asks for the pass that measures the new page.
+                        if (frameLayout != null) {
+                            frameLayout.requestLayout();
+                        }
                     }
 
                     @Override
@@ -1279,7 +1285,13 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         TabPageState(int tab) {
             this.tab = tab;
             Context context = frameLayout.getContext();
+            // The pager adds a page with whatever LayoutParams it finds on it (ViewPagerFixed's
+            // updateViewForIndex calls a bare addView), and a page without any would measure to
+            // zero - the page fills the pager, the way the pages are laid out in the pager's own
+            // screens.
             root = new FrameLayout(context);
+            root.setLayoutParams(LayoutHelper.createFrame(
+                    LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
 
             listView = new RecyclerListView(context);
             listView.setLayoutManager(new LinearLayoutManager(context));

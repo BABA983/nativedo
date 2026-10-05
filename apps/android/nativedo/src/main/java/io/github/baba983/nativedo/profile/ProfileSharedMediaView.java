@@ -244,7 +244,9 @@ public class ProfileSharedMediaView extends FrameLayout {
      * tabs and their text colours interpolate - the way upstream's pages follow its strip
      * ({@code SharedMediaLayout} translates the pages in the strip's own {@code onPageScrolled}).
      * Here the pager owns the clock, so the strip is driven from it: the fraction is how far the
-     * pager's animated position has come from the tab it is on and the tab it is heading to.
+     * pager's animated position has come from the tab it is on toward the tab it is heading to - as
+     * soon as the drag starts, so the indicator moves with the finger, and back to 0 when the drag
+     * is cancelled.
      */
     private void followStripWithPager() {
         if (tabStrip.getTabsCount() < 2) {

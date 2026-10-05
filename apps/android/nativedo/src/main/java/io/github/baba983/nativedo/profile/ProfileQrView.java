@@ -11,6 +11,7 @@ import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
 import android.text.Layout;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
@@ -22,22 +23,32 @@ import android.view.View;
 import androidx.core.content.ContextCompat;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.FileLog;
 import org.telegram.messenger.R;
 import org.telegram.messenger.TelegramQRCodeWriter;
 import org.telegram.ui.Cells.SettingsSearchCell;
 
+import java.lang.reflect.Method;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
 /**
  * The QR card, ported from {@code QrActivity}'s {@code QrView} (QrActivity.java:928-1420): the
- * white rounded card with its shadow, the QR built by upstream's own
- * {@link TelegramQRCodeWriter}, the {@code @username} line under it, and the solid circle in the
- * QR's middle where upstream draws its plane logo. What is left out is Telegram-only: the animated
- * {@code MotionBackgroundDrawable} gradient the QR is tinted through (it comes from the account's
- * themes), the timer/export-token branch, the crossfade between two contents, and the logo lottie.
- * The card is drawn in the QR's own black on white in both themes, the way upstream's writer
- * paints it before a theme is applied.
+ * white rounded card with its shadow, the QR in Telegram's own drawing style, the
+ * {@code @username} line under it, and the blank circle in the QR's middle where upstream draws
+ * the plane logo - here the reader's own avatar when it is on disk.
+ *
+ * <p>The QR itself is {@code TelegramQRCodeWriter.encode}'s own drawing loop
+ * (TelegramQRCodeWriter.java:61-194): zxing's {@code Encoder} through reflection (zxing is
+ * TMessagesProj's {@code implementation} dependency, so this module cannot name it), the rounded
+ * modules, the writer's public {@code drawSideQuadsGradient} for the three corner patterns, and
+ * its centre blank sized for the middle mark. One step is left out: the plane logo the writer
+ * stamps from Telegram's own SVG ({@code readRes(R.raw.qr_logo)} through {@code SvgHelper}), which
+ * a linux.do card has no use for - and which is also why the writer itself is not called: its
+ * signature needs zxing's {@code WriterException} at compile time and its drawing always expects
+ * that logo. What is left out besides: the animated {@code MotionBackgroundDrawable} gradient the
+ * account's themes paint the QR through, the timer/export-token branch and the crossfade.
  */
 public class ProfileQrView extends View {
 
@@ -49,7 +60,14 @@ public class ProfileQrView extends View {
     private final String username;
     private Bitmap backgroundBitmap;
     private Bitmap contentBitmap;
+    /** The picture drawn in the QR's centre blank; null leaves it white. */
+    private Bitmap centerBitmap;
+    /** The centre blank's radius in the content bitmap, from the writer's own imageSize. */
+    private float centerRadius;
+    private int centerX;
+    private int centerY;
     private final Paint contentPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+    private final Paint centerPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
 
     public ProfileQrView(Context context, String link, String username) {
         super(context);
@@ -62,36 +80,10 @@ public class ProfileQrView extends View {
         return link;
     }
 
-    /**
-     * The hints upstream builds by name (QrActivity.java:1345-1352): error correction M, no quiet
-     * zone, a pinned QR version so the code fills the card the way upstream's does. zxing is
-     * TMessagesProj's own {@code implementation} dependency, so this module cannot name its enums
-     * at compile time; they are the same constants, looked up by name at runtime.
-     */
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    private static Map qrHints() {
-        HashMap hints = new HashMap();
-        try {
-            Class<?> hintType = Class.forName("com.google.zxing.EncodeHintType");
-            Class<?> level = Class.forName("com.google.zxing.qrcode.decoder.ErrorCorrectionLevel");
-            hints.put(Enum.valueOf((Class<? extends Enum>) hintType, "ERROR_CORRECTION"),
-                    Enum.valueOf((Class<? extends Enum>) level, "M"));
-            hints.put(Enum.valueOf((Class<? extends Enum>) hintType, "MARGIN"), 0);
-        } catch (Exception e) {
-            // A build without zxing cannot have TelegramQRCodeWriter either; an empty hint map
-            // still encodes with the writer's own defaults.
-        }
-        return hints;
-    }
-
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    private static Object hintConstant(String name) {
-        try {
-            Class<?> hintType = Class.forName("com.google.zxing.EncodeHintType");
-            return Enum.valueOf((Class<? extends Enum>) hintType, name);
-        } catch (Exception e) {
-            return name;
-        }
+    /** The reader's own picture for the middle of the code, once it is decoded. */
+    public void setCenterBitmap(Bitmap bitmap) {
+        centerBitmap = bitmap;
+        invalidate();
     }
 
     @Override
@@ -117,7 +109,7 @@ public class ProfileQrView extends View {
 
     /**
      * QrActivity.java:1223-1420, the non-timer branch: the QR with the site's own error-correction
-     * hints, the circle in its middle, and the {@code @username} line under it.
+     * hints, the blank centre, and the {@code @username} line under it.
      */
     private void prepareContent(int w, int h) {
         if (w == 0 || h == 0 || TextUtils.isEmpty(link)) {
@@ -177,21 +169,11 @@ public class ProfileQrView extends View {
         Bitmap qrBitmap = null;
         int imageSize = 0;
         int qrBitmapSize = w - dp(30) * 2;
-        Map hints = qrHints();
-        TelegramQRCodeWriter writer = new TelegramQRCodeWriter();
         for (int version = 3; version < 5; ++version) {
-            try {
-                hints.put(hintConstant("QR_VERSION"), version);
-                // TelegramQRCodeWriter.encode declares zxing's WriterException, which this module
-                // cannot name at compile time (zxing is TMessagesProj's own implementation
-                // dependency); the call is the same one, made reflectively.
-                java.lang.reflect.Method encode = TelegramQRCodeWriter.class.getMethod("encode",
-                        String.class, int.class, int.class, Map.class, Bitmap.class, float.class, int.class, int.class);
-                qrBitmap = (Bitmap) encode.invoke(writer, link, qrBitmapSize, qrBitmapSize, hints, null, 0.75f, backgroundColor, qrColor);
-                imageSize = writer.getImageSize();
-            } catch (Exception ignore) {
-            }
-            if (qrBitmap != null) {
+            QrResult result = encodeQr(qrBitmapSize, version);
+            if (result != null) {
+                qrBitmap = result.bitmap;
+                imageSize = result.imageSize;
                 break;
             }
         }
@@ -209,11 +191,12 @@ public class ProfileQrView extends View {
         }
         canvas.drawBitmap(qrBitmap, left, qrTop, contentPaint);
 
-        Paint circlePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        circlePaint.setColor(qrColor);
-        float xCenter = left + qrBitmap.getWidth() * 0.5f;
-        float yCenter = qrTop + qrBitmap.getWidth() * 0.5f;
-        canvas.drawCircle(xCenter, yCenter, imageSize * 0.5f, circlePaint);
+        // QrActivity.java:1355-1361: the middle mark, sized by the writer's own imageSize. Upstream
+        // paints a solid circle here and draws the plane logo over it; this card draws the reader's
+        // avatar when it has one and leaves the writer's blank white otherwise.
+        centerRadius = imageSize * 0.5f;
+        centerX = (int) (left + qrBitmap.getWidth() * 0.5f);
+        centerY = (int) (qrTop + qrBitmap.getWidth() * 0.5f);
 
         if (staticLayout != null) {
             float xTranslate = (canvas.getWidth() - staticLayout.getWidth()) * 0.5f;
@@ -230,6 +213,166 @@ public class ProfileQrView extends View {
         invalidate();
     }
 
+    /** The QR bitmap and the centre blank's diameter, from the writer's own maths. */
+    private static class QrResult {
+        final Bitmap bitmap;
+        final int imageSize;
+
+        QrResult(Bitmap bitmap, int imageSize) {
+            this.bitmap = bitmap;
+            this.imageSize = imageSize;
+        }
+    }
+
+    /**
+     * TelegramQRCodeWriter.encode's drawing loop, with the plane logo left out (see the class
+     * comment). The geometry, colours, hint set and radius factor are the writer's own:
+     * error correction M, no quiet zone, a pinned QR version, {@code radiusFactor 0.75f}, a 16 px
+     * padding, and the centre block sized by {@code round((size - 32) / 4.65f / multiple)}.
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private QrResult encodeQr(int requestedSize, int hintVersion) {
+        final int qrColor = 0xff000000;
+        final int backgroundColor = 0x00ffffff;
+        final float radiusFactor = 0.75f;
+        try {
+            Class<?> hintType = Class.forName("com.google.zxing.EncodeHintType");
+            Class<?> levelType = Class.forName("com.google.zxing.qrcode.decoder.ErrorCorrectionLevel");
+            Class<?> encoderType = Class.forName("com.google.zxing.qrcode.encoder.Encoder");
+            Map hints = new HashMap();
+            hints.put(Enum.valueOf((Class<? extends Enum>) hintType, "QR_VERSION"), hintVersion);
+            Object level = Enum.valueOf((Class<? extends Enum>) levelType, "M");
+            Object code = encoderType.getMethod("encode", String.class, levelType, Map.class)
+                    .invoke(null, link, level, hints);
+            Object matrix = code.getClass().getMethod("getMatrix").invoke(code);
+            Method matrixGet = matrix.getClass().getMethod("get", int.class, int.class);
+            int inputWidth = (int) matrix.getClass().getMethod("getWidth").invoke(matrix);
+            int inputHeight = (int) matrix.getClass().getMethod("getHeight").invoke(matrix);
+            boolean[][] modules = new boolean[inputWidth][inputHeight];
+            for (int x = 0; x < inputWidth; x++) {
+                for (int y = 0; y < inputHeight; y++) {
+                    modules[x][y] = ((Number) matrixGet.invoke(matrix, x, y)).intValue() == 1;
+                }
+            }
+
+            int sideQuadSize = 0;
+            for (int x = 0; x < inputWidth; x++) {
+                if (modules[x][0]) {
+                    sideQuadSize++;
+                } else {
+                    break;
+                }
+            }
+            int outputWidth = Math.max(requestedSize, inputWidth);
+            int outputHeight = Math.max(requestedSize, inputHeight);
+            int multiple = Math.min(outputWidth / inputWidth, outputHeight / inputHeight);
+            int padding = 16;
+            int size = multiple * inputWidth + padding * 2;
+
+            int imageBloks = Math.round((size - 32) / 4.65f / multiple);
+            if (imageBloks % 2 != inputWidth % 2) {
+                imageBloks++;
+            }
+            int imageBlockX = (inputWidth - imageBloks) / 2;
+            int imageSize = imageBloks * multiple - 24;
+
+            Bitmap bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(bitmap);
+            canvas.drawColor(backgroundColor);
+            Paint blackPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            blackPaint.setColor(qrColor);
+            GradientDrawable rect = new GradientDrawable();
+            rect.setShape(GradientDrawable.RECTANGLE);
+            float[] radii = new float[8];
+            rect.setCornerRadii(radii);
+
+            TelegramQRCodeWriter.drawSideQuadsGradient(canvas, blackPaint, rect, sideQuadSize, multiple,
+                    padding, size, radiusFactor, radii, backgroundColor, qrColor);
+
+            boolean isTransparentBackground = Color.alpha(backgroundColor) == 0;
+            float r = multiple / 2.0f * radiusFactor;
+            for (int y = 0, outputY = padding; y < inputHeight; y++, outputY += multiple) {
+                for (int x = 0, outputX = padding; x < inputWidth; x++, outputX += multiple) {
+                    if (has(modules, sideQuadSize, imageBlockX, imageBloks, x, y)) {
+                        Arrays.fill(radii, r);
+                        if (has(modules, sideQuadSize, imageBlockX, imageBloks, x, y - 1)) {
+                            radii[0] = radii[1] = 0;
+                            radii[2] = radii[3] = 0;
+                        }
+                        if (has(modules, sideQuadSize, imageBlockX, imageBloks, x, y + 1)) {
+                            radii[6] = radii[7] = 0;
+                            radii[4] = radii[5] = 0;
+                        }
+                        if (has(modules, sideQuadSize, imageBlockX, imageBloks, x - 1, y)) {
+                            radii[0] = radii[1] = 0;
+                            radii[6] = radii[7] = 0;
+                        }
+                        if (has(modules, sideQuadSize, imageBlockX, imageBloks, x + 1, y)) {
+                            radii[2] = radii[3] = 0;
+                            radii[4] = radii[5] = 0;
+                        }
+                        rect.setColor(qrColor);
+                        rect.setBounds(outputX, outputY, outputX + multiple, outputY + multiple);
+                        rect.draw(canvas);
+                    } else {
+                        boolean has = false;
+                        Arrays.fill(radii, 0);
+                        if (has(modules, sideQuadSize, imageBlockX, imageBloks, x - 1, y - 1)
+                                && has(modules, sideQuadSize, imageBlockX, imageBloks, x - 1, y)
+                                && has(modules, sideQuadSize, imageBlockX, imageBloks, x, y - 1)) {
+                            radii[0] = radii[1] = r;
+                            has = true;
+                        }
+                        if (has(modules, sideQuadSize, imageBlockX, imageBloks, x + 1, y - 1)
+                                && has(modules, sideQuadSize, imageBlockX, imageBloks, x + 1, y)
+                                && has(modules, sideQuadSize, imageBlockX, imageBloks, x, y - 1)) {
+                            radii[2] = radii[3] = r;
+                            has = true;
+                        }
+                        if (has(modules, sideQuadSize, imageBlockX, imageBloks, x - 1, y + 1)
+                                && has(modules, sideQuadSize, imageBlockX, imageBloks, x - 1, y)
+                                && has(modules, sideQuadSize, imageBlockX, imageBloks, x, y + 1)) {
+                            radii[6] = radii[7] = r;
+                            has = true;
+                        }
+                        if (has(modules, sideQuadSize, imageBlockX, imageBloks, x + 1, y + 1)
+                                && has(modules, sideQuadSize, imageBlockX, imageBloks, x + 1, y)
+                                && has(modules, sideQuadSize, imageBlockX, imageBloks, x, y + 1)) {
+                            radii[4] = radii[5] = r;
+                            has = true;
+                        }
+                        if (has && !isTransparentBackground) {
+                            canvas.drawRect(outputX, outputY, outputX + multiple, outputY + multiple, blackPaint);
+                            rect.setColor(backgroundColor);
+                            rect.setBounds(outputX, outputY, outputX + multiple, outputY + multiple);
+                            rect.draw(canvas);
+                        }
+                    }
+                }
+            }
+            canvas.setBitmap(null);
+            return new QrResult(bitmap, imageSize);
+        } catch (Exception e) {
+            FileLog.e(e);
+            return null;
+        }
+    }
+
+    /** TelegramQRCodeWriter.has (TelegramQRCodeWriter.java:281-295), the centre blank included. */
+    private static boolean has(boolean[][] modules, int sideQuadSize, int imageBlockX, int imageBloks,
+                               int x, int y) {
+        if (x >= imageBlockX && x < imageBlockX + imageBloks && y >= imageBlockX && y < imageBlockX + imageBloks) {
+            return false;
+        }
+        if ((x < sideQuadSize || x >= modules.length - sideQuadSize) && y < sideQuadSize) {
+            return false;
+        }
+        if (x < sideQuadSize && y >= modules[0].length - sideQuadSize) {
+            return false;
+        }
+        return x >= 0 && y >= 0 && x < modules.length && y < modules[0].length && modules[x][y];
+    }
+
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
@@ -238,6 +381,16 @@ public class ProfileQrView extends View {
         }
         if (contentBitmap != null) {
             canvas.drawBitmap(contentBitmap, 0f, 0f, contentPaint);
+        }
+        if (centerBitmap != null && !centerBitmap.isRecycled() && centerRadius > 0) {
+            float half = centerBitmap.getWidth() * 0.5f;
+            canvas.save();
+            canvas.translate(centerX - half, centerY - half);
+            android.graphics.Path clip = new android.graphics.Path();
+            clip.addCircle(half, half, centerRadius, android.graphics.Path.Direction.CW);
+            canvas.clipPath(clip);
+            canvas.drawBitmap(centerBitmap, 0f, 0f, centerPaint);
+            canvas.restore();
         }
     }
 }
