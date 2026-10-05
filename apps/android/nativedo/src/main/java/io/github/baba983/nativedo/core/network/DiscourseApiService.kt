@@ -25,6 +25,7 @@ import io.github.baba983.nativedo.core.model.TopicSummary
 import io.github.baba983.nativedo.core.model.UserActionPage
 import io.github.baba983.nativedo.core.model.UserBadge
 import io.github.baba983.nativedo.core.model.UserProfile
+import io.github.baba983.nativedo.core.model.UserPreferences
 import io.github.baba983.nativedo.core.model.UserSummary
 import io.github.baba983.nativedo.core.session.SessionUserSummary
 import kotlinx.serialization.SerialName
@@ -294,6 +295,28 @@ interface DiscourseApiService {
 
     @GET("u/{username}.json")
     suspend fun profile(@Path("username") username: String): UserProfileResponseDto
+
+    /**
+     * `GET /u/{username}.json` again, read for its other half: the same payload carries the
+     * reader's own `user_option` when the username is the signed-in one. The public profile
+     * endpoint does not have it, so the settings screens ask for the same route this way.
+     */
+    @GET("u/{username}.json")
+    suspend fun userPreferences(@Path("username") username: String): UserPreferencesResponseDto
+
+    /**
+     * `PUT /u/{username}.json`: the reader updating their own preferences. Discourse's
+     * `users#update` takes the option attributes as top-level form fields (`UserUpdater::
+     * OPTION_ATTR`), a boolean as the string `"true"`/`"false"`, and answers with the updated
+     * user. The write needs the session's CSRF token.
+     */
+    @FormUrlEncoded
+    @PUT("u/{username}.json")
+    suspend fun updateUserPreferences(
+        @Path("username") username: String,
+        @FieldMap fields: Map<String, String>,
+        @Header("X-CSRF-Token") csrfToken: String,
+    ): PreferencesUpdateResponseDto
 
     /** `GET /u/{username}/summary.json`: the stats block (likes, days visited, post counts). */
     @GET("u/{username}/summary.json")
@@ -927,6 +950,60 @@ internal fun CurrentUserDto.toSessionUserSummary(): SessionUserSummary? {
 data class UserProfileResponseDto(
     val user: UserDto,
 )
+
+/**
+ * The reader's own payload read for its preferences: just enough of `user` to reach
+ * `user_option`, which is the object the settings screens draw from. It is present only when the
+ * username asked for is the signed-in reader.
+ */
+@Serializable
+data class UserPreferencesResponseDto(
+    val user: PreferencesUserDto,
+)
+
+@Serializable
+data class PreferencesUserDto(
+    val username: String = "",
+    @SerialName("user_option")
+    val userOption: UserOptionDto? = null,
+)
+
+@Serializable
+data class UserOptionDto(
+    @SerialName("like_notification_frequency")
+    val likeNotificationFrequency: Int? = null,
+    @SerialName("notify_on_linked_posts")
+    val notifyOnLinkedPosts: Boolean? = null,
+    @SerialName("notification_level_when_replying")
+    val notificationLevelWhenReplying: Int? = null,
+    @SerialName("auto_track_topics_after_msecs")
+    val autoTrackTopicsAfterMsecs: Int? = null,
+    @SerialName("new_topic_duration_minutes")
+    val newTopicDurationMinutes: Int? = null,
+    @SerialName("allow_private_messages")
+    val allowPrivateMessages: Boolean? = null,
+    @SerialName("hide_profile_and_presence")
+    val hideProfileAndPresence: Boolean? = null,
+)
+
+/** `PUT /u/{username}.json` answers `{"success":"OK",...}` and the updated user. */
+@Serializable
+data class PreferencesUpdateResponseDto(
+    val success: String = "",
+)
+
+internal fun UserPreferencesResponseDto.toModel(): UserPreferences? {
+    val option = user.userOption ?: return null
+    return UserPreferences(
+        likeNotificationFrequency = option.likeNotificationFrequency ?: 0,
+        notifyOnLinkedPosts = option.notifyOnLinkedPosts ?: true,
+        notificationLevelWhenReplying = option.notificationLevelWhenReplying ?: 2,
+        autoTrackTopicsAfterMsecs = option.autoTrackTopicsAfterMsecs ?: 300000,
+        newTopicDurationMinutes = option.newTopicDurationMinutes ?: 2880,
+        allowPrivateMessages = option.allowPrivateMessages ?: true,
+        hideProfileAndPresence = option.hideProfileAndPresence ?: false,
+    )
+}
 
 @Serializable
 data class UserDto(
