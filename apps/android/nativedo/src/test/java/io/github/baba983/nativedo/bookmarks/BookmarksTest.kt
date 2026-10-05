@@ -22,6 +22,7 @@ import io.github.baba983.nativedo.harness.shadows.ShadowSQLiteCursor
 import io.github.baba983.nativedo.harness.shadows.ShadowSQLiteDatabase
 import io.github.baba983.nativedo.harness.shadows.ShadowSQLitePreparedStatement
 import io.github.baba983.nativedo.harness.shadows.ShadowUtilities
+import io.github.baba983.nativedo.profile.ProfileActionsView
 import io.github.baba983.nativedo.profile.ProfileFragment
 import io.github.baba983.nativedo.topic.TopicFragment
 import org.junit.After
@@ -165,30 +166,16 @@ internal class BookmarksTest {
         val profile = ProfileFragment.forUser("baba", "Baba")
         harness.present(profile)
         harness.await("the reader's own profile") { site.requestPaths.contains("u/baba.json") }
-        // The reader's own rows sit under everything the profile itself says, so the list is scrolled
-        // to where they are - which is how a reader reaches them too.
         harness.await("the profile's own fields") { rowLabels().isNotEmpty() }
-        val profileList = contentListOf(harness.activity) ?: throw AssertionError("no profile list")
-        // A drag, not one scroll event: the profile's first upward event on its collapsing header
-        // only disarms the pull-down and returns the list to rest (upstream's own clamp), so the
-        // reach for the bottom is the move after it.
-        profileList.scrollBy(0, 1)
-        profileList.scrollBy(0, 20_000)
-        harness.layoutApp()
-        harness.idle()
-        println("bookmarks: the profile's own rows = " + rowLabels())
-        assertTrue(
-            "the reader's own profile offers their bookmarks",
-            rowLabels().contains("书签"),
-        )
         harness.layoutApp()
         harness.renderApp("profile-own")
-
-        val list = contentListOf(harness.activity) ?: throw AssertionError("the profile drew no list")
-        val row = (0 until list.childCount)
-            .map { index -> list.getChildAt(index) }
-            .first { view -> rowLabelsOf(view).contains("书签") }
-        list.clickItem(row, positionOf(row))
+        // 书签 is one of the action row's buttons on the reader's own profile (the row under the
+        // header), and pressing it is how the reader reaches their list.
+        assertTrue(
+            "the reader's own profile offers their bookmarks",
+            profile.hasAction(ProfileActionsView.KEY_BOOKMARKS),
+        )
+        profile.onActionClicked(ProfileActionsView.KEY_BOOKMARKS, 0f, 0f)
         harness.idle()
 
         harness.await("the site for the reader's own bookmarks") {

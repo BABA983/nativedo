@@ -116,22 +116,33 @@ race fails its own request instead of ending the session. The retired native sna
   the composer as soon as there is text, because upstream's own button steps aside then and a forum
   reply often wants a second picture. Each upload goes to `/uploads.json` and what the field receives
   is the markdown the site's own composer writes for the answer, pointing at its `upload://` handle.
-* **Profiles** — a tap on a post's author (their avatar, or the name above the bubble) opens
-  `/u/{username}.json` in a screen of our own. Upstream's `ProfileActivity` cannot be that screen:
-  it is a Telegram account's profile, whose `onFragmentCreate` loads the full user through tgnet
-  (`loadFullUser` sends `TL_users_getFullUser`, and the answer is written into Telegram's database)
-  and whose tabs are that account's own photos, stories, contacts and gifts. So the screen keeps its
-  own `BaseFragment` and takes upstream's own collapsing header for its head: the avatar lives in a
-  `ProfileGooeyView`, and `ProfileActivity`'s `needLayout()` / `checkListViewScroll()` math moves and
-  scales it while the name and status lines migrate into the screen's own transparent action bar.
-  The sections below are the cells upstream draws lists with: `HeaderCell` for the sections,
-  `TextDetailCell` for the fields — the site's answer in the cell's own large line and the field's
-  name under it, which is the way `ProfileActivity`'s info block writes a phone number above the
-  word "Mobile" — and a `TextInfoPrivacyCell` for the bio. Under all of it the reader's activity:
-  `user_actions.json` for the topics they started and for their replies, merged into one stream
-  newest first, one `DialogCell` row per action, and a tap opens that action's topic at the floor it
-  happened on. Telegram-only parts of the header (stories ring, gift/emoji status, pull-down-to-open
-  gallery, shared media, call buttons) are left out.
+* **Profiles** — a tap on a post's author (their avatar, or the name above the bubble), or on the
+  topic header's center capsule, opens `/u/{username}.json` in a screen of our own. Upstream's
+  `ProfileActivity` cannot be that screen: it is a Telegram account's profile, whose
+  `onFragmentCreate` loads the full user through tgnet (`loadFullUser` sends
+  `TL_users_getFullUser`, and the answer is written into Telegram's database) and whose tabs are
+  that account's own photos, stories, contacts and gifts. So the screen keeps its own `BaseFragment`
+  and takes upstream's profile pieces one by one. The head is upstream's collapsing header: the
+  avatar lives in a `ProfileGooeyView`, and `ProfileActivity`'s `needLayout()` /
+  `checkListViewScroll()` math moves and scales it while the name and status lines migrate into the
+  screen's own transparent action bar. A capsule tap hands the profile the capsule avatar's X, and
+  the screen plays `ProfileActivity`'s own `playProfileAnimation == 2` flight for it (250 ms,
+  `CubicBezierInterpolator.DEFAULT`, the avatar's average colour behind the header) - opening from a
+  post avatar or 我的 keeps the ordinary transition. Under the title sits upstream's action row
+  (`ProfileActionsView`, our port): 私信 (`GET /new-message?username=…` in the in-app browser,
+  offered only when the profile says `can_send_private_message_to_user`), 关注 / 取消关注
+  (`PUT|DELETE /follow/{username}`, the discourse-follow plugin), 静音 / 取消静音
+  (`PUT /u/{username}/notification_level.json`) and 分享; the reader's own profile gets 书签 /
+  设置 / 分享. The sections under it are the cells upstream draws lists with: `HeaderCell`,
+  `TextDetailCell` (the site's answer in the cell's large line, the field's name under it) and a
+  `TextInfoPrivacyCell` for the bio, fed by `/u/{username}.json` and `/u/{username}/summary.json`.
+  The list ends in the site's own tabs - 话题 / 回复 / 点赞 / 书签(own only) / 徽章 over
+  `user_actions.json` filters 4/5/1, the reader's bookmarks and `/user-badges/{u}.json` - drawn on
+  a `ScrollSlidingTextTabStrip` + `ViewPagerFixed` pair ported from `SharedMediaLayout`'s mechanism
+  (the strip pins to the list's top; a drag the list cannot take continues into the page's list,
+  through a `NestedScrollingParent3` root like `ProfileActivity`'s `NestedFrameLayout`). Telegram-only
+  parts of the header (stories ring, gift/emoji status, pull-down-to-open gallery, shared media, call
+  buttons) are left out.
 * **Search** — the home screen shows upstream's own `FragmentSearchField` where 12.10.5's chat list
   shows it, instead of an action-bar icon, and tapping it runs `DialogsActivity`'s open-search
   animation (the field's glass goes on, the list leaves over 200ms EASE_OUT, the shell's bottom bar
@@ -219,10 +230,10 @@ stands, and the upstream component each row is meant to use.
 | Mentions and autocomplete (`/u/search/users`) | done | missing | the composer's mention panel |
 | Reactions: toggle and who reacted | done | half, toggling only | upstream's reaction chips, `CustomEmojiReactionsWindow` |
 | Polls: vote, retract, voter list | done | vote and retract; voter list missing | `TL_messageMediaPoll` with one bubble per poll, the floor split at its `div.poll`; a tap votes through our own `PUT /polls/vote`. Known gaps: `View Votes (N)` (upstream draws it, its voters list lives in `ChatActivity`, which this screen does not have) and `ranked_choice` (a tap cannot express a rank, so those polls open the floor menu instead of voting); poll option images and "add option" are not offered |
-| Bookmarks (`/bookmarks.json`, `DELETE /posts/{id}/bookmark`) | done | done: the post menu adds and takes back a bookmark, and the reader's own list (`/u/{username}/bookmarks.json`, a 书签 row under 我的 on their own profile) draws the site's entries, a tap opening the topic at the bookmarked floor. The site's own envelope has a trap: a page with rows arrives under `user_bookmark_list`, an empty one is a bare `{"bookmarks":[]}` | upstream's `DialogCell` rows and the settings-shaped row on the profile |
+| Bookmarks (`/bookmarks.json`, `DELETE /posts/{id}/bookmark`) | done | done: the post menu adds and takes back a bookmark, the reader's own 书签 button on their profile opens the list (`/u/{username}/bookmarks.json`), and the profile's own 书签 tab draws the same entries inline, a tap opening the topic at the bookmarked floor. The site's own envelope has a trap: a page with rows arrives under `user_bookmark_list`, an empty one is a bare `{"bookmarks":[]}` | upstream's `DialogCell` rows |
 | Read progress (`POST /topics/timings`) and restore | done | done, without upstream's unread divider: the floors the viewport reaches are reported as the reader moves (debounced) and at once when they leave, the dwell reported is the reader's real time - counted the way Discourse's own screen-track counts it, only while the screen is in front, a floor is on screen and the reader has scrolled within three minutes - a topic opens at the site's own `last_read_post_number` (or this device's further one), and the list's unread counts follow the site's answer - a topic read in full draws no badge even before the site has taken the report in | our own reporter over the site's endpoint; the list's rows are upstream's `DialogCell` |
 | Search: topics, posts, users, categories, tags, in-topic | done | done: the home screen carries upstream's own `FragmentSearchField` (12.10.5's visible search entry, not a bar icon), and tapping it runs DialogsActivity's open-search animation - the list leaves, the pager arrives, the category strip fades, the bottom bar steps away - onto a `ViewPagerFixed` whose pill tabs are 话题 / 帖子 / 用户 / 分类 / 标签. The first three are one `/search.json` answer (topics, posts, users) with a 300ms debounce; 分类 and 标签 are `/categories.json` and `/tags.json` narrowed to the query, and picking one filters the home list. A hit opens its topic at its floor or a person their profile; the empty and loading states are upstream's `StickerEmptyView` / `FlickerLoadingView`; back or the field's close button runs the close animation; in-topic search missing | `FragmentSearchField`, `ViewPagerFixed` + its pill `TabsView` (+ `SearchTabsAndFiltersLayout`), `DialogsActivity`'s search animator math, `DialogCell` / `ProfileSearchCell` / `HashtagSearchCell` over `/search.json` / `/categories.json` / `/tags.json` |
-| User profile (`/u/{username}.json`, activity feed) | done | done, `/user_actions.json` for the topics created and the replies merged into one stream, one upstream `DialogCell` row per action, a tap opens the topic at that floor; the head is upstream's own collapsing header (`ProfileGooeyView` + `ProfileActivity`'s `needLayout` math) | our own `BaseFragment` with `ProfileGooeyView` / `HeaderCell` / `TextDetailCell` / `TextInfoPrivacyCell` / `DialogCell`; `ProfileActivity` is unusable here (it loads the full user through tgnet and is bound to a Telegram account) |
+| User profile (`/u/{username}.json`, `/u/{username}/summary.json`, activity) | done | done: the head is upstream's collapsing header (`ProfileGooeyView` + `ProfileActivity`'s `needLayout` math), the capsule tap plays its `playProfileAnimation == 2` avatar flight, the row under it is upstream's `ProfileActionsView` port (私信 / 关注 / 静音 / 分享; 书签 / 设置 / 分享 on one's own), the sections are `HeaderCell` / `TextDetailCell` / `TextInfoPrivacyCell` over the profile + summary endpoints, and the list ends in 话题 / 回复 / 点赞 / 书签(own) / 徽章 tabs over `user_actions.json` filters 4/5/1, the bookmarks and `/user-badges/{u}.json`, on `ScrollSlidingTextTabStrip` + `ViewPagerFixed` | our own `BaseFragment` with the upstream components above; `ProfileActivity` is unusable here (it loads the full user through tgnet and is bound to a Telegram account) |
 | Notifications | not built | done, the reader's own list from `/notifications.json`, and the 通知 tab's own counter is the site's unread count: seeded from the bootstrap page and then fed by the message bus `/notification/{userId}` channel (the server publishes a new count after notifications are read); opening the list does not mark anything read | upstream's notification screens are Telegram-account bound, so our own screen over upstream's `DialogCell`; the tab counter is upstream's `GlassTabView.setCounter`, the same mechanism `MainTabsActivity` puts on its chats tab |
 | Appearance and theme | done | done: the settings tab's 外观 row opens it, and the home action bar's options menu switches night/day in place (upstream's own entries, with the circular reveal out of the menu icon) | `ThemeActivity` (`THEME_TYPE_BASIC`); `DialogsActivity`'s options item / `ItemOptions` / `showItemOptions()` / `switchTheme()` |
 | Account and session settings | done | done: the settings tab is our own screen over upstream's cells (`HeaderCell` / `TextSettingsCell`), with the appearance page, the bookmark list and the account - the current reader and a sign-out that clears the cookies and returns to the login page | upstream's settings cells, the way `SettingsActivity` draws its own list |
@@ -234,6 +245,16 @@ stands, and the upstream component each row is meant to use.
 ## 真机验证清单
 
 每一项都是手感或真站点的疑问，orb 只能定正确性（golden 与 E2E），定不了这些。
+
+### 资料页改版：胶囊开屏动画、动作条与站点 tabs（2026-10-05，`emulator-5554`，`nativedo-profile-redesign`，已登录 @example_user）
+
+- 打开动画：中心胶囊的点按把胶囊头像在资料页坐标系里的 X（`ViewPositionWatcher.computeXCoordinateInParent`，上游 `ProfileActivity:10080` 同一手法）交给 `ProfileFragment.forUserFromAvatar`；页面按 `ProfileActivity` 的 `playProfileAnimation == 2`（250ms、`CubicBezierInterpolator.DEFAULT`、50ms 延迟启动）让头像从 42dp 的胶囊圆图长到页头 96dp 的静止大头像、圆角保持 50dp（本站落在折叠态页头，Telegram 落在展开态，其余常量与曲线照搬），列表 0→1 淡入并从左侧 48dp 归位，页头底色由透明白混到头像平均色（`AndroidUtilities.calcBitmapColor`）。点帖子头像与 我的 tab 仍走普通转场（`playProfileAnimation == 0`）。设备：话题页点胶囊进 Neo 的资料页，logcat `present fragment ProfileFragment args=Bundle[{avatarX=204.0, username=neo…}]`（`02-profile-from-capsule`）；本 AVD 的 `screenrecord` 仍冻结（两次尝试仅 1–2 帧，与既有记录一致），动效以 harness 的 `profile-open-from-capsule` 渲染 + 状态断言为证。
+- 动作条（移植 `ui/Components/ProfileActionsView.java`）：头像下的 74dp 行，胶囊画法/出现与删除动画/图标全是上游的；颜色改为按用户名取的头像背板色（上游在模糊页头上用 40 alpha，本站页面是纯色底，改成实色）。四项按站点回答出现：私信（`can_send_private_message_to_user`，内嵌浏览器开 `/new-message?username=`）、关注/取消关注（discourse-follow 插件 `PUT|DELETE /follow/{u}`，写前取 csrf）、静音/取消静音（`PUT /u/{u}/notification_level.json`）、分享（系统分享，无接收方时复制链接）；自己的资料页是 书签/设置/分享。设备：Neo 的资料页显示 Message/取消关注/分享（Neo 已被 @example_user 关注，与站点 `is_followed` 一致，`02`），@example_user 自己的资料页显示 书签/设置/分享（`15-own-profile`）。「忽略」按站点 `can_ignore_user` 真实存在但未做确认流，README 的映射记录了这一条。
+- 信息区：`HeaderCell`/`TextDetailCell`/`TextInfoPrivacyCell` 照旧，新增 用户名/所在地/个人网站/最后发帖，以及 `/u/{u}/summary.json` 的 话题/帖子/获赞/送出赞/访问天数/阅读帖子（summary 没到就不画，不拿 0 充数）。设备实拍 Neo 的统计：话题 649、帖子 21254、获赞 620454、送出赞 3629、访问天数 993、阅读帖子 1631688、阅读时长 3155 小时、关注者 12456（`04-profile-scrolled2`），summary 解析正确。
+- tabs 区（`ProfileSharedMediaView`：`ScrollSlidingTextTabStrip` + `ViewPagerFixed`，条高 50dp / 7dp 内边距、页首行上留 54dp、圆角与颜色常量照 `SharedMediaLayout`；屏幕根布局实现 `NestedScrollingParent3`，tab 行顶到列表上缘后把列表吃不下的滚动交给当前页自己的列表，同 `ProfileActivity.NestedFrameLayout`）：话题/回复/点赞 是 `user_actions.json` 的 filter 4/5/1 各自分页（offset），书签仅自己（`/u/{u}/bookmarks.json` 每页 20），徽章是 `/user-badges/{u}.json`；每页有 `FlickerLoadingView` 与空态。设备：Neo 的 话题 页（`16-final-tab-topics`，真实帖子行，摘要已去 HTML）、徽章 页（`14-tab-badges`，热门链接/领导者/不错的回复 与授予日期）。
+- 设备上改掉的两处：summary 晚到会重建 info rows，最初把作为最后一行的 tabs 行一起冲掉（列表底部只剩统计行、tabs 永远到不了）；现在 `buildRows` 在 tabs 视图存在时总是重新追加该行，harness 的 tabs 用例同时喂 summary fixture 来钉住。另：`user_actions` 的摘要会带 cooked HTML（真站点的 `<a href=…>`），按书签同款 `plainTextFromHtml()` 去标签。
+- 未验证：真机（`449dd25d`）未装本片 APK（片内按规则只做只读设备）；录屏冻结，连续水滴动画只有 harness 帧与设备前后截图；关注/静音的写路径只在 harness 的 `FakeDiscourseSite` 上打过（设备上未对真实账号做写操作）。
+- 构建与测试：`:nativedo:assembleDebug -Pandroid.injected.build.abi=arm64-v8a`（排除两个 CMake 任务，arm64 `.so` 用既有构建产物拷入本 worktree 的 `jni/arm64-v8a/`）通过；同 HEAD `:nativedo:testDebugUnitTest` 43 类 153 项全过（0 失败、0 error、0 skipped）。没有改 `apps/android/telegram` 子树（`TopicFragment.openTopicAuthorProfile` 与 profile 文件都在本模块），vendor-guard 不涉及。APK sha256 `9f7f3cb6…` 与设备 `base.apk` 一致；证据在 `.amp/in/artifacts/profile-redesign/`。
 
 - 分类条的手感：分类名字是否可读、颜色是否分得开、选中胶囊是否清楚、分类放不下时横向滑动是否被发现；分类到达前列表先出现再下移的跳变是否能接受。
 - 标签菜单：栏上的标签图标是否能被看懂、标签多时弹窗里是否好找、选中的标签在标题里是否一眼可见、清除是否一步到位；分类加标签的组合请求是否返回符合预期的话题。

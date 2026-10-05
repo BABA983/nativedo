@@ -1206,16 +1206,27 @@ public class TopicFragment extends BaseFragment {
     /**
      * A tap on the center capsule asks for the person who started the topic; it is the same screen
      * a tap on their post's avatar opens, and the same the chat header opens on a tap of its own
-     * (ChatAvatarContainer's container listener).
+     * (ChatAvatarContainer's container listener). The avatar's X travels with the request: the
+     * profile plays the chat header's own flight for it (ChatAvatarContainer.openProfile sets
+     * ProfileActivity's `playProfileAnimation = 2` the same way), measured with the same
+     * ViewPositionWatcher call upstream makes before its animation (ProfileActivity.java:10080).
      */
     private void openTopicAuthorProfile() {
         if (topicAuthor == null || topicAuthor.username == null || topicAuthor.username.isEmpty()) {
             return;
         }
+        float avatarX = 0f;
+        if (avatarContainer != null && wallpaperView != null) {
+            org.telegram.ui.Components.BackupImageView avatar = avatarContainer.getAvatarImageView();
+            if (avatar != null) {
+                avatarX = org.telegram.ui.Components.chat.ViewPositionWatcher
+                        .computeXCoordinateInParent(avatar, wallpaperView);
+            }
+        }
         if (getParentActivity() instanceof NativeDoActivity) {
             ((NativeDoActivity) getParentActivity()).present(
-                    io.github.baba983.nativedo.profile.ProfileFragment.forUser(
-                            topicAuthor.username, topicAuthor.first_name));
+                    io.github.baba983.nativedo.profile.ProfileFragment.forUserFromAvatar(
+                            topicAuthor.username, topicAuthor.first_name, avatarX));
         }
     }
 
