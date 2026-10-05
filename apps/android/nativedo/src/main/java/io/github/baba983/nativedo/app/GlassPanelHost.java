@@ -10,6 +10,7 @@ import androidx.annotation.Nullable;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.LiteMode;
 import org.telegram.messenger.SharedConfig;
+import org.telegram.messenger.utils.RenderNodeEffects;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.blur3.BlurredBackgroundDrawableViewFactory;
 import org.telegram.ui.Components.blur3.drawable.BlurredBackgroundDrawable;
@@ -72,7 +73,11 @@ public final class GlassPanelHost {
         colorSource.setColor(Theme.getColor(Theme.key_windowBackgroundWhite));
         if (Build.VERSION.SDK_INT >= 31 && SharedConfig.chatBlurEnabled()) {
             BlurredBackgroundSourceRenderNode node = new BlurredBackgroundSourceRenderNode(colorSource);
-            node.setBlur(AndroidUtilities.dp(8));
+            // What the chat header's glass is made of: the frosted source.
+            // DownscaleScrollableNoiseSuppressor's SourcePart blurs dpf2(40) and raises the
+            // saturation by 3 (simpleMode branch, 410-416), so a capsule samples a strongly
+            // frosted, saturated image instead of the barely-softened one an 8dp blur gives.
+            node.setBlur(AndroidUtilities.dpf2(40), RenderNodeEffects.getSaturationX3RenderEffect());
             renderNode = node;
         } else {
             renderNode = null;
