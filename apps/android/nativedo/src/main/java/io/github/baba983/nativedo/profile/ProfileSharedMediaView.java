@@ -63,14 +63,18 @@ public class ProfileSharedMediaView extends FrameLayout {
     }
 
     private final Delegate delegate;
+    private final Theme.ResourcesProvider resourcesProvider;
     private final ScrollSlidingTextTabStrip tabStrip;
     private final ViewPagerFixed pager;
+    /** The surface under the strip; its colour follows the theme (see {@link #updateColors()}). */
+    private View tabRowSurface;
     private int currentTab = -1;
     private boolean tabsBuilt;
 
     public ProfileSharedMediaView(@NonNull Context context, Theme.ResourcesProvider resourcesProvider, @NonNull Delegate delegate) {
         super(context);
         this.delegate = delegate;
+        this.resourcesProvider = resourcesProvider;
 
         tabStrip = new ScrollSlidingTextTabStrip(context, resourcesProvider);
         tabStrip.animationDuration = 320;
@@ -154,7 +158,7 @@ public class ProfileSharedMediaView extends FrameLayout {
         // it a row's date would show through in the strip row. The band is that row's own surface
         // across the whole width, the way upstream's tab bar draws its own glass across the row it
         // pins in (SharedMediaLayout.java:3743-3751).
-        View tabRowSurface = new View(context);
+        tabRowSurface = new View(context);
         tabRowSurface.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite, resourcesProvider));
 
         // The pager goes in first and the strip over it: the strip is the pinned surface the
@@ -206,5 +210,20 @@ public class ProfileSharedMediaView extends FrameLayout {
 
     public ViewPagerFixed getPager() {
         return pager;
+    }
+
+    /** The day/night switch: the band's surface and the strip re-read the theme's colours. */
+    public void updateColors() {
+        if (tabStrip == null) {
+            return;
+        }
+        int surface = Theme.getColor(Theme.key_windowBackgroundWhite, resourcesProvider);
+        if (tabRowSurface != null) {
+            tabRowSurface.setBackgroundColor(surface);
+        }
+        // The strip's own surface is ours (upstream draws its glass here), so it is re-applied
+        // with the band's; updateColors() only re-resolves the tabs' text, line and selector.
+        tabStrip.setBackgroundColor(surface);
+        tabStrip.updateColors();
     }
 }

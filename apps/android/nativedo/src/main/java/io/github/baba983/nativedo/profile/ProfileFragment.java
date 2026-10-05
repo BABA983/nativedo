@@ -256,6 +256,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                 if (avatarContainer != null && listView != null) {
                     setAvatarExpandProgress(currentExpanAnimatorFracture);
                 }
+                applyThemeColors();
                 if (listView != null && listView.getAdapter() != null) {
                     listView.getAdapter().notifyDataSetChanged();
                 }
@@ -1110,6 +1111,24 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             tabPages[tab] = new TabPageState(tab);
         }
         return tabPages[tab];
+    }
+
+    /**
+     * The day/night switch: the surfaces that had their colour baked in when they were built read
+     * the theme again (the two lists' page surfaces and the tab strip's band).
+     */
+    private void applyThemeColors() {
+        if (listView != null) {
+            listView.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundWhite));
+        }
+        for (TabPageState page : tabPages) {
+            if (page != null) {
+                page.listView.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundWhite));
+            }
+        }
+        if (mediaView != null) {
+            mediaView.updateColors();
+        }
     }
 
     /** The strip's current page list, which is where a pinned scroll goes (see NestedFrameLayout). */
