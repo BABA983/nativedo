@@ -819,6 +819,13 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             return;
         }
         actionsView.mode = ownProfile ? ProfileActionsView.MODE_MY_PROFILE : ProfileActionsView.MODE_USER;
+        // The capsules' own colour, the way ProfileActivity gives them the profile's back colour
+        // (ProfileActivity.java:1334 calls setActionsColor with the peer colour); a linux.do user
+        // has no Telegram peer colour, so the avatar's own palette stands in, keyed by username.
+        actionsView.setActionsColor(
+                org.telegram.ui.Components.AvatarDrawable.getProfileBackColorForId(
+                        DiscourseRows.userId(username()), resourceProvider),
+                false);
         actionsView.beginApplyingActions();
         if (ownProfile) {
             actionsView.addBookmarks();
@@ -843,10 +850,10 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
     /**
      * What a button does. The writes come back through [ProfileLoader], and a successful one flips
      * the site's own state before the row is rebuilt - upstream re-applies its actions after a
-     * write the same way (ProfileActivity.java:6911-6916). Package-visible so a screen test can
-     * press the button the view draws.
+     * write the same way (ProfileActivity.java:6911-6916). Public so a screen test can press the
+     * button the view draws.
      */
-    void onActionClicked(int key, float x, float y) {
+    public void onActionClicked(int key, float x, float y) {
         switch (key) {
             case ProfileActionsView.KEY_MESSAGE:
                 openNewMessage();
@@ -2072,6 +2079,13 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             if (actionsView != null) {
                 actionsView.setParentExpanded(0);
             }
+            // The flight lands in the collapsed header's own layout (small round avatar, centered):
+            // the pull-down's fraction is handed back to 0 so a later expand starts from rest.
+            currentExpanAnimatorFracture = 0f;
+            currentExpandAnimatorValue = 0f;
+            if (avatarImage != null) {
+                avatarImage.setRoundRadiusForExpand(getSmallAvatarRoundRadius());
+            }
             restoreTransitionColors();
             checkListViewScroll();
             needLayout(true);
@@ -2126,10 +2140,14 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
     }
 
     /**
-     * The avatar along the flight path, ProfileActivity.java:8623-8690 with the Telegram-only
-     * overlays (stories, gifts, the time item, the emoji status) left out: it starts as the 42 dp
-     * capsule picture at the header avatar's X and grows to 138% of the 100 dp frame as its round
-     * corners open to the full-width square.
+     * The avatar along the flight path, ProfileActivity.java:8623-8690 adapted to this screen's end
+     * state: the picture starts as the capsule's 42 dp round avatar at the capsule's own X and
+     * grows to the header's 96 dp rest scale, its container travelling to the centered position
+     * the collapsed header sits at (~ProfileActivity's `avatarContainer.setTranslationX(
+     * lerp(avX, 0, avatarAnimationProgress))`, whose 0 is that centered position in the expanded
+     * end state Telegram lands in; this screen lands in the collapsed one, so the target is
+     * fixAvatarImageInCenter()'s X). Telegram-only overlays (stories, gifts, the emoji status, the
+     * time/community items) are left out.
      */
     private void openAnimationAvatarLayout(float newTop) {
         float avX = prevAvatarTranslation;
@@ -2138,28 +2156,22 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                 - 21 * AndroidUtilities.density
                 + actionBar.getTranslationY();
 
-        avatarScale = lerp(42, 138, avatarAnimationProgress) / 100f;
+        avatarScale = lerp(42, 96, avatarAnimationProgress) / 100f;
         pullUpProgress = 0.0f;
 
-        avatarImage.setRoundRadiusForExpand(
-                (int) AndroidUtilities.lerp(getSmallAvatarRoundRadius(), 0f, avatarAnimationProgress));
-        avatarContainer.setTranslationX(AndroidUtilities.lerp(avX, 0, avatarAnimationProgress));
-        avatarContainer.setTranslationY(AndroidUtilities.lerp((float) Math.ceil(avY), 0f, avatarAnimationProgress));
+        final FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) avatarContainer.getLayoutParams();
+        params.width = dp(100);
+        params.height = dp(100);
         avatarContainer.setScaleX(avatarScale);
         avatarContainer.setScaleY(avatarScale);
-        avatarImage.setBlurRadiusProgressForExpand(avatarAnimationProgress, avatarScale, true);
 
-        final FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) avatarContainer.getLayoutParams();
-        params.width = (int) lerp(dpf2(100), listView.getMeasuredWidth() / avatarScale, avatarAnimationProgress);
-        params.height = (int) lerp(dpf2(100), (extraHeight + newTop) / avatarScale, avatarAnimationProgress);
+        float restX = listView.getMeasuredWidth() / 2f - (params.width * avatarScale * 0.5f);
+        avatarContainer.setTranslationX(AndroidUtilities.lerp(avX, restX, avatarAnimationProgress));
+        avatarContainer.setTranslationY((float) Math.ceil(avY));
         avatarContainer.requestLayout();
-        fixAvatarImageInCenter();
 
-        // The title keeps the scale the flight ends at, pivoted from its base, the way upstream's
-        // collapsing copy does (nameTextView[1].setPivotY(measuredHeight), 1.38f).
-        nameTextView.setPivotY(nameTextView.getMeasuredHeight());
-        nameTextView.setScaleX(AndroidUtilities.lerp(1f, 1.38f, avatarAnimationProgress));
-        nameTextView.setScaleY(AndroidUtilities.lerp(1f, 1.38f, avatarAnimationProgress));
+        avatarImage.setRoundRadiusForExpand(getSmallAvatarRoundRadius());
+        avatarImage.setBlurRadiusProgressForExpand(avatarAnimationProgress, avatarScale, false);
     }
 
     private void captureBackwardInitialValues() {
@@ -2214,7 +2226,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
      * Whether the header's action row currently shows [key] (one of [ProfileActionsView]'s KEY_*):
      * the observable answer to what the site said this reader may do.
      */
-    boolean hasAction(int key) {
+    public boolean hasAction(int key) {
         return actionsView != null && actionsView.hasAction(key);
     }
 

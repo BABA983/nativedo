@@ -135,6 +135,8 @@ internal class ProfileRedesignTest {
             detailValue("信任等级") == "3"
         }
         assertEquals("the author's handle", "baba", profile.arguments?.getString("username"))
+        // The action row's capsules animate in; a few frames settle them for the render.
+        repeat(25) { harness.idleClock(20); harness.drawApp() }
         harness.renderApp("profile-open-from-capsule")
         harness.assertNoTelegramSideEffects()
     }

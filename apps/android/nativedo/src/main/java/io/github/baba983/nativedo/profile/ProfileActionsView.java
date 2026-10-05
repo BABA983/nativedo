@@ -209,7 +209,9 @@ public class ProfileActionsView extends View {
         if (color == 0) return;
         if (!hasColorById) {
             paint.setColor(color);
-//            paint.setAlpha(40);
+            // Upstream's 40-alpha fill sits on the blurred profile background its expanded header
+            // paints; this screen's is the theme's own surface, so the capsule is drawn solid.
+            paint.setAlpha(255);
             return;
         }
         int w = getMeasuredWidth();
@@ -1273,7 +1275,7 @@ public class ProfileActionsView extends View {
         NOTIFICATION_UNMUTE(R.string.ProfileButtonUnmute, R.drawable.filled_profile_unmute_24, R.drawable.outline_profile_unmute_24),
         DISCUSS(R.string.ProfileActionsDiscuss, R.drawable.filled_profile_message_24, R.drawable.outline_profile_message_24),
         GIFT(R.string.ProfileActionsGift, R.drawable.gift, R.drawable.input_gift_s),
-        SHARE(R.string.ProfileActionsShare, R.drawable.action_share, R.drawable.msg_share),
+        SHARE("分享", R.drawable.action_share, R.drawable.msg_share),
         CALL(R.string.ProfileActionsCall, R.drawable.filled_profile_call_24, R.drawable.outline_profile_call_24),
         VIDEO(R.string.ProfileActionsVideo, R.drawable.filled_profile_video_24, R.drawable.outline_profile_video_24),
         JOIN(R.string.ProfileActionsJoin, R.drawable.filled_profile_member_24, R.drawable.outline_profile_member_24),

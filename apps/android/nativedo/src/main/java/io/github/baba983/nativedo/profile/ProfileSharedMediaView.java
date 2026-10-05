@@ -82,7 +82,10 @@ public class ProfileSharedMediaView extends FrameLayout {
         tabStrip.setUseMinimalWidth(true);
         tabStrip.setPadding(0, dp(7), 0, dp(7));
         tabStrip.setClipToPadding(false);
-        tabStrip.setBackground(null);
+        // The strip sits over the pages, and a page's rows scroll under it: it needs a surface of
+        // its own. Upstream draws its blur3 glass here (SharedMediaLayout.java:3743-3749); this
+        // screen keeps the theme's own background so the rows behind it do not show through.
+        tabStrip.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite, resourcesProvider));
         tabStrip.setOpen(false);
         tabStrip.setDelegate(new ScrollSlidingTextTabStrip.ScrollSlidingTabStripDelegate() {
             @Override
@@ -146,12 +149,14 @@ public class ProfileSharedMediaView extends FrameLayout {
             }
         });
 
+        // The pager goes in first and the strip over it: the strip is the pinned surface the
+        // pages scroll under (upstream adds it after the pages, SharedMediaLayout.java:3751).
+        addView(pager, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.LEFT));
         addView(tabStrip, LayoutHelper.createFrame(
                 LayoutHelper.WRAP_CONTENT,
                 STRIP_HEIGHT_DP,
                 Gravity.CENTER_HORIZONTAL | Gravity.TOP, -2, 0, -2, 0));
-        addView(pager, LayoutHelper.createFrame(
-                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.LEFT));
         selectTab(0, false);
     }
 
