@@ -62,6 +62,7 @@ jobs:
       android: ${{ steps.filter.outputs.android }}
       vendor: ${{ steps.filter.outputs.vendor }}
       plugin: ${{ steps.filter.outputs.plugin }}
+      nativedo: ${{ steps.filter.outputs.nativedo }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -78,6 +79,7 @@ jobs:
             echo "android=true" >> "$GITHUB_OUTPUT"
             echo "vendor=true" >> "$GITHUB_OUTPUT"
             echo "plugin=true" >> "$GITHUB_OUTPUT"
+            echo "nativedo=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           # Both events classify the same way: over the files this push (or this pull request)
@@ -86,20 +88,29 @@ jobs:
           android=false
           vendor=false
           plugin=false
+          nativedo=false
           while IFS= read -r path; do
             case "$path" in
+              # The full-Telegram subtree and our module: the old :app job does not
+              # cover them, so they get their own job (dependency prep + NDK build).
+              apps/android/telegram/*|apps/android/nativedo/*) nativedo=true ;;
               apps/android/*) android=true; vendor=true ;;
               # `DiscourseApiClientTest` / `DiscourseMediaUploaderTest` read fixtures/discourse/*,
               # so a fixture edit can fail the unit suite even though it ships no code.
-              fixtures/*) android=true ;;
+              fixtures/*) android=true; nativedo=true ;;
+              # The telegram deps/hook-guard tools and their tests both live in
+              # `scripts/`, so their edits run the vendor test discovery *and* the
+              # nativedo job (which needs full history to resolve the pin).
+              scripts/telegram_*|scripts/telegram-*|scripts/telegramlib.py|scripts/tests/test_telegram_*) vendor=true; nativedo=true ;;
               scripts/*|contracts/*|vendor-overlay.json|VENDOR.md) vendor=true ;;
               .amp/plugins/*) plugin=true ;;
-              .github/workflows/*) android=true; vendor=true; plugin=true ;;
+              .github/workflows/*) android=true; vendor=true; plugin=true; nativedo=true ;;
             esac
           done < <(git diff --name-only "$base" HEAD)
           echo "android=$android" >> "$GITHUB_OUTPUT"
           echo "vendor=$vendor" >> "$GITHUB_OUTPUT"
           echo "plugin=$plugin" >> "$GITHUB_OUTPUT"
+          echo "nativedo=$nativedo" >> "$GITHUB_OUTPUT"
 
   plugin:
     needs: changes
@@ -244,3 +255,90 @@ jobs:
             ~/.gradle/caches
             ~/.gradle/wrapper
           key: gradle-v2-${{ runner.os }}-${{ hashFiles('apps/android/*.gradle.kts', 'apps/android/*/build.gradle.kts', 'apps/android/*/build.gradle', 'apps/android/gradle/**') }}
+
+  # The full-Telegram stack: `apps/android/telegram` (a git subtree of upstream
+  # kept byte-for-byte) plus our module at `apps/android/nativedo`. This job is
+  # separate from `android` because it needs a different toolchain (platform/
+  # build-tools 36, NDK 27.2.12479018, CMake 3.22.1), a full-history clone (the
+  # subtree pin and its 15 dependency gitlinks live in history), and a source
+  # fetch of those pinned dependency trees before Gradle can run.
+  nativedo:
+    needs: changes
+    if: needs.changes.outputs.nativedo == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The pin is the `git subtree` merge of apps/android/telegram; its tree
+          # carries the 15 dependency gitlinks. A shallow clone cannot resolve
+          # either, so both `scripts/telegram-deps.sh` and the hook guard would
+          # have nothing to read.
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: "platforms;android-36 build-tools;36.0.0 ndk;27.2.12479018 cmake;3.22.1 platform-tools"
+
+      # Same retry-and-cache reasoning as the `android` job: artifact resolution
+      # fails transiently, and a warm Gradle home turns a re-attempt into local
+      # reads. The key lists the build scripts explicitly instead of a broad
+      # `**/*.gradle*` glob, which would also match the `.gradle` project
+      # directory and could never hit (see the android job).
+      - uses: actions/cache/restore@v4
+        id: nativedo-gradle-cache
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-nativedo-v1-${{ runner.os }}-${{ hashFiles('apps/android/*.gradle.kts', 'apps/android/*/build.gradle.kts', 'apps/android/*/build.gradle', 'apps/android/telegram/gradle/**', 'apps/android/telegram/gradle.properties', 'apps/android/telegram/buildSrc/**/*.gradle.kts') }}
+          restore-keys: |
+            gradle-nativedo-v1-${{ runner.os }}-
+
+      - name: Materialize pinned Telegram dependency trees
+        # Idempotent and pinned to the subtree's gitlinks: fetches each of the 15
+        # trees from its own `.gitmodules` remote and extracts it. No prebuilt
+        # `.so` is copied from anywhere.
+        run: scripts/telegram-deps.sh
+
+      - name: Hook guard (upstream stays pristine)
+        # Fails on any non-hook edit under apps/android/telegram, so a render,
+        # measurement or gesture change shows up here instead of silently
+        # entering the subtree.
+        run: scripts/telegram-hook-guard.sh
+
+      - name: Dependency and hook-guard tool tests
+        run: python3 -m unittest discover -s scripts/tests -t scripts/tests -p 'test_telegram_*.py'
+
+      - name: Unit tests
+        run: ./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:testDebugUnitTest --quiet
+
+      - name: arm64 assemble
+        run: ./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:assembleDebug -Pandroid.injected.build.abi=arm64-v8a --quiet
+
+      # On failure keep what a human needs to diagnose it without re-running the
+      # ~15 minute job: the JUnit XML, the test report, and the APK/logs if the
+      # build got far enough. Retained for a week; a green run uploads nothing.
+      - name: Upload verification artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nativedo-verification
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            apps/android/nativedo/build/test-results/**
+            apps/android/nativedo/build/reports/tests/**
+            apps/android/nativedo/build/outputs/apk/**
+            apps/android/nativedo/build/intermediates/apk/**
+            apps/android/nativedo/build/outputs/logs/**
+
+      - uses: actions/cache/save@v4
+        if: success() && steps.nativedo-gradle-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-nativedo-v1-${{ runner.os }}-${{ hashFiles('apps/android/*.gradle.kts', 'apps/android/*/build.gradle.kts', 'apps/android/*/build.gradle', 'apps/android/telegram/gradle/**', 'apps/android/telegram/gradle.properties', 'apps/android/telegram/buildSrc/**/*.gradle.kts') }}

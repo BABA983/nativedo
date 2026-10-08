@@ -7,4 +7,5 @@
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
-exec "$ROOT/scripts/vendor-guard.sh" --quick
+"$ROOT/scripts/vendor-guard.sh" --quick
+exec "$ROOT/scripts/telegram-hook-guard.sh"
