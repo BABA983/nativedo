@@ -93,14 +93,42 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
      * preset, and the preset is what the glass (chat blur / liquid glass) reads.
      */
     private final LiteMode.BatteryReceiver batteryReceiver = new LiteMode.BatteryReceiver();
-    /** Whether the session question has been answered, so a link can be opened right away. */
-    private boolean sessionResolved;
+    /**
+     * Whether the session gate has answered *and* the answer was a signed-in reader. A VIEW link
+     * arriving while the gate is still asking, or while the login page is up, is kept pending
+     * rather than presented: the topic is private content, and opening it before the gate says the
+     * reader may see it is exactly what the gate exists to stop. The login page's own completion
+     * flips this true (see {@link #onSessionResolved} and {@link #signedOut}).
+     */
+    private boolean sessionAuthenticated;
     /** The topic a VIEW link asked for, and the floor it named; 0 while there is none. */
     private long pendingTopicId;
     private int pendingFloor;
+    /** The root tab a restored shell should open; 0 (the first tab) unless a recreation named one. */
+    private int restoredTabPosition;
+
+    /**
+     * Set once {@link #onDestroy} has run. The session gate's answer is a network round-trip, so it
+     * can land after the shell that asked for it was destroyed (a slow revalidation across a
+     * configuration change, say); the answer is dropped rather than built on a dead host.
+     */
+    private boolean destroyed;
+
+    /**
+     * How many shell instances are alive, in LaunchActivity's shape (266, 6856-6859): the viewer
+     * singletons are torn down only when the last one goes, so a configuration change's replacement
+     * activity never has the viewer it may already own destroyed under it.
+     */
+    private static int activeInstanceCount;
+
+    /** Saved-instance keys: the root tab and the topic (with its floor) the reader had open. */
+    private static final String STATE_TAB = "nativedo_tab";
+    private static final String STATE_TOPIC_ID = "nativedo_topic_id";
+    private static final String STATE_TOPIC_FLOOR = "nativedo_topic_floor";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        activeInstanceCount++;
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         setTheme(org.telegram.messenger.R.style.Theme_TMessages);
         super.onCreate(savedInstanceState);
@@ -327,31 +355,40 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
             );
         }
 
+        // The session lives in cookies, so what to open with cannot be decided synchronously:
+        // show progress, revalidate the session, then present the answer. Gating here rather than
+        // in a fragment of its own keeps the first screen the app shows the real one. A recreation
+        // is gated the same way: the navigation it names is only *read* below and is presented
+        // after the session is answered, so private content never reaches the screen before the
+        // gate lets it through.
+        showSessionProgress();
+        AppContainer container = NativeDo.container(this);
         if (savedInstanceState == null) {
-            // The session lives in cookies, so what to open with cannot be decided synchronously:
-            // show progress, restore the session, then present the answer. Gating here rather than
-            // in a fragment of its own keeps the first screen the app shows the real one.
-            showSessionProgress();
-            AppContainer container = NativeDo.container(this);
             // A linux.do link is the reader saying what to open; it is read before the session is
             // answered so the answer can act on it.
             readTopicLink(getIntent());
-            SessionStarter.INSTANCE.start(container, state -> {
-                onSessionResolved(state instanceof AppSessionState.Authenticated);
-                return kotlin.Unit.INSTANCE;
-            });
+        } else {
+            restoreNavigation(savedInstanceState);
         }
+        SessionStarter.INSTANCE.start(container, state -> {
+            onSessionResolved(state instanceof AppSessionState.Authenticated);
+            return kotlin.Unit.INSTANCE;
+        });
     }
 
     /**
      * A linux.do topic link opened while the app is already up. The reader asked for a topic, so it
-     * is pushed on top of whatever they were reading, the same as a row tap from a feed.
+     * is pushed on top of whatever they were reading, the same as a row tap from a feed - but only
+     * once the gate has said the reader is signed in. While the gate is still asking, or while the
+     * login page is up, the link is only kept as the pending route: the login page's completion
+     * opens it, so a link that arrives during login is not lost and is not shown before the reader
+     * may see it.
      */
     @Override
     protected void onNewIntent(android.content.Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
-        if (!readTopicLink(intent) || !sessionResolved) {
+        if (!readTopicLink(intent) || !sessionAuthenticated) {
             return;
         }
         openPendingTopic();
@@ -672,6 +709,17 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
 
     @Override
     protected void onDestroy() {
+        // The gate's answer may still be on its way; from here on it lands on a dead shell.
+        destroyed = true;
+        // LaunchActivity:6856-6861. The shell count is decremented first, so the shared viewers -
+        // and this shell's registration as the browser host - are released only when this was the
+        // last one: a configuration change's replacement activity owns both now, and clearing them
+        // here would take the replacement's window and its in-app browser with it.
+        activeInstanceCount--;
+        if (activeInstanceCount == 0) {
+            releaseSharedViewers();
+            NativeDoHooks.setBrowserHost(null);
+        }
         NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.needSetDayNightTheme);
         NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.needCheckSystemBarColors);
         NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.didSetNewTheme);
@@ -681,7 +729,6 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         } catch (Exception e) {
             FileLog.e(e);
         }
-        NativeDoHooks.setBrowserHost(null);
         // LaunchActivity:6886-6894. (Upstream's API-33 branch tests the wrong field at 6891 - the
         // plain callback is the one registered there - so this unregisters the one it registered.)
         if (Build.VERSION.SDK_INT >= 34) {
@@ -693,7 +740,47 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
                 getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback((OnBackInvokedCallback) onBackInvokedCallback);
             }
         }
+        // LaunchActivity:6897-6898. Upstream tells every screen on the stack it is gone before the
+        // activity finishes; that is where a screen releases what it subscribed to (the tab host's
+        // message-bus handle, for one). The fragments are not AndroidX fragments, so the framework
+        // will not do it for them.
+        clearFragments();
         super.onDestroy();
+    }
+
+    /**
+     * LaunchActivity.clearFragments (1265-1280): each screen is told it is destroyed, then the
+     * layout's stack is emptied. The layout's stack is the live list (see the constructor's
+     * {@code setFragmentStack}), the same one upstream clears, so the removal needs no animation and
+     * no second {@code onFragmentDestroy} through the pop path.
+     */
+    private void clearFragments() {
+        if (actionBarLayout == null) {
+            return;
+        }
+        List<BaseFragment> stack = actionBarLayout.getFragmentStack();
+        for (BaseFragment fragment : new ArrayList<>(stack)) {
+            fragment.onFragmentDestroy();
+        }
+        stack.clear();
+    }
+
+    /**
+     * LaunchActivity.onDestroyStaticResources (6884-6945), for the viewers this client can open: a
+     * {@link PhotoViewer} (a post's full-screen image), an {@link ArticleViewer} (the in-app browser)
+     * and a {@link ContentPreviewViewer} each hold a window and global observers, and none of them
+     * should outlive the last activity that could show them.
+     */
+    private void releaseSharedViewers() {
+        if (PhotoViewer.hasInstance()) {
+            PhotoViewer.getInstance().destroyPhotoViewer();
+        }
+        if (ArticleViewer.hasInstance()) {
+            ArticleViewer.getInstance().destroyArticleViewer();
+        }
+        if (ContentPreviewViewer.hasInstance()) {
+            ContentPreviewViewer.getInstance().destroy();
+        }
     }
 
     /**
@@ -716,6 +803,11 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
             actionBarLayout.onResume();
             updateSystemBarColors();
         }
+        // LaunchActivity:7016-7018. An open PhotoViewer is told the app is in front again: its
+        // video seeks back to where it was and its paint view, if any, resumes.
+        if (PhotoViewer.hasInstance() && PhotoViewer.getInstance().isVisible()) {
+            PhotoViewer.getInstance().onResume();
+        }
     }
 
     @Override
@@ -729,6 +821,11 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         ApplicationLoader.mainInterfacePaused = true;
         if (actionBarLayout != null) {
             actionBarLayout.onPause();
+        }
+        // LaunchActivity:6764-6766. A PhotoViewer left open as the app leaves the front closes a
+        // live gesture and drops its looping; without this it keeps playing behind the next app.
+        if (PhotoViewer.hasInstance() && PhotoViewer.getInstance().isVisible()) {
+            PhotoViewer.getInstance().onPause();
         }
     }
 
@@ -802,7 +899,10 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
             return;
         }
         actionBarLayout.removeAllFragments();
-        actionBarLayout.presentFragment(new NativeDoMainTabsActivity(), false);
+        actionBarLayout.presentFragment(
+                NativeDoMainTabsActivity.forTab(restoredTabPosition), false);
+        // Consumed: a later root (after a sign-out and sign-in) starts on the first tab.
+        restoredTabPosition = 0;
     }
 
     private void showSessionProgress() {
@@ -816,15 +916,31 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
     }
 
     private void onSessionResolved(boolean authenticated) {
+        // The answer may outlive the shell: the revalidation is a network round-trip, and a
+        // configuration change can destroy the asker before it lands. Building on a destroyed
+        // activity's layout would put a screen on a window that is gone; the replacement has its
+        // own gate (see onCreate), so this shell drops the answer.
+        if (destroyed) {
+            return;
+        }
         if (sessionProgress != null) {
             contentView.removeView(sessionProgress);
             sessionProgress = null;
         }
-        sessionResolved = true;
+        sessionAuthenticated = authenticated;
         if (authenticated) {
             showRootOrPendingTopic();
         } else {
-            actionBarLayout.presentFragment(new LoginWebViewFragment(this::showRootOrPendingTopic), false);
+            // The login WebView's completion lands in this shell too; a login that finished after
+            // the shell was destroyed belongs to the replacement, not here. Only that completion
+            // makes the reader signed in: the gate answering anonymous is exactly why a link stays
+            // pending rather than opening (see {@link #onNewIntent}).
+            actionBarLayout.presentFragment(new LoginWebViewFragment(() -> {
+                if (!destroyed) {
+                    sessionAuthenticated = true;
+                    showRootOrPendingTopic();
+                }
+            }), false);
         }
     }
 
@@ -842,7 +958,8 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         // and presentFragment refuses while one is - so the feed goes on the stack without an
         // animation and the topic is presented over it.
         actionBarLayout.removeAllFragments();
-        actionBarLayout.addFragmentToStack(new NativeDoMainTabsActivity());
+        actionBarLayout.addFragmentToStack(NativeDoMainTabsActivity.forTab(restoredTabPosition));
+        restoredTabPosition = 0;
         openPendingTopic();
     }
 
@@ -858,6 +975,93 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
     }
 
     /**
+     * Reads the navigation a saved instance names, without presenting any of it: the selected root
+     * tab, and the topic - its id and floor - the reader had open. The fields are consumed after the
+     * session is revalidated (see {@link #onCreate}), so a recreation cannot put private content on
+     * the screen before the gate has answered.
+     *
+     * <p>The topic is rebuilt from its own arguments rather than from a serialized fragment: the
+     * shell supports the reader's navigation, not a generic fragment graph, and {@code TopicFragment}
+     * is the only pushed screen whose arguments fully describe it.</p>
+     */
+    private void restoreNavigation(Bundle state) {
+        int tab = state.getInt(STATE_TAB, 0);
+        restoredTabPosition = tab >= 0 ? tab : 0;
+        long topicId = state.getLong(STATE_TOPIC_ID, 0);
+        if (topicId > 0) {
+            pendingTopicId = topicId;
+            pendingFloor = state.getInt(STATE_TOPIC_FLOOR, 0);
+        }
+    }
+
+    /**
+     * The shell's own instance state, in LaunchActivity's shape (8250-8300): the root tab, the topic
+     * the reader had open, and the last screen's own {@code saveSelfArgs}. What is restored is
+     * deliberately narrow - the reader's navigation, not the whole back stack - because only the root
+     * and a topic can be rebuilt faithfully without Telegram's account state.
+     */
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        if (actionBarLayout == null) {
+            return;
+        }
+        List<BaseFragment> stack = actionBarLayout.getFragmentStack();
+        for (BaseFragment fragment : stack) {
+            if (fragment instanceof NativeDoMainTabsActivity) {
+                outState.putInt(STATE_TAB, ((NativeDoMainTabsActivity) fragment).getSelectedTabPosition());
+            }
+        }
+        // The topic the reader was in. The stack is searched from the top, so a screen pushed over a
+        // topic does not hide it; the fragment's own saved args are given to it the way upstream does.
+        for (int index = stack.size() - 1; index >= 0; index--) {
+            BaseFragment fragment = stack.get(index);
+            if (fragment instanceof io.github.baba983.nativedo.topic.TopicFragment) {
+                Bundle args = fragment.getArguments();
+                if (args != null) {
+                    long topicId = args.getLong("topic_id", 0);
+                    if (topicId > 0) {
+                        outState.putLong(STATE_TOPIC_ID, topicId);
+                        int floor = currentReadingFloor(topicId, args.getInt("floor", 0));
+                        if (floor > 0) {
+                            outState.putInt(STATE_TOPIC_FLOOR, floor);
+                        }
+                    }
+                }
+                break;
+            }
+        }
+        BaseFragment last = stack.isEmpty() ? null : stack.get(stack.size() - 1);
+        if (last != null) {
+            last.saveSelfArgs(outState);
+        }
+    }
+
+    /**
+     * The floor the reader is on now. The fragment's arguments only carry the floor the screen was
+     * *opened* at - a feed row's post number, a link's floor - which a reader who has since scrolled
+     * past is no longer on; restoring from it would send them back down a thread they had already
+     * read. The device's own read position for the topic is the current floor (the same position the
+     * topic screen resumes from when it is opened without one), so it wins; the opening floor is
+     * only the fallback for a topic that has no stored position yet.
+     *
+     * <p>The stored position is per reader (its key is the base URL, the username and the topic), so
+     * it is read only while a signed-in identity exists; an anonymous shell has no position of its
+     * own and keeps the opening floor.</p>
+     */
+    private int currentReadingFloor(long topicId, int openedAtFloor) {
+        AppContainer container = NativeDo.container(this);
+        io.github.baba983.nativedo.core.session.SessionSnapshot snapshot = container.getSessionStore().snapshot();
+        if (snapshot == null || snapshot.getUsername() == null || snapshot.getUsername().isEmpty()) {
+            return openedAtFloor;
+        }
+        io.github.baba983.nativedo.feature.topic.data.TopicReadPositionKey key =
+                new io.github.baba983.nativedo.feature.topic.data.TopicReadPositionKey(
+                        container.getBaseUrl(), snapshot.getUsername(), topicId);
+        return Math.max(openedAtFloor, container.getTopicReadPositionStore().load(key));
+    }
+
+    /**
      * The reader signed out. The session is gone, so every screen built on it is gone too: the
      * login page replaces the stack, and the tab shell comes back once there is a reader again.
      */
@@ -865,10 +1069,18 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         if (actionBarLayout == null) {
             return;
         }
+        // The reader is gone, so the gate's mark goes with the session: a VIEW link that arrives
+        // while the login page is up must stay pending, not open private content (onNewIntent).
+        sessionAuthenticated = false;
         // Nothing behind the login page is usable without a session, so the tab shell goes with it
         // and comes back when the reader is back.
         actionBarLayout.removeAllFragments();
-        actionBarLayout.presentFragment(new LoginWebViewFragment(this::showRootOrPendingTopic), false);
+        actionBarLayout.presentFragment(new LoginWebViewFragment(() -> {
+            if (!destroyed) {
+                sessionAuthenticated = true;
+                showRootOrPendingTopic();
+            }
+        }), false);
     }
 
     /** Pushes a screen on top of the current one; back returns to it. */

@@ -54,6 +54,7 @@ import org.telegram.ui.ContentPreviewViewer;
 import org.telegram.ui.PhotoViewer;
 
 import java.util.ArrayList;
+import io.github.baba983.nativedo.hooks.NativeDoHooks;
 
 public class MentionsContainerView extends FrameLayout implements NotificationCenter.NotificationCenterDelegate {
 
@@ -239,6 +240,7 @@ public class MentionsContainerView extends FrameLayout implements NotificationCe
             }
 
         }, resourcesProvider, isStories());
+        adapter = NativeDoHooks.createMentionsAdapter(adapter, this, context, dialogId, threadMessageId, resourcesProvider);
         paddedAdapter = new PaddedListAdapter(adapter);
         listView.setAdapter(paddedAdapter);
         listView.setTranslationY(AndroidUtilities.dp(6));

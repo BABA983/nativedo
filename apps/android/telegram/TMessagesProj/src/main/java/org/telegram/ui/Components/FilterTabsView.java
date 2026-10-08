@@ -869,7 +869,7 @@ public class FilterTabsView extends FrameLayout {
                 animationTime = 1.0f;
             }
             if (animationTime < 1.0f) {
-                AndroidUtilities.runOnUIThread(animationRunnable);
+                io.github.baba983.nativedo.hooks.NativeDoHooks.repostIndicatorAnimation(animationRunnable); // NativeDo: hold the indicator to the frame clock
             } else {
                 animatingIndicator = false;
                 setEnabled(true);

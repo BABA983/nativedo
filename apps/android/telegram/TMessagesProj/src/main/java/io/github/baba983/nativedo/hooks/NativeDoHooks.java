@@ -324,6 +324,209 @@ public final class NativeDoHooks {
         return scheme == null || "http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme);
     }
 
+    /**
+     * The seam for upstream's rich editor ({@code org.telegram.ui.iv.RichEditor}).
+     *
+     * <p>The editor is bound to a {@code ChatActivity}: its send path builds a Telegram message and
+     * hands it to {@code SendMessagesHelper}, and its draft path writes to Telegram's own draft
+     * database. This client has neither. The host is bound to the editor instance itself - this
+     * client opens the upstream screen through a {@code DiscourseRichEditor} subclass that
+     * implements this interface - so the upstream call sites hand the editor and its live rows
+     * straight in, with no process-wide registry to keep in sync and no reflection to reach a
+     * package-private list. A real Telegram editor is not an instance of this interface, so the
+     * hooks return false and upstream runs unchanged.</p>
+     */
+    public interface RichEditorHost {
+        void bindRows(java.util.List<org.telegram.ui.iv.BlockRow> rows);
+
+        /**
+         * The editor's Apply/send was pressed, with the editor's live blocks. Return true when the
+         * content was applied here (exported to the reader's composer, say); false lets upstream
+         * send it as a Telegram message.
+         */
+        boolean onApply(java.util.List<org.telegram.ui.iv.BlockRow> rows);
+
+        /**
+         * The editor is keeping the reader's work (a back press, a transition out), with the
+         * editor's live blocks. Return true when the content was written here; false lets upstream
+         * persist its own draft.
+         */
+        boolean onPersistDraft(java.util.List<org.telegram.ui.iv.BlockRow> rows);
+
+        boolean canClose(java.util.List<org.telegram.ui.iv.BlockRow> rows, boolean showError);
+    }
+
+    /** The host bound to {@code editor}, or null for a real Telegram editor. */
+    private static RichEditorHost richEditorHost(org.telegram.ui.iv.RichEditor editor) {
+        return editor instanceof RichEditorHost ? (RichEditorHost) editor : null;
+    }
+
+    /** Whether this client's editor owns the screen; upstream's controls ask here. */
+    public static boolean richEditorHostPresent(org.telegram.ui.iv.RichEditor editor) {
+        return richEditorHost(editor) != null;
+    }
+
+    /**
+     * Answered from the editor's own send path with its live rows; true means the content left
+     * through this client and upstream's Telegram send is skipped.
+     */
+    public static boolean onRichEditorSend(org.telegram.ui.iv.RichEditor editor, java.util.List<org.telegram.ui.iv.BlockRow> rows) {
+        RichEditorHost host = richEditorHost(editor);
+        return host != null && host.onApply(rows);
+    }
+
+    /**
+     * Answered from the editor's own draft path with its live rows; true means this client wrote
+     * the draft and upstream's Telegram draft write is skipped.
+     */
+    public static boolean onRichEditorPersistDraft(org.telegram.ui.iv.RichEditor editor, java.util.List<org.telegram.ui.iv.BlockRow> rows) {
+        RichEditorHost host = richEditorHost(editor);
+        return host != null && host.onPersistDraft(rows);
+    }
+
+    public static boolean richEditorCanClose(org.telegram.ui.iv.RichEditor editor, java.util.List<org.telegram.ui.iv.BlockRow> rows, boolean showError) {
+        RichEditorHost host = richEditorHost(editor);
+        return host == null || host.canClose(rows, showError);
+    }
+
+    /**
+     * Telegram's premium lock on the editor, answered by whether this client owns it.
+     *
+     * <p>Upstream reads the lock off a Telegram account's entitlement. This client has no account,
+     * so the lock would cover formatting the site does support (headings, lists, tables, marked,
+     * sub/super) and would block the Apply. While this client owns the editor the lock is off; a
+     * real Telegram editor keeps the value upstream computed.</p>
+     */
+    public static boolean richEditorPremiumLock(org.telegram.ui.iv.RichEditor editor, boolean upstream) {
+        return richEditorHost(editor) == null && upstream;
+    }
+
+    public static void richEditorCreated(org.telegram.ui.iv.RichEditor editor, org.telegram.ui.Components.ChatActivityEnterView.SendButton button, java.util.List<org.telegram.ui.iv.BlockRow> rows) {
+        RichEditorHost host = richEditorHost(editor);
+        if (host != null) {
+            host.bindRows(rows);
+            button.setResourceId(org.telegram.messenger.R.drawable.input_done);
+            button.setContentDescription("完成并返回");
+            button.setOnLongClickListener(null);
+        }
+    }
+
+    /**
+     * One control that only means something inside Telegram (AI, media attach, inline button, date,
+     * formula): hidden while this client owns the editor, so the reader is never offered a screen
+     * this client cannot finish. The view is returned so the upstream call site keeps its chain,
+     * and it is untouched - still visible - in a real Telegram build.
+     */
+    public static <T extends android.view.View> T richEditorControl(org.telegram.ui.iv.RichEditor editor, T control) {
+        if (control != null && richEditorHost(editor) != null) {
+            control.setVisibility(android.view.View.GONE);
+        }
+        return control;
+    }
+
+    /**
+     * The seam for upstream's mention panel ({@code org.telegram.ui.Components.MentionsContainerView}).
+     *
+     * <p>The panel builds its own {@code MentionsAdapter} against Telegram's chat participants,
+     * which this client has none of: a linux.do composer offers the site's users and mentionable
+     * groups instead. The host is bound to the panel instance itself - this client opens the panel
+     * through a {@code DiscourseMentionsPanel} subclass that implements this interface - so
+     * upstream's single construction site hands the panel straight in, with no process-wide
+     * registry to keep in sync and no reflection. A real Telegram panel is not an instance of this
+     * interface, so the hook hands back upstream's own adapter and Telegram runs unchanged.</p>
+     */
+    public interface MentionsHost {
+        org.telegram.ui.Adapters.MentionsAdapter createMentionsAdapter(
+                org.telegram.ui.Adapters.MentionsAdapter upstream,
+                org.telegram.ui.Components.MentionsContainerView container,
+                android.content.Context context,
+                long dialogId,
+                long threadMessageId,
+                org.telegram.ui.ActionBar.Theme.ResourcesProvider resourcesProvider);
+    }
+
+    /**
+     * The adapter a mention panel runs with.
+     *
+     * <p>Upstream's own adapter unless this client owns the panel (see {@link MentionsHost}); the
+     * arguments are exactly the ones upstream's construction used, so the fallback rebuilds the
+     * adapter it would have built itself.</p>
+     */
+    public static org.telegram.ui.Adapters.MentionsAdapter createMentionsAdapter(
+            org.telegram.ui.Adapters.MentionsAdapter upstream,
+            org.telegram.ui.Components.MentionsContainerView container,
+            android.content.Context context,
+            long dialogId,
+            long threadMessageId,
+            org.telegram.ui.ActionBar.Theme.ResourcesProvider resourcesProvider) {
+        if (container instanceof MentionsHost) {
+            return ((MentionsHost) container).createMentionsAdapter(
+                    upstream, container, context, dialogId, threadMessageId, resourcesProvider);
+        }
+        return upstream;
+    }
+
+    /**
+     * The repost of upstream's indicator animation ({@code FilterTabsView.animationRunnable}).
+     *
+     * <p>Upstream reposts the runnable with no delay and relies on the platform's traversal barrier
+     * to hold it to one step per frame: the invalidate inside each step schedules a traversal,
+     * whose sync barrier parks the repost until the next frame. Where that barrier does not apply,
+     * the whole 320 ms animation drains inside a single frame - the selected capsule jumps to its
+     * destination instead of travelling - which is the failure this frame delay removes. Drawing
+     * and interpolation stay upstream's own; only the repost's delay changes, and a real Telegram
+     * host (no shell bound here) keeps upstream's own scheduling.</p>
+     */
+    public static void repostIndicatorAnimation(Runnable runnable) {
+        if (browserHost == null) {
+            org.telegram.messenger.AndroidUtilities.runOnUIThread(runnable);
+        } else {
+            org.telegram.messenger.AndroidUtilities.runOnUIThread(runnable, 16);
+        }
+    }
+
+    /** A client-owned reaction PNG must never fall through to a Telegram datacenter download. */
+    public static org.telegram.messenger.ImageLocation documentImageLocation(
+            org.telegram.tgnet.TLRPC.Document document, org.telegram.messenger.ImageLocation upstream) {
+        if (!mtprotoEnabled && "image/png".equals(document.mime_type)
+                && document.localPath != null && !document.localPath.isEmpty()) {
+            return org.telegram.messenger.ImageLocation.getForPath(document.localPath);
+        }
+        return upstream;
+    }
+
+    /**
+     * The decode type for a path {@code ImageLocation}.
+     *
+     * <p>Upstream tags a reaction picture with the {@code "tgs"} extension because a Telegram
+     * reaction is a Lottie animation. This client's reaction pictures are PNGs it fetched itself
+     * and hands upstream as a path location, so that tag would make the loader build an empty
+     * Lottie drawable out of the PNG and draw nothing at all. While this client owns the file (a
+     * host build, not Telegram) a PNG path is decoded as a plain bitmap; upstream's own decode type
+     * is kept for anything this client did not fetch, so a real Telegram reaction still animates.</p>
+     */
+    public static int pathImageType(org.telegram.messenger.ImageLocation imageLocation, int upstream) {
+        if (!mtprotoEnabled && imageLocation != null && imageLocation.path != null
+                && imageLocation.path.toLowerCase(java.util.Locale.ROOT).endsWith(".png")) {
+            return 0;
+        }
+        return upstream;
+    }
+
+    /** The site's static PNG has no Lottie enter animation to wait for. */
+    public static boolean hasReactionEnterAnimation(int account, String emoticon, boolean upstream) {
+        if (!mtprotoEnabled && emoticon != null) {
+            org.telegram.tgnet.TLRPC.TL_availableReaction reaction =
+                    org.telegram.messenger.MediaDataController.getInstance(account).getReactionsMap().get(emoticon);
+            if (reaction != null && reaction.appear_animation != null
+                    && "image/png".equals(reaction.appear_animation.mime_type)
+                    && reaction.appear_animation.localPath != null) {
+                return false;
+            }
+        }
+        return upstream;
+    }
+
     private NativeDoHooks() {
     }
 }

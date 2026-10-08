@@ -48,6 +48,7 @@ import androidx.annotation.Nullable;
 import androidx.core.graphics.Insets;
 import androidx.core.view.WindowInsetsCompat;
 
+import io.github.baba983.nativedo.hooks.NativeDoHooks;
 import org.telegram.messenger.AccountInstance;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.Emoji;
@@ -567,6 +568,7 @@ public class RichEditor extends BaseFragment implements NotificationCenter.Notif
         ScaleStateListAnimator.apply(backButton);
         backButton.setContentDescription(getString(R.string.AccDescrGoBack));
         backButton.setOnClickListener(v -> {
+            if (!NativeDoHooks.richEditorCanClose(this, listView.rows, true)) return;
             if (!listView.deselectIfAny()) finishFragment();
         });
         topPanel.addView(backButton, LayoutHelper.createFrame(44, 44, Gravity.TOP | Gravity.LEFT, 8, 8, 8, 8));
@@ -624,6 +626,7 @@ public class RichEditor extends BaseFragment implements NotificationCenter.Notif
         ScaleStateListAnimator.apply(aiButton);
         aiButton.setContentDescription(getString(R.string.AIEditor));
         aiButton.setOnClickListener(v -> {
+            if (NativeDoHooks.richEditorHostPresent(this)) return; // NativeDo: this control is ours to hide
             if (listView.isInSelectionMode()) {
                 onAiStyleSelection();
             } else {
@@ -682,7 +685,7 @@ public class RichEditor extends BaseFragment implements NotificationCenter.Notif
                 currentMenuVisible.dismiss();
                 currentMenuVisible = null;
             }
-            final boolean premiumLock = !MessagesController.getInstance(currentAccount).richEditorAllowed() && !UserConfig.getInstance(currentAccount).isPremium();
+            final boolean premiumLock = NativeDoHooks.richEditorPremiumLock(this, !MessagesController.getInstance(currentAccount).richEditorAllowed() && !UserConfig.getInstance(currentAccount).isPremium());
             final BlockRow row = listView.findFocusedRow();
             final ItemOptions o = ItemOptions.makeOptions(RichEditor.this, v, true).dontFocus();
             final ItemOptions headers = o.makeSwipeback();
@@ -793,6 +796,7 @@ public class RichEditor extends BaseFragment implements NotificationCenter.Notif
                 }
             }, getResourceProvider());
         });
+        NativeDoHooks.richEditorControl(this, blocksLayout.findViewWithTag(7)); // NativeDo: hide the formula block
 
         addButton = new ImageView(context);
         addButton.setImageResource(R.drawable.outline_poll_attach_24);
@@ -1001,6 +1005,7 @@ public class RichEditor extends BaseFragment implements NotificationCenter.Notif
         sendButton.setContentDescription(getString(R.string.Send));
         sendButton.setOnClickListener(v -> sendMessage());
         sendButton.setOnLongClickListener(this::onSendLongClick);
+        NativeDoHooks.richEditorCreated(this, sendButton, listView.rows);
         updateSendButtonLock();
 
         container.setPadding(0, AndroidUtilities.statusBarHeight, 0, 0);
@@ -1013,6 +1018,12 @@ public class RichEditor extends BaseFragment implements NotificationCenter.Notif
 
         updatePremiumButtons();
 
+        NativeDoHooks.richEditorControl(this, aiButton); // NativeDo: hide Telegram-only controls
+        NativeDoHooks.richEditorControl(this, aiStyleButton);
+        NativeDoHooks.richEditorControl(this, addButton);
+        NativeDoHooks.richEditorControl(this, inlineButton);
+        NativeDoHooks.richEditorControl(this, dateButton);
+        NativeDoHooks.richEditorControl(this, mathButton);
         if (convertToSimpleOnOpen) {
             listView.convertToSimple();
             convertToSimpleOnOpen = false;
@@ -1025,6 +1036,7 @@ public class RichEditor extends BaseFragment implements NotificationCenter.Notif
     public boolean isSwipeBackEnabled(MotionEvent event) {
         if (listView != null && listView.textSelectionHelper.isInSelectionMode())
             return false;
+        if (!NativeDoHooks.richEditorCanClose(this, listView.rows, false)) return false;
         return super.isSwipeBackEnabled(event);
     }
 
@@ -1759,6 +1771,7 @@ public class RichEditor extends BaseFragment implements NotificationCenter.Notif
         openAttach(DEFAULT_ATTACH_LAYOUTS, 0);
     }
     private void openAttach(int allowedLayouts, int initialLayoutType) {
+        if (NativeDoHooks.richEditorHostPresent(this)) return; // NativeDo: this control is ours to hide
         listView.pendingInsertRow = listView.findFocusedRow();
         ChatAttachAlert chatAttachAlert = new ChatAttachAlert(getContext(), this, false, false, true, getResourceProvider());
         chatAttachAlert.setDelegate(new ChatAttachAlert.ChatAttachViewDelegate() {
@@ -1887,9 +1900,7 @@ public class RichEditor extends BaseFragment implements NotificationCenter.Notif
     }
 
     private boolean isSendLocked() {
-        return !MessagesController.getInstance(currentAccount).richEditorAllowed()
-            && !UserConfig.getInstance(currentAccount).isPremium()
-            && listView.isLossy();
+        return NativeDoHooks.richEditorPremiumLock(this, !MessagesController.getInstance(currentAccount).richEditorAllowed() && !UserConfig.getInstance(currentAccount).isPremium() && listView.isLossy());
     }
 
     private void updateSendButtonLock() {
@@ -1906,6 +1917,7 @@ public class RichEditor extends BaseFragment implements NotificationCenter.Notif
     }
 
     private void openLocationPicker(BlockRow row) {
+        if (NativeDoHooks.richEditorHostPresent(this)) return; // NativeDo: this control is ours to hide
         if (row == null || !(row.block instanceof TL_iv.pageBlockMap)) return;
         if (!AndroidUtilities.isMapsInstalled(this)) return;
         final ChatAttachAlert pickerAlert = new ChatAttachAlert(getContext(), this, false, false, false, getResourceProvider());
@@ -1961,6 +1973,7 @@ public class RichEditor extends BaseFragment implements NotificationCenter.Notif
     }
 
     private void sendMessage(boolean notify, int scheduleDate, int scheduleRepeatPeriod) {
+        if (NativeDoHooks.onRichEditorSend(this, listView.rows)) return; // NativeDo: our host applies it
         if (isSendLocked()) {
             showConversionSheet();
             return;
@@ -2164,6 +2177,7 @@ public class RichEditor extends BaseFragment implements NotificationCenter.Notif
     }
 
     private boolean persistDraft() {
+        if (NativeDoHooks.onRichEditorPersistDraft(this, listView.rows)) return true; // NativeDo: our host keeps it
         if (chatActivity == null) return false;
         if (editingMessageObject != null) return false;
         if (!listView.canUndo()) return false;
@@ -2500,11 +2514,12 @@ public class RichEditor extends BaseFragment implements NotificationCenter.Notif
         if (listView.deselectIfAny()) {
             return false;
         }
+        if (!NativeDoHooks.richEditorCanClose(this, listView.rows, invoked)) return false;
         return super.onBackPressed(invoked);
     }
 
     private void updatePremiumButtons() {
-        final boolean premiumLock = !MessagesController.getInstance(currentAccount).richEditorAllowed() && !UserConfig.getInstance(currentAccount).isPremium();
+        final boolean premiumLock = NativeDoHooks.richEditorPremiumLock(this, !MessagesController.getInstance(currentAccount).richEditorAllowed() && !UserConfig.getInstance(currentAccount).isPremium());
         for (Button b : premiumButtons) {
             b.setPremiumLocked(premiumLock);
         }

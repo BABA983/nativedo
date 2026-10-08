@@ -15,7 +15,10 @@ object DiscourseReactions {
         "laughing" to "\uD83D\uDE04",
         "open_mouth" to "\uD83D\uDE2E",
         "clap" to "\uD83D\uDC4F",
-        "confetti_ball" to "\uD83C\uDF89",
+        // Two different reactions, two different glyphs: the table is read back to find the id a
+        // chip toggles, so an id that shares another's glyph would toggle the wrong one. Discourse's
+        // `confetti_ball` is the confetti ball (U+1F38A), not the party popper (U+1F389).
+        "confetti_ball" to "\uD83C\uDF8A",
         "tada" to "\uD83C\uDF89",
         "hugs" to "\uD83E\uDD17",
         "distorted_face" to "\uD83E\uDD74",

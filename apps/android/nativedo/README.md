@@ -1,7 +1,7 @@
 # The full-upstream spike: `apps/android/nativedo`
 
 This is the spike that asks whether a linux.do client can be built on a *complete*
-upstream Telegram (12.10.5, `dc780e81ed1261c369c27870e8e0999a1eb0b600`) rather than on the
+upstream Telegram (12.10.5, [343d9c99](https://github.com/DrKLO/Telegram/commit/343d9c998bf5a6f51669b5bf9f55c6e489a4906f)) rather than on the
 shrunk skeleton in `apps/android/TMessagesProj`.
 
 ## Layout
@@ -34,7 +34,7 @@ live that keep tgnet and Telegram's database switched off.
 ## The upstream lines
 
 `git diff --stat <subtree-merge> -- apps/android/telegram/TMessagesProj apps/android/telegram/settings.gradle`
-reports 12 upstream files, 25 inserted lines (19 of them replace the upstream line they sit on):
+reports the host callsites. Their inventory is checked by `scripts/telegram-hook-guard.sh`:
 `ConnectionsManager.init` and `ConnectionsManager.isTestBackend` return early while the hooks are off,
 `MessagesStorage.openDatabase` does the same, `RichMessageLayout` asks whether a file this client
 fetches itself is still on its way (the media block's loading condition) and hands the block's own
@@ -49,6 +49,94 @@ sheet's dismiss, its navigation bar, its close button and the article lookup tha
 tgnet is off; `settings.gradle` includes this module from outside the subtree. Every one of them is a
 one-line call into `NativeDoHooks`; nothing else upstream is touched — rendering, gestures, layout and
 animation are upstream's own code.
+
+`RichEditor` also uses instance-bound `NativeDoHooks.RichEditorHost`: live rows go to
+`DiscourseRichEditor` for Apply and draft saving. Close checks prevent unsupported Telegram media
+from being discarded. Hosted editors remove Telegram premium gates and hide Telegram-only AI,
+media, inline-button, date and formula controls. The upstream send button becomes a checkmark
+labelled "完成并返回"; scheduling is not offered. The editor's block list, formatting toolbar,
+measurement and animations remain upstream code. There is no global editor callback or production
+reflection.
+
+`MentionsContainerView` has one instance-bound adapter hook. `DiscourseMentionsPanel` supplies
+the site's users/groups through `DiscourseMentionsAdapter`, while upstream keeps list measurement,
+clipping, recycling and spring reveal. The discarded Telegram adapter and the replacement both
+release their notification observers at the appropriate lifecycle boundary.
+
+## Composer and lifecycle integration
+
+Reply and new-topic screens use upstream `ChatActivityEnterView` inside `ChatInputViewsContainer`,
+with `WindowInsetsStateHolder` handling system and emoji keyboard insets. The enter view's old
+rectangular background is disabled, and its animated island height drives the capsule. Both
+screens forward pause, resume and destroy to the composer. Reply text/target and new-topic
+title/category/body are saved by account; failures retain the draft, accepted posts clear it.
+An open field remains owned by its original account even if the session changes.
+
+`DiscourseComposerTools` owns mention and emoji lifecycle for both screens. Typing `@` opens
+upstream's mention panel above the animated capsule, immediately offering loaded participants and
+authors, then merging the server-ranked `/u/search/users` answer. Newly paged authors refresh the
+same token. New-topic searches omit `topic_id`; paused/destroyed screens cannot search or reopen
+the panel from editor write-back. Selection replaces only the token under the caret.
+
+The capsule's existing animated smile button opens the site's `/emojis.json` catalog. Telegram's
+`EmojiView` requires Telegram packs, so the site picker uses upstream `RecyclerListView`,
+`ScrollSlidingTextTabStrip`, `SearchField`, `EmptyTextProgressView` and `BackupImageView` instead.
+It inserts literal `:name:` shortcodes, keeps category/search/error/retry states, and pads the
+navigation inset through `InAppKeyboardInsetView`. Catalog image paths are resolved against the
+site URL; focusing search expands the panel above the system IME so results remain tappable.
+Tile reads are dispatched after RecyclerView binding, including synchronous cache completions.
+Back closes the input panel before its owner; predictive probes do not mutate it. Switching back
+to the field opens the system keyboard.
+
+The reply's "富文本" control and the new-topic action-bar pencil open the same upstream editor.
+`DiscourseRichText` converts Discourse raw into upstream editor blocks and serializes the result
+back to raw. Upload handles remain literal Markdown rather than becoming Telegram media IDs.
+Reading continues to use the existing `ChatMessageCell` / `RichMessageLayout` cooked-content path.
+Telegram network, storage, stickers, voice/video messages and AI are not enabled by this work.
+
+The shell now bootstraps authentication after recreation, then restores the selected root tab
+and an open topic at the device's saved reading floor. Destroyed shells ignore late authentication
+callbacks. Browser/viewer cleanup is reserved for the last activity instance; PhotoViewer receives
+pause/resume. Profile status icons follow the expanded-photo and pinned-media states.
+
+The retained flow tests and renders use the real host with `FakeDiscourseSite`, not linux.do writes.
+The previous-wave APK has emulator evidence for a real Gboard inset, gesture/three-button
+navigation, both themes, editor Apply and shell recreation in `docs/device-verification.md`.
+The final mention/emoji APK also has emulator evidence for site image tiles in both themes,
+search results above visible Gboard, exact insertion, Back, and mention-panel touch pass-through.
+The previous composer wave passed 235 tests. Physical-device keyboard animation and GPU blur remain
+unverified; emulator and JVM checks do not prove those behaviors on hardware.
+
+## Folders, reactions, topic search and sharing
+
+The home folder strip keeps 全部 visible even with an empty category cache. It uses upstream's
+default-folder flag so `FilterTabsView` builds the position tables its selected capsule animates
+between. The hosted indicator repost runs at 16 ms; the upstream Telegram host keeps its original
+scheduling. The emulator recording in `docs/device-verification.md` shows the capsule itself moving,
+not just the strip scrolling.
+
+Long-pressing a post offers 回应 when the topic supplies `valid_reactions`. The chooser is upstream
+`ReactionsContainerLayout` in a `BottomSheet`, restricted to those choices. Its static site PNGs use
+three host hooks: `ImageLocation` reads the local document path, `ImageLoader` decodes it as a bitmap
+rather than Lottie despite the caller's `tgs` extension, and the reaction holder skips the Lottie enter
+animation. Registration fills the in-memory reaction map, without Telegram database writes. A chip
+tap toggles; a chip long press reads the selected group's users through `UserCell` rows. The sheet
+shows the server's total and warns when only a recent subset was returned; errors can be retried.
+
+The topic menu's 话题内搜索 opens an upstream action-bar search field with `DialogCell` results.
+Requests append `topic:<id>` and use `type_filter=posts`; foreign topics and invalid floors are
+dropped, pages deduplicate by floor, and obsolete queries are cancelled. Typing another `topic:`
+scope is refused. A result opens its exact `post_number`.
+
+Topic and post menus share links through the Android chooser, not Telegram contacts. A floor link
+uses its `post_number`, never its global post id. Same-origin topic VIEW intents stay pending while
+anonymous or signed out, then open at their requested floor after login.
+
+The combined suite contains 251 tests. Complete passing runs and failures are retained under
+`.amp/in/artifacts/folders-reactions-wave/final-check/`; some repeated runs have timing-sensitive
+failures, so a passing run is not a claim of deterministic suite stability. The initial empty-cache
+state and topic flows were verified against `FakeDiscourseSite`; only home folder taps were exercised
+on the emulator against linux.do. No real topic was opened or real reaction written.
 
 ## The in-app browser
 
@@ -108,8 +196,9 @@ race fails its own request instead of ending the session. The retired native sna
 * **Attachments** — a post's file link becomes a document block whose `localPath` is where the
   bridge downloads it, so upstream's block shows its name and size and hands it to the system to
   open. The FileProvider paths this module ships cover the app cache those files live in.
-* **Reactions** — a post's reactions become the chips upstream draws at the bottom of a bubble, and
-  a tap toggles the reaction the chip stands for (`PUT .../custom-reactions/{id}/toggle.json`).
+* **Reactions** — a post's reactions become upstream's bubble chips. Taps toggle through
+  `PUT .../custom-reactions/{id}/toggle.json`; long presses open the selected group's user sheet.
+  The post menu opens upstream's picker restricted to the topic's `valid_reactions`.
 * **The post menu, bookmarks and reply** — a long press asks the reader what to do (copy, copy link,
   bookmark, reply);
   and replying uses upstream's own composer (`ChatActivityEnterView`) at the bottom of the screen;
@@ -215,7 +304,7 @@ stands, and the upstream component each row is meant to use.
 | Latest topic feed with paging | done | done | `DialogCell.CustomDialog` + `RecyclerListView` |
 | A "N 个新话题" pill when the site publishes new or bumped topics | not built | done: `/latest` and `/new` through the message bus count one incoming topic per id (the category the message named), the count follows the category tab in front of the reader (全部 counts all), and the pill refreshes the list, scrolls to top and clears on tap; a screen refresh clears it too; the list starts below the pill while it is shown | `ButtonWithCounterView` (upstream's rounded control) over `AndroidUtilities.updateViewVisibilityAnimated`'s upstream constants |
 | New / top feeds | done | missing | the same rows, driven by our own feed calls |
-| A category filter over the topic list (`/categories.json`, `/c/{slug}/{id}/l/latest.json`) | done | done: upstream's `FilterTabsView` as the floating glass capsule 12.10.5 presents its own filter tabs as, one tab per top-level category in the site's own order, the site's color as the dot in front of the name, and a tab loads that category's own feed; the strip floats over the list, which keeps its height as padding so rows scroll under it, and it appears when the categories arrive so a site that answers none leaves the list the whole screen | `FilterTabsView`, upstream's own list-filter control (the one its chat list filters chat folders with), with `BlurredBackgroundDrawableViewFactory` + `BlurredBackgroundProviderImpl.topPanel` over our `GlassPanelHost` |
+| A category filter over the topic list (`/categories.json`, `/c/{slug}/{id}/l/latest.json`) | done | done: upstream's `FilterTabsView` as the floating glass capsule 12.10.5 presents its own filter tabs as, one tab per top-level category in the site's own order, the site's color as the dot in front of the name, and a tab loads that category's own feed; the strip floats over the list, which keeps its height as padding so rows scroll under it; its 全部 folder is up from the first frame (the site's categories are added to it as they arrive, and a site that answers none leaves just that one tab), and the selected capsule travels between tabs as the page pair slides | `FilterTabsView`, upstream's own list-filter control (the one its chat list filters chat folders with), with `BlurredBackgroundDrawableViewFactory` + `BlurredBackgroundProviderImpl.topPanel` over our `GlassPanelHost` |
 | A tag filter over the topic list (`/tags.json`, `/tag/{slug}/l/latest.json`, `/tags/c/.../{tag}/{id}`) | not built | done: one item in the action bar (not a second strip, which would take the list's height) opens the site's tags in a dialog, the chosen tag shows in the title and clears in one tap, and it combines with the category tab over the site's own combined route | the action bar's own icon-and-dialog pattern, `ActionBarMenuItem` |
 | Start a topic (a title, a category, a body → `POST /posts.json`) | not built | done: the list's own floating button - upstream's, the one its chat list starts a new chat with - opens upstream's titled field, upstream's composer for the body, and the site's categories behind a dialog; the send button appears only when the form is complete | `FragmentFloatingButton`, `EditTextBoldCursor`, `ChatActivityEnterView`, `AlertDialog` of the site's items |
 | Topic detail, cooked HTML to native blocks | done, 41 ports | done | upstream `RichHtml.parse` into `ChatMessageCell` |
@@ -227,22 +316,22 @@ stands, and the upstream component each row is meant to use.
 | Attachments: download, open with the system | done | done | upstream's document block |
 | Long press a post: copy, copy link, bookmark, reply | done | done | upstream's `ItemOptions` scrim menu anchored on the bubble; our delegate on `ChatMessageCell` supplies the choices |
 | Swipe left on a post to answer it | done | done | ChatActivity's chat-list sliding view (`slidingView`/`setSlidingOffset`, reply disc, 50dp completion) |
-| Reply (`POST /posts.json` with CSRF) | done, rich editor sheet | done, text and uploaded files | `ChatActivityEnterView` |
+| Reply (`POST /posts.json` with CSRF) | done, rich editor sheet | done, capsule input, uploaded files and rich-editor write-back | `ChatActivityEnterView` inside `ChatInputViewsContainer`; upstream `RichEditor` via an instance-bound host |
 | Reply with media (`POST /uploads.json`) | done | done, the composer's own paperclip and our attach strip upload the file and insert the site's markdown for it | the composer's own attach button plus our uploader (`ChatAttachAlert`'s modal is Telegram's own) |
-| Mentions and autocomplete (`/u/search/users`) | done | missing | the composer's mention panel |
-| Reactions: toggle and who reacted | done | half, toggling only | upstream's reaction chips, `CustomEmojiReactionsWindow` |
+| Mentions and autocomplete (`/u/search/users`) | done | done, reply and new-topic token insertion, local candidates followed by server-ranked results | upstream `MentionsContainerView` and `MentionCell` with a site adapter |
+| Reactions: toggle and who reacted | done | done, finite site picker, chip toggle and group-specific users with truncated-list notice | upstream bubble chips, `ReactionsContainerLayout`, `BottomSheet`, `UserCell` |
 | Polls: vote, retract, voter list | done | vote and retract; voter list missing | `TL_messageMediaPoll` with one bubble per poll, the floor split at its `div.poll`; a tap votes through our own `PUT /polls/vote`. Known gaps: `View Votes (N)` (upstream draws it, its voters list lives in `ChatActivity`, which this screen does not have) and `ranked_choice` (a tap cannot express a rank, so those polls open the floor menu instead of voting); poll option images and "add option" are not offered |
 | Bookmarks (`/bookmarks.json`, `DELETE /posts/{id}/bookmark`) | done | done: the post menu adds and takes back a bookmark, the reader's own 书签 button on their profile opens the list (`/u/{username}/bookmarks.json`), and the profile's own 书签 tab draws the same entries inline, a tap opening the topic at the bookmarked floor. The site's own envelope has a trap: a page with rows arrives under `user_bookmark_list`, an empty one is a bare `{"bookmarks":[]}` | upstream's `DialogCell` rows |
 | Read progress (`POST /topics/timings`) and restore | done | done, without upstream's unread divider: the floors the viewport reaches are reported as the reader moves (debounced) and at once when they leave, the dwell reported is the reader's real time - counted the way Discourse's own screen-track counts it, only while the screen is in front, a floor is on screen and the reader has scrolled within three minutes - a topic opens at the site's own `last_read_post_number` (or this device's further one), and the list's unread counts follow the site's answer - a topic read in full draws no badge even before the site has taken the report in | our own reporter over the site's endpoint; the list's rows are upstream's `DialogCell` |
-| Search: topics, posts, users, categories, tags, in-topic | done | done: the home screen carries upstream's own `FragmentSearchField` (12.10.5's visible search entry, not a bar icon), and tapping it runs DialogsActivity's open-search animation - the list leaves, the pager arrives, the category strip fades, the bottom bar steps away - onto a `ViewPagerFixed` whose pill tabs are 话题 / 帖子 / 用户 / 分类 / 标签. The first three are one `/search.json` answer (topics, posts, users) with a 300ms debounce; 分类 and 标签 are `/categories.json` and `/tags.json` narrowed to the query, and picking one filters the home list. A hit opens its topic at its floor or a person their profile; the empty and loading states are upstream's `StickerEmptyView` / `FlickerLoadingView`; back or the field's close button runs the close animation; in-topic search missing | `FragmentSearchField`, `ViewPagerFixed` + its pill `TabsView` (+ `SearchTabsAndFiltersLayout`), `DialogsActivity`'s search animator math, `DialogCell` / `ProfileSearchCell` / `HashtagSearchCell` over `/search.json` / `/categories.json` / `/tags.json` |
+| Search: topics, posts, users, categories, tags, in-topic | done | done: home search has 话题 / 帖子 / 用户 / 分类 / 标签 tabs, debounced grouped results and exact-floor navigation; topic search appends `topic:<id>`, pages posts and opens their exact floors | home: `FragmentSearchField`, `ViewPagerFixed`, `TabsView`, upstream search animation and row cells; topic: action-bar search input, `DialogCell`, `EmptyTextProgressView` |
 | User profile (`/u/{username}.json`, `/u/{username}/summary.json`, activity) | done | done: the head is upstream's collapsing header (`ProfileGooeyView` + `ProfileActivity`'s `needLayout` math), the capsule tap plays its `playProfileAnimation == 2` avatar flight, the row under it is upstream's `ProfileActionsView` port (私信 / 关注 / 静音 / 分享; 书签 / 设置 / 分享 on one's own), the sections are `HeaderCell` / `TextDetailCell` / `TextInfoPrivacyCell` over the profile + summary endpoints, and the list ends in 话题 / 回复 / 点赞 / 书签(own) / 徽章 tabs over `user_actions.json` filters 4/5/1, the bookmarks and `/user-badges/{u}.json`, on `ScrollSlidingTextTabStrip` + `ViewPagerFixed`; the own tab's top-left is upstream's QR button opening a screen for `https://linux.do/u/<u>`, the strip is SharedMediaLayout's glass capsule whose indicator follows the pager, and pinning it under the bar runs ProfileActivity's media-header animation | our own `BaseFragment` with the upstream components above; `ProfileActivity` is unusable here (it loads the full user through tgnet and is bound to a Telegram account); `QrActivity`'s link/themes/token are account-bound, so its card is ported over `TelegramQRCodeWriter`'s drawing |
 | Notifications | not built | done, the reader's own list from `/notifications.json`, and the 通知 tab's own counter is the site's unread count: seeded from the bootstrap page and then fed by the message bus `/notification/{userId}` channel (the server publishes a new count after notifications are read); opening the list does not mark anything read | upstream's notification screens are Telegram-account bound, so our own screen over upstream's `DialogCell`; the tab counter is upstream's `GlassTabView.setCounter`, the same mechanism `MainTabsActivity` puts on its chats tab |
 | Appearance and theme | done | done: the settings tab's 外观 row opens it, and the home action bar's options menu switches night/day in place (upstream's own entries, with the circular reveal out of the menu icon) | `ThemeActivity` (`THEME_TYPE_BASIC`); `DialogsActivity`'s options item / `ItemOptions` / `showItemOptions()` / `switchTheme()` |
 | Account and session settings | done | done: the settings tab is our own screen over upstream's cells (`HeaderCell` / `TextSettingsCell`), with the appearance page, the bookmark list and the account - the current reader and a sign-out that clears the cookies and returns to the login page | upstream's settings cells, the way `SettingsActivity` draws its own list |
-| linux.do emoji sprite in the composer | done | missing | upstream's emoji panel plus our sprite downloader |
+| linux.do emoji catalog in the composer | done | done, site image tiles, categories, search above IME and literal shortcode insertion | upstream `RecyclerListView`, `SearchField`, `ScrollSlidingTextTabStrip` and `BackupImageView`; not Telegram account packs |
 | Floating date and jump to the read position | done | missing | upstream's chat date overlay |
 | Text selection inside a post | done | done: the post menu's 选择文本 picks the bubble's own text, and upstream's handles, extension, copy bar and clipboard take over from there | `ChatListTextSelectionHelper`, hosted the way `ChatActivity` hosts it |
-| Share and deep links into a topic | partial | missing | `ShareActivity` plus an intent filter |
+| Share and deep links into a topic | partial | done, topic and floor links through the system chooser; same-origin VIEW intents retain the floor behind the login gate | Android `ACTION_SEND` chooser; shell intent filter and `DiscourseLinks` |
 
 ## 真机验证清单
 
@@ -385,6 +474,17 @@ stands, and the upstream component each row is meant to use.
 - 真机 `449dd25d`：`install -r -t` 成功，拉回 base.apk 与构建产物同 hash；启动即 `performance class = HIGH, measured = HIGH, chat blur = true`（设备自己的档位），登录态完整（`hasToken/hasForumSession/hasClearance=true`，话题深链的请求全 200）；crash buffer 里只有 12:37（本片安装前）的 ArticleViewer 网页设置旧崩溃，本片没有新 crash。**但真机屏幕锁着**：HyperOS 拒 `input`（INJECT_EVENTS），`wm dismiss-keyguard` 与 `locksettings`（WRITE_SETTINGS 被拒）都解不开安全锁屏，`screencap` 只能拍到锁屏；所以真机像素没拿到，HIGH 分支改在模拟器上用上游同一套 override 验证（同一个 APK、同一段代码，差的是 GPU 驱动）。真机解锁后按上面清单补看。锁屏期间为了叫醒屏幕用过的 `svc power stayon` / `locksettings set-disabled` 都已还原（前者在 MIUI 上本来就没写成设置），只留下一条 shell 通知 `NativeDo test`。
 - 构建与测试：`:nativedo:testDebugUnitTest` 全量 **45 类 153 项 0 失败 0 error 0 skipped**；新增 `TopicFadeBandTest`（1 项：z 序在列表上/栏与输入框下、上区 ≥ 栏高、下区 ≥ 输入岛、触摸不被吞、源变化时取样 view 被标脏，并输出 `fade: content=2742 bar=168 composer=138 … zoneTop=171 zoneBottom=186` 作为留存数）与 `TopicHeaderAvatarTest`（3 项：加载前胶囊画的就是行里的头像且不二次请求、站点给出不同作者时换绑并取图、窗口答案没有 `details` 时恢复阅读不清空胶囊）；arm64 `:nativedo:assembleDebug -Pandroid.injected.build.abi=arm64-v8a` 通过（本 worktree 用 `jni/arm64-v8a/libtmessages.49.so` 预编译件并排除两个 CMake 任务，APK 里只含一份），APK 63.7 MB。没有改 `apps/android/telegram` 子树，vendor-guard 不涉及。证据在 `.amp/in/artifacts/topic-fade/`。
 - 未验证：真机像素（安全锁屏挡住，见上）；下区（输入框上方）渐隐带在真机上的观感；夜间主题的带子（harness 有暗色渲染 `harness/topic-fade-band-dark.png`，设备上没拍）。
+
+### 顶带改吃壁纸、胶囊录缩小图：chat 那一份的出处（2026-10-06，`emulator-5554`，HIGH 探针）
+
+- 症状（真机反馈）：话题滚动时 action bar 那片"闪"，与 Telegram 聊天室的顶栏观感不同。两处接线与 chat 不是同一条：
+  1. **顶带取样错了源**。`ChatActivity:6970` 把 `ChatActivityFadeView` 接到 `navbarContentDrawableFactory`——那是壁纸源（`navbarContentSourceWallpaper`，由 `onUpdateBackgroundDrawable` 用 `WallpaperBitmapProvider` 从窗口背景 drawable 推出，17229-17245），不是 frosted 节点。我们此前给的是 `glassHost.getFactory()`，也就是"录下来的帖子"，于是带子每帧都在变、并且把还在清晰的帖子再盖一层（0.81 alpha 的渐变），视觉上就是闪。修法：`GlassPanelHost.getWallpaperFactory()`（源 = `BlurredBackgroundSourceWrapped`，由 `setWallpaperDrawable` 换入壁纸 bitmap/色），`TopicFragment` 的带子接它；`TopicFragment.updateBackground()`（已存在的每次主题切换入口）顺手 `glassHost.setWallpaperDrawable(Theme.getCachedWallpaper())`。
+  2. **胶囊录的是整屏、且每帧重录**。chat 是 `DownscaleScrollableNoiseSuppressor`：每个面板矩形单独捕获、按 1/8 缩小、模糊半径同除 8（`DownscaleScrollableNoiseSuppressor:402-426、504-509`），再 `setUnderSource(壁纸)` 让壁纸在玻璃下不被糊（`BlurredBackgroundSourceRenderNode:126-131`）。`GlassPanelHost` 此前是一个整屏节点挂 40dp 模糊 + ×3 饱和、每帧 `beginRecording` 整屏重录。修法：换成上游那一套——`setScrollableNoiseSuppressor(suppressor, DRAW_FROSTED_GLASS)` + `setUnderSource(wallpaperSource)`，矩形由 `getVisiblePositions`（可见玻璃 drawable 的 padded bounds，扩 48dp）+ `RectFMergeBounding.mergeOverlapping` 得到，捕获走 `IBlur3Capture`（`RecyclerListView` 只画交叠的子行；其它记录视图整绘、由节点 bounds 裁），`setOnDrawablesRelativePositionChangeListener` 标脏矩形，`record()` 里 `invalidateResultRenderNodes` 变了才 `invalidateDisplayListForDrawables()` + 标脏取样 view。壁纸 bitmap 的 `setParentSize` 与 chat 一样按根视图尺寸给（18249-18252）；壁纸 drawable 推不出像素时回退纯色（否则带子是空的）。
+  3. **首页顶带**（DialogsActivity 那条路）读的是"录下来的内容"，所以矩形要显式声明：`GlassPanelHost.setSourceRect()` 按 DialogsActivity 自己的 `iBlur3Positions`（14163-14202）把 header band 收进记录矩形，`TopicListFragment.dispatchDraw` 在 `record()` 之前把 `blurBounds` 交出去（原来那两行只是往下挪了位置）。
+- 设备（`emulator-5554`，`install -r -t` 覆盖，未卸载未清数据，登录态未动）：APK SHA-256 `4913cad41294434623840e6ea7d8cc197acfd65b21608662e60f6f095b01a3f3`。HIGH 分支用上游 override 探针（`GlassProbeActivity --ez forcePerfClass true` → 冷启动 `performance class = HIGH, measured = LOW, chat blur = true`），话题页连续三帧（打开、两次下滚）：**顶带 y=0..70 三帧像素完全一致**（`c5d089 c2ce89 c7d59e bdd19d b7ce9c b5cd9c 9ec085` = 壁纸，不再随帖子走），胶囊内（y=80..200）随滚动内容变化（`f3f7f7`→`f7f9fb`→`edf2e2`，玻璃下的糊化内容）；无 crash/ANR，返回首页、首页列表滚动照常。验完清掉 `overrideDevicePerformanceClass`/`lite_mode6`，冷启动回到 `LOW/false`。
+- 测试：`GlassGateTest` 3 项、`TopicFadeBandTest`、`MessageBusUiTest` 4 项、`HomeFeedTest` 3 项全过（`aBlurringDeviceSamplesTheRenderNode` 钉住 HIGH 档头带取样仍是 render node，LOW 档仍是纯色源）。
+- 未验证：真机像素与手感（等读者）；harness 渲染里 bitmap 源那条 fast way（`ComposeShader` 的 DST_IN）在 Robolectric 下不出像素，所以留存帧 `harness/topic-fade-band.png` 的带子是空的——把源换成纯色做对照渲染时整条带子正常，说明是沙箱的 shader 能力而不是接线；真机/模拟器上壁纸 bitmap 路径正常（上面的三帧）。
+
 
 ### 主页四件：搜索框进动作栏、返回不重读、分类滑动跟手、翻页页脚（2026-10-05，`emulator-5554`，`nativedo-home-motion`，**已登出，仅 harness**）
 
@@ -1335,17 +1435,40 @@ stands, and the upstream component each row is meant to use.
   媒体是按需自己取的，不读 `DownloadController`；通知屏不做邮件摘要、免打扰时段与 muted 列表；信任等级是
   打开设置页那一刻的值；清理缓存后图片/头像要重下。
 
+### 分类条：条子先于网络出现、滑动不再被条子拖住、数字不做（2026-10-06，`emulator-5554`）
+
+真机反馈三件：切 tab 看不到滑动效果、进 app 时那条是空的、数字（discourse 没有就别做）。
+
+1. **条子先于网络出现**。此前 `createView` 只等 `/categories.json` 的答案才 `buildTabs()`，答案没到（实测模拟器上 3-5s）那段带子整片是空的。上游的文件夹条来自本地存储，第一帧就在，所以照做：`CategoryStore` 多一层 `CategoryPersistence`（`SharedPreferencesCategoryPersistence`，key `categories|<host>`，kotlinx 序列化 `List<CategorySummary>`，`CategorySummary` 加了 `@Serializable`），`TopicListFragment.loadCategories()` 先把 `cachedCategories()` 铺上（`publishCategories` → `buildTabs`），再请网络，答案到达后用同一个 `publishCategories` 替换（所以 `buildTabs()` 开头补了 `tabsView.removeTabs()`，`selectedTabId` 会自己认回原来那个 tab）。读失败（挑战/断网/会话没就绪）不再是一辈子的空白：`onParentBecameVisible` 里只要 `categories.isEmpty()` 就再问一次。
+2. **滑动**：手势（横滑换分类）在 `ContentView.onTouchEvent` 里被 `stripHasTabs` 门着——条子没起来，滑也白滑，这正是"看不出滑动效果"的来源；条子起来后手势与点 tab 的 320ms 指示条动画都是上游那一份（`FilterTabsView` 的 `animationRunnable` + `onPageScrolled` 双页平移，与 `DialogsActivity:3641-3667` 同形）。模拟器上按住慢拖（`input swipe` 2000ms）逐帧看：列表内容簇从 x≈420 连续左移到 x≈120，两页同时在屏；把 `onPageScrolled` 的 progress 临时钉在 0.3 渲染一帧，屏上确实是两块面（左旧页右新页），验完撤掉。
+3. **数字不做**：`/categories.json` 没有按分类的未读数（`contracts/discourse/endpoints.md` 列的字段是 `id/name/slug/color/text_color/topic_count/position/description_text`，fixture 里也没有 `unread`），上一版按"已加载行里该分类的未读条数"自己算了一个，这次删掉，`getTabCounter` 回到 0——按真机反馈"没有对应数据就不做"，也避免 tab 上的数与站点真实状态各说各话。
+
+- 设备（`emulator-5554`，覆盖安装 `-r -t`）：**离线冷启动**（`svc wifi disable` → 冷启动 → 截帧 → 恢复网络）那条带子照样在，四个分类 tab 与色点齐（`strip` 1136 个非白像素、两个可见色点 `#32C3C3`/`#D12C25`），证明它来自落盘的那份而不是网络；同一屏里只有选中药丸的 12% 底色与标题笔画是蓝的，没有未读气泡。`:nativedo:testDebugUnitTest` 全量 **235 项 0 失败 0 error 0 skipped**；arm64 `:nativedo:assembleDebug` 通过，APK SHA-256 `ecc3afceaaf3833cb9db4b8001a0cb9ca039fd44c40235454c6866777fe2833f`。
+- 未验证：真机（读者安装实测）；点 tab 时入页若是首次访问仍是 shimmer 而不是真行（上游的文件夹内容在本地，我们的在服务器上），所以"滑过去时两边都有内容"只在访问过的分类上成立——要做只能预取全部分类的首屏，这次没做。
+
+### 分类条补修：首次加载不再空、选中胶囊恢复位移动画（2026-10-06，harness 假站中间帧）
+
+上一版落了落盘缓存与手势门，但两处仍与真机反馈对不上：
+
+1. **首次加载那条仍是空的**。`publishCategories` 只在 `categories` 非空时才 `buildTabs()`，且 `buildTabs()` 里 `stripHasTabs = !categories.isEmpty()`——缓存为空（首装、或上一次没读成功）时条子整个被 `checkUi_filterTabsVisible` 置 GONE。现在"全部"被当成条子自己的一个 tab：`publishCategories` 每次都 `buildTabs()`，`stripHasTabs = true`，条子从第一帧就在，站点答案只是往上加 tab；站点答不出分类时留下单独一个"全部"，列表照常可读。
+2. **胶囊没有位移动画**（真根因，此前归因错了）。`FilterTabsView.onMeasure` 只在 `findDefaultTab() != null` 时才调 `updateTabsWidths()`，而 `positionToX/Width/Count` 正是它建的；动画期间 `drawSelector` 用 `indicatorWidth = lerp(prevW, newW, animatingIndicatorProgress)` 画胶囊，三张表为空时 `indicatorWidth == 0`，`if (indicatorWidth != 0)` 直接跳过——胶囊在滑动时**整段不画**，到落点才重新出现（`before`/`after` 都有胶囊、中间帧没有，即此）。之前"全部"tab 用 `isDefault=false`（为避开上游 `onMeasure` 把默认 tab 改名成 `All chats`），恰好关掉了这条路径。现在 `addTab(..., isDefault=true)`，并把 `FilterAllChats`/`FilterAllChatsShort` 在本模块 `strings.xml` 覆盖成"全部"。
+3. **帧调度**：上游 `animationRunnable` 以零延时自 post（`runOnUIThread(animationRunnable)`），真机上靠 traversal 的 sync barrier 压成一帧一步；没有该 barrier 的宿主里整段 320ms 动画在一次 looper drain 内跑完，胶囊瞬移（正是"一次绘制前结束"）。加 `NativeDoHooks.repostIndicatorAnimation`（`FilterTabsView` 里一行接入，本宿主 16ms 帧延时，真实 Telegram 宿主仍走上游调度），绘制与插值仍是上游的。
+
+- 验证（harness，假站）：`HomeCategoryPagerTest` 8 项全过，含新增 `firstEntryKeepsTheAllFolderVisibleWhileCategoriesArePending`（`/categories.json` 被扣住时 strip 为 `VISIBLE` 且只有 tab 0）与 `aTabTapPaintsAnIntermediateSelectorPositionInsteadOfFinishingInOneFrame`（中间帧胶囊 `centerX` 严格落在两 tab 之间）；与 `TopicCategoriesTest`/`MessageBusUiTest`/`HomeFeedTest`/`TopicTagsTest` 合跑 18 项全过。`scripts/telegram-hook-guard.sh` OK；arm64 `:nativedo:assembleDebug` 通过，APK SHA-256 `ea6f58d162ac23386c43132e76dea63c32100c53356d6b00a90799e89a239fa6`。
+- 证据：`.amp/in/artifacts/folders-reactions-wave/tabs/renders/`（`home-folders-initial-loading.png` 条子在、只有"全部"、分类请求仍等待但列表已加载；`home-folders-selector-{before,mid,after}.png` 胶囊在"全部"、中间帧、落在"开发调优"）。
+- 后续模拟器点击录屏见 `docs/device-verification.md` 的本轮组合验证；仍未开真实 topic、未写真实 API、未清数据。
+
 ## Switch plan
 
-Moving the entry point to `:nativedo` and deleting the old stack. Not started; it needs the human's
-agreement.
+The full-subtree build now has its own CI job. Deleting the old stack has not started and needs
+the human's agreement.
 
-* **CI** has to gain NDK `27.2.12479018`, CMake `3.22.1`, platform 36 and build-tools 36.0.0, and
-  enough disk for `:TMessagesProj`'s CMake build (a cold arm64-v8a `assembleDebug` already produces
-  a 40 MB `libtmessages.49.so`; a release builds every ABI).
-* **The 15 submodule trees** that a subtree squash drops are fetched today by
-  `.amp/in/artifacts/spike/fetch_submodules.sh` (pinned SHAs). That script has to move into
-  `scripts/` and into the CI job and `.agents/setup`, or a fresh clone cannot build the library.
+* **CI** now installs NDK `27.2.12479018`, CMake `3.22.1`, platform 36 and build-tools 36.0.0,
+  runs the hook guard and tests, and assembles arm64. The old app's job remains alongside it.
+* **The 15 dependency trees** are materialized from the subtree's gitlinks by
+  `scripts/telegram-deps.sh`, also called by CI and `.agents/setup`. No prebuilt `.so` is copied.
+  `--verify` checks the script's stamps; previously populated, unstamped trees are reported as
+  unverified rather than assumed to match the pin. Cold-clone CI execution remains unverified locally.
 * **Delete:** `apps/android/app` (the old app), `apps/android/TMessagesProj` (the shrunk skeleton
   and its stubs), `apps/android/telegram/NativeDoSpike` (the superseded spike; its harness already
   lives in `src/test`), and the vendor tooling that only served the skeleton: `scripts/vendor-*.sh`,
@@ -1362,6 +1485,8 @@ agreement.
 ## Building
 
 ```sh
+./scripts/telegram-deps.sh
+./scripts/telegram-hook-guard.sh
 ./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:testDebugUnitTest
 ./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:assembleDebug -Pandroid.injected.build.abi=arm64-v8a
 ```

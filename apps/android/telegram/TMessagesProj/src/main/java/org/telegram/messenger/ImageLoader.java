@@ -3114,7 +3114,7 @@ public class ImageLoader {
                                 if (trueExt.equalsIgnoreCase("webm") || trueExt.equalsIgnoreCase("mp4") || trueExt.equalsIgnoreCase("gif")) {
                                     img.imageType = FileLoader.IMAGE_TYPE_ANIMATION;
                                 } else if ("tgs".equals(ext)) {
-                                    img.imageType = FileLoader.IMAGE_TYPE_LOTTIE;
+                                    img.imageType = io.github.baba983.nativedo.hooks.NativeDoHooks.pathImageType(imageLocation, FileLoader.IMAGE_TYPE_LOTTIE);
                                 }
                             }
                         }

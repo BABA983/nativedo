@@ -399,9 +399,9 @@ public class TopicListFragment extends BaseFragment
 
         tabsView = new FilterTabsView(context, resourceProvider);
         tabsView.setDelegate(new CategoryTabsDelegate());
-        // A strip with no tabs in it is a band of nothing over the list: it is shown by the tabs
-        // arriving, not before them, so a site whose categories could not be read leaves the list
-        // the whole screen rather than an empty row above it.
+        // The strip carries the all-topics folder from the first frame (buildTabs adds it before
+        // the site's categories can land), so it is never a band of nothing: loadCategories builds
+        // that tab and shows it, and the site's answer only adds to it.
         tabsView.setVisibility(View.GONE);
 
         // The strip is the floating glass capsule 12.10.5 presents its own filter tabs as:
@@ -661,15 +661,21 @@ public class TopicListFragment extends BaseFragment
         }
 
         /**
-         * DialogsActivity.ViewPage.setTranslationX (434-450): a page's own movement is where the
-         * slide is noticed. Upstream re-points the strip's indicator from here; this screen's
-         * header offset is what follows the same progress, so the field and the strip travel with
-         * the pair instead of jumping when it swaps.
+         * DialogsActivity.ViewPage.setTranslationX (434-455): a page's own movement is where the
+         * slide is noticed. Upstream re-points the strip's indicator from here while the release
+         * settle is animating the pair (446-453); this screen's header offset is what follows the
+         * same progress, so the field and the strip travel with the pair instead of jumping when
+         * it swaps. Without the indicator re-point the strip only moves while the finger is down
+         * and freezes at the release point for the whole settle, then jumps on its last frame.
          */
         @Override
         public void setTranslationX(float translationX) {
             if (getTranslationX() != translationX) {
                 super.setTranslationX(translationX);
+                if (tabsAnimationInProgress && viewPages[0] == this) {
+                    float scrollProgress = Math.abs(viewPages[0].getTranslationX()) / (float) viewPages[0].getMeasuredWidth();
+                    tabsView.selectTabWithId(viewPages[1].selectedType, scrollProgress);
+                }
                 followSlideWithPanelOffset();
             }
         }
@@ -1535,8 +1541,16 @@ public class TopicListFragment extends BaseFragment
 
         @Override
         protected void dispatchDraw(Canvas canvas) {
+            // 1012-1045: the frame paints the header's glass behind the bar and the field; the
+            // rect shrinks to the bar alone - and the rows clipped below follow it - as the list
+            // is scrolled up. It is also the rectangle the recording is read under, so it is what
+            // the source has to record (DialogsActivity's own position list, 14163-14202).
+            final int top = getActionBarTop();
+            blurBounds.set(0, Math.max(0, top), getMeasuredWidth(),
+                    top + getActionBarFullHeight() - AndroidUtilities.dp(2 * searchAnimationProgress));
             // The panels' blur source records the list before the frame draws its children, so a
             // panel samples the rows behind it and never itself.
+            glassHost.setSourceRect(blurBounds);
             glassHost.record();
             // DialogsActivity.ContentView.dispatchDraw (957-1006): the offset the top panel follows
             // is recomputed from the list itself, once per draw after a scroll. The search takes
@@ -1569,12 +1583,7 @@ public class TopicListFragment extends BaseFragment
             if (newTopicsPill != null) {
                 newTopicsPill.setTranslationY(panelOffset);
             }
-            // 1012-1045: the frame paints the header's glass behind the bar and the field; the
-            // rect shrinks to the bar alone - and the rows clipped below follow it - as the list
-            // is scrolled up.
-            final int top = getActionBarTop();
-            blurBounds.set(0, Math.max(0, top), getMeasuredWidth(),
-                    top + getActionBarFullHeight() - AndroidUtilities.dp(2 * searchAnimationProgress));
+            // 1012-1045: the frame paints the header's glass behind the bar and the field.
             drawBlurRect(canvas, 0, blurBounds, actionBarDefaultPaint, true);
             super.dispatchDraw(canvas);
             // 1091 + drawHeaderShadow (14284-14314): the soft line under the header's edge.
@@ -2222,6 +2231,13 @@ public class TopicListFragment extends BaseFragment
     @Override
     public void onParentBecameVisible() {
         refreshPageRows(currentPage());
+        // A categories read that failed (a challenge, an outage, a session that was not ready yet)
+        // left the strip empty - and the swipe that switches categories is gated on the strip
+        // having tabs, so the gesture went with it. The list is in front again, so it is asked
+        // once more; the cached answer, when there is one, is already up.
+        if (categories.isEmpty()) {
+            loadCategories();
+        }
     }
 
     /** A second tap on the reader's tab: the list goes back to its top. */
@@ -2492,15 +2508,13 @@ public class TopicListFragment extends BaseFragment
      * blocking it - the reader can still read the forum, which is what this screen is for.
      */
     private void loadCategories() {
+        // What the last launch read is up first, so the strip is there in the first frame the way
+        // upstream's own folder strip is (its folders come from local storage); the site's answer
+        // then replaces it.
+        publishCategories(container.getCategoryStore().cachedCategories());
         DiscourseLoader.INSTANCE.categories(container,
                 loaded -> {
-                    categories.clear();
-                    for (CategorySummary category : loaded) {
-                        if (category.getParentCategoryId() == null) {
-                            categories.add(category);
-                        }
-                    }
-                    buildTabs();
+                    publishCategories(loaded);
                     return kotlin.Unit.INSTANCE;
                 },
                 error -> {
@@ -2509,18 +2523,41 @@ public class TopicListFragment extends BaseFragment
                 });
     }
 
+    /**
+     * The categories the strip is built from: the site's top-level ones, in its own order. It runs
+     * twice - the cached list, then the site's answer - so the tabs are cleared first. It builds
+     * even with no categories: the all-topics folder is a tab of its own, so the strip stands from
+     * the first frame and the site's answer only adds to it.
+     */
+    private void publishCategories(List<CategorySummary> loaded) {
+        categories.clear();
+        for (CategorySummary category : loaded) {
+            if (category.getParentCategoryId() == null) {
+                categories.add(category);
+            }
+        }
+        buildTabs();
+    }
+
     private void buildTabs() {
-        // The all-topics tab is not upstream's "default" tab: upstream renames the default tab to
-        // its own "All chats" string while it measures (FilterTabsView.onMeasure), because in its
-        // own chat list the default tab *is* that folder. This screen's own name for it is the one
-        // that belongs on it.
-        tabsView.addTab(ALL_TAB_ID, 0, "全部", false, false, false);
+        tabsView.removeTabs();
+        // The all-topics tab is upstream's "default" folder: FilterTabsView.onMeasure builds the
+        // position tables (positionToX/Width/Count) only when it finds a default tab, and the
+        // selected capsule interpolates between those tables. With none, they stay empty, the
+        // indicator width is 0 and the capsule is not drawn at all while it travels - it jumps.
+        // Upstream renames the default tab to its own "All chats" string as it measures, so this
+        // screen's name for the folder ("全部") is supplied through that string resource (see
+        // nativedo/src/main/res/values/strings.xml).
+        tabsView.addTab(ALL_TAB_ID, 0, "全部", false, true, false);
         for (CategorySummary category : categories) {
             tabsView.addTab(
                     category.getId(), category.getId(), CategoryLabels.of(category), false, false, false);
         }
         tabsView.finishAddingTabs(false);
-        stripHasTabs = !categories.isEmpty();
+        // The all-topics folder is always a tab of the strip, so the strip is never the empty band
+        // that would justify hiding it: it is shown from the first frame, before the site's
+        // categories land, and stays shown when they never do (the list is still readable).
+        stripHasTabs = true;
         checkUi_filterTabsVisible();
         checkUi_pillTop();
     }
@@ -2530,9 +2567,7 @@ public class TopicListFragment extends BaseFragment
             // The row already downloaded the author's picture: its user and template go to the
             // topic screen, so the center capsule is bound before the topic is read.
             ((io.github.baba983.nativedo.app.NativeDoActivity) getParentActivity())
-                    .present(TopicFragment.forTopic(
-                            topic.getId(), topic.getTitle(),
-                            topic.getAuthorUsername(), topic.getAuthorAvatarTemplate()));
+                    .present(TopicFragment.forTopic(topic));
         }
     }
 

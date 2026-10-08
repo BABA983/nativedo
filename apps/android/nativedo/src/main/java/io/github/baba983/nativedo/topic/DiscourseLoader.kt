@@ -1,9 +1,6 @@
 package io.github.baba983.nativedo.topic
 
 import io.github.baba983.nativedo.core.di.AppContainer
-import io.github.baba983.nativedo.feature.topic.data.TopicReadPositionKey
-import io.github.baba983.nativedo.feature.topic.data.TopicReadReporter
-import io.github.baba983.nativedo.feature.topic.data.TopicRepository
 import io.github.baba983.nativedo.core.media.PickedMedia
 import io.github.baba983.nativedo.core.media.absoluteUploadUrl
 import io.github.baba983.nativedo.core.media.replyUploadMarkup
@@ -11,12 +8,14 @@ import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.core.model.PostPoll
 import io.github.baba983.nativedo.core.model.PostReaction
 import io.github.baba983.nativedo.core.model.TopicDetail
-import io.github.baba983.nativedo.core.model.TopicSummary
-import org.telegram.tgnet.TLRPC
+import io.github.baba983.nativedo.feature.topic.data.TopicReadPositionKey
+import io.github.baba983.nativedo.feature.topic.data.TopicReadReporter
+import io.github.baba983.nativedo.feature.topic.data.TopicRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import org.telegram.tgnet.TLRPC
 
 /**
  * Bridges the copied Kotlin data layer to the Java fragments. The fragments are Java because they
@@ -24,21 +23,25 @@ import kotlinx.coroutines.launch
  * generating a continuation by hand, so the launch lives here and reports back through callbacks.
  */
 object DiscourseLoader {
-
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     /**
      * The reader's place in one topic: the floors the viewport reaches, and the report of them the
      * site asks for. One per topic screen, so its position is that screen's own.
      */
-    fun readReporter(container: AppContainer, topicId: Long): TopicReadReporter =
+    fun readReporter(
+        container: AppContainer,
+        topicId: Long,
+    ): TopicReadReporter =
         TopicReadReporter(
             topicId = topicId,
             repository = TopicRepository(container.discourseApiClient),
             store = container.topicReadPositionStore,
-            key = container.sessionStore.snapshot()
-                ?.takeIf { snapshot -> snapshot.username.isNotBlank() && snapshot.username != "anonymous" }
-                ?.let { snapshot -> TopicReadPositionKey(container.baseUrl, snapshot.username, topicId) },
+            key =
+                container.sessionStore
+                    .snapshot()
+                    ?.takeIf { snapshot -> snapshot.username.isNotBlank() && snapshot.username != "anonymous" }
+                    ?.let { snapshot -> TopicReadPositionKey(container.baseUrl, snapshot.username, topicId) },
             scope = scope,
         )
 
@@ -89,21 +92,29 @@ object DiscourseLoader {
         onLoaded: (String?) -> Unit,
     ) {
         scope.launch {
-            val name = runCatching {
-                container.categoryStore.loadIfNeeded().getOrNull()?.get(categoryId)?.name
-            }.getOrNull()
+            val name =
+                runCatching {
+                    container.categoryStore
+                        .loadIfNeeded()
+                        .getOrNull()
+                        ?.get(categoryId)
+                        ?.name
+                }.getOrNull()
             onLoaded(name)
         }
     }
 
-    /** The categories the topic list filters by, in the site's own order. */
+    /** The categories the topic list filters by, in the site's own order, read and written down. */
     fun categories(
         container: AppContainer,
         onLoaded: (List<io.github.baba983.nativedo.core.model.CategorySummary>) -> Unit,
         onFailed: (Throwable) -> Unit,
     ) {
         scope.launch {
-            runCatching { container.discourseApiClient.fetchCategories() }
+            // Through the store: its answer is what the next launch draws the strip from before
+            // the site has been asked.
+            container.categoryStore
+                .refresh()
                 .onSuccess(onLoaded)
                 .onFailure(onFailed)
         }
@@ -185,7 +196,45 @@ object DiscourseLoader {
         }
     }
 
+    /**
+     * One post by its floor number: how a reply preview resolves a target the loaded window does
+     * not carry. It reads the single post rather than a window around it, so the list the reader is
+     * standing on is never reset - only that floor's own rows are rebuilt once the target lands.
+     */
+    fun resolvePost(
+        container: AppContainer,
+        topicId: Long,
+        postNumber: Int,
+        onLoaded: (Post) -> Unit,
+        onFailed: (Throwable) -> Unit,
+    ) {
+        scope.launch {
+            runCatching { container.discourseApiClient.fetchPostByNumber(topicId, postNumber) }
+                .onSuccess(onLoaded)
+                .onFailure(onFailed)
+        }
+    }
+
     fun posts(detail: TopicDetail): List<Post> = detail.posts
+
+    /**
+     * The direct replies to one post, one page at a time: the replies sheet asks for the page after
+     * the greatest floor it already holds, as the contract's `after` cursor. A read-only load, so a
+     * failure is a page that did not arrive and the caller keeps what it has.
+     */
+    fun postReplies(
+        container: AppContainer,
+        postId: Long,
+        afterPostNumber: Int,
+        onLoaded: (List<Post>) -> Unit,
+        onFailed: (Throwable) -> Unit,
+    ) {
+        scope.launch {
+            runCatching { container.discourseApiClient.fetchPostReplies(postId, afterPostNumber) }
+                .onSuccess(onLoaded)
+                .onFailure(onFailed)
+        }
+    }
 
     /** Starts a topic: the title, the category it goes to, and the body of its first floor. */
     fun newTopic(
@@ -254,11 +303,12 @@ object DiscourseLoader {
     ) {
         scope.launch {
             runCatching {
-                val uploaded = container.discourseApiClient.uploadFile(
-                    file = picked.file,
-                    mimeType = picked.mimeType,
-                    onProgress = { },
-                )
+                val uploaded =
+                    container.discourseApiClient.uploadFile(
+                        file = picked.file,
+                        mimeType = picked.mimeType,
+                        onProgress = { },
+                    )
                 // A site that answers an upload without a resolvable target leaves nothing to point
                 // a post at, and that is the one case the reader has to see as a failure.
                 val url = absoluteUploadUrl(container.baseUrl, uploaded.url)
@@ -274,8 +324,7 @@ object DiscourseLoader {
                     height = uploaded.height,
                     humanSize = uploaded.humanSize,
                 )
-            }
-                .onSuccess(onUploaded)
+            }.onSuccess(onUploaded)
                 .onFailure(onFailed)
         }
     }
@@ -286,11 +335,12 @@ object DiscourseLoader {
         postId: Long,
         reactionId: String,
         onDone: () -> Unit,
+        onFailed: (Throwable) -> Unit,
     ) {
         scope.launch {
             runCatching { container.discourseApiClient.toggleReaction(postId, reactionId) }
-                .onFailure { error -> org.telegram.messenger.FileLog.e("reaction toggle failed", error) }
-            onDone()
+                .onSuccess { onDone() }
+                .onFailure(onFailed)
         }
     }
 
@@ -314,8 +364,7 @@ object DiscourseLoader {
                 } else {
                     container.discourseApiClient.votePoll(postId, pollName, selection.digests)
                 }
-            }
-                .onSuccess(onUpdated)
+            }.onSuccess(onUpdated)
                 .onFailure(onFailed)
         }
     }
@@ -383,9 +432,11 @@ object DiscourseLoader {
             try {
                 when (DiscourseImageBridge.downloadVideo(container.imageOkHttpClient, video)) {
                     DiscourseImageBridge.VideoDownload.Stored -> onStored()
+
                     // A cancellation is not a clip the site would not hand over: nothing plays, and
                     // the block's own play button is where the reader left it.
                     DiscourseImageBridge.VideoDownload.Cancelled -> Unit
+
                     else -> onStream()
                 }
             } finally {
@@ -395,9 +446,10 @@ object DiscourseLoader {
     }
 
     /** The clips a fetch is running for right now, by the name the block looks them up by. */
-    private val fetching = java.util.Collections.newSetFromMap(
-        java.util.concurrent.ConcurrentHashMap<String, Boolean>(),
-    )
+    private val fetching =
+        java.util.Collections.newSetFromMap(
+            java.util.concurrent.ConcurrentHashMap<String, Boolean>(),
+        )
 
     /** Fetches one participant's avatar next to the location upstream will look it up in. */
     fun cacheAvatar(
@@ -437,18 +489,25 @@ object DiscourseLoader {
                 // The catalog's picture is a path on the site ("/images/emoji/twitter/heart.png");
                 // the session's client needs the address it belongs to. A reaction with no icon at
                 // all, or one whose fetch fails, keeps its place as a fallback below.
-                val file = reaction.iconUrl
-                    ?.takeUnless { it.isBlank() }
-                    ?.let { url ->
-                        runCatching { java.net.URI(container.baseUrl).resolve(url).toString() }.getOrNull()
-                    }
-                    ?.let { absolute -> DiscourseReactionEmoji.cache(container.imageOkHttpClient, absolute) }
+                val file =
+                    reaction.iconUrl
+                        ?.takeUnless { it.isBlank() }
+                        ?.let { url ->
+                            runCatching {
+                                java.net
+                                    .URI(container.baseUrl)
+                                    .resolve(url)
+                                    .toString()
+                            }.getOrNull()
+                        }?.let { absolute -> DiscourseReactionEmoji.cache(container.imageOkHttpClient, absolute) }
                 if (file != null) {
                     DiscourseReactionEmoji.register(emoticon, file)
                 } else {
                     DiscourseReactionEmoji.registerFallback(
                         emoticon,
-                        io.github.baba983.nativedo.core.model.PostReactionRendering.fallbackLabel(reaction.id),
+                        io.github.baba983.nativedo.core.model.PostReactionRendering
+                            .fallbackLabel(reaction.id),
+                        reaction.id,
                     )
                 }
             }

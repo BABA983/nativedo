@@ -78,7 +78,7 @@ public class ImageLocation {
         imageLocation.key = document.key;
         imageLocation.iv = document.iv;
         imageLocation.currentSize = document.size;
-        return imageLocation;
+        return io.github.baba983.nativedo.hooks.NativeDoHooks.documentImageLocation(document, imageLocation);
     }
 
     public static ImageLocation getForWebFile(WebFile webFile) {

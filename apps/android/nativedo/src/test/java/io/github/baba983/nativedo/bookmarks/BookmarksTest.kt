@@ -102,7 +102,7 @@ internal class BookmarksTest {
         println("bookmarks: the menu offers $items")
         assertEquals(
             "the menu offers the bookmark and the post's text too",
-            listOf("复制", "复制链接", "添加书签", "回复", "选择文本"),
+            listOf("复制", "复制链接", "分享", "添加书签", "回复", "选择文本"),
             items,
         )
 

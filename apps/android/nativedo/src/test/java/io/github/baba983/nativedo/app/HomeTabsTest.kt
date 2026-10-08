@@ -266,8 +266,15 @@ internal class HomeTabsTest {
         ViewCompat.dispatchApplyWindowInsets(root, system)
         harness.layoutApp()
         composer.getLocationInWindow(position)
-        assertEquals("hiding the keyboard leaves only the navigation inset", root.height - 37,
-            position[1] + composer.height)
+        // The reply box is now upstream's floating input island: its bottom sits the navigation
+        // inset above the window edge plus the island's own bottom gap (INPUT_BUBBLE_BOTTOM), the
+        // same 9dp the chat's composer floats on.
+        assertEquals(
+            "hiding the keyboard leaves the navigation inset and the island's own gap",
+            (root.height - 37 - org.telegram.messenger.AndroidUtilities.dp(
+                org.telegram.ui.Components.chat.ChatInputViewsContainer.INPUT_BUBBLE_BOTTOM.toFloat())).toLong(),
+            (position[1] + composer.height).toLong(),
+        )
         shell.onBackPressed()
         harness.await("return to notifications") { fragmentStackSize(shell) == 1 }
         harness.layoutApp()

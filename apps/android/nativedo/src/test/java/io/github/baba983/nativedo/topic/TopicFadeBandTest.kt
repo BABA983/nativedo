@@ -99,6 +99,9 @@ internal class TopicFadeBandTest {
         val content = fragment.fragmentView as ViewGroup
         val fade = field(fragment, "fadeView") as ChatActivityFadeView
         val composer = field(fragment, "composer") as View
+        // The input now rides in upstream's floating container; that host is what the band must
+        // draw under, since the composer itself is no longer a child of the screen.
+        val inputHost = field(fragment, "inputViews") as View
         val list = contentListOf(harness.activity) as RecyclerListView
         val bar = (0 until content.childCount)
             .map { content.getChildAt(it) }
@@ -110,7 +113,7 @@ internal class TopicFadeBandTest {
                 " composer=" + composer.height + " listIndex=" + content.indexOfChild(list) +
                 " fadeIndex=" + content.indexOfChild(fade) +
                 " barIndex=" + content.indexOfChild(bar) +
-                " composerIndex=" + content.indexOfChild(composer) +
+                " composerIndex=" + content.indexOfChild(inputHost) +
                 " zoneTop=" + zone(fragment, "fadeZoneTop") +
                 " zoneBottom=" + zone(fragment, "fadeZoneBottom"),
         )
@@ -125,7 +128,7 @@ internal class TopicFadeBandTest {
         )
         assertTrue(
             "the band must draw under the composer (or its bottom zone hides the input)",
-            content.indexOfChild(fade) < content.indexOfChild(composer),
+            content.indexOfChild(fade) < content.indexOfChild(inputHost),
         )
         assertTrue(
             "the top zone reaches the bar's measured height, the status bar included",

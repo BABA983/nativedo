@@ -11,6 +11,9 @@ import android.widget.LinearLayout;
 import io.github.baba983.nativedo.app.NativeDo;
 import io.github.baba983.nativedo.core.di.AppContainer;
 import io.github.baba983.nativedo.core.model.CategorySummary;
+import io.github.baba983.nativedo.core.session.SessionSnapshot;
+import io.github.baba983.nativedo.feature.topic.data.NewTopicDraft;
+import io.github.baba983.nativedo.feature.topic.data.NewTopicDraftKey;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLog;
@@ -18,6 +21,7 @@ import org.telegram.messenger.LocaleController;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
+import org.telegram.ui.ActionBar.EdgeToEdgeSupportMode;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.TextSettingsCell;
 import org.telegram.ui.Components.ChatActivityEnterView;
@@ -47,11 +51,23 @@ public class NewTopicFragment extends BaseFragment {
     private EditTextBoldCursor titleField;
     private TextSettingsCell categoryRow;
     private ChatActivityEnterView composer;
+    /** Upstream's floating-composer host: the island bubble the enter view rides in. */
+    private org.telegram.ui.Components.chat.ChatInputViewsContainer inputViews;
+    private org.telegram.ui.Components.inset.WindowInsetsStateHolder inputInsets;
+    private io.github.baba983.nativedo.app.GlassPanelHost glassHost;
+    private DiscourseComposerTools composerTools;
+    private int bottomInset;
     private final List<CategorySummary> categories = new ArrayList<>();
     /** The category the topic goes to. Nothing is posted without one, so it starts empty. */
     private CategorySummary category;
     private AppContainer container;
     private boolean sending;
+    /** True while a stored draft is being put back, so the restore is not written over itself. */
+    private boolean restoringDraft;
+    private boolean posted;
+    private NewTopicDraftKey formDraftKey;
+    /** The category id a restored draft asked for, held until the site's categories arrive. */
+    private Integer pendingCategoryId;
 
     public NewTopicFragment(android.os.Bundle args) {
         super(args);
@@ -70,11 +86,19 @@ public class NewTopicFragment extends BaseFragment {
         actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
             @Override
             public void onItemClick(int id) {
-                if (id == -1) {
+                if (id == -1 && onBackPressed(true)) {
                     finishFragment();
+                } else if (id == 1 && composer != null) {
+                    CharSequence raw = composer.getFieldText();
+                    presentFragment(new DiscourseRichEditor(raw == null ? "" : raw.toString(), applied -> {
+                        composer.setFieldText(applied);
+                        saveDraft();
+                    }));
                 }
             }
         });
+        actionBar.createMenu().addItem(1, org.telegram.messenger.R.drawable.msg_edit)
+                .setContentDescription("富文本");
 
         contentView = new SizeNotifierFrameLayout(context);
         contentView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
@@ -94,12 +118,41 @@ public class NewTopicFragment extends BaseFragment {
         contentView.addView(form, LayoutHelper.createFrame(
                 LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP));
 
-        contentView.addView(createComposer(contentView), LayoutHelper.createFrame(
-                LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.BOTTOM));
+        // The body rides in upstream's floating composer island (ChatActivity.createView:4587-4599),
+        // the same capsule the reply box uses, instead of a strip pinned across the screen.
+        glassHost = new io.github.baba983.nativedo.app.GlassPanelHost(form, contentView);
+        inputViews = new org.telegram.ui.Components.chat.ChatInputViewsContainer(context);
+        inputViews.setClipChildren(false);
+        inputInsets = new org.telegram.ui.Components.inset.WindowInsetsStateHolder(() -> {
+            if (inputViews != null) {
+                inputViews.checkInsets();
+                if (composerTools != null) {
+                    composerTools.updatePosition(0);
+                }
+            }
+        });
+        inputViews.setWindowInsetsProvider(inputInsets);
+        inputViews.getInputIslandBubbleContainer().setClipChildren(false);
+        org.telegram.ui.Components.blur3.drawable.color.BlurredBackgroundProvider inputProvider =
+                org.telegram.ui.Components.blur3.drawable.color.impl.BlurredBackgroundProviderImpl
+                        .bottomPanelChatActivity(resourceProvider);
+        inputViews.setInputIslandBubbleDrawable(glassHost.createPanel(inputViews, inputProvider));
+        inputViews.setUnderKeyboardBackgroundDrawable(glassHost.createPanel(inputViews, inputProvider));
+        contentView.addView(inputViews, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        inputViews.getInputIslandBubbleContainer().addView(createComposer(contentView),
+                LayoutHelper.createFrame(
+                        LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT,
+                        Gravity.LEFT | Gravity.BOTTOM, 7, 0, 7, 0));
 
+        composerTools = new DiscourseComposerTools(
+                this, container, composer, inputViews, inputInsets, glassHost, null);
         fragmentView = contentView;
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(contentView, this::onInsetsInternal);
         showCategory();
         loadCategories();
+        // A topic that was half-written is handed back whole: title, category and body.
+        loadDraft();
         return fragmentView;
     }
 
@@ -154,6 +207,7 @@ public class NewTopicFragment extends BaseFragment {
             @Override
             public void afterTextChanged(android.text.Editable text) {
                 updateComposerActions();
+                saveDraft();
             }
         });
         return field;
@@ -165,13 +219,36 @@ public class NewTopicFragment extends BaseFragment {
      */
     private View createComposer(SizeNotifierFrameLayout parent) {
         ChatActivityEnterView view = new ChatActivityEnterView(
-                getParentActivity(), parent, null, true, resourceProvider);
+                getParentActivity(), parent, null, true, resourceProvider) {
+            @Override
+            protected void onChangedIslandTotalHeight(float height) {
+                if (inputViews != null) {
+                    inputViews.setInputBubbleHeight(Math.max(height, AndroidUtilities.dp(44)));
+                    if (composerTools != null) {
+                        composerTools.updatePosition(0);
+                    }
+                }
+            }
+        };
+        view.shouldDrawBackground = false;
+        view.setMinimumHeight(AndroidUtilities.dp(51));
+        view.setInAppInsetsController(inputInsets);
+        view.setViewParentForEmoji(inputViews.getInAppKeyboardBubbleContainer());
         view.setAllowStickersAndGifs(false, false, false);
         view.setDelegate(new SendDelegate());
         // The composer decides the button again whenever it is laid out (a keyboard, an emoji panel,
-        // a first layout), so the decision is repeated there too.
-        view.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
-                updateComposerActions());
+        // a first layout), so the decision is repeated there too; the island's own height is what
+        // the capsule and the insets follow.
+        view.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+            updateComposerActions();
+            if (inputViews != null) {
+                inputViews.setInputBubbleHeight(Math.max(view.getIslandTotalHeight(false), AndroidUtilities.dp(44)));
+                inputViews.checkInsets();
+                if (composerTools != null) {
+                    composerTools.updatePosition(0);
+                }
+            }
+        });
         composer = view;
         return view;
     }
@@ -190,6 +267,7 @@ public class NewTopicFragment extends BaseFragment {
                         }
                     }
                     showCategory();
+                    applyPendingCategory();
                     return kotlin.Unit.INSTANCE;
                 },
                 error -> {
@@ -214,6 +292,7 @@ public class NewTopicFragment extends BaseFragment {
                 category = categories.get(which);
                 showCategory();
                 updateComposerActions();
+                saveDraft();
             }
         });
         builder.setNegativeButton("取消", null);
@@ -231,6 +310,164 @@ public class NewTopicFragment extends BaseFragment {
             categoryRow.setTextAndValue("分类", "无法读取分类", true);
         } else {
             categoryRow.setTextAndValue("分类", "选择分类", true);
+        }
+    }
+
+    /**
+     * The key a new-topic draft is stored under: the site and the account. There is no topic id
+     * yet, so the whole form is one draft per reader, the way the site keeps it.
+     */
+    private NewTopicDraftKey draftKey() {
+        if (formDraftKey != null) {
+            return formDraftKey;
+        }
+        String username = "";
+        if (container != null) {
+            SessionSnapshot snapshot = container.getSessionStore().snapshot();
+            if (snapshot != null) {
+                username = snapshot.getUsername();
+            }
+        }
+        return formDraftKey = new NewTopicDraftKey(container == null ? "" : container.getBaseUrl(), username);
+    }
+
+    /** Puts the form back: the title, the body, and the category once the site's list arrives. */
+    private void loadDraft() {
+        if (container == null) {
+            return;
+        }
+        NewTopicDraft draft = container.getTopicReplyDraftStore().loadNewTopic(draftKey());
+        pendingCategoryId = draft.getCategoryId();
+        restoringDraft = true;
+        try {
+            if (titleField != null && !draft.getTitle().isEmpty()) {
+                titleField.setText(draft.getTitle());
+            }
+            if (composer != null && !draft.getRaw().isEmpty()) {
+                composer.setFieldText(draft.getRaw());
+            }
+        } finally {
+            restoringDraft = false;
+        }
+        applyPendingCategory();
+        updateComposerActions();
+    }
+
+    /** The saved category, once the site's own list has arrived to find it in. */
+    private void applyPendingCategory() {
+        if (pendingCategoryId == null || categories.isEmpty()) {
+            return;
+        }
+        for (CategorySummary candidate : categories) {
+            if (candidate.getId() == pendingCategoryId) {
+                category = candidate;
+                pendingCategoryId = null;
+                showCategory();
+                return;
+            }
+        }
+    }
+
+    /** Writes the form down; a restore does not write, and a category-less form still saves. */
+    private void saveDraft() {
+        if (container == null || restoringDraft || posted) {
+            return;
+        }
+        String title = titleField == null ? "" : titleField.getText().toString();
+        String raw = composer == null || composer.getFieldText() == null
+                ? "" : composer.getFieldText().toString();
+        Integer categoryId = category == null ? null : category.getId();
+        container.getTopicReplyDraftStore().saveNewTopic(
+                draftKey(), new NewTopicDraft(title, categoryId, raw));
+    }
+
+    /** Only a topic the site accepted earns this; a failure keeps the form for the next press. */
+    private void clearDraft() {
+        if (container == null) {
+            return;
+        }
+        container.getTopicReplyDraftStore().saveNewTopic(draftKey(), new NewTopicDraft("", null, ""));
+    }
+
+    /** The reader is leaving: the form is written down and the composer told, as a chat screen does. */
+    @Override
+    public void onPause() {
+        super.onPause();
+        saveDraft();
+        if (composerTools != null) {
+            composerTools.onPause();
+        }
+        if (composer != null) {
+            composer.onPause();
+        }
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        if (composer != null) {
+            composer.onResume();
+        }
+        if (composerTools != null) {
+            composerTools.onResume();
+        }
+    }
+
+    @Override
+    public boolean onBackPressed(boolean invoked) {
+        if (composerTools != null && composerTools.onBackPressed(invoked)) {
+            return false;
+        }
+        return super.onBackPressed(invoked);
+    }
+
+    @Override
+    public void onFragmentDestroy() {
+        saveDraft();
+        if (composerTools != null) {
+            composerTools.onDestroy();
+            composerTools = null;
+        }
+        if (composer != null) {
+            composer.onDestroy();
+            composer = null;
+        }
+        inputViews = null;
+        super.onFragmentDestroy();
+    }
+
+    @Override
+    public boolean isSupportEdgeToEdge() {
+        return true;
+    }
+
+    @Override
+    public EdgeToEdgeSupportMode getEdgeToEdgeSupportMode() {
+        return EdgeToEdgeSupportMode.FULL;
+    }
+
+    @Override
+    public boolean drawEdgeNavigationBar() {
+        return false;
+    }
+
+    @Override
+    public androidx.core.view.WindowInsetsCompat onInsetsInternal(@androidx.annotation.NonNull View view,
+            @androidx.annotation.NonNull androidx.core.view.WindowInsetsCompat insets) {
+        androidx.core.graphics.Insets bars = AndroidUtilities.getDefaultWindowInsets(insets, false);
+        onInsets(bars.left, bars.top, bars.right, bars.bottom);
+        if (inputInsets != null) {
+            inputInsets.setInsets(insets);
+        }
+        return androidx.core.view.WindowInsetsCompat.CONSUMED;
+    }
+
+    @Override
+    public void onInsets(int left, int top, int right, int bottom) {
+        super.onInsets(left, top, right, bottom);
+        bottomInset = bottom;
+        if (inputViews != null) {
+            inputViews.checkInsets();
         }
     }
 
@@ -282,6 +519,7 @@ public class NewTopicFragment extends BaseFragment {
         // one of the other two says which, rather than doing nothing.
         String missing = title.isEmpty() ? "标题" : category == null ? "分类" : null;
         if (missing != null) {
+            composer.setFieldText(raw);
             showError("还不能发帖", new java.io.IOException("请先填写" + missing));
             return;
         }
@@ -293,6 +531,10 @@ public class NewTopicFragment extends BaseFragment {
             return kotlin.Unit.INSTANCE;
         }, error -> {
             sending = false;
+            if (composer != null) {
+                composer.setFieldText(raw);
+            }
+            saveDraft();
             updateComposerActions();
             showError("发帖失败", error);
             return kotlin.Unit.INSTANCE;
@@ -304,9 +546,12 @@ public class NewTopicFragment extends BaseFragment {
      * from reloads as it comes back - the new topic is the newest thing on it.
      */
     private void onTopicCreated() {
+        posted = true;
         if (composer != null) {
             composer.setFieldText("");
         }
+        // The topic is the site's now; the draft it came from is not.
+        clearDraft();
         finishFragment();
     }
 
@@ -342,6 +587,7 @@ public class NewTopicFragment extends BaseFragment {
         @Override
         public void onTextChanged(CharSequence text, boolean bigChange, boolean fromDraft) {
             updateComposerActions();
+            saveDraft();
         }
 
         @Override

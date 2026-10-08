@@ -151,6 +151,12 @@ internal class HomeFeedTest {
             list.scrollBy(0, AndroidUtilities.dp(100f))
             harness.idle()
         }
+        // requestMore fires synchronously from onScrolled, but the page=1 request leaves on
+        // OkHttp's own thread: wait (real time, the way await does) until the site has seen it,
+        // then assert it was asked for exactly once while the held answer is on its way.
+        harness.await("the next page to be asked for") {
+            site.queriesFor("latest.json").count { it.contains("page=1") } >= 1
+        }
         assertEquals(
             "one read of page 1 while it is on its way",
             1,

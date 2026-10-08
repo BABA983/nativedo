@@ -99,12 +99,24 @@ public class NativeDoMainTabsActivity extends ViewPagerActivity {
     private int insetLeft;
     private int insetRight;
     private int navigationBarHeight;
+    /** The page the shell first builds on; the first tab unless a restore named another. */
+    private final int startTabPosition;
 
     private final BlurredBackgroundSourceColor iBlur3SourceColor = new BlurredBackgroundSourceColor();
     private final BlurredBackgroundSourceRenderNode iBlur3SourceTabGlass;
 
     public NativeDoMainTabsActivity() {
+        this(POSITION_TOPICS);
+    }
+
+    /**
+     * The tab shell restored to one page: the shell's own {@code ViewPagerActivity} reads
+     * {@link #getStartPosition()} when it first builds, so the page the reader was on comes back
+     * without a second scroll. The first tab is the default.
+     */
+    public NativeDoMainTabsActivity(int startTabPosition) {
         super();
+        this.startTabPosition = startTabPosition;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             iBlur3SourceTabGlass = new BlurredBackgroundSourceRenderNode(iBlur3SourceColor);
             // The captured pages are the glass's source, so the frosted look is this blur.
@@ -112,6 +124,16 @@ public class NativeDoMainTabsActivity extends ViewPagerActivity {
         } else {
             iBlur3SourceTabGlass = null;
         }
+    }
+
+    /** The tab shell opened on {@code position}, for a shell restoring the reader's page. */
+    public static NativeDoMainTabsActivity forTab(int position) {
+        return new NativeDoMainTabsActivity(position);
+    }
+
+    /** The page the strip is on now, so the shell can save it and restore it on recreation. */
+    public int getSelectedTabPosition() {
+        return viewPager != null ? viewPager.getCurrentPosition() : startTabPosition;
     }
 
     /**
@@ -368,6 +390,9 @@ public class NativeDoMainTabsActivity extends ViewPagerActivity {
 
     @Override
     protected int getStartPosition() {
+        if (startTabPosition >= 0 && startTabPosition < TABS_COUNT) {
+            return startTabPosition;
+        }
         return POSITION_TOPICS;
     }
 

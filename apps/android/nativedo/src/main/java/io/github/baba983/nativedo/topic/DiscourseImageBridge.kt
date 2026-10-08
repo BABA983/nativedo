@@ -8,11 +8,15 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
+import org.jsoup.nodes.Node
+import org.jsoup.nodes.TextNode
 import org.jsoup.parser.Tag
 import org.telegram.messenger.FileLoader
 import org.telegram.messenger.FileLog
 import org.telegram.messenger.NotificationCenter
+import org.telegram.messenger.UserConfig
 import org.telegram.tgnet.TLRPC
+import org.telegram.ui.Components.AnimatedEmojiDrawable
 import java.io.File
 import java.net.URI
 import java.security.MessageDigest
@@ -79,8 +83,17 @@ object DiscourseImageBridge {
     /** A video tag with no frame of its own is still a video; sixteen by nine is what a player assumes. */
     private const val DEFAULT_FRAME_WIDTH = 1280
 
-    fun prepare(cookedHtml: String, baseUrl: String): PreparedPostBody {
+    @JvmOverloads
+    fun prepare(
+        cookedHtml: String,
+        baseUrl: String,
+        emojiCatalog: Map<String, String> = emptyMap(),
+    ): PreparedPostBody {
         val document = Jsoup.parseBodyFragment(cookedHtml ?: "")
+        // Serialize verbatim: jsoup's pretty-printer injects a newline and indent after a <br>,
+        // which upstream's importer reads as a second, blank line. The text itself is normalized
+        // at the cooked-input boundary in DiscoursePostBody.
+        document.outputSettings().prettyPrint(false)
         val body = document.body()
         val images = ArrayList<PostImage>()
         // A video is read before the wrappers around it go: Discourse puts the frame's shape on the
@@ -96,12 +109,10 @@ object DiscourseImageBridge {
             element.removeAttr("poster")
             element.select("source").remove()
         }
-        for (wrapper in body.select(WRAPPERS)) {
-            wrapper.unwrap()
-        }
         body.select(LIGHTBOX_META).remove()
 
         val photos = ArrayList<TLRPC.Photo>()
+        // Read the lightbox's download target before unwrapping it; src is usually a resize.
         for (image in body.select("img")) {
             val postImage = postImage(image, baseUrl) ?: continue
             images += postImage
@@ -111,6 +122,32 @@ object DiscourseImageBridge {
             image.attr("src", postImage.id.toString())
             image.removeAttr("srcset")
             image.removeAttr("data-download-href")
+        }
+        // Inline emoji: the site's cook leaves each one as an `img.emoji` (standard twemoji, or a
+        // custom emoji it uploaded) carrying the picture's own src and a readable shortcode as
+        // alt/title. Upstream's importer drops a bare inline img, so each becomes an
+        // `animated-emoji` element - the tag upstream's rich renderer draws from a document id -
+        // once its picture is on disk; until then it stays the readable label it came with, so a
+        // slow or refused fetch never leaves a blank square. The picture is fetched through the
+        // same image cache as a post photo, by the id both the tag and the document share.
+        val emojiImages = ArrayList<PostImage>()
+        if (emojiCatalog.isNotEmpty()) resolveShortcodes(body, baseUrl, emojiCatalog, emojiImages)
+        for (image in body.select("img.emoji")) {
+            val asset = emojiAsset(image, baseUrl)
+            if (asset == null) {
+                image.replaceWith(TextNode(image.attr("alt").ifBlank { image.attr("title") }))
+                continue
+            }
+            if (emojiCached(asset.image)) {
+                seedEmojiDocument(asset.image)
+                image.replaceWith(animatedEmojiElement(asset))
+            } else {
+                emojiImages += asset.image
+                image.replaceWith(TextNode(asset.label))
+            }
+        }
+        for (wrapper in body.select(WRAPPERS)) {
+            wrapper.unwrap()
         }
         val attachments = ArrayList<PostAttachment>()
         for (anchor in body.select(ATTACHMENT)) {
@@ -132,7 +169,7 @@ object DiscourseImageBridge {
                 anchor.replaceWith(replacement)
             }
         }
-        return PreparedPostBody(body.html(), photos, images, attachments, videos)
+        return PreparedPostBody(body.html(), photos, images, attachments, videos, emojiImages.distinctBy { it.id })
     }
 
     /**
@@ -482,7 +519,7 @@ object DiscourseImageBridge {
         if (width < MIN_MEDIA_WIDTH) {
             return null
         }
-        val url = resolve(image.attr("src"), baseUrl) ?: return null
+        val url = originalSource(image, baseUrl) ?: return null
         return PostImage(
             id = idOf(url),
             url = url,
@@ -490,6 +527,179 @@ object DiscourseImageBridge {
             height = height.coerceAtLeast(1),
             extension = extensionOf(url),
         )
+    }
+
+    /** The size reserved for an emoji whose own markup named none: the site's own 20px default. */
+    private const val EMOJI_PX = 20
+
+    /** One cooked emoji: the id/label upstream's tag carries, and the picture both share. */
+    private data class EmojiAsset(val label: String, val image: PostImage)
+
+    /**
+     * One cooked `img.emoji` as an emoji asset, or null when it names no picture this client can
+     * fetch. The label is what the site already put on it (`alt`, else `title`), so a body never
+     * loses the run: an emoji whose picture is not there yet reads as its shortcode.
+     */
+    private fun emojiAsset(image: Element, baseUrl: String): EmojiAsset? {
+        val source = image.attr("src").ifBlank { image.attr("data-src") }
+        val url = resolve(source, baseUrl)?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
+            ?: return null
+        val label = image.attr("alt").ifBlank { image.attr("title") }.ifBlank { ":${nameOf(url)}:" }
+        val side = image.attr("width").toIntOrNull() ?: EMOJI_PX
+        val height = image.attr("height").toIntOrNull() ?: EMOJI_PX
+        val postImage = PostImage(
+            id = idOf(url),
+            url = url,
+            width = side.coerceAtLeast(1),
+            height = height.coerceAtLeast(1),
+            extension = extensionOf(url),
+        )
+        return EmojiAsset(label, postImage)
+    }
+
+    /**
+     * Whether an emoji's picture is on disk <em>and</em> decodable. A cache file that a fetch cut
+     * short, or a 200 the site answered with something that is not a picture, is not artwork: the
+     * emoji keeps its readable label instead of drawing a blank square. Same rule the reaction
+     * chips use - the bytes are checked, not the response code.
+     */
+    fun emojiCached(image: PostImage): Boolean = localFiles(image).any { file ->
+        file.exists() && file.length() > 0 && runCatching {
+            val bitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath) ?: return@runCatching false
+            bitmap.recycle()
+            true
+        }.getOrDefault(false)
+    }
+
+    /** The tag upstream's importer reads as a custom emoji: its id, and the label it covers. */
+    private fun animatedEmojiElement(asset: EmojiAsset): Element =
+        Element(Tag.valueOf("animated-emoji"), "")
+            .attr("data-document-id", asset.image.id.toString())
+            .appendText(asset.label)
+
+    /**
+     * Registers the emoji's document with upstream before any span names it.
+     *
+     * <p>Upstream resolves a custom emoji's id through its own document store, which is a Telegram
+     * database this client never opens. Seeding the fetcher's in-memory cache with a document whose
+     * picture sits in the file cache this client fills is what lets the renderer draw it with no
+     * database and no datacenter: the document's own thumbnail names the file, and its id is the one
+     * the tag carries.</p>
+     */
+    private fun seedEmojiDocument(image: PostImage) {
+        val file = localFiles(image).firstOrNull { it.exists() }
+        val document = TLRPC.TL_document().apply {
+            id = image.id
+            dc_id = 0
+            access_hash = 0
+            file_name = "emoji." + image.extension
+            mime_type = mimeOf(image.extension)
+            size = file?.length() ?: 0L
+            thumbs = arrayListOf(sizeOf(image))
+            attributes = arrayListOf()
+        }
+        // Upstream keys the fetcher by account: the renderer asks the selected one, the rest of this
+        // client files everything under account 0. Both are seeded so the id is found either way.
+        AnimatedEmojiDrawable.getDocumentFetcher(0).putDocument(document)
+        val selected = UserConfig.selectedAccount
+        if (selected != 0) {
+            AnimatedEmojiDrawable.getDocumentFetcher(selected).putDocument(document)
+        }
+    }
+
+    /** A picture's file name, without its extension, as a readable shortcode label. */
+    private fun nameOf(url: String): String =
+        url.substringBefore('?').substringAfterLast('/').substringBeforeLast('.').ifEmpty { "emoji" }
+
+    /** The form a raw `:shortcode:` is written in. */
+    private val SHORTCODE = Regex(":([A-Za-z0-9_+\\-]{1,60}):")
+
+    /**
+     * Raw shortcodes the site's cook left as literal text: `:name:` becomes the same emoji a cooked
+     * one would, but only when the loaded catalog names that shortcode. An unknown literal, and any
+     * text inside a code/pre block, is left exactly as written. Only missing pictures are queued
+     * for download, so a warm picture cannot cause an unrelated failed label to rebuild the floor.
+     */
+    private fun resolveShortcodes(
+        root: Element,
+        baseUrl: String,
+        catalog: Map<String, String>,
+        out: MutableList<PostImage>,
+    ) {
+        val texts = ArrayList<TextNode>()
+        collectTextNodes(root, texts)
+        for (text in texts) {
+            val whole = text.wholeText
+            if (whole.indexOf(':') < 0) {
+                continue
+            }
+            val pieces = ArrayList<Node>()
+            var last = 0
+            for (match in SHORTCODE.findAll(whole)) {
+                val name = match.groupValues[1]
+                val raw = catalog[name]?.takeUnless { it.isBlank() } ?: continue
+                val url = resolve(raw, baseUrl)?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
+                    ?: continue
+                if (match.range.first > last) {
+                    pieces += TextNode(whole.substring(last, match.range.first))
+                }
+                val label = ":$name:"
+                val image = PostImage(idOf(url), url, EMOJI_PX, EMOJI_PX, extensionOf(url))
+                if (emojiCached(image)) {
+                    seedEmojiDocument(image)
+                    pieces += animatedEmojiElement(EmojiAsset(label, image))
+                } else {
+                    out += image
+                    pieces += TextNode(label)
+                }
+                last = match.range.last + 1
+            }
+            if (pieces.isEmpty()) {
+                continue
+            }
+            if (last < whole.length) {
+                pieces += TextNode(whole.substring(last))
+            }
+            for (piece in pieces) {
+                text.before(piece)
+            }
+            text.remove()
+        }
+    }
+
+    /** The raw text of [root] outside the tags whose whitespace and literals are authored. */
+    private fun collectTextNodes(element: Element, out: MutableList<TextNode>) {
+        for (child in element.childNodes()) {
+            when (child) {
+                is TextNode -> out += child
+                is Element -> if (child.normalName() !in VERBATIM_TAGS) collectTextNodes(child, out)
+                else -> Unit
+            }
+        }
+    }
+
+    /** Tags whose text is authored verbatim, so a `:shortcode:` inside one is not an emoji. */
+    private val VERBATIM_TAGS = setOf("pre", "code", "tt", "textarea")
+
+    /** Explicit download targets, then responsive candidates; ordinary image links are navigation. */
+    private fun originalSource(image: Element, baseUrl: String): String? {
+        val lightbox = image.parents().firstOrNull { it.tagName() == "a" && it.hasClass("lightbox") }
+        val hints = listOf(image.attr("data-download-href"),
+            lightbox?.attr("data-download-href").orEmpty(), lightbox?.attr("href").orEmpty())
+        for (hint in hints) {
+            val url = resolve(hint, baseUrl) ?: continue
+            if (url.startsWith("https://") || url.startsWith("http://")) return url
+        }
+        val candidates = image.attr("srcset").split(',').mapNotNull { candidate ->
+            val parts = candidate.trim().split(Regex("\\s+"))
+            val url = resolve(parts.first(), baseUrl) ?: return@mapNotNull null
+            if (!url.startsWith("https://") && !url.startsWith("http://")) return@mapNotNull null
+            val size = parts.getOrNull(1)?.removeSuffix("w")?.removeSuffix("x")?.toDoubleOrNull() ?: 1.0
+            url to size
+        }
+        return candidates.firstOrNull { URI(it.first).path.contains("/original/") }?.first
+            ?: candidates.maxByOrNull { it.second }?.first
+            ?: resolve(image.attr("src"), baseUrl)
     }
 
     /** Discourse writes both absolute and site-relative sources; the client only fetches absolute ones. */
@@ -714,6 +924,8 @@ class PreparedPostBody(
     val images: List<PostImage>,
     val attachments: List<PostAttachment> = emptyList(),
     val videos: List<PostVideo> = emptyList(),
+    /** Missing emoji pictures to fetch, then upgrade their labels to upstream's inline artwork. */
+    val emojis: List<PostImage> = emptyList(),
 )
 
 /** One video a post carries: the file to fetch, its cover, and the identity upstream names it by. */

@@ -419,6 +419,13 @@ internal class MessageBusUiTest {
             .firstOrNull { it.id == id }
             ?: throw AssertionError("the strip drew no view for tab $id")
         container.clickItem(tab, position)
-        harness.idle()
+        // The tap starts the strip's 320 ms indicator animation (FilterTabsView.scrollToTab); the
+        // pair swaps only when it reaches its end (CategoryTabsDelegate.onPageScrolled then
+        // swapPagesAtRest), which is what moves viewPages[0].selectedType onto the tapped tab. A
+        // plain idle() drains the looper but does not guarantee the animation's delayed frame
+        // reposts run (under a busy full-suite JVM the drain's task budget is spent first, so the
+        // animation is still mid-flight when the next tap lands). Settle it by advancing the clock,
+        // the way the other category tests do, before the caller asserts on the strip.
+        harness.idleClock(400)
     }
 }

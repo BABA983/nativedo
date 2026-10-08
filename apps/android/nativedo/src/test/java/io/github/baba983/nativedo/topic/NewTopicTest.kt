@@ -158,6 +158,11 @@ internal class NewTopicTest {
         harness.await("the list to be read again, with the new topic on it") {
             site.queriesFor("latest.json").size >= 2
         }
+        val container = NativeDo.container(harness.activity)
+        assertEquals("a successful post stays cleared after the form's destroy callback",
+            io.github.baba983.nativedo.feature.topic.data.NewTopicDraft(),
+            container.topicReplyDraftStore.loadNewTopic(
+                io.github.baba983.nativedo.feature.topic.data.NewTopicDraftKey(site.baseUrl, "baba")))
         harness.assertNoTelegramSideEffects()
     }
 
@@ -204,6 +209,8 @@ internal class NewTopicTest {
 
         // The screen is still the composer: there is no topic, so there is nothing to go back to.
         assertNotNull("the composer stays for the reader to fix the title", composer())
+        assertEquals("a rejected title does not discard the body", BODY,
+            composer.getFieldText()?.toString())
         harness.assertNoTelegramSideEffects()
     }
 

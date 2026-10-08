@@ -34,6 +34,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.ImageLocation;
+import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.TLRPC;
@@ -67,12 +68,17 @@ import java.util.List;
 
 import io.github.baba983.nativedo.app.NativeDo;
 import io.github.baba983.nativedo.app.NativeDoMainTabsActivity;
+import io.github.baba983.nativedo.auth.LoginWebViewFragment;
 import io.github.baba983.nativedo.core.di.AppContainer;
 import io.github.baba983.nativedo.core.model.TopicSummary;
 import io.github.baba983.nativedo.feature.topic.data.TopicReadMarks;
 import io.github.baba983.nativedo.core.model.UserProfile;
+import io.github.baba983.nativedo.core.session.AppSessionState;
 import io.github.baba983.nativedo.feature.profile.data.ProfileExtrasRepository;
 import io.github.baba983.nativedo.feature.profile.data.ProfileFeedRepository;
+import io.github.baba983.nativedo.sessionui.SessionUi;
+import io.github.baba983.nativedo.sessionui.SessionUiAction;
+import io.github.baba983.nativedo.sessionui.SessionUiState;
 import io.github.baba983.nativedo.topic.DiscourseAvatars;
 import io.github.baba983.nativedo.topic.DiscourseLoader;
 import io.github.baba983.nativedo.topic.DiscourseRows;
@@ -103,12 +109,15 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
 
     /**
      * The screen the avatar flies in from: the X of the chat header's avatar in the profile's own
-     * coordinate space. Upstream plays the same animation for a profile opened from the chat header
-     * ({@code playProfileAnimation == 2}, with {@code prevAvatarTranslation} captured through
-     * {@code ViewPositionWatcher.computeXCoordinateInParent}, ProfileActivity.java:10080), and
-     * ProfileActivity:8623-8690 lays the avatar out along the path this argument starts.
+     * coordinate space. Upstream captures the same X for a profile opened from the chat header
+     * ({@code prevAvatarTranslation}, through {@code ViewPositionWatcher.computeXCoordinateInParent},
+     * ProfileActivity.java:10080), and ProfileActivity:8623-8690 lays the avatar out along the path
+     * this argument starts. Its presence is also what selects the flight; the transition around it
+     * is the ordinary header one (see {@link #createView}).
      */
     private static final String ARG_AVATAR_X = "avatarX";
+    private static final String ARG_AVATAR_Y = "avatarY";
+    private static final String ARG_AVATAR_SIZE = "avatarSize";
 
     private static final int TYPE_SECTION = 1;
     private static final int TYPE_DETAIL = 2;
@@ -118,6 +127,8 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
     private static final int TYPE_LINK = 5;
     /** The tab area - the strip and its pages - the last row of the info list. */
     private static final int TYPE_MEDIA = 6;
+    /** The row a session state draws in place of the info rows: the state and the tap that acts on it. */
+    private static final int TYPE_STATE = 7;
 
     /** 话题: the topics the reader started (`/user_actions.json?filter=4`). */
     private static final int TAB_TOPICS = 0;
@@ -175,22 +186,49 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
     /** Summary stats from `/u/{u}/summary.json`; null until (and if) they arrive. */
     private io.github.baba983.nativedo.core.model.UserSummary summary;
 
-    // The opening animation, ported from ProfileActivity's `playProfileAnimation`:
-    // 2 is the avatar's flight from the chat header's capsule (ChatAvatarContainer.openProfile
-    // picks it when the tap was on the avatar), 0 is the ordinary transition. Keep upstream's
-    // duration (250 ms), its CubicBezierInterpolator.DEFAULT and its layout path.
+    /**
+     * The explicit session state the list shows in place of the info rows, or {@code null} while it
+     * shows a loaded profile. It is dropped on an identity change and on a view recreation.
+     */
+    private SessionUiState stateUi;
+    /** The session value the screen last acted on, so a change can be told from a repeat. */
+    private AppSessionState lastSessionState;
+    /**
+     * Bumped whenever the account changes or the views go away. A read captures it before it starts
+     * and drops its own answer if it no longer matches, so a late profile from the previous account
+     * cannot repopulate the screen.
+     */
+    private int loadEpoch;
+    /** The session-state observer; cancelled with the views and started again with the next ones. */
+    private kotlinx.coroutines.Job sessionObserver;
+
+    // The opening animation, ported from ProfileActivity's `playProfileAnimation`: 1 is the
+    // ordinary header transition (`ChatAvatarContainer.openProfile` picks it for a header tap, and
+    // 2 for the tap on the avatar itself), 0 is no transition at all. This screen has one header
+    // tap target - the topic's capsule - so it is the ordinary transition; `avatarFlight` is the
+    // host extra that keeps the capsule's flight (ProfileActivity.java:9895-10265 lays type 2 out,
+    // and the geometry here is that path, landing in the collapsed header instead of the expanded
+    // photo).
     private int playProfileAnimation;
+    /** Whether the avatar flies from the capsule ({@link #forUserFromAvatar}); the ordinary palette
+     *  and the 180 ms/DecelerateInterpolator clock stay those of upstream's type 1. */
+    private boolean avatarFlight;
     private boolean openAnimationInProgress;
     private float avatarAnimationProgress;
     private float prevAvatarTranslation;
-    private int avatarColor;
+    private float prevAvatarY;
+    private float prevAvatarSize;
+    private org.telegram.messenger.ImageReceiver transitionAvatar;
     /**
      * captureBackwardInitialValues (ProfileActivity.java:8155-8191): what the close animation
      * travels back to. Upstream keeps sixteen slots; this screen keeps the ones its own views
      * have - the avatar (scale, X, Y), the action row's alpha, the title's scale/Y/X and the
-     * online line's Y/X (upstream's [7]-[13]).
+     * online line's Y/X (upstream's [7]-[13]). [14]/[15] are the avatar frame's captured width
+     * and height and [16] the avatar's own captured round radius, so an ordinary close keeps the
+     * header's round corners while a deliberate expanded-photo close starts from the square the
+     * pull left it.
      */
-    private final float[] backwardInitialValues = new float[14];
+    private final float[] backwardInitialValues = new float[17];
     /** The list offset the close started from; backwardAnimationLayout's diff is read against it. */
     private float backwardTransitionFromExtraHeight;
     private boolean allowProfileAnimation = true;
@@ -352,14 +390,24 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
     }
 
     /**
-     * The same screen, opened from the chat header's capsule: {@code avatarX} is the capsule
-     * avatar's X in this screen's own coordinate space, and the avatar flies from there to its
-     * centered rest position exactly as upstream's {@code playProfileAnimation == 2} does
-     * (ChatAvatarContainer.openProfile → {@code setPlayProfileAnimation(2)}).
+     * ChatAvatarContainer.openProfile's avatar flight, with the host's actual capsule geometry.
      */
-    public static ProfileFragment forUserFromAvatar(String username, String displayName, float avatarX) {
+    public static ProfileFragment forUserFromAvatar(String username, String displayName,
+            org.telegram.ui.Components.BackupImageView avatar, ViewGroup parent) {
         ProfileFragment fragment = forUser(username, displayName);
-        fragment.getArguments().putFloat(ARG_AVATAR_X, avatarX);
+        int[] source = new int[2];
+        int[] origin = new int[2];
+        avatar.getLocationOnScreen(source);
+        parent.getLocationOnScreen(origin);
+        float scale = avatar.getScaleX();
+        for (android.view.ViewParent p = avatar.getParent(); p instanceof View && p != parent;
+                p = p.getParent()) {
+            scale *= ((View) p).getScaleX();
+        }
+        fragment.getArguments().putFloat(ARG_AVATAR_X, source[0] - origin[0]);
+        fragment.getArguments().putFloat(ARG_AVATAR_Y, source[1] - origin[1]);
+        fragment.getArguments().putFloat(ARG_AVATAR_SIZE, avatar.getWidth() * scale);
+        fragment.transitionAvatar = avatar.getImageReceiver();
         return fragment;
     }
 
@@ -370,12 +418,22 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
     @Override
     protected View createView(Context context) {
         final boolean hasMainTabs = getArguments() != null && getArguments().getBoolean("hasMainTabs", false);
-        // The avatar's flight is the chat header's animation (ProfileActivity's
-        // `playProfileAnimation == 2`); the ordinary transition is everything else.
-        playProfileAnimation = getArguments() != null && getArguments().containsKey(ARG_AVATAR_X) ? 2 : 0;
+        // ChatAvatarContainer.openProfile sets `setPlayProfileAnimation(byAvatar ? 2 : 1)`: the tap
+        // on the topic header's capsule is a header tap, so upstream gives it the ordinary header
+        // transition - 180 ms, DecelerateInterpolator, the profile's own palette, no expansion of
+        // the action row. The port keeps the capsule's flight as a host extra (`avatarFlight`): the
+        // avatar still travels from the drawn capsule to the collapsed header's round 96 dp rest,
+        // but nothing else passes through the expanded photo's state. That photo is opened only by
+        // an explicit pull (startAvatarExpand).
+        final boolean fromAvatar = getArguments() != null && getArguments().containsKey(ARG_AVATAR_X);
+        playProfileAnimation = fromAvatar ? 1 : 0;
+        avatarFlight = fromAvatar;
         prevAvatarTranslation = getArguments() == null ? 0f : getArguments().getFloat(ARG_AVATAR_X, 0f);
+        prevAvatarY = getArguments() == null ? 0f : getArguments().getFloat(ARG_AVATAR_Y, 0f);
+        prevAvatarSize = getArguments() == null ? dp(42) : getArguments().getFloat(ARG_AVATAR_SIZE, dp(42));
         allowProfileAnimation = playProfileAnimation != 0 && !hasMainTabs;
         additionNavigationBarHeight = hasMainTabs ? AndroidUtilities.dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS) : 0;
+        container = NativeDo.container(getParentActivity());
         // The profile draws behind its own transparent action bar, the way upstream's profile does
         // (ProfileActivity.java:2470-2478), so it keeps its view the whole screen.
         actionBar.setAddToContainer(false);
@@ -502,6 +560,13 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         };
         listView.setLayoutManager(layoutManager);
         listView.setAdapter(new ProfileAdapter());
+        // The info rows are text to read; the one tappable thing they can carry is the session
+        // state's own row, whose tap recovers the session or reads again.
+        listView.setOnItemClickListener((view, position) -> {
+            if (stateUi != null) {
+                onStateAction();
+            }
+        });
         listView.setVerticalScrollBarEnabled(false);
         listView.setClipToPadding(false);
         // ProfileActivity.java:4223 sets the same surface on its own list; the screen keeps one
@@ -572,6 +637,11 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         avatarImage.setPivotX(0);
         avatarImage.setPivotY(0);
         avatarContainer.addView(avatarImage, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        if (transitionAvatar != null) {
+            avatarImage.setImageDrawable(transitionAvatar.getDrawable());
+            avatarImage.setAnimateFromImageReceiver(transitionAvatar);
+            allowPullingDown = canPullDown();
+        }
 
         // The two text views upstream's needLayout() moves into the action bar as the header
         // collapses (ProfileActivity.java:5548-5637); the name is the header's readable copy.
@@ -648,17 +718,39 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         });
 
         fragmentView = frameLayout;
-        loadProfile();
+        // The session is read before the profile: an account with no usable session gets the
+        // explicit state (and the read is not even sent), and a tab opened before a login catches
+        // up the moment the session lands.
+        stateUi = null;
+        lastSessionState = container.getSessionCoordinator().getSessionState().getValue();
+        observeSession();
+        if (lastSessionState instanceof AppSessionState.Authenticated) {
+            loadProfile(false);
+        }
         ViewCompat.requestApplyInsets(frameLayout);
         org.telegram.messenger.NotificationCenter.getGlobalInstance().addObserver(
                 themeObserver, org.telegram.messenger.NotificationCenter.needSetDayNightTheme);
         return fragmentView;
     }
 
+    /**
+     * The tab host rebuilds a page's views (a theme switch) without destroying the fragment: the
+     * observer belongs to the views, so it is dropped here and started again from
+     * {@link #createView}. Bumping the epoch drops any read still in flight for the old views.
+     */
+    @Override
+    public void clearViews() {
+        stopSessionObservation();
+        loadEpoch++;
+        super.clearViews();
+    }
+
     @Override
     public void onFragmentDestroy() {
         org.telegram.messenger.NotificationCenter.getGlobalInstance().removeObserver(
                 themeObserver, org.telegram.messenger.NotificationCenter.needSetDayNightTheme);
+        stopSessionObservation();
+        loadEpoch++;
         // A flight torn down mid-way (the host destroyed) must not leave the topic's header
         // hidden: the animator's own end listener restores it otherwise.
         if (previousTransitionActionBar != null) {
@@ -666,6 +758,163 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             previousTransitionActionBar = null;
         }
         super.onFragmentDestroy();
+    }
+
+    private void observeSession() {
+        stopSessionObservation();
+        sessionObserver = SessionUi.observe(container, state -> {
+            onSessionState(state);
+            return kotlin.Unit.INSTANCE;
+        });
+    }
+
+    private void stopSessionObservation() {
+        if (sessionObserver != null) {
+            SessionUi.cancel(sessionObserver);
+            sessionObserver = null;
+        }
+    }
+
+    /**
+     * A new session value. The first one for this view was already acted on in {@link #createView},
+     * so a value equal to it changes nothing; anything else drops the old account's profile and,
+     * when the session is usable again, reads it again - immediately, so an open tab never keeps
+     * showing the previous account.
+     */
+    private void onSessionState(AppSessionState state) {
+        boolean identityChanged = !SessionUi.identity(lastSessionState).equals(SessionUi.identity(state));
+        lastSessionState = state;
+        if (identityChanged) {
+            loadEpoch++;
+            resetForReload();
+        }
+        if (state instanceof AppSessionState.Authenticated) {
+            if (identityChanged) {
+                stateUi = null;
+                if (isRootProfile()) {
+                    // The own tab root is whatever account is signed in: a new one is that
+                    // account's own profile, so the header, the tabs and their streams follow it.
+                    refreshHeaderIdentity();
+                    resetMediaForReload();
+                }
+                notifyRowsChanged();
+                // The cache may hold the previous read of this account; a recovery re-reads it.
+                loadProfile(true);
+            }
+        } else {
+            stateUi = SessionUi.stateFor(state);
+            buildStateRow();
+            notifyRowsChanged();
+        }
+    }
+
+    /** Drops everything the tab area read for the previous account, so a new identity's tabs are its own. */
+    private void resetMediaForReload() {
+        topicsFeed = null;
+        repliesFeed = null;
+        likesFeed = null;
+        for (TabPageState page : tabPages) {
+            if (page != null) {
+                page.resetForNewIdentity();
+            }
+        }
+        for (TabPageState page : tabPages) {
+            if (page != null) {
+                page.loadFirstIfNeeded();
+            }
+        }
+    }
+
+    /** Drops everything read for the previous identity, including the header's picture. */
+    private void resetForReload() {
+        profile = null;
+        summary = null;
+        avatarUser = null;
+        expandedAvatarUser = null;
+        expandedAvatarBound = false;
+        isFollowed = false;
+        isMuted = false;
+        rows.clear();
+        mediaRow = -1;
+        bookmarksRow = -1;
+    }
+
+    /** The single row a session state draws in place of the profile's own info block. */
+    private void buildStateRow() {
+        rows.clear();
+        mediaRow = -1;
+        bookmarksRow = -1;
+        // The follow / message / share buttons act on a session that is not usable; they go with
+        // the profile they belong to and come back when a read does.
+        if (actionsView != null) {
+            actionsView.setVisibility(View.GONE);
+        }
+        rows.add(Row.state(SessionUi.text(getContext(), stateUi)));
+    }
+
+    /** The tap on the state row: recover the session, or read again. */
+    private void onStateAction() {
+        if (stateUi == null) {
+            return;
+        }
+        SessionUiAction action = SessionUi.action(stateUi);
+        if (action == SessionUiAction.Retry) {
+            stateUi = null;
+            resetForReload();
+            rows.clear();
+            notifyRowsChanged();
+            loadProfile(true);
+            return;
+        }
+        openRecovery(action == SessionUiAction.OpenVerification);
+    }
+
+    /**
+     * The session is dealt with where the site can be: the recovery flow in the login WebView. Its
+     * own completion publishes the usable session; this screen's observer re-reads the profile when
+     * that changes the account, and the explicit completion re-reads it when it does not, so a
+     * cancelled verification neither recovers nor refreshes.
+     */
+    private void openRecovery(boolean verification) {
+        if (getParentActivity() == null) {
+            return;
+        }
+        final String identityAtStart = SessionUi.identity(lastSessionState);
+        LoginWebViewFragment[] holder = new LoginWebViewFragment[1];
+        holder[0] = new LoginWebViewFragment(() -> {
+            holder[0].finishFragment();
+            onRecoveryCompleted(identityAtStart);
+        }, verification);
+        presentFragment(holder[0]);
+    }
+
+    /**
+     * The recovery WebView's explicit completion ran: the reader confirmed it, so the session the
+     * site is holding is the one to read with. A completion that changed the account is already
+     * re-read by {@link #onSessionState} (its identity differs), so this reads only the
+     * same-account case - a challenge solved by the account already signed in, which publishes the
+     * same identity and would otherwise leave the failed page showing its challenge - exactly once.
+     * It only reads: it never cancels the observation and never writes the session.
+     */
+    private void onRecoveryCompleted(String identityAtStart) {
+        if (container == null) {
+            return;
+        }
+        AppSessionState now = container.getSessionCoordinator().getSessionState().getValue();
+        if (!SessionUi.identity(now).equals(identityAtStart)) {
+            // A different account (or a lost session): the observer's own identity change is the
+            // refresh, and reading again here would only duplicate it.
+            return;
+        }
+        lastSessionState = now;
+        loadEpoch++;
+        stateUi = null;
+        resetForReload();
+        if (isRootProfile()) {
+            resetMediaForReload();
+        }
+        notifyRowsChanged();
+        loadProfile(true);
     }
 
     /** The room the list keeps under its last row: the usual list end plus the gesture bar and
@@ -682,10 +931,13 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         }
     }
 
-    /** The page reaches the bottom of the window itself; a pushed profile is laid out as before. */
+    /**
+     * The page reaches the bottom of the window itself, pushed or not: the shell reserves no band
+     * for the gesture bar, and this screen pads its own last row clear of it.
+     */
     @Override
     public boolean isSupportEdgeToEdge() {
-        return getArguments() != null && getArguments().getBoolean("hasMainTabs", false);
+        return true;
     }
 
     @Override
@@ -703,11 +955,58 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                 action.getId(), action.getTitle(), action.getTargetPostNumber()));
     }
 
+    /**
+     * Whether this screen is the shell's own {@code 我的} tab root. It is the reader's own profile,
+     * so the account it shows is whatever the session currently is; a pushed profile is about one
+     * viewed reader and keeps that target even when the account behind the app changes.
+     */
+    private boolean isRootProfile() {
+        return getArguments() != null && getArguments().getBoolean(ARG_ROOT, false);
+    }
+
+    private AppSessionState sessionState() {
+        if (container == null && getParentActivity() != null) {
+            container = NativeDo.container(getParentActivity());
+        }
+        return container == null ? null : container.getSessionCoordinator().getSessionState().getValue();
+    }
+
+    /** The signed-in account's username, which only the own tab root follows; empty when there is none. */
+    private String sessionUsername() {
+        AppSessionState state = sessionState();
+        if (state instanceof AppSessionState.Authenticated) {
+            String name = ((AppSessionState.Authenticated) state).getSnapshot().getUsername();
+            return name == null ? "" : name;
+        }
+        return "";
+    }
+
+    private String sessionDisplayName() {
+        AppSessionState state = sessionState();
+        if (state instanceof AppSessionState.Authenticated) {
+            String name = ((AppSessionState.Authenticated) state).getSnapshot().getDisplayName();
+            return name == null ? "" : name;
+        }
+        return "";
+    }
+
     private String username() {
+        if (isRootProfile()) {
+            String session = sessionUsername();
+            if (!session.isEmpty()) {
+                return session;
+            }
+        }
         return getArguments() == null ? "" : getArguments().getString(ARG_USERNAME, "");
     }
 
     private String displayName() {
+        if (isRootProfile()) {
+            String session = sessionDisplayName();
+            if (!session.isEmpty()) {
+                return session;
+            }
+        }
         String name = getArguments() == null ? "" : getArguments().getString(ARG_DISPLAY_NAME, "");
         if (name != null && !name.isEmpty()) {
             return name;
@@ -715,9 +1014,32 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         return username();
     }
 
-    private void loadProfile() {
+    /**
+     * The own tab root's header follows the account: a different reader's login is a different
+     * profile, so the name and @username lines are re-derived from the new session. A pushed
+     * profile is never touched by this - it keeps the reader it was opened for.
+     */
+    private void refreshHeaderIdentity() {
+        if (nameTextView != null) {
+            nameTextView.setText(displayName());
+        }
+        if (onlineTextView != null) {
+            onlineTextView.setText("@" + username());
+        }
+    }
+
+    private void loadProfile(boolean forceRefresh) {
         container = NativeDo.container(getParentActivity());
-        ProfileLoader.INSTANCE.load(container, username(), loaded -> {
+        // Without a usable session there is nothing private to read: the state row is the screen.
+        if (!(lastSessionState instanceof AppSessionState.Authenticated)) {
+            return;
+        }
+        final int epoch = loadEpoch;
+        kotlin.jvm.functions.Function1<UserProfile, kotlin.Unit> onLoaded = loaded -> {
+            if (epoch != loadEpoch) {
+                return kotlin.Unit.INSTANCE;
+            }
+            stateUi = null;
             profile = loaded;
             isFollowed = loaded.isFollowed();
             isMuted = loaded.getMuted();
@@ -743,18 +1065,24 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             fetchAvatar();
             loadSummary();
             return kotlin.Unit.INSTANCE;
-        }, error -> {
+        };
+        kotlin.jvm.functions.Function1<Throwable, kotlin.Unit> onFailed = error -> {
+            if (epoch != loadEpoch) {
+                return kotlin.Unit.INSTANCE;
+            }
             FileLog.e("profile failed", error);
-            // The profile never arrived: the shimmer ends with the read rather than turning over
-            // an empty screen, and the list stays as empty as it was.
-            if (listView != null) {
-                listView.setEmptyView(null);
-            }
-            if (progressView != null) {
-                progressView.setVisibility(View.GONE);
-            }
+            // A profile that did not arrive is its own explicit state, not a blank screen: the
+            // failure's kind decides whether the tap recovers the session or just reads again.
+            stateUi = SessionUi.stateForLoadFailure(error);
+            buildStateRow();
+            notifyRowsChanged();
             return kotlin.Unit.INSTANCE;
-        });
+        };
+        if (forceRefresh) {
+            ProfileLoader.INSTANCE.refresh(container, username(), onLoaded, onFailed);
+        } else {
+            ProfileLoader.INSTANCE.load(container, username(), onLoaded, onFailed);
+        }
     }
 
     /**
@@ -763,7 +1091,14 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
      * send standing.
      */
     private void loadSummary() {
+        if (!(lastSessionState instanceof AppSessionState.Authenticated)) {
+            return;
+        }
+        final int epoch = loadEpoch;
         ProfileLoader.INSTANCE.loadSummary(container, username(), loaded -> {
+            if (epoch != loadEpoch) {
+                return kotlin.Unit.INSTANCE;
+            }
             summary = loaded;
             if (profile != null) {
                 buildRows(profile);
@@ -795,12 +1130,17 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
      * the square the pull-down opens draws the same picture at full resolution.
      */
     private void fetchAvatar() {
+        final int epoch = loadEpoch;
         String url = DiscourseAvatars.INSTANCE.url(
                 profile == null ? null : profile.getAvatarTemplate(),
                 container.getBaseUrl(),
                 DiscourseAvatars.DEFAULT_SIZE);
         if (url != null && avatarUser != null && !DiscourseAvatars.INSTANCE.isCached(avatarUser)) {
             DiscourseLoader.INSTANCE.cacheAvatar(container, url, avatarUser, () -> {
+                // A picture that lands after the account changed belongs to the previous profile.
+                if (epoch != loadEpoch) {
+                    return kotlin.Unit.INSTANCE;
+                }
                 // The head and every action row draw the same picture, so all of them are re-bound.
                 bindAvatar();
                 notifyRowsChanged();
@@ -814,6 +1154,9 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         if (expandedUrl != null && expandedAvatarUser != null
                 && !DiscourseAvatars.INSTANCE.isCached(expandedAvatarUser)) {
             DiscourseLoader.INSTANCE.cacheAvatar(container, expandedUrl, expandedAvatarUser, () -> {
+                if (epoch != loadEpoch) {
+                    return kotlin.Unit.INSTANCE;
+                }
                 bindExpandedAvatar();
                 return kotlin.Unit.INSTANCE;
             });
@@ -843,7 +1186,8 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         return !AndroidUtilities.isTablet()
                 && AndroidUtilities.displaySize.x <= AndroidUtilities.displaySize.y
                 && avatarImage != null
-                && avatarImage.getImageReceiver().hasNotThumb()
+                && (avatarImage.getImageReceiver().hasNotThumb()
+                    || transitionAvatar != null && transitionAvatar.hasNotThumb())
                 && !AndroidUtilities.isAccessibilityScreenReaderEnabled();
     }
 
@@ -1280,6 +1624,12 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         boolean loading;
         boolean finished;
         boolean firstLoaded;
+        /**
+         * Bumped when the account the root follows changes. A page captures it before a read and
+         * drops its own answer if it no longer matches, so a late page of the previous account's
+         * stream cannot repopulate the new account's tab.
+         */
+        int generation;
         final java.util.Set<String> avatarRequests = new java.util.HashSet<>();
 
         TabPageState(int tab) {
@@ -1348,6 +1698,22 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             loadPage();
         }
 
+        /**
+         * The account the root follows changed: the page forgets the previous account's rows and
+         * stream, and any read still in flight is discarded by its bumped [generation].
+         */
+        void resetForNewIdentity() {
+            generation++;
+            items.clear();
+            offset = 0;
+            loading = false;
+            finished = false;
+            firstLoaded = false;
+            avatarRequests.clear();
+            adapter.notifyDataSetChanged();
+            updateLoadingState();
+        }
+
         void loadMoreIfNeeded() {
             if (loading || finished || items.isEmpty()) {
                 return;
@@ -1367,10 +1733,15 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             }
             loading = true;
             updateLoadingState();
+            // The account this read is for; if it changes before the page lands, the page is dropped.
+            final int epoch = generation;
             switch (tab) {
                 case TAB_BOOKMARKS: {
                     final int page = offset;
                     ProfileLoader.INSTANCE.loadBookmarks(container, username(), page, loaded -> {
+                        if (epoch != generation) {
+                            return kotlin.Unit.INSTANCE;
+                        }
                         loading = false;
                         offset = page + 1;
                         finished = loaded.size() < BOOKMARK_PAGE_SIZE;
@@ -1379,6 +1750,9 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                         updateLoadingState();
                         return kotlin.Unit.INSTANCE;
                     }, error -> {
+                        if (epoch != generation) {
+                            return kotlin.Unit.INSTANCE;
+                        }
                         loading = false;
                         finished = true;
                         FileLog.e("profile bookmarks failed", error);
@@ -1389,6 +1763,9 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                 }
                 case TAB_BADGES: {
                     ProfileLoader.INSTANCE.loadBadges(container, username(), loaded -> {
+                        if (epoch != generation) {
+                            return kotlin.Unit.INSTANCE;
+                        }
                         loading = false;
                         finished = true;
                         items.addAll(loaded);
@@ -1396,6 +1773,9 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                         updateLoadingState();
                         return kotlin.Unit.INSTANCE;
                     }, error -> {
+                        if (epoch != generation) {
+                            return kotlin.Unit.INSTANCE;
+                        }
                         loading = false;
                         finished = true;
                         FileLog.e("profile badges failed", error);
@@ -1407,6 +1787,9 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                 default: {
                     final ProfileTabFeed feed = feedFor(tab);
                     feed.load(() -> {
+                        if (epoch != generation) {
+                            return kotlin.Unit.INSTANCE;
+                        }
                         loading = false;
                         finished = !feed.hasMore();
                         items.clear();
@@ -1503,8 +1886,10 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                     bookmark.getAuthorAvatarTemplate(), container.getBaseUrl(), DiscourseAvatars.DEFAULT_SIZE);
             if (url != null && !DiscourseAvatars.INSTANCE.isCached(author)
                     && state.avatarRequests.add(bookmark.getAuthorUsername())) {
+                final int epoch = state.generation;
                 DiscourseLoader.INSTANCE.cacheAvatar(container, url, author, () -> {
-                    if (state.listView.getAdapter() != null) {
+                    // A picture that lands after the account changed belongs to the old tab.
+                    if (epoch == state.generation && state.listView.getAdapter() != null) {
                         state.adapter.notifyDataSetChanged();
                     }
                     return kotlin.Unit.INSTANCE;
@@ -1625,7 +2010,8 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
                     return new RecyclerListView.Holder(cell);
                 }
-                case TYPE_BIO: {
+                case TYPE_BIO:
+                case TYPE_STATE: {
                     TextInfoPrivacyCell cell = new TextInfoPrivacyCell(context, resourceProvider);
                     cell.setLayoutParams(new RecyclerView.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -1687,8 +2073,9 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         @Override
         public boolean isEnabled(RecyclerView.ViewHolder holder) {
             // The info rows are text to read; the tappable things are the action row's buttons and
-            // the pages' own rows, each with their own click handling.
-            return false;
+            // the pages' own rows, each with their own click handling. The session state's own row
+            // is the exception: its tap is the whole action.
+            return stateUi != null && SessionUi.hasAction(stateUi);
         }
     }
 
@@ -1724,6 +2111,9 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
 
     /** checkListViewScroll (ProfileActivity.java:8002) */
     private void checkListViewScroll() {
+        if (openAnimationInProgress) {
+            return;
+        }
         if (listView.getVisibility() != View.VISIBLE) {
             return;
         }
@@ -1834,6 +2224,9 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         });
         headerAnimatorSet.setDuration(150);
         headerAnimatorSet.start();
+        // ProfileActivity.java:7933: entering or leaving the media header changes what is behind the
+        // status line, so the shell recomputes the icon contrast.
+        NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.needCheckSystemBarColors, true);
     }
 
     /**
@@ -1863,6 +2256,31 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         if (topView != null) {
             topView.invalidate();
         }
+    }
+
+    /**
+     * ProfileActivity.isLightStatusBar (15779-15793), for the two states this screen has. The
+     * expanded photo draws under the status line, so its icons go light there; while the tab area is
+     * pinned the bar behind them is the window background (the media header), not the profile's own
+     * action-bar colour; otherwise the profile's own colour decides, with the action-mode colour
+     * while a selection is up. The peer-colour branch upstream has between those two has no
+     * counterpart here. The shell recomputes from this answer when the state changes (see
+     * {@code startAvatarExpand}, {@code startAvatarCollapse}, {@code setMediaHeaderVisible}).
+     */
+    @Override
+    public boolean isLightStatusBar() {
+        if (isPulledDown) {
+            return false;
+        }
+        int color;
+        if (actionBar != null && actionBar.isActionModeShowed()) {
+            color = getThemedColor(Theme.key_actionBarActionModeDefault);
+        } else if (mediaHeaderVisible) {
+            color = getThemedColor(Theme.key_windowBackgroundWhite);
+        } else {
+            color = getThemedColor(Theme.key_actionBarDefault);
+        }
+        return ColorUtils.calculateLuminance(color) > 0.7f;
     }
 
     /**
@@ -1906,7 +2324,6 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             backwardAnimationLayout();
             return;
         }
-
         final int headerExtraHeight = getHeaderExtraHeight();
 
         if (avatarContainer != null) {
@@ -1973,7 +2390,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                 pullUpProgress = 1.0f - diff;
 
                 final float nameScale = 1.0f + 0.12f * diff;
-                if (!(openAnimationInProgress && playProfileAnimation == 2)) {
+                if (!(openAnimationInProgress && avatarFlight)) {
                     avatarContainer.setScaleX(avatarScale);
                     avatarContainer.setScaleY(avatarScale);
                     fixAvatarImageInCenter();
@@ -1986,7 +2403,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                 onlineY = avatarBottom + dp(24) + (float) Math.floor(11 * AndroidUtilities.density) * diff;
                 // needLayout (ProfileActivity.java:8756): while the flight is running the title
                 // starts where the capsule's own title was (its left edge is the avatar's + 48dp).
-                final float minimizedX = openAnimationInProgress && playProfileAnimation == 2
+                final float minimizedX = openAnimationInProgress && avatarFlight
                         ? prevAvatarTranslation - dp(109) + dp(48)
                         : -dpf2(42 + 4);
 
@@ -2017,7 +2434,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                 }
                 updateTextLayoutBasedOnTranslation();
             }
-            if (openAnimationInProgress && playProfileAnimation == 2) {
+            if (openAnimationInProgress && avatarFlight) {
                 openAnimationAvatarLayout(newTop);
             }
             if (!textMeasured) {
@@ -2108,6 +2525,9 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
      */
     private void startAvatarExpand(float durationFactor) {
         isPulledDown = true;
+        // ProfileActivity.java:8462-8463: the expanded photo changes the status-bar contrast, so the
+        // shell is asked to recompute the icons over the now-full-screen picture.
+        NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.needCheckSystemBarColors, true);
         expandAnimator.cancel();
         float value = AndroidUtilities.lerp(expandAnimatorValues, currentExpanAnimatorFracture);
         expandAnimatorValues[0] = value;
@@ -2153,6 +2573,9 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
      */
     private void startAvatarCollapse(float durationFactor) {
         isPulledDown = false;
+        // ProfileActivity.java:8543-8545: handing the header back to its small avatar hands the
+        // status-bar contrast back with it.
+        NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.needCheckSystemBarColors, true);
         expandAnimator.cancel();
         avatarImage.getImageReceiver().setAllowStartAnimation(true);
         avatarImage.getImageReceiver().startAnimation();
@@ -2321,12 +2744,15 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
     }
 
     // ---------------------------------------------------------------------------------------------
-    // The opening animation, ProfileActivity's `playProfileAnimation == 2` (9895-10265, and the
-    // layout at 8623-8690): the avatar flies from the chat header's capsule to the big centered
-    // picture, its round corners open, the list fades in under the header and the background
-    // blends to the avatar's average colour. Upstream's 250 ms duration and its
-    // CubicBezierInterpolator.DEFAULT are kept, as is the 50 ms start delay it runs the animator
-    // with (`AndroidUtilities.runOnUIThread(animatorSet::start, 50)`, ProfileActivity.java:10264).
+    // The opening animation. The topic header's tap is upstream's ordinary header transition:
+    // ProfileActivity.java:9895-10265 sets the clock by type (`playProfileAnimation == 2 ? 250 : 180`
+    // and `CubicBezierInterpolator.DEFAULT` only for 2), so this runs at the ordinary 180 ms with a
+    // DecelerateInterpolator, keeps the profile's own palette (never the expanded photo's white
+    // labels or its avatar-average backdrop) and never expands the action row - all of that is the
+    // explicit pull's setAvatarExpandProgress. The host extra is the flight itself: the avatar still
+    // travels from the drawn capsule (ProfileActivity.java:8623-8690's layout) to the collapsed
+    // header's round 96 dp rest, and upstream's 50 ms start delay is kept
+    // (`AndroidUtilities.runOnUIThread(animatorSet::start, 50)`, ProfileActivity.java:10264).
     // ---------------------------------------------------------------------------------------------
 
     @Override
@@ -2334,7 +2760,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         if (getArguments() != null && getArguments().getBoolean("hasMainTabs", false)) {
             return null;
         }
-        if (!(playProfileAnimation != 0 && allowProfileAnimation && !isPulledDown)) {
+        if (!(playProfileAnimation != 0 && allowProfileAnimation && (!isPulledDown || avatarFlight))) {
             return null;
         }
 
@@ -2355,7 +2781,9 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         }
 
         final AnimatorSet animatorSet = new AnimatorSet();
-        animatorSet.setDuration(playProfileAnimation == 2 ? 250 : 180);
+        // ProfileActivity.java:9952: `playProfileAnimation == 2 ? 250 : 180`; the header tap is the
+        // ordinary transition.
+        animatorSet.setDuration(180);
         if (listView != null) {
             listView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
         }
@@ -2365,15 +2793,16 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             if (frameLayout != null) {
                 frameLayout.setBackgroundColor(0);
             }
-            avatarColor = getAverageColor();
-            nameTextView.setTextColor(Color.WHITE);
-            onlineTextView.setTextColor(0xB3FFFFFF);
-            actionBar.setItemsBackgroundColor(Theme.ACTION_BAR_WHITE_SELECTOR_COLOR, false);
+            // Upstream's type-1 isOpen leaves the bar's colours alone (only its type-2 branch sets
+            // the white labels, the avatar's average colour and the white item selector); this
+            // screen's palette is already the profile's, so nothing here has to be undone at the end.
             nameTextView.setAlpha(0.0f);
             onlineTextView.setAlpha(0.0f);
 
             ArrayList<Animator> animators = new ArrayList<>();
             animators.add(ObjectAnimator.ofFloat(this, "avatarAnimationProgress", 0.0f, 1.0f));
+            avatarImage.setCrossfadeProgress(1f);
+            animators.add(ObjectAnimator.ofFloat(avatarImage, ProfileActivity.AvatarImageView.CROSSFADE_PROGRESS, 0f));
             animators.add(ObjectAnimator.ofFloat(nameTextView, View.ALPHA, 1.0f));
             animators.add(ObjectAnimator.ofFloat(onlineTextView, View.ALPHA, 1.0f));
             if (actionsView != null) {
@@ -2385,6 +2814,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             captureBackwardInitialValues();
             ArrayList<Animator> animators = new ArrayList<>();
             animators.add(ObjectAnimator.ofFloat(this, "avatarAnimationProgress", 1.0f, 0.0f));
+            animators.add(ObjectAnimator.ofFloat(avatarImage, ProfileActivity.AvatarImageView.CROSSFADE_PROGRESS, 1f));
             // ProfileActivity.java:10163-10166: the copy that travels is the one the reader sees;
             // upstream fades its header copy ([1]) out while its bar copy ([0]) fades in. This
             // screen keeps one copy, and it is the header's: it leaves with the flight (the topic's
@@ -2397,9 +2827,9 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             animatorSet.playTogether(animators);
         }
 
-        animatorSet.setInterpolator(playProfileAnimation == 2
-                ? CubicBezierInterpolator.DEFAULT
-                : new android.view.animation.DecelerateInterpolator());
+        // ProfileActivity.java:10262: `playProfileAnimation == 2 ? CubicBezierInterpolator.DEFAULT :
+        // new DecelerateInterpolator()`.
+        animatorSet.setInterpolator(new android.view.animation.DecelerateInterpolator());
         animatorSet.addListener(new AnimatorListenerAdapter() {
             @Override
             public void onAnimationEnd(Animator animation) {
@@ -2428,7 +2858,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             actionsView.startAnimatedActions();
         }
         if ((!isOpen && backward || isOpen && !backward) && playProfileAnimation != 0
-                && allowProfileAnimation && !isPulledDown) {
+                && allowProfileAnimation && (!isPulledDown || avatarFlight)) {
             openAnimationInProgress = true;
             if (!isOpen) {
                 captureBackwardInitialValues();
@@ -2452,19 +2882,25 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             openAnimationInProgress = false;
         }
         if (isOpen && !backward && playProfileAnimation != 0) {
+            // The flight lands in the collapsed header's own layout - the round 96 dp avatar under
+            // the action bar - so an ordinary tap opens a normal profile and the photo only opens
+            // further on a deliberate pull. The pull-down's fraction is handed back to 0 so a later
+            // expand starts from rest.
+            isPulledDown = false;
             if (actionsView != null) {
-                actionsView.setParentExpanded(0);
+                actionsView.setParentExpanded(0f);
             }
-            // The flight lands in the collapsed header's own layout (small round avatar, centered):
-            // the pull-down's fraction is handed back to 0 so a later expand starts from rest.
             currentExpanAnimatorFracture = 0f;
             currentExpandAnimatorValue = 0f;
+            expandAnimatorValues[0] = 0f;
+            expandAnimatorValues[1] = 1f;
             if (avatarImage != null) {
                 avatarImage.setRoundRadiusForExpand(getSmallAvatarRoundRadius());
             }
             restoreTransitionColors();
             checkListViewScroll();
             needLayout(true);
+            NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.needCheckSystemBarColors, true);
         } else if (!isOpen && listView != null) {
             listView.setAlpha(1f);
         }
@@ -2474,25 +2910,21 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
     @androidx.annotation.Keep
     public void setAvatarAnimationProgress(float progress) {
         avatarAnimationProgress = currentExpandAnimatorValue = progress;
-        if (actionsView != null) {
-            actionsView.setParentExpanded(progress);
-        }
         if (listView != null) {
             listView.setAlpha(progress);
             listView.setTranslationX(dp(48) - dp(48) * progress);
         }
-        // The background under the header blends from the chat screen's colour - transparent, so
-        // the screen behind shows through - to the avatar's average colour.
-        int color = avatarColor != 0 ? avatarColor : getThemedColor(Theme.key_windowBackgroundWhite);
-        int from = androidx.core.graphics.ColorUtils.setAlphaComponent(getThemedColor(Theme.key_actionBarDefault), 0);
+        // Upstream's ordinary transition (its `playProfileAnimation == 2` blocks are the expanded
+        // photo's) blends the backdrop from the screen it is leaving - transparent, so the screen
+        // behind shows through - to the profile's own surface, and leaves the title, the status and
+        // the action row on the profile's palette. Nothing here has to be undone when the flight
+        // lands; the white labels, the avatar's average colour and the expanded action row belong
+        // to the explicit pull (setAvatarExpandProgress).
         if (topView != null) {
-            topView.setTransitionColor(androidx.core.graphics.ColorUtils.blendARGB(from, color, progress));
-        }
-        if (nameTextView != null) {
-            nameTextView.setTextColor(androidx.core.graphics.ColorUtils.blendARGB(
-                    getThemedColor(Theme.key_profile_title), Color.WHITE, progress));
-            onlineTextView.setTextColor(androidx.core.graphics.ColorUtils.blendARGB(
-                    getThemedColor(Theme.key_actionBarDefaultSubtitle), 0xB3FFFFFF, progress));
+            int from = androidx.core.graphics.ColorUtils.setAlphaComponent(
+                    getThemedColor(Theme.key_actionBarDefault), 0);
+            topView.setTransitionColor(androidx.core.graphics.ColorUtils.blendARGB(
+                    from, getThemedColor(Theme.key_windowBackgroundWhite), progress));
         }
         updateActionsPosition();
         needLayout(true);
@@ -2516,51 +2948,51 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
     }
 
     /**
-     * The avatar along the flight path, ProfileActivity.java:8623-8690 adapted to this screen's end
-     * state: the picture starts as the capsule's 42 dp round avatar at the capsule's own X and Y
-     * (the capsule sits at the action bar's centre, which is where this screen's own bar has it)
-     * and grows to the header's 96 dp rest scale, its container travelling to the centered rest
-     * position the collapsed header sits at. Upstream's end state is the full-width square
-     * (translation (0, 0), scale 138/100, container grown past the viewport); this screen lands in
-     * the collapsed header, so both targets are that header's own rest geometry. The title and the
-     * status ride just under the avatar's growing bottom edge, exactly as upstream's second title
-     * copy does through the {@code avatarAnimationProgress} term of its needLayout(). Telegram-only
-     * overlays (stories, gifts, the emoji status, the time/community items) are left out.
+     * ProfileActivity.java:8623-8690: the capsule's photo along the flight path, seeded with this
+     * host's actual capsule geometry (X, Y and scaled source size, {@link #forUserFromAvatar}).
+     * Upstream's type 2 ends on the full-width expanded photo; this screen lands in the collapsed
+     * header's own rest instead - the round 96 dp avatar under the action bar - so an ordinary tap
+     * opens a normal profile and the photo only opens further on a deliberate pull. The avatar's
+     * round corners are kept, not opened.
      */
     private void openAnimationAvatarLayout(float newTop) {
         float avX = prevAvatarTranslation;
-        float avY = (actionBar.getOccupyStatusBar() ? AndroidUtilities.statusBarHeight : 0)
-                + ActionBar.getCurrentActionBarHeight() / 2.0f
-                - 21 * AndroidUtilities.density
-                + actionBar.getTranslationY();
+        float avY = prevAvatarY;
 
-        avatarScale = lerp(42, 96, avatarAnimationProgress) / 100f;
+        avatarScale = lerp(prevAvatarSize / AndroidUtilities.density, 96, avatarAnimationProgress) / 100f;
         pullUpProgress = 0.0f;
 
         final FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) avatarContainer.getLayoutParams();
+        final int prevWidth = params.width;
+        final int prevHeight = params.height;
         params.width = dp(100);
         params.height = dp(100);
         avatarContainer.setScaleX(avatarScale);
         avatarContainer.setScaleY(avatarScale);
 
-        float restX = listView.getMeasuredWidth() / 2f - (params.width * avatarScale * 0.5f);
-        // The rest Y is the collapsed header's own avatarY (needLayout's `startY` at diff == 1):
-        // the top of the 100dp frame below the action bar. Upstream interpolates Y to its end
-        // state (0, the top of the square); this screen's end state is that rest position.
+        // The rest the collapsed header's own needLayout puts the avatar at (its `startY` at
+        // diff == 1): the 100 dp frame below the action bar, centered. Upstream's end state is the
+        // full-width square (translation (0, 0), scale 138/100); this screen's is that rest.
         final int statusBar = actionBar.getOccupyStatusBar() ? AndroidUtilities.statusBarHeight : 0;
-        float restY = (float) Math.ceil(statusBar + ActionBar.getCurrentActionBarHeight()
+        final float restX = listView.getMeasuredWidth() / 2f - (params.width * avatarScale * 0.5f);
+        final float restY = (float) Math.ceil(statusBar + ActionBar.getCurrentActionBarHeight()
                 - dp(21) + actionBar.getTranslationY());
         avatarContainer.setTranslationX(AndroidUtilities.lerp(avX, restX, avatarAnimationProgress));
         avatarContainer.setTranslationY(AndroidUtilities.lerp((float) Math.ceil(avY), restY, avatarAnimationProgress));
-        avatarContainer.requestLayout();
+        // The frame is the collapsed header's own 100 dp one for the whole flight - only the
+        // transform moves - so a frame that leaves its bounds unchanged must not ask for another
+        // layout pass (upstream requests one there because its container's size really grows).
+        if (params.width != prevWidth || params.height != prevHeight) {
+            avatarContainer.requestLayout();
+        }
 
         avatarImage.setRoundRadiusForExpand(getSmallAvatarRoundRadius());
         avatarImage.setBlurRadiusProgressForExpand(avatarAnimationProgress, avatarScale, false);
 
-        // needLayout (ProfileActivity.java:8752-8755): the title starts where the capsule's own
-        // title was and rides the avatar's bottom edge down to its rest place below the picture.
+        // needLayout (ProfileActivity.java:8752-8755): the title starts at the capsule's own title
+        // and rides the avatar's growing bottom edge down to its rest place below the picture.
         final float diff = calculateHeaderExtraDiff();
-        float endNameY = statusBar
+        final float endNameY = statusBar
                 + ActionBar.getCurrentActionBarHeight() / 2f * (1f + diff)
                 - dp(21)
                 + actionBar.getTranslationY();
@@ -2572,8 +3004,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         nameTextView.setTranslationY(avatarBottom + dp(1.3f) + dp(7) * diff);
         onlineTextView.setTranslationX(onlineX);
         onlineTextView.setTranslationY(avatarBottom + dp(24) + (float) Math.floor(11 * AndroidUtilities.density) * diff);
-        mediaCounterTextView.setTranslationX(onlineX);
-        mediaCounterTextView.setTranslationY(onlineTextView.getTranslationY());
+        syncMediaCounterFromOnline();
     }
 
     /**
@@ -2590,27 +3021,38 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         // The animator's progress is the diff upstream reads off the ramping extraHeight
         // (`extraHeight = initialAnimationExtraHeight * progress`, ProfileActivity.java:9853).
         final float backwardDiff = Utilities.clamp01(avatarAnimationProgress);
-        if (backwardDiff <= 0) {
-            return;
-        }
         final float backwardDiffHalf = (backwardDiff - 0.5f) / 0.5f;
         final int statusBar = actionBar.getOccupyStatusBar() ? AndroidUtilities.statusBarHeight : 0;
 
-        float startAvatarY = statusBar
-                + ActionBar.getCurrentActionBarHeight() / 2f
-                - dp(21)
-                + actionBar.getTranslationY();
-
-        avatarScale = lerp(42f / 100f, backwardInitialValues[0], backwardDiff);
+        avatarScale = lerp(prevAvatarSize / dp(100f), backwardInitialValues[0], backwardDiff);
         avatarX = lerp(prevAvatarTranslation, backwardInitialValues[1], backwardDiff);
-        avatarY = lerp(startAvatarY, backwardInitialValues[2], backwardDiff);
+        avatarY = lerp(prevAvatarY, backwardInitialValues[2], backwardDiff);
         pullUpProgress = lerp(backwardInitialValues[11], 0f, backwardDiff);
+        final FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) avatarContainer.getLayoutParams();
+        final int prevWidth = params.width;
+        final int prevHeight = params.height;
+        params.width = (int) lerp(dp(100), backwardInitialValues[14], backwardDiff);
+        params.height = (int) lerp(dp(100), backwardInitialValues[15], backwardDiff);
+        // The reverse of the flight's own frame rule (see openAnimationAvatarLayout): an ordinary
+        // close leaves the avatar's 100 dp frame unchanged, so a frame that does not move its
+        // bounds must not ask for another layout pass.
+        if (params.width != prevWidth || params.height != prevHeight) {
+            avatarContainer.requestLayout();
+        }
         avatarContainer.setScaleX(avatarScale);
         avatarContainer.setScaleY(avatarScale);
         avatarContainer.setTranslationX(avatarX);
         avatarContainer.setTranslationY(avatarY);
         avatarImage.setAlpha(1f);
         avatarContainer.setAlpha(1f);
+        // The corners travel from the radius the close actually started at - the header's round
+        // one for an ordinary close, the square a deliberate pull left it - back to the capsule's.
+        avatarImage.setRoundRadiusForExpand((int) lerp(
+                getSmallAvatarRoundRadius(), backwardInitialValues[16], backwardDiff));
+        avatarImage.setBlurRadiusProgressForExpand(backwardDiff, avatarScale, true);
+        if (expandedAvatarBound) {
+            avatarImage.setForegroundAlpha(backwardDiff);
+        }
 
         final float minEndNameY = statusBar
                 + ActionBar.getCurrentActionBarHeight() / 2f
@@ -2651,6 +3093,10 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         backwardInitialValues[1] = avatarContainer == null ? 0f : avatarContainer.getTranslationX();
         backwardInitialValues[2] = avatarContainer == null ? 0f : avatarContainer.getTranslationY();
         backwardInitialValues[3] = actionsView == null ? 1f : actionsView.getAlpha();
+        backwardInitialValues[14] = avatarContainer.getLayoutParams().width;
+        backwardInitialValues[15] = avatarContainer.getLayoutParams().height;
+        backwardInitialValues[16] = avatarImage == null
+                ? getSmallAvatarRoundRadius() : avatarImage.getRoundRadiusForExpand();
         // ProfileActivity.java:8168-8174: the title's scale, its Y and the online line's Y, the
         // width it was laid out with, where the pull-up left the gooey, and the X both titles
         // were translated to - the values backwardAnimationLayout() lerps away from.
@@ -2665,18 +3111,6 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         backwardInitialValues[11] = pullUpProgress;
         backwardInitialValues[12] = nameTextView.getTranslationX();
         backwardInitialValues[13] = onlineTextView.getTranslationX();
-    }
-
-    /** The avatar's own average colour, as ProfileActivity.java:10268-10273 reads it. */
-    private int getAverageColor() {
-        try {
-            if (avatarImage != null && avatarImage.getImageReceiver().getBitmap() != null) {
-                return AndroidUtilities.calcBitmapColor(avatarImage.getImageReceiver().getBitmap());
-            }
-        } catch (Exception e) {
-            FileLog.e(e);
-        }
-        return 0;
     }
 
     /** updateExtraViews (ProfileActivity.java:8802-8817); the emoji-status and action placements are Telegram-only. */
@@ -2695,7 +3129,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         final int newTop = (actionBar.getOccupyStatusBar() ? AndroidUtilities.statusBarHeight : 0)
                 + ActionBar.getCurrentActionBarHeight();
         actionsView.isOpeningLayout = openAnimationInProgress;
-        if (openAnimationInProgress && playProfileAnimation == 2 && avatarContainer != null) {
+        if (openAnimationInProgress && avatarFlight && avatarContainer != null) {
             float vh = avatarContainer.getHeight() * avatarContainer.getScaleY();
             actionsView.clipHeight = avatarContainer.getY() + vh;
             actionsView.setAlpha(avatarAnimationProgress);
@@ -2893,6 +3327,9 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         static Row media() {
             return new Row(TYPE_MEDIA, null, null);
         }
+
+        static Row state(CharSequence text) {
+            return new Row(TYPE_STATE, null, text == null ? "" : text.toString());
+        }
     }
 }
-

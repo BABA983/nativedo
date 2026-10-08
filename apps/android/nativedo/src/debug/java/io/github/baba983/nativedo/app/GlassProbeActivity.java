@@ -123,11 +123,11 @@ public class GlassProbeActivity extends Activity {
         setContentView(root);
 
         // The topic frame's own path (ChatActivity.updateBackground): the wallpaper under the
-        // posts, and the source records that view when the screen has one.
+        // posts, and the panels' source is told the same drawable.
         android.graphics.drawable.Drawable wallpaper = Theme.getCachedWallpaper();
         if (wallpaper != null) {
             root.setBackgroundImage(wallpaper, Theme.isWallpaperMotion());
-            glassHost.setBackgroundView(root.backgroundView);
+            glassHost.setWallpaperDrawable(wallpaper);
         }
 
         Log.d("GlassProbe", "perfClass=" + SharedConfig.getDevicePerformanceClass()

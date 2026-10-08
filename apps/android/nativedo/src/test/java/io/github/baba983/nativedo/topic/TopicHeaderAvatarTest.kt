@@ -21,6 +21,7 @@ import io.github.baba983.nativedo.harness.shadows.ShadowUtilities
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNotNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -97,6 +98,79 @@ internal class TopicHeaderAvatarTest {
     fun tearDown() {
         NativeDo.setContainerFactory { context -> io.github.baba983.nativedo.core.di.AppContainer(context) }
         site.stop()
+    }
+
+    /** A list entry must paint cached metadata while both reads are pending, then trust detail. */
+    @Test
+    fun theListEntrySeedsSubtitleAndDetailCorrectsIt() {
+        site.serveFixture("categories.json", "categories.json")
+        val answer = CountDownLatch(1)
+        site.serveResponse("t/$TOPIC_ID.json") {
+            answer.await(30, TimeUnit.SECONDS)
+            MockResponse().setHeader("Content-Type", "application/json").setBody(
+                org.json.JSONObject(topicJson()).put("posts_count", 4).put("category_id", 2).toString(),
+            )
+        }
+        harness.bootApp()
+        harness.await("the list screen") { harness.visibleFragment() is TopicListFragment }
+        val list = harness.visibleFragment() as TopicListFragment
+        val container = list.javaClass.getDeclaredField("container").apply { isAccessible = true }
+            .get(list) as io.github.baba983.nativedo.core.di.AppContainer
+        harness.await("the list and category cache") {
+            rowCount() == 2 && container.categoryStore.categories.value.isNotEmpty()
+        }
+        val categories = CountDownLatch(1)
+        site.serveResponse("categories.json") {
+            categories.await(30, TimeUnit.SECONDS)
+            MockResponse().setHeader("Content-Type", "application/json").setBody(harness.fixture("categories.json"))
+        }
+        try {
+            DiscourseLoader.categories(container, {}, { throw AssertionError(it) })
+            harness.await("the category refresh is also pending") {
+                site.requestPaths.count { it == "categories.json" } >= 2
+            }
+            val entry = io.github.baba983.nativedo.core.model.TopicSummary(
+                id = TOPIC_ID, title = "Header metadata", authorUsername = "baba",
+                authorAvatarTemplate = authorTemplate, replyCount = 17, categoryId = 4,
+            )
+            list.javaClass.getDeclaredMethod("presentTopic", entry.javaClass).apply { isAccessible = true }
+                .invoke(list, entry)
+            harness.layoutApp()
+            val capsule = capsule()
+            assertEquals("开发调优 · 17 回复", subtitle(capsule))
+            harness.renderAppFrame("header-profile-subtitle-pending")
+            answer.countDown()
+            harness.await("detail corrects both cached fields") {
+                subtitle(capsule) == "运营反馈 · 3 回复"
+            }
+            harness.renderApp("header-profile-subtitle-corrected")
+        } finally {
+            answer.countDown()
+            categories.countDown()
+        }
+    }
+
+    /** Measure the Canvas translation, not the marquee enable flag. */
+    @Test
+    fun theLongTitleMovesItsDrawingOverTime() {
+        val title = "A deliberately long topic title that cannot fit inside the center capsule and must scroll"
+        site.serveJson("t/$TOPIC_ID.json", org.json.JSONObject(topicJson()).put("title", title).toString())
+        harness.bootApp()
+        harness.await("the list") { rowCount() == 2 }
+        harness.present(TopicFragment.forTopic(TOPIC_ID, title, "baba", authorTemplate))
+        harness.await("the topic") { rowCount() == 1 }
+        val text = capsule().titleTextView
+        val bitmap = Bitmap.createBitmap(text.width, text.height, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bitmap)
+        text.draw(canvas)
+        val initial = text.layoutX
+        harness.renderAppFrame("header-profile-marquee-before")
+        repeat(160) {
+            org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(17))
+            text.draw(canvas)
+        }
+        assertTrue("the title's drawn origin moves left ($initial -> ${text.layoutX})", text.layoutX < initial - 10)
+        harness.renderAppFrame("header-profile-marquee-after")
     }
 
     /**
@@ -282,6 +356,13 @@ internal class TopicHeaderAvatarTest {
     }
 
     // ---------------------------------------------------------------------- capsule inspection
+
+    private fun capsule(): ChatAvatarContainer = TopicFragment::class.java
+        .getDeclaredField("avatarContainer").apply { isAccessible = true }
+        .get(harness.visibleFragment()) as ChatAvatarContainer
+
+    private fun subtitle(capsule: ChatAvatarContainer): String =
+        (capsule.subtitleTextView as org.telegram.ui.ActionBar.SimpleTextView).text?.toString().orEmpty()
 
     /** What the center capsule is drawing right now; null while it has no picture. */
     private fun capsuleBitmap(): Bitmap? {

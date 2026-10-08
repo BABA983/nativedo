@@ -1854,3 +1854,687 @@ device's `base.apk`) and re-verified the tab pages.
 
 Suite: 43 classes / 153 tests green. Evidence: `.amp/in/artifacts/profile-redesign/`
 (screenshots `00`-`16`, both mp4 attempts, `ui*.xml`, `harness/`).
+
+## Composer / shell / system-bar integration pass — device verification (2026-10-06, `emulator-5554`, signed in @example_user)
+
+Scope: the previous wave's shell/system-bar/capsule build, `apps/android/nativedo/build/intermediates/apk/debug/nativedo-debug.apk`,
+SHA-256 `14eceb294eb342f60bb9f8c273ed2bffb091026cdc1d08b3e8dd734226b3114d`. Verification only — no app source edited,
+no Gradle, no commits. `adb install -r -t` over the existing data (session and drafts preserved); the device `pm path`
+base.apk pulled back matched the build hash. Emulator `emulator-5554`, AVD `Medium_Phone_API_36.0` (Android 16 / API 36,
+arm64, 1080x2400 @ 420 dpi, 1 core / 2 GB).
+
+Checks against the native **NewTopic** screen (no topic opened — `TopicReadReporter` would post `/topics/timings`):
+
+- **Keyboard focus / hide** — focusing the title or body sets `mInputShown=true` and BACK clears it (`mInputShown=false`,
+  IME inset `visible=false`); composer returns to its resting bounds (`05`,`07`,`25`,`26`).
+- **Composer above IME, no double inset** — the composer's bottom sits **28 px above whichever bottom inset is current**:
+  with only the nav bar, composer `[151,2202][939,2309]` vs `navigationBars [0,2337][1080,2400]`; with Gboard up,
+  composer `[151,1384][939,1491]` vs `ime [0,1519][1080,2400]` (881 px). A double inset would grow that 28 px gap by the
+  nav-bar height when the IME is up; it does not. Composer keeps its 107 px height and is not overlapped (`25-newtopic-ime-real.png`).
+- **System gesture handle / 3-button nav** — the gesture pill is visible and coherent in both themes (`15-gesture-handle-crop`,
+  `27-gesture-handle-crop`); with the `threebutton` overlay the back/home/recents buttons appear and the nav band samples
+  `#1d2733`, identical to the app background (no mismatched band) (`17b-home-3button-dark.png`).
+- **Light/dark switches** — the home options-menu switch recolours home (header `#1d2733`, no stale white band) and the
+  reopened NewTopic screen is coherent in dark; switching back gives coherent light home (`15`,`16`,`27`).
+- **Return / back and editor Apply back-to-origin** — the NewTopic action-bar pencil opens the upstream editor; **Apply**
+  ("完成并返回") returns to NewTopic with the draft `raw` updated to `BodyLine`; BACK from the editor returns to NewTopic and
+  BACK from NewTopic returns home (`09`–`13b`).
+- **Last-Activity recreation** — a `font_scale` config change (not in the manifest's `configChanges`) recreated the Activity
+  in the same process; the shell re-verified the session (`route=session status=200 hasToken=true`) and re-presented
+  `NativeDoMainTabsActivity`, restoring the selected **我的** tab (`19-after-fontscale-recreate.png`).
+- **Database / socket observations** — no `cache4.db`, crash buffer empty; app-uid sockets go only to the configured
+  proxy `10.0.2.2:7890` (`29-sideeffect-checks.txt`). The destination behind that proxy was not inspected, so this
+  device observation does not prove the absence of Telegram network traffic. The harness separately checks tgnet calls.
+
+**IME environment finding (recorded for the harness):** the AVD ships `hw.keyboard = yes`, so Gboard runs its
+`AccessoryKeyboard` at zero height (`keyboardType: accessory`, IME inset `[0,2400][1080,2400]`) — the same limitation earlier
+passes saw. Only Gboard is installed (its service class *is* `com.android.inputmethod.latin.LatinIME`); no AOSP LatinIME exists.
+To get a real keyboard the AVD was cold-booted once with `hw.keyboard = no` (config backed up), which gave the full QWERTY
+kernel used for the inset measurement, then restored to `hw.keyboard = yes` (config diff identical) and cold-booted back.
+
+**Observed startup issue:** the first app start after the cold boot raised a one-off ANR
+("NativeDoApplication isn't responding", `Reason: … failed to complete startup`, `Load: 25.52`, CPU pressure 97 % on the
+1-core AVD); tapping **Wait** let it finish and it did not recur. CPU pressure is a possible explanation, not a verified
+cause, and an app defect has not been ruled out. Cold start is slow (~19.7 s).
+
+**Restored:** gestural nav, light theme, Gboard default IME, `config.ini` identical to the pre-pass backup, drafts back to
+the pristine snapshot (test `new|…` draft removed), app on the 我的 tab, APK `14eceb29…` still installed.
+Evidence: `.amp/in/artifacts/composer-next-wave/device/` (`device-notes.md` per-image map; logs redact the session cookie —
+no tokens/cookies/credentials captured).
+
+## Composer emoji-panel crash fix + mention host — device verification (2026-10-06, `emulator-5554`, signed in @example_user)
+
+Scope: the fixed build `apps/android/nativedo/build/intermediates/apk/debug/nativedo-debug.apk`,
+SHA-256 `cdad87aad11631538b7b386dd7391829c734e2910b5f612580db0ec53f10dd09`. Verification only — no app source edited,
+no Gradle, no commit, no push, no login/logout. The verified main pass opened no real topic (`TopicReadReporter` would
+POST `/topics/timings`); a post-pass re-capture accidentally did — see the disclosed incident below.
+`adb install -r -t` over the existing data (session and drafts preserved); the device `pm path` base.apk pulled back after
+install matched the build hash (`cdad87…`). It replaced the previous pass's crashing build (`c1e1bc…`). Emulator
+`emulator-5554`, Android 16 / API 36, arm64, 1080×2400 @ 420 dpi. Device lock `/tmp/nativedo-device.lock.d` held for the
+whole pass and released at the end.
+
+**The emoji-panel crash is fixed.** The prior build died in `DiscourseEmojiPicker.requestImage` →
+`GridAdapter.submit` (`notifyDataSetChanged` while the `RecyclerView` was computing layout, `DiscourseEmojiPicker.kt:492/559`).
+The fixed build runs the same sequence — warm catalog, `show()` → `applyGroups()` → first grid layout binds a tile →
+`requestImage` — in **both light and dark** and completes with `grep -c "Cannot call this method while RecyclerView"` = 0,
+an empty crash buffer and no ANR in the full 24,878-line pass logcat. Verified: cold open → NewTopic → smile (no crash),
+reopen, toggle to keyboard and back, category switch (`Smileys / Emotion` → `People / Body`), search (`grin` → 5 cells),
+and exact shortcode insertion (`hello world` → `hello world:grin:`, surrounding draft kept). Back closes the panel and
+releases the composer lift (`[27,2197]`) while staying on NewTopic.
+
+**Mention host.** The `@` panel renders full-height above the composer with the **first row fully visible** and ≥4 live
+candidates (`@Dua`, `@duanzero`, `@duansheng`, `@duansix`), scrolls (6 candidates after a swipe) and selects
+(`@duanzero ` inserted, panel closed). Touching above the band reaches the form: tapping the title field focuses it
+(`focused=true`) with the body unfocused, so the full-height panel does not block the form. Dark panel is coherent.
+
+**Two honest limitations remain (not crashes).** (1) **Emoji images never render** — the catalog entries carry
+root-relative image paths (`/image…`); `DiscourseReactionEmoji` feeds them to okhttp, which throws
+`Expected URL scheme 'http' or 'https' but no scheme was found for /image…` (172×), so every tile falls back to its
+human-readable **name as text** (the shortcode is still on the cell, `content-desc=":grin:"`, and insertion inserts the
+shortcode, so only the asset fetch is broken — a URL-resolution gap). (2) **Focusing the emoji search field brings up the
+IME over the grid**, so results are only visible/tappable after dismissing the keyboard (ESC/Back); searching works, you
+just can't tap a result while the keyboard is up. Cosmetic: the mention panel's 4th row is clipped by the composer (the
+first row — the fix target — is intact), and Back needs two presses when the IME is up (first dismisses the keyboard).
+
+**Observations:** no fatal exception and no `am_anr` across the main pass (04:24–04:37); `databases/` contains no
+`cache4.db`; at rest the app uid (`u0_a212` = 10212) owns TCP sockets only to `10.0.2.2:7890` (the configured proxy),
+which — as before — cannot prove the absence of Telegram traffic behind the proxy. `grep -c posts.json` = 0 (no post
+created).
+
+**Disclosed incident (post-pass re-capture, not part of the verified pass):** after the pass, a too-broad `rm` glob
+deleted the uiautomator scratch dumps, so a re-capture was attempted. The app then sat on the **我的** tab, where the
+reused compose-FAB coordinate lands on a topic row; it **opened a real topic** (`TopicFragment topic_id=2919125`) at
+04:39:49 and the following keystrokes went into that topic's reply composer. `TopicReadReporter` fired
+`POST /topics/timings` twice (04:39:50, 04:40:49), each answered `403 … evidence=Challenge` — **no server write
+succeeded**. It was stopped immediately; the real reply draft (`2919125.raw`) was removed, the draft store was restored
+byte-identically, and the app was relaunched onto the 我的 tab. The four re-captured dumps from the topic screen were
+discarded. The main pass opened no topic (its logcat shows only `NewTopicFragment`/`DiscourseRichEditor`), so the headline
+findings stand.
+
+**Restored:** light theme (via the app's own 夜间模式/日间模式 toggle), `cmd uimode night` = no, `navigation_mode` = 2,
+`font_scale` = 1.0, Gboard default IME; session preserved (`@example_user`); `nativedo.topic_reply_drafts.xml` byte-identical to
+the pre-pass snapshot (test `new|…` keys and the accidental `2919125` draft removed); `shared_prefs/` file set unchanged;
+app left on the **我的** tab; APK `cdad87…` still installed. Evidence:
+`.amp/in/artifacts/composer-next-wave/fixed-device/` (`verdict.md`, screenshots `00`–`33`, `99-final-state.txt`,
+`logcat-all.txt`, `ui-final.xml`; logs redact the session cookie — no tokens/cookies/credentials captured).
+
+## Composer emoji picker fixes — final device retest (2026-10-06, `emulator-5554`, signed in @example_user)
+
+Scope: the build `apps/android/nativedo/build/intermediates/apk/debug/nativedo-debug.apk`, SHA-256
+`71fa82693d274fa5fe4083bc46dbce2dff373a66a6ba4243e5f0ecf32d97e4f9` (the `emoji-live-fixes` source). Verification
+only — no source/test edited, no Gradle, no commit, no push, no login/logout. `adb install -r -t` over the existing
+data (session, drafts and prefs preserved); the device `pm path` base.apk pulled back after install and again at the
+end both matched the build hash. It replaced the previous pass's fixed build (`cdad87…`). Emulator `emulator-5554`,
+Android 16 / API 36, arm64, 1080×2400 @ 420 dpi, `hw.keyboard = yes`. Device lock `/tmp/nativedo-device.lock.d`
+held (mkdir) for the whole pass and released at the end. No real topic was opened; the prior pass's incident was
+avoided by dump-confirming the active home feed and the actual FAB bounds before every tap.
+
+**Both fixes verified. (1) The emoji grid draws the site's images** — the catalog carries root-relative paths
+(`/images/emoji/twemoji/grin.png?v=15`), which this build resolves against `baseUrl`; the grid shows real images (no
+shortcode text) in **both light and dark**, with `grep -c "no scheme was found"` = 0 (was 172×), `IllegalArgumentException`
+= 0 and no non-200 image status. **(2) Focusing the emoji search field grows the in-app panel above the real IME** —
+with the field focused (`mInputShown=true`, `keyboardType=prime`, full Gboard QWERTY visible) the search field and the
+`grin` result tiles sit above the keyboard (field `[142,692][959,797]`, results `y 821–947`), and a result tile is
+tappable while the IME is up (the `:grin:` tile at `[270,821][405,947]` inserted the shortcode). Also verified: exact
+`:grin:` insertion keeping the surrounding text (`hello world` → `hello world:grin:`, draft store updated); Back hides
+the IME then closes the panel with the form kept and the capsule back at `[27,2197]`; reopening the panel does not
+crash; the `@` panel's **first row is fully visible** with 4 candidates (`@Dua` `[242,1058][346,1111]`, `@duanlab`,
+`@duanzero`, `@duansheng`); tapping the title with the panel open focuses the title (`focused=true`) while the body
+stays unfocused.
+
+**Observations:** no fatal exception and no `am_anr` across the pass; `databases/` contains no `cache4.db`;
+`grep -c posts.json` = 0, `grep -c timings` = 0, no `TopicReadReporter`, and `present fragment` shows only
+`NativeDoMainTabsActivity` + `NewTopicFragment` (×2) — no real topic opened. The AVD's
+`show_ime_with_hard_keyboard` was already `1` and was not touched (reads `1` at the end); no AVD config changed and
+no cold boot.
+
+**Restored:** light theme (`theme = Blue`, via the app's own toggle), `cmd uimode night` = no, `navigation_mode` = 2,
+`font_scale` = 1.0, Gboard default IME; session preserved (`@example_user`); `nativedo.topic_reply_drafts.xml` byte-identical
+to the pre-pass snapshot (SHA-256 `8444fa95…`, test `new|…` keys removed, mode `660`); `shared_prefs/` file set
+unchanged; app left on the **我的** tab; APK `71fa8269…` still installed. Evidence:
+`.amp/in/artifacts/composer-next-wave/final-device/` (`verdict.md`, `00`–`30` captures, `99-final-state.txt`,
+`logcat-main.txt`, `ui-final.xml`; logs redact the session cookie — no tokens/cookies/credentials captured).
+
+## The home category strip: shown from the first frame, its capsule travels (2026-10-06), initial harness pass
+
+What changed: two things the earlier pass left wrong. (1) The strip was hidden until `/categories.json`
+answered — `publishCategories` only ran `buildTabs()` for a non-empty list, and `buildTabs()` set
+`stripHasTabs = !categories.isEmpty()` — so with an empty cache the first frames carried no strip at
+all. The all-topics folder is now a tab of the strip itself: `publishCategories` always builds,
+`stripHasTabs = true`, and the site's answer only adds tabs (a site that answers none leaves just the
+全部 tab, with the list still readable). (2) The selected capsule had no travel:
+`FilterTabsView.onMeasure` calls `updateTabsWidths()` — the only source of `positionToX/Width/Count` —
+only when `findDefaultTab() != null`, and the capsule is drawn from
+`indicatorWidth = lerp(prevW, newW, progress)`. With the tables empty `indicatorWidth == 0`, so
+`drawSelector` skipped the capsule entirely while it moved: it vanished on the tap and reappeared at
+the destination. The 全部 tab was added with `isDefault=false` (to dodge upstream renaming the default
+tab to "All chats"), which disabled exactly that path; it now carries `isDefault=true`, and
+`FilterAllChats`/`FilterAllChatsShort` are overridden to 全部 in the module's `strings.xml`. Finally,
+upstream's zero-delay animation repost now goes through `NativeDoHooks.repostIndicatorAnimation`, which
+holds it to the frame clock (a device already paces it through the traversal barrier; a host without one
+ran the whole 320 ms animation inside a single drain).
+
+Verdict: harness only (the fake site). `HomeCategoryPagerTest` 8/8, including the two new tests: while
+`/categories.json` is held the strip is `VISIBLE` and offers only the 全部 tab, and a mid-slide frame
+draws the capsule at a `centerX` strictly between the two tabs. Evidence:
+`.amp/in/artifacts/folders-reactions-wave/tabs/renders/` — `home-folders-initial-loading.png` (strip up,
+全部 only, categories pending but feed loaded) and `home-folders-selector-before/mid/after.png` (capsule on 全部, mid-travel,
+settled on 开发调优). No real topic was opened, no real API written, no data cleared.
+
+Still to settle on hardware: the capsule's hand-feel through a real tap (the harness steps the clock by
+hand).
+
+## Folders, reactions, search and sharing (2026-10-06), combined verification
+
+The final arm64 APK was assembled and installed with `adb install -r -t` on `emulator-5554`
+(API 36, 1080×2400, 420 dpi). SHA-256:
+`e508b5cf59e6f8bf5b8de89440b5a467f7ff4a0a886c6ea13d3eccc459d5ca48`.
+Session and app data were preserved; no uninstall, clear-data, logout or draft edit was performed.
+The device lock was held during the pass and released afterward.
+
+**Home taps:** from 全部, tap 开发调优 → 国产替代 → 全部 → 资源荟萃 → 全部, waiting one second
+between taps. The recording contains frames at approximately 16 ms intervals during the slide.
+The inspected `first-slide-60fps.png` shows the selected blue capsule moving and widening from
+全部 to 开发调优 through intermediate positions while the text positions stay fixed. It stays drawn
+throughout, so this verifies the selector itself rather than confusing it with strip scrolling.
+Evidence: `.amp/in/artifacts/folders-reactions-wave/device/tabs-travel.mp4`,
+`first-slide-60fps.png`, `selector-travel.gif`, and before/after hierarchy captures.
+The first attempted recording was static because recording and input were separate tool calls;
+it was replaced by a single ordered recording/input command. Low-rate video summaries missed the
+short transition; the verdict above comes from inspecting its full-rate frame extraction.
+
+The app was left on 我的 in the light theme; `navigation_mode=2`, night mode `no`. The collected
+flow log reports only `NativeDoMainTabsActivity`, with no topic fragment, fatal exception or ANR
+in that retained excerpt. No real topic was opened or real reaction submitted during the pass.
+
+**Fake-site topic flows:** the retained production-host tests verify the finite upstream reaction
+picker, chip toggle versus user-list long press, retry/empty states and dismissal before a late
+user response; topic-scoped search with floor navigation, retry, paging and deduplication; system
+share intents with unequal post id and post number; anonymous/signed-out deep-link gating and
+exact-floor navigation after login. Inspected screenshots show the picker and loaded/error/empty
+users sheets, plus search results. The loading-sheet static JVM capture does not show a spinner,
+so it is not retained as proof of a visible loading animation. Topic flows were not driven on the
+real site to avoid writes and read-timing reports.
+
+**Combined checks:** the parent's final `:nativedo:testDebugUnitTest --quiet` run passed
+251 tests, zero failures/errors/skips. The arm64 assemble, Telegram hook guard and vendor quick
+guard passed. Logs and XML are retained in
+`.amp/in/artifacts/folders-reactions-wave/final-check/` (`parent-full.log`, `xml-parent/`).
+Earlier repeated runs exposed timing-sensitive failures. Fixed the category-tap settlement wait,
+the fake server's live-list iteration race, asynchronous feed assertions, and the new selector
+test's sampling: its 48 ms sample now uses bounded `idleFor` instead of draining future tasks.
+Other timing-sensitive full-suite failures are retained honestly; this pass is not a guarantee
+of deterministic stability or physical-device GPU/keyboard performance.
+
+All changes remain local and uncommitted; the APK is installed only on this emulator.
+
+## Topic body fidelity and delayed avatars (2026-10-06), host UI only
+
+This pass used FakeDiscourseSite and UpstreamUiHarness against the production TopicFragment and
+upstream ChatMessageCell on macOS. It did not run on a device, use adb, open a real topic or write
+to linux.do. No APK was installed by this unit. The changes remain local and uncommitted.
+
+The retained pre-fix failures show lost root text, 14 top-level blocks where the nested body needs
+4, and a delayed avatar resetting the first visible position from 8 to 0. A real details tap also
+exposed a missing host forceUpdate callback: its model opened, but its cell stayed at the collapsed
+height. A separate Discourse aside/title case failed before quote titles were moved into cite.
+
+The final combined run passed 15 tests with zero failures, errors or skips: TopicBodyFidelityTest
+(5), AvatarRenderTest (4), PollTest (3), OneboxTest (1), TopicImageTest (1), TopicPagingTest (1).
+Each Gradle run held the shared `/tmp/nativedo-T01a10c8f-gradle.lock` with ownerPID and an EXIT trap.
+Production-file `git diff --check` passed. The body checks reported zero tgnet native calls,
+initialisations or Telegram database opens after harness boot.
+
+Inspected renders and assertions show nested ordered/unordered lists, quote authors and details
+children in the correct containers; a Discourse quote retains its downloaded photo and author
+without title controls leaking into the body. Actual taps open and close details, grow and restore
+the cell height, and preserve cell identity and top offset. The delayed avatar changes initials
+to the downloaded magenta picture while retaining position 8, top 143 px and cell identity.
+The synthetic 40-paragraph body's END OF LONG BODY is visible after scrolling (rich height
+5505 px, cell bottom 2562 px in a 2742 px list viewport).
+
+Evidence: `.amp/in/artifacts/topic-fidelity-wave/body/` contains the failure XML/logs,
+`final-check.log`, `xml-final/`, the body/quote/details/long-tail/avatar PNGs, and a README with
+the exact repeat command and limits. Inline emoji now keeps its alt/title shortcode as readable
+text; this is not a claim that the original emoji image is rendered.
+
+This does not reproduce topic 2963407: its original JSON was unavailable, and the synthetic long
+body already passed before the fix. The 900 dp cap is upstream's partial-message behavior and
+was not changed. Physical-device animation/gesture behavior and arbitrary plugin markup remain
+unverified; the conversion rebuilds the rows upstream's importer emits, not content that importer
+already flattened inside a list item.
+
+## Topic original photos and viewer source geometry (2026-10-07 CST), host UI only
+
+This pass used FakeDiscourseSite and UpstreamUiHarness through the production TopicFragment,
+ChatMessageCell, ImageReceiver and PhotoViewer on macOS. It did not use adb, install an APK,
+clear app data, open a real topic or write to linux.do. All edits remain local and uncommitted.
+Only the photo bridge/viewer, TopicFragment's two viewer calls and TopicImageTest changed in
+this unit; the shared checkout's existing body, avatar, composer and other changes were preserved.
+No upstream animation, drawing or gesture code was edited.
+
+Tests were written and run before production changes. The retained red results show that the
+lightbox original was never requested, all conflicting download/srcset hints resolved to src,
+and the viewer opened without a source PlaceProviderObject. The final combined run passed
+25 tests, zero failures/errors/skips: TopicImageTest (3), DiscourseCookedHtmlTest (3),
+PostCellRenderTest (6), PostVideoTest (7), TopicBodyFidelityTest (5), TopicPagingTest (1).
+The arm64 :nativedo:assembleDebug build and scoped git diff --check also passed. Gradle runs
+held /tmp/nativedo-T01a10c8f-gradle.lock with ownerPID and an EXIT trap; the lock was released.
+
+The fake preview is magenta, 320×180; its original is cyan, 1600×900. The original request carried
+_t, _forum_session and cf_clearance. The stock viewer's actual adapter file decoded as 1600×900,
+matched the original fixture byte-for-byte, and the full-screen receiver/render drew cyan pixels.
+The photo model kept the cooked 320×180 display aspect. Explicit data-download-href on the image
+or lightbox wins, then lightbox href, then an original-path/widest srcset candidate, then src.
+An ordinary linked picture does not use its navigation href; emoji and small icons stay inline.
+
+The visible source was (210,419) px with 180/180 px list clip additions. Its receiver, bitmap and
+coordinates matched the drawn rich block. Actual upstream opening and closing animator progress
+was sampled between 0.4 and 0.6, with separate-window captures. Closing preserved cell identity
+and top offset 180 px. After scrolling the same long cell, the image was outside the viewport;
+the current provider returned null and upstream's no-source close completed. Invalid gallery
+indices also returned null. The photo checks reported zero tgnet requests/native initialisations
+and Telegram database opens after harness boot.
+
+Evidence is retained in .amp/in/artifacts/topic-fidelity-wave/photo/: red XML/logs, xml-final/,
+final-check.log, assemble.log, preview-fixture.png, original-fixture.png,
+viewer-downloaded-original.png, photo-original-viewer.png, photo-open-mid.png,
+photo-close-mid.png and photo-close-offscreen-mid.png. These captures were inspected with
+view_media. The README there records the repeat commands and the host rendering limits.
+
+This verifies host production wiring, file contents and sampled animation states, not physical
+device GPU/gesture behavior. The existing eager image cache now fetches the selected original,
+so page-load bandwidth can increase; no separate preview/original lazy-download lifecycle was
+introduced. Stock importer behavior for ordinary inline images and nested media was not changed.
+
+## Topic header metadata and avatar-to-profile flight (2026-10-07 CST), host UI only
+
+This pass used FakeDiscourseSite and UpstreamUiHarness through the active nativedo/full Telegram
+build on macOS. No adb, installation, data clearing, real topic request or linux.do write was
+performed. Changes remain in the shared local main checkout, uncommitted. This unit touched
+TopicListFragment's presentTopic entry, TopicFragment's header/profile opening, ProfileFragment,
+TopicHeaderAvatarTest and ProfileTransitionTest. Existing body/photo/composer/reaction/reply and
+other uncommitted work was preserved; no upstream source was edited.
+
+The topic entry now carries the row's reply count and category ID. CategoryStore's current cache
+supplies the name synchronously. With topic detail and a category refresh both held, the first
+header paints `开发调优 · 17 回复`; detail corrects it to `运营反馈 · 3 回复` while the refresh still
+waits. An unknown category is not guessed. The stock SimpleTextView title scrolling is enabled;
+the test measures its actual Canvas layoutX moving left across 160 timed draws, not a flag.
+
+Profile now follows pristine ProfileActivity's 8623-8690 full-width photo target, retaining its
+250ms DEFAULT interpolation and 50ms delay. The source's actual X/Y, drawn size and ImageReceiver
+are handed over. The test moves the source 19px and scales it to 90%, opens while the profile
+response is held, then releases a changed avatar template in mid-flight. Actual AnimatorSets
+are sampled at opening 0/125/250ms and closing 125/249ms, then ended through the real host
+callbacks. Avatar and title rects agree across the opening handover within 2px; the final visible
+closing frame returns to the source rect within 2px, the real TopicFragment returns and its
+bar is restored. Cancellation at 100ms also restores the bar and produces a returned-topic frame.
+The real cached source photo remains sufficient for expansion while the destination download
+is pending, fixing a reproduced race that otherwise collapsed the photo to x=410 at handover.
+
+Tests preceded the production changes. Retained red evidence covers empty initial subtitle,
+immobile title, wrong source rect and the async-avatar collapse. Final combined verification
+passed 22 tests with zero failures/errors/skips: ProfileTransitionTest (4), TopicHeaderAvatarTest
+(5), ProfileScreenTest (3), ProfileRedesignTest (5), ProfileStatusBarTest (1), HomeFeedTest (3),
+TopicPagingTest (1). Arm64 :nativedo:assembleDebug and scoped git diff --check passed. Gradle
+runs held /tmp/nativedo-T01a10c8f-gradle.lock with ownerPID/EXIT cleanup; the lock was released.
+
+Evidence is retained in .amp/in/artifacts/topic-fidelity-wave/header-profile/: xml-red/,
+xml-final/, final-check.log, assemble.log, pending/corrected subtitle, marquee before/after,
+opening start/mid/end, closing mid, normal/cancelled return PNGs and a README with repeat commands.
+The final captures were directly inspected with view_media after its objective-based service
+returned intermittent errors. The photo is a flat magenta fixture at 96×96 and 720×720, not a
+missing network picture. Pale action capsules/glyphs in the host capture are not accepted here
+as proof of action-row visual fidelity.
+
+This is host production-wiring and sampled-animation verification, not a device smoothness pass.
+GPU blur, physical frame pacing, real avatar latency, landscape/tablet and screen-reader animation
+behavior, and a completely empty category cache were not verified. Long category labels keep the
+existing width policy: the reply count is appended only when the composed subtitle fits.
+
+## Topic replies, mention scrolling and long-press reactions (2026-10-07 CST), combined host verification
+
+The reply composer hosts Telegram's ChatActivityEnterTopView and ChatReplyContainer above the
+capsule. Selecting a target preserves the existing draft instead of replacing it with @username;
+cancelling clears only the target. A restored target outside the loaded window is read by floor
+number and names the strip when it arrives. Incoming text, onebox and poll bubbles carry the
+reply on the first bubble only, with the target's author and excerpt in the stock reply preview.
+Taps navigate by post number, not post ID. One target read updates all current replies to it;
+generation checks reject results belonging to a replaced window or a destroyed screen.
+
+The long-press menu now hosts ReactionsContainerLayout directly, without a second sheet step.
+Tests scroll the production popup to its tenth permitted reaction and verify the selected site's
+ID in the fake toggle request. LayoutHelper receives dp rather than already converted pixels,
+fixing a reproduced oversized rail. A dismissed rail ignores late emoji completion. The mention
+host is bounded while twenty candidates scroll, so it does not grow over the entire topic. Both
+light and dark renders retain the header and post above the candidate band.
+
+Tests preceded the corresponding fixes. Retained red results cover draft replacement, missing
+reply previews, multiple answers to an unloaded target, a target later in the same window,
+onebox-first replies, restored targets, the oversized rail and late updates after dismissal.
+Inspected screenshots show different reply authors (Baba and Dora), empty/drafted/multiline
+reply strips, cancellation, the menu rail, and mention scrolling. The rail screenshot uses
+generated fallback tiles because that fixture supplies no emoji catalog; it is not evidence of
+real site emoji artwork. The multiline review PNG is a resized copy of the executed host render.
+
+The parent's final fresh :nativedo:testDebugUnitTest run passed 273 tests across 67 classes,
+zero failures/errors/skips. The arm64 assemble, Telegram hook guard, vendor quick guard and
+git diff --check passed. The final APK SHA-256 is
+b39c0b8d2161dec816fb859af66cc7e1e4a50957c11b94c92c2d21b0e0497e74.
+Gradle commands ran serially under the mkdir lock, which was released. The temporary Gradle
+wrapper was removed after use. No upstream component implementation changed in this wave.
+
+This was not consistently green: the parent's first fresh full run timed out in
+AvatarRenderTest.aListAvatarArrivingAfterAnotherRowsPhotoIsDrawnStillAppears; an isolated
+AvatarRenderTest run passed that case but timed out in
+theAvatarSpotIsNeverEmptyWhileThePictureIsNotDrawn. No tests were disabled or expectations
+weakened. Those logs/XML and the final clean run remain under
+.amp/in/artifacts/topic-fidelity-wave/final-check/. Earlier subagent attempts also reported
+order/timing-sensitive failures. The passing run does not establish deterministic suite stability.
+
+Interaction evidence and repeat notes are under
+.amp/in/artifacts/topic-fidelity-wave/interactions/. All topic flows used FakeDiscourseSite;
+there was no real topic read/timing write, reaction, reply, adb pass or data clearing. The final
+APK was built but not installed in this wave; code remains local and uncommitted. Reply/window
+generation guards were reviewed but do not have dedicated deterministic late-window/cancel
+tests. Native IME/GPU frame pacing and physical-device hand-feel remain unverified. Topic 2963407
+was not reproduced because its original payload was unavailable. Inline cooked emoji currently
+retains its readable label, not the original custom emoji image; arbitrary plugin HTML and
+content already flattened by the stock importer are not claimed to have full fidelity.
+
+## Profile, message menus, session states and direct replies (2026-10-07 CST), host verification
+
+This pass used serial subagents in the shared `spike/full-telegram-subtree` checkout, followed
+by parent source review, screenshot inspection and combined validation. It is not a device pass.
+All topic and account flows used FakeDiscourseSite through the production NativeDoActivity and
+upstream widgets. No real topic timings, replies, reactions or account changes were sent.
+
+The topic action-bar profile flight now lands on the normal round header avatar, not the expanded
+full-width photo. Deliberate photo expansion remains available. Pushed profiles are edge-to-edge,
+and the upstream ProfileActionsView receives the collapsed expansion state so its four permitted
+actions have dark text on light pills and light text on dark pills. Source coordinates and scale,
+reverse flight and cancellation restoration are retained. Both other-user action-row themes were
+rendered and inspected, rather than inferring four-action contrast from the own-account row.
+
+The message menu now uses ChatScrimPopupContainerLayout with ReactionsContainerLayout above the
+action list, instead of placing the rail inside ItemOptions. The pressed message is redrawn above
+a flat dim layer. The rail is populated before measurement and uses upstream's enter animation;
+ten permitted IDs remain scrollable and each fake-site toggle carries the selected ID. Fallback
+artwork is transparent rather than invented colored rectangles, and a warm menu retains an
+already registered site icon. Inspection found decoded static chips at scale zero after a late
+icon rebind. The production callback now resets the rail's visible-holder play bookkeeping after
+setMessage; the painted-last-chip test only waits and draws, with no test-side repair. Failed
+topic pages use Telegram Bulletin above the composer, preserving the loaded rows and retry path.
+
+Notifications, Profile and Settings now observe session state and show explicit login, expiry,
+verification, forbidden and retry states. Ordinary network failures and plain 403s are not called
+logout. Cancelled WebView recovery does not refresh or report success. Confirmed recovery refreshes
+reads, including same-account challenge recovery when coordinator identity did not change. Own
+Profile follows an account change; epochs reject late profile, notification and activity results.
+Pushed profiles keep their viewed target. Appearance and help remain accessible in Settings.
+
+The source comparison with local main found a deliberate cookie-design difference: main uses
+CookieStore plus CookieSyncBridge, whereas this branch already shares CookieManager between the
+WebView and native exchanges. This pass did not revert that design. Native validation remains
+startup plus explicit recovery, not every foreground event or tab selection. Authentication does
+not prove Cloudflare accepts native reads or writes, and no write is automatically replayed.
+
+Each floor's last bubble can now carry the stock ChatMessageCell reply/comment footer. Its total
+is the server's reply_count; faces come only from loaded direct replies and are deduplicated by
+author. Opening the footer reads the existing /posts/{id}/replies endpoint lazily. The sheet scroll
+and status taps drive pagination/retry, overlapping pages are deduplicated by post ID, and a tapped
+reply jumps by positive post number. Dismissed sheets ignore late results. An empty page says no
+replies are currently visible without replacing the server's total. No new endpoint was needed.
+
+Parent validation artifacts are in .amp/in/artifacts/topic-corrections-final/. The final fresh
+full suite ran 320 tests across 71 classes with three failures: HomeTabsTest's keyboard clearance,
+TopicFadeBandTest's theme-switch timeout, and PostVideoTest's in-flight progress assertion.
+The requested feature classes contributed 83 passing tests and no failures in that same run.
+The parent's earlier full run ran 319 tests and failed HomeCategoryPagerTest, TopicFadeBandTest
+and PostVideoTest. Each of these four classes passed in separate parent invocations. This is
+evidence of order/timing sensitivity, not proof the entire suite is stable or that a regression
+has been excluded. No tests were disabled or assertions weakened to obtain those results.
+
+The final arm64 assemble, Telegram hook guard, vendor quick guard and git diff --check passed.
+APK SHA-256: 5d3ecd97b277631b68c2f88a2ec8fd7eb0499923c11a5524bcb86d353ef72c1a.
+The APK was not installed. Work is local and uncommitted; nothing was pushed or deployed.
+
+Review images and repeat evidence are grouped in .amp/in/artifacts/topic-corrections-final/REVIEW.md
+and the profile-correction, menu-correction, session-correction and replies-correction directories.
+These are host renders, not real-site screenshots or a hardware frame-pacing verification.
+Physical gesture/three-button bar behavior, GPU blur, keyboard animation and real emoji latency
+remain unverified in this pass. The menu uses a non-blurred dim layer; synthetic emoji fixtures
+verify decoding and composition, not the exact production catalog artwork. Stock reply-count and
+composer labels still include English. Full-suite instability remains an open verification issue.
+
+### 2026-10-08 — Profile, post menu and discussion-page correction (host only)
+
+This follow-up supersedes the replies-sheet behavior recorded above. The active build remains
+`:nativedo` under `apps/android/telegram` on `spike/full-telegram-subtree`. No upstream file was
+changed in this follow-up. All checks used FakeDiscourseSite and the production UI harness, not
+linux.do. No device was connected during the parent check; no APK was installed and no real
+reaction, reply or read-timing write was sent.
+
+The topic header now uses the ordinary Profile transition's clock and palette rather than the
+expanded-photo transition. The avatar still travels from the actual capsule to the round header;
+opening and closing avoid layout requests when its frame dimensions are unchanged. The reverse
+captures the actual starting corner radius, preserving both round-header and expanded-photo
+returns. Transition tests exposed the expanded action/palette state, redundant layout requests
+and round-to-square first-close frame before those corrections.
+
+The long-press menu retains ChatScrimPopupContainerLayout and ReactionsContainerLayout, adds the
+action-content width floor, and uses the cell-local press point with composer-aware placement.
+The permitted ten reactions remain horizontally reachable and retain their server IDs. The
+width floor also applies to rows because the upstream scrim measures the menu's inner content;
+this is a host adaptation, not a claim of byte-identical ChatActivity wiring. The backdrop still
+uses the previously recorded flat dim with the pressed cell redrawn, not Telegram's global blur.
+
+The comment footer now pushes TopicFragment in discussion mode: original rich post, direct reply
+chat cells and the same capsule composer. It no longer opens an author/excerpt BottomSheet.
+Paging uses post ID for the endpoint and post number for the cursor, deduplicates overlapping
+pages, and ends on empty or non-advancing pages. Thread drafts are isolated from the topic and
+other root posts. A default send targets the root at send time without a redundant reply strip;
+explicit targets and failed-send text are retained. Reaction/reply refresh stays in the discussion,
+reads the root's authoritative count, and rejects stale callbacks. Sparse discussion reads never
+advance the full-topic read reporter. The original page's scroll and draft survive back navigation.
+
+The self-styled loading strip was replaced by ChatActivityBlurredRoundPageDownButton, including
+its loading indicator and remaining-count badge. Retry uses the existing session-aware path and
+Bulletin; empty replies use ChatActionCell. A positive server count with an empty endpoint says
+that no replies are currently visible, not that none exist. Default, paged, loading, retry and
+empty light/dark renders were inspected. These are host renders, not GPU or frame-pacing proof.
+
+Parent fresh full run: 338 tests, 2 failures (PostVideoTest's in-flight progress assertion and
+TopicFadeBandTest's theme-switch timeout). The selected Profile/menu/reaction/thread/reply/draft/
+read/paging classes contributed 108 passes and no failures in that same run. Both failing classes
+passed in a subsequent isolated invocation. This demonstrates order/timing sensitivity, not
+proof that they are unrelated regressions. No failing checks were disabled.
+
+The final arm64 assemble, telegram-hook-guard, vendor-guard --quick and git diff --check passed.
+Full XML results and logs are retained in .amp/in/artifacts/comments-thread-v2/parent-full-results
+and parent-*.log. Review captures are grouped in .amp/in/artifacts/topic-corrections-v2/REVIEW.html.
+Work remains local, uncommitted and unpushed. Hardware smoothness, GPU blur and real-site artwork
+remain unverified.
+
+### 2026-10-08 — Resumed-topic history and home folder settle (host only)
+
+The active build is still `:nativedo` under `apps/android/telegram`, on
+`spike/full-telegram-subtree`. Serial subagents implemented the changes, followed by parent
+integration and additional failure reproductions. This pass changed no Telegram subtree files.
+A physical device was visible to adb, but it was not driven or updated. No APK was installed and
+no real-site topic was opened: all topic tests use FakeDiscourseSite so read-timing writes stay
+on the fake site rather than altering the reader's linux.do history.
+
+Ordinary topics now prefetch both sides of the stream window. Earlier rows are inserted rather
+than rebinding the whole list, retaining the visible floor's pixel offset and unaffected rich
+body objects. A reply-preview rebuild restores the anchor by post identity and segment ordinal
+when its old message object no longer exists. The details test invokes the upstream details
+block's touch handler, then verifies expanded content survives an unrelated prepend; it does
+not inject a flag, but it bypasses the list-cell coordinate hit test. An empty successful slice
+advances the stream cursor; a failed slice retains it. Media callbacks resolve their message's
+current row rather than using a captured row index. Window/head/page generations reject stale
+answers. A held replacement-window test also caught old rows starting pagination with the new
+generation; stream prefetch now waits until that window finishes or fails.
+
+The existing ChatActivityBlurredRoundPageDownButton now works for ordinary topics as well as
+discussion pages. Its badge counts actual stream posts below the viewport, not a subtraction of
+floor numbers that would include deleted floors. A tap targets the first unread floor after the
+reader's monotonic position when it is below the viewport, otherwise the newest floor. Loaded
+targets smooth-scroll; unloaded targets show the stock spinner and refuse duplicate requests.
+Only the actual viewport advances reading state. Failed jumps retain rows and position, restore
+the button, and show the arrow-retry Bulletin. The parent's geometry test exposed the Bulletin
+covering the retry button; the Bulletin delegate now reserves the measured button band above
+the composer. The final banner and button rectangles do not intersect. Discussion paging and
+its sparse read-report isolation remain separate.
+
+The home still uses FilterTabsView, the correct Telegram folder component. Comparison with
+DialogsActivity.ViewPage.setTranslationX found the missing release-settle hook: finger MOVE
+updated the indicator, but the page AnimatorSet after UP did not. The upstream per-frame update
+is restored while tabsAnimationInProgress and only for the outgoing/front page. Profile's
+existing pager-driven strip was already continuous and was not changed. DispatchTouchEvent
+tests reproduce the indicator freezing during a commit, remaining half-selected after a cancel,
+and losing alignment when a settling pair is grabbed again. They also verify the tab-tap clock
+stays separate and a held category-feed response does not block the settle. Retained release
+frames show progress 0.393, then 0.643, then 1.000; cancel frames start on the feedback category
+and return to that category, with progress 0.066 then 0.000.
+
+Parent combined feature check: 68 tests, zero failures. Final fresh full check: 367 tests across
+73 classes, two failures, PostVideoTest's in-flight progress assertion and TopicFadeBandTest's
+theme-switch timeout. A prior parent full run also failed DiscourseMentionsTest's watcher
+cleanup assertion. All three classes then passed alongside the relevant feature classes in the
+final selected run: 85 tests across ten classes, zero failures/errors. These results demonstrate
+order/timing sensitivity, not proof that the failures are pre-existing or harmless. No failing
+checks were disabled or their assertions weakened.
+
+Final arm64 assemble, telegram-hook-guard, vendor-guard --quick and git diff --check passed.
+APK SHA-256: 3224a13f13d5aab9496d107b0b404e4055e7ec7a33333de371cdf3130d40b8c5.
+Logs and XML are under .amp/in/artifacts/topic-history/parent-final-*; the inspected topic states
+and home settle frames are grouped in .amp/in/artifacts/topic-history/REVIEW.html. Reproduction
+tests are TopicHistoryPagingTest, TopicPageDownTest and HomeCategoryPagerTest. These are host
+renders and simulated-clock checks; physical frame pacing, GPU blur and real network latency
+remain unverified. Work is local, uncommitted and unpushed.
+
+### 2026-10-08 — Ordinary-topic repeated paging failure (host only)
+
+A serial subagent reproduced the repeated failure hint in the production TopicFragment with
+FakeDiscourseSite. Before the fix, small near-edge scrolls made seven requests for the same
+failed stream slice, both forward and backward. The failure cleared the busy flag without
+advancing the cursor or blocking another automatic attempt. After the fix, each direction
+makes one request per failed edge visit. Layout callbacks and small nudges do not re-ask;
+actual scrolling away from that threshold re-arms it. Successful pages still load normally.
+
+The stock Telegram Bulletin now carries an explicit retry button. The failed direction's
+rows, cursor and reading anchor stay. Each hint captures its own failure, window and cursor,
+rather than overwriting the full-screen retry. Challenge/login failures use the existing
+WebView recovery. Parent tests reproduced two additional defects: a stale challenge action
+opened login after a window switch, and an old hint requested the next slice after the failed
+page had already arrived. Window/cursor/in-flight guards now reject both before any recovery
+navigation and again after recovery. The queued-challenge test captures the real Bulletin
+button callback to exercise the timing boundary; it does not click an already detached button
+and mistake upstream's no-op for an application guard.
+
+Parent combined check: 63 tests across five classes, zero failures. Fresh full check: 374 tests
+across 73 classes, five failures: TopicPageDownTest's Bulletin/button-bounds nonintersection,
+two DiscourseMentionsTest cases (paused-query and avatar arrival), PostVideoTest's in-flight
+progress, and TopicFadeBandTest's theme switch. Rechecking those classes with the affected
+classes produced 80 tests across eight classes, one failure: the same Bulletin/button-bounds
+assertion, with a 10-pixel intersection. Its capture was inspected: the visible badge and arrow
+are not obscured, but the existing bounds contract still fails. It was not weakened or disabled.
+Both ordinary stream-paging classes passed all 22 cases in every parent combined/full run.
+These differing results do not prove the remaining failures are pre-existing or harmless.
+
+Arm64 assemble, telegram-hook-guard, vendor-guard --quick and git diff --check passed.
+APK SHA-256: 257cc325c060404fbe1d76c0e53edd935bf5e07da04a75fb2bb6ab16a97314ac.
+Reproduction tests are TopicPagingTest and TopicHistoryPagingTest. Parent logs and XML are
+retained under .amp/in/artifacts/topic-scroll-failure/parent-*; inspected failure and recovery
+captures are grouped in .amp/in/artifacts/topic-scroll-failure/REVIEW.html. This pass changed
+no Telegram subtree files. No APK was installed and no real-site topic or reading history was
+touched. The user's original transport/session failure and physical-device behavior remain
+unverified. Work remains local, uncommitted and unpushed.
+
+### 2026-10-08 — Rich-message whitespace and inline emoji (host only)
+
+Serial subagents reproduced extra blank lines and indented line starts through the production
+TopicFragment. Jsoup's pretty-printer inserted whitespace after a cooked `<br>`, and Telegram's
+RichHtml importer preserved it in addition to the explicit break. Both HTML serializers now use
+non-pretty output. The cooked boundary collapses ordinary whitespace across inline bold/link
+elements and trims around breaks while preserving code/pre, NBSP, fullwidth spaces and explicit
+consecutive breaks. Tests written before these whitespace changes compare independent canonical
+text, block origins and drawn height with a direct stock RichHtml import. Telegram's layout
+constants and paragraph-spacing implementation were not changed.
+
+Cooked `img.emoji` had been replaced by its alt/title shortcode, so the importer never received
+artwork. The bridge now downloads the site's picture using the existing session image client and
+maps decodable cached images to upstream `animated-emoji`/AnimatedEmojiSpan documents. Documents
+are seeded in memory before attachment; host tests assert no Telegram native send, init or database
+open. Standard and custom pictures remain distinct, and warm reopen performs no redownload. Raw
+shortcodes resolve only against the loaded site's catalog; unknown names and code literals remain
+text. Missing/unsupported URLs, refused requests and non-picture responses keep readable labels.
+Static thumbnails are supported; SVG and Lottie/tgs remain labels, not animation support.
+
+Parent tests added before further corrections caught two real regressions: artwork arrival moved
+the reader from an attached floor 4008 to 4006, and a missing src discarded its label. A subsequent
+real-cell details tap caught the same arrival closing expanded content. The emoji refresh now
+preserves the first visible row's pixel offset and the floor's details states. The final test starts
+at position 8 / offset -37 and identifies the visible cell through LayoutManager, rather than
+assuming the first attached child is visible. Only missing artwork is queued, deduplicated by id;
+an already-cached emoji cannot trigger an unrelated failed label's rebuild.
+
+Final combined check: 82 tests across nine classes, zero failures. Separate DiscourseMentionsTest
+recheck: nine tests, zero failures. Full check: 380 tests across 74 classes, three failures:
+PostVideoTest's in-flight progress, TopicFadeBandTest's theme switch, and DiscourseMentionsTest's
+paused query. The prior full run also failed TopicPageDownTest's Bulletin/button-bounds contract.
+These order/timing differences do not establish that failures are pre-existing or harmless.
+No failing assertion was disabled or weakened. Original worker emoji checks were written after
+implementation and demonstrated a disabled-gate failure, not an original-code red run; the
+parent's actual regression red XML is retained separately.
+
+Arm64 assemble, telegram-hook-guard, vendor-guard --quick and git diff --check passed.
+APK: `apps/android/nativedo/build/intermediates/apk/debug/nativedo-debug.apk`.
+SHA-256: `d9d846510caee270a3c5e7141880b3ff74fb02f359000a951200509c6497c7f0`.
+Light/dark whitespace, emoji, loading/upgrade, expanded-details, fallback and literal-code captures
+were inspected and grouped in `.amp/in/artifacts/rich-message-layout/REVIEW.html`; parent logs/XML
+are alongside it. Emoji captures use synthetic color images to verify decoding and layout, not
+real linux.do artwork. No Telegram subtree file changed in this pass. No APK was installed, no
+real-site reading history was written, and physical frame pacing/network behavior remain unverified.
+Changes are local, uncommitted and unpushed.
+
+### 2026-10-08 — Commit preparation checkpoint (macOS host only)
+
+The accumulated work is grouped into two local commits: pinned dependency/build tooling and CI,
+then application features, upstream host hooks, contracts and their verification records. This
+checkpoint supersedes the earlier waves' delivery statuses; their test results remain historical.
+The organization pass changes no application behavior. Root build instructions now distinguish
+the active `apps/android/telegram` / `:nativedo` build from the legacy `:app` stack.
+
+The print-only CategorySelectorDiagTest was moved out of test discovery, without deleting it.
+Loose root recordings and the `frames/` directory are retained under
+`.amp/in/artifacts/precommit/retained/`; the diagnostic source and keyboard notes are under
+`.amp/in/scratch/precommit/`. These local artifacts are excluded from Git, not bundled with code.
+
+Fresh full `:nativedo:cleanTestDebugUnitTest :nativedo:testDebugUnitTest --quiet`:
+379 tests across 73 classes, three failures, zero errors/skips. Failures were PostVideoTest's
+in-flight progress assertion, TopicFadeBandTest's theme-switch timeout, and TopicPageDownTest's
+Bulletin/button-bounds nonintersection assertion. The latter reported
+`Rect(0, 2358 - 1233, 2550)` against `Rect(1065, 2370 - 1233, 2562)`.
+Rechecking those three classes together with DiscourseMentionsTest passed all 28 tests.
+The selected pass does not turn the full-suite result green or prove those failures harmless.
+Neither assertions nor gates were disabled. Both runs' XML and the original full report are
+retained under `.amp/in/artifacts/precommit/`.
+
+All 85 Python script tests passed, including the 40 dependency/hook-tool cases. Both guards
+passed via an explicit `.githooks/pre-commit` invocation: this checkout's configured `.git/hooks`
+directory has no installed pre-commit hook. Shell syntax, CI YAML parsing and `git diff --check`
+passed. `scripts/telegram-deps.sh --verify` failed on all 15 existing dependency trees because
+they have no pinned-content stamps. Their source provenance remains unverified; no stamps were
+manufactured and no existing dependency tree was replaced. Linux orb setup and fresh-clone CI
+were not executed on this macOS runner.
+
+The documented arm64 assemble command passed; inspecting the APK confirmed that both native
+libraries are under `lib/arm64-v8a/`, with no other ABI packaged. A preceding default-ABI assemble
+also completed. Logs are `app-arm64-assemble.log` and `app-assemble.log` in the checkpoint artifacts.
+APK: `apps/android/nativedo/build/intermediates/apk/debug/nativedo-debug.apk`.
+SHA-256: `0e9f397a70cd197668810c27c047edf67f9bda5eab1066d7b5f5c95bea25fd37`.
+
+No APK was installed, no real-site reading history was written, and no commit was pushed.

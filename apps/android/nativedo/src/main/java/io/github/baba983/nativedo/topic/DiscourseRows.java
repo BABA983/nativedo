@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.TimeZone;
 
@@ -115,6 +116,17 @@ public final class DiscourseRows {
     public static MessageObject postMessage(
             Post post, long topicId, HashMap<Long, TLRPC.User> users, PreparedPostBody body,
             String baseUrl) {
+        return postMessage(post, topicId, users, body, baseUrl, null);
+    }
+
+    /**
+     * One post as a message, answerable to another floor: when [replyTo] is given the message
+     * carries upstream's reply header and the target's snapshot, so the bubble draws the reply
+     * preview and a tap on it can find where it points.
+     */
+    public static MessageObject postMessage(
+            Post post, long topicId, HashMap<Long, TLRPC.User> users, PreparedPostBody body,
+            String baseUrl, TLRPC.Message replyTo) {
         TLRPC.User user = author(post, baseUrl);
         users.put(user.id, user);
 
@@ -131,7 +143,52 @@ public final class DiscourseRows {
         for (PostVideo video : body.getVideos()) {
             message.rich_message.documents.add(DiscourseImageBridge.INSTANCE.videoDocument(video));
         }
+        if (replyTo != null) {
+            applyReply(message, replyTo);
+        }
         return messageObject(message, users);
+    }
+
+    /**
+     * Writes upstream's reply header onto a locally built message: the flags a chat message carries
+     * when it answers another one. Shared by every kind of bubble - text, poll, onebox - so a reply
+     * reads the same whichever kind of bubble happens to be the floor's first.
+     */
+    public static void applyReply(TLRPC.Message message, TLRPC.Message replyTo) {
+        if (message == null || replyTo == null) {
+            return;
+        }
+        message.replyMessage = replyTo;
+        TLRPC.TL_messageReplyHeader replyHeader = new TLRPC.TL_messageReplyHeader();
+        // The header's own presence flag (bit 4, the one upstream's composer sets for a
+        // reply_to_msg_id - TL_messageReplyHeader.FLAG_4).
+        replyHeader.flags |= 16;
+        replyHeader.reply_to_msg_id = replyTo.id;
+        message.reply_to = replyHeader;
+        message.flags |= TLRPC.MESSAGE_FLAG_REPLY;
+    }
+
+    /**
+     * A reply's target as a plain message the preview can draw: the target's author and its text.
+     *
+     * <p>The real floor keeps its own rich body; this snapshot is a separate message, read only by
+     * the reply block upstream draws on the answering bubble, so it is a text message rather than a
+     * copy of the target's rich layout. That is what puts the author's name and the target's text
+     * into the preview, which upstream reads from {@code replyMessageObject.messageText}.</p>
+     */
+    public static TLRPC.Message replySnapshot(
+            Post target, long topicId, HashMap<Long, TLRPC.User> users, String baseUrl, String text) {
+        TLRPC.User user = author(target, baseUrl);
+        users.put(user.id, user);
+        TLRPC.TL_message snapshot = localMessage(
+                (int) target.getId(),
+                epochSeconds(target.getCreatedAt()),
+                topicId,
+                user.id,
+                new TLRPC.TL_messageMediaEmpty());
+        snapshot.message = text == null ? "" : text;
+        snapshot.date = epochSeconds(target.getCreatedAt());
+        return snapshot;
     }
 
     /**
@@ -171,12 +228,52 @@ public final class DiscourseRows {
         return message;
     }
 
-    /** Wraps a locally built message the way the stock cells expect to receive it. */
+    /**
+     * Wraps a locally built message the way the stock cells expect to receive it.
+     *
+     * <p>Upstream queues a message that carries views or a reply footer for a views read, which is
+     * Telegram's own bookkeeping and has nothing behind it here: the message is marked reloaded so
+     * the stock cell never asks. That is the one bit the footer costs - no chat, no request.</p>
+     */
     public static MessageObject messageObject(
             TLRPC.Message message, HashMap<Long, TLRPC.User> users) {
-        return new MessageObject(
+        MessageObject object = new MessageObject(
                 0, message, null, users, new HashMap<>(), null, null,
                 true, false, 0, false, false, false);
+        object.viewsReloaded = true;
+        return object;
+    }
+
+    /**
+     * A direct reply's author as the peer the reply footer draws a face from. The id is the same
+     * username hash the author's own messages carry, so a face and its author are one person.
+     */
+    public static TLRPC.Peer replierPeer(String username) {
+        TLRPC.TL_peerUser peer = new TLRPC.TL_peerUser();
+        peer.user_id = userId(username);
+        return peer;
+    }
+
+    /**
+     * Writes the reply footer onto a floor's last bubble: the site's own {@code reply_count} as the
+     * authoritative total, and the faces of the direct replies this session has loaded.
+     *
+     * <p>The total is the site's and never the loaded subset: a floor with five direct replies of
+     * which three have been read says five. An unread reply has no face, and none is invented for
+     * it. A floor with no replies gets no footer at all.</p>
+     */
+    public static void attachReplyFooter(
+            MessageObject messageObject, int replyCount, long topicId, List<TLRPC.Peer> recentRepliers) {
+        if (messageObject == null || messageObject.messageOwner == null || replyCount <= 0) {
+            return;
+        }
+        TLRPC.TL_messageReplies replies = new TLRPC.TL_messageReplies();
+        replies.replies = replyCount;
+        replies.channel_id = topicId;
+        if (recentRepliers != null && !recentRepliers.isEmpty()) {
+            replies.recent_repliers = new ArrayList<>(recentRepliers);
+        }
+        messageObject.messageOwner.replies = replies;
     }
 
     /**

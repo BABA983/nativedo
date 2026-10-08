@@ -144,7 +144,7 @@ class DiscourseApiClient(
             service.search(query = query, page = page, typeFilter = typeFilter).toModel()
         }
 
-    suspend fun searchMentionUsers(term: String, topicId: Long): MentionSearchResult =
+    suspend fun searchMentionUsers(term: String, topicId: Long?): MentionSearchResult =
         runWithSessionBoundary {
             service.searchMentionUsers(term = term, topicId = topicId).toModel()
         }
@@ -242,6 +242,23 @@ class DiscourseApiClient(
         } catch (error: Throwable) {
             emptyMap()
         }
+    }
+
+    /**
+     * The site's emoji table for a screen that offers it: the kept one when it is warm, otherwise
+     * one request, which is then kept. A picker needs this on a screen that reads no topic (a new
+     * topic has no floor), where nothing else would ever fill the store.
+     *
+     * Unlike [emojiGroupsForDecoration] this reports a failure instead of answering an empty table,
+     * because a picker has to tell "the site offers no emoji" apart from "the table could not be
+     * read". Like it, the read is not routed through [runWithSessionBoundary]: a decorative table
+     * that failed to arrive is not evidence about the session, and the request the reader actually
+     * asked for carries its own boundary and error classification.
+     */
+    suspend fun fetchEmojiCatalog(): EmojiGroupsDto {
+        val store = emojiCatalogStore ?: return emptyMap()
+        store.groups.value.takeIf { groups -> groups.isNotEmpty() }?.let { cached -> return cached }
+        return service.emojis().also(store::save)
     }
 
     suspend fun fetchPostReplies(postId: Long, afterPostNumber: Int = 1): List<Post> =

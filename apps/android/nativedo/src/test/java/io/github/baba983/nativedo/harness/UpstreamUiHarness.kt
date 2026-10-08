@@ -365,6 +365,63 @@ internal class UpstreamUiHarness {
         idle()
     }
 
+    /**
+     * Draws the whole page the way the window manager composites it: the activity's own decor, then
+     * every popup window at the offset the window manager placed it at.
+     *
+     * <p>A menu is its own window: a capture of the content view alone misses the menu, and a
+     * capture of the popup alone misses the page it dims and the post it leaves lit. Only the two
+     * composited show whether the menu is aligned, dimmed and anchored the way it is on a device.</p>
+     */
+    fun renderComposite(relativePath: String, maxTasks: Int = 1_000): File {
+        val decor = activity.window.decorView
+        val w = width
+        val h = height
+        val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        measureAndLayout(decor, w, h, maxTasks)
+        decor.draw(canvas)
+        val windowManager = org.robolectric.shadow.api.Shadow.extract(activity.windowManager)
+            as org.robolectric.shadows.ShadowWindowManagerImpl
+        for (view in windowManager.views) {
+            if (view === decor) continue
+            if (view.visibility != View.VISIBLE) continue
+            val params = view.layoutParams as? android.view.WindowManager.LayoutParams
+            // A popup is WRAP_CONTENT: measure it to its own natural size, never stretched to the
+            // display, or the rail inside it drifts away from the list it belongs to.
+            repeat(2) {
+                view.measure(
+                    View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.AT_MOST),
+                    View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.AT_MOST),
+                )
+                view.layout(0, 0, view.measuredWidth, view.measuredHeight)
+                idle(maxTasks)
+            }
+            val dx = params?.x ?: 0
+            val dy = params?.y ?: 0
+            canvas.save()
+            canvas.translate(dx.toFloat(), dy.toFloat())
+            view.draw(canvas)
+            canvas.restore()
+        }
+        val out = repoFile(relativePath)
+        out.parentFile?.mkdirs()
+        FileOutputStream(out).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        println("harness: wrote $out (${out.length()} bytes)")
+        return out
+    }
+
+    private fun measureAndLayout(view: View, w: Int, h: Int, maxTasks: Int) {
+        repeat(2) {
+            view.measure(
+                View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.AT_MOST),
+            )
+            view.layout(0, 0, view.measuredWidth, view.measuredHeight)
+            idle(maxTasks)
+        }
+    }
+
     private fun renderView(view: View, name: String, maxTasks: Int = 1_000): File {
         val widthSpec = View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY)
         val heightSpec = View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.AT_MOST)

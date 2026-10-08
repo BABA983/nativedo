@@ -92,7 +92,7 @@ interface DiscourseApiService {
     @GET("u/search/users")
     suspend fun searchMentionUsers(
         @Query("term") term: String,
-        @Query("topic_id") topicId: Long,
+        @Query("topic_id") topicId: Long? = null,
         @Query("include_groups") includeGroups: Boolean = true,
         @Query("limit") limit: Int = 6,
     ): MentionSearchResponseDto

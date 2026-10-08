@@ -2,7 +2,9 @@ package io.github.baba983.nativedo.topic
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
 import io.github.baba983.nativedo.app.NativeDo
 import io.github.baba983.nativedo.harness.FakeDiscourseSite
 import io.github.baba983.nativedo.harness.UpstreamUiHarness
@@ -44,8 +46,9 @@ import java.io.File
  * <p>The failures this pins: the chip looks its emoticon up in upstream's reaction table and draws
  * whatever document that entry carries, so an id the site gave no icon for, or one whose icon does
  * not arrive, used to draw a bare count - indistinguishable from the other. Each chip's own picture
- * is read back, so the mapped id has to show the site's own image and the two kinds of missing icon
- * have to show a drawn fallback, each one its own.</p>
+ * is read back, so the mapped id has to show the site's own (transparent) image and the two kinds of
+ * missing icon have to show a transparent glyph/label, never an invented colour block standing in for
+ * a picture the site never sent.</p>
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(
@@ -97,12 +100,14 @@ internal class ReactionEmojiTest {
     @Before
     fun setUp() {
         site.start()
-        site.serveImage(mappedPath, solidPng(servedMagenta, 96))
+        // The site's own icon is a picture with a transparent surround, the shape a real emoji icon
+        // has - not an opaque block that would be indistinguishable from an invented fallback tile.
+        site.serveImage(mappedPath, emojiPng(servedMagenta, 96))
         // failedPath is deliberately not served: the site answers it 404.
         // A 200 whose body is not a picture at all, and a picture the cache already holds bad
         // bytes for: both must end as the reaction's fallback, and the second must be replaced.
         site.serveImage(htmlPath, "<html>not a picture</html>".toByteArray(), contentType = "text/html")
-        site.serveImage(corruptPath, solidPng(servedCyan, 96))
+        site.serveImage(corruptPath, emojiPng(servedCyan, 96))
         site.serveTopic(TOPIC_ID) { post ->
             post.put("cooked", "<p>反应如下。</p>")
             post.put("reaction_users_count", 6)
@@ -152,6 +157,23 @@ internal class ReactionEmojiTest {
             DiscourseReactionEmoji.fallbackFile(mappedId).exists(),
         )
 
+        // The two missing icons fall back to a transparent tile, not an opaque invented block.
+        val failedFallbackFile = DiscourseReactionEmoji.fallbackFile(failedId)
+        val unmappedFallbackFile = DiscourseReactionEmoji.fallbackFile(unmappedId)
+        harness.await("the missing icons to draw a fallback") {
+            failedFallbackFile.exists() && unmappedFallbackFile.exists()
+        }
+        val failedFallback = BitmapFactory.decodeFile(failedFallbackFile.absolutePath)!!
+        val unmappedFallback = BitmapFactory.decodeFile(unmappedFallbackFile.absolutePath)!!
+        assertTrue("the failed download's fallback is transparent, not an opaque tile",
+            hasTransparency(failedFallback))
+        assertTrue("the unmapped id's fallback is transparent, not an opaque tile",
+            hasTransparency(unmappedFallback))
+        assertTrue("the failed download's fallback still draws something readable",
+            opaqueCount(failedFallback) > 0)
+        assertTrue("the unmapped id's fallback still draws something readable",
+            opaqueCount(unmappedFallback) > 0)
+
         // Each chip decodes its own document; the wait is for the loader, not a fixed number of drains.
         harness.await("the chips to draw their pictures") {
             harness.drawApp()
@@ -170,27 +192,16 @@ internal class ReactionEmojiTest {
             "the mapped reaction drew the site's own picture",
             colourCount(mappedBitmap, servedMagenta) > 0,
         )
-        // The fallback each missing id drew is read from the tile the app itself produced, so the
-        // oracle is that id's own drawing and not "some coloured pixel".
-        val failedFallback = dominantColour(DiscourseReactionEmoji.fallbackFile(failedId))
-        val unmappedFallback = dominantColour(DiscourseReactionEmoji.fallbackFile(unmappedId))
-        assertTrue("the failed download drew its fallback", colourCount(failedBitmap, failedFallback) > 0)
-        assertTrue("the unmapped id drew its fallback", colourCount(unmappedBitmap, unmappedFallback) > 0)
         assertTrue(
-            "the two fallbacks are different pictures",
-            failedFallback != unmappedFallback,
-        )
-        assertTrue(
-            "and neither is the site's own picture",
-            failedFallback != servedMagenta && unmappedFallback != servedMagenta,
+            "the site's picture is the transparent icon, not a filled block",
+            hasTransparency(mappedBitmap),
         )
         println(
             "reaction-emoji: mapped=${mappedFile.name} magentaPixels=${colourCount(mappedBitmap, servedMagenta)} " +
-                "failedFallback=${Integer.toHexString(failedFallback)} pixels=${colourCount(failedBitmap, failedFallback)} " +
-                "unmappedFallback=${Integer.toHexString(unmappedFallback)} pixels=${colourCount(unmappedBitmap, unmappedFallback)}",
+                "failedFallback=${opaqueCount(failedFallback)}px unmappedFallback=${opaqueCount(unmappedFallback)}px",
         )
         // The three states in one frame: the mapped chip shows the site's picture, the 404'd and
-        // icon-less chips each show their own drawn fallback.
+        // icon-less chips each show their own transparent glyph/label.
         harness.renderApp("reactions-emoji-states")
         harness.assertNoTelegramSideEffects()
     }
@@ -223,7 +234,7 @@ internal class ReactionEmojiTest {
         harness.present(TopicFragment.forTopic(BAD_PICTURE_TOPIC_ID, "Bad pictures"))
         harness.await("the topic to load") { rowCount() == 1 }
 
-        val servedCyanPng = solidPng(servedCyan, 96)
+        val servedCyanPng = emojiPng(servedCyan, 96)
         harness.await("the corrupt cache to be replaced by the site's picture") {
             corruptFile.readBytes().contentEquals(servedCyanPng)
         }
@@ -237,22 +248,23 @@ internal class ReactionEmojiTest {
         val cell = firstCell()
         val htmlBitmap = chip(cell, htmlId)!!.imageReceiver!!.bitmap!!
         val corruptBitmap = chip(cell, corruptId)!!.imageReceiver!!.bitmap!!
-        val htmlFallback = dominantColour(DiscourseReactionEmoji.fallbackFile(htmlId))
-        assertTrue(
-            "the 200 that is not a picture drew its fallback",
-            colourCount(htmlBitmap, htmlFallback) > 0,
-        )
+        val htmlFallbackFile = DiscourseReactionEmoji.fallbackFile(htmlId)
+        assertTrue("the 200 that is not a picture fell back to a transparent tile",
+            htmlFallbackFile.exists() && hasTransparency(BitmapFactory.decodeFile(htmlFallbackFile.absolutePath)!!))
         assertTrue(
             "the real picture replaced the corrupt cache and is drawn",
             colourCount(corruptBitmap, servedCyan) > 0,
+        )
+        assertTrue(
+            "the site's transparent picture is what the corrupt chip drew",
+            hasTransparency(corruptBitmap),
         )
         assertFalse(
             "and no fallback was used where the picture arrived",
             DiscourseReactionEmoji.fallbackFile(corruptId).exists(),
         )
         println(
-            "reaction-emoji-cache: htmlFallback=${Integer.toHexString(htmlFallback)} " +
-                "pixels=${colourCount(htmlBitmap, htmlFallback)} " +
+            "reaction-emoji-cache: htmlFallback=${htmlFallbackFile.length()} " +
                 "corruptCacheReplaced=${corruptFile.length()} cyanPixels=${colourCount(corruptBitmap, servedCyan)}",
         )
         harness.renderApp("reactions-emoji-bad-cache")
@@ -266,12 +278,29 @@ internal class ReactionEmojiTest {
     private fun chip(cell: ChatMessageCell, id: String): ReactionsLayoutInBubble.ReactionButton? =
         cell.reactionsLayoutInBubble.reactionButtons.firstOrNull { it.key == id }
 
-    private fun solidPng(colour: Int, size: Int): ByteArray {
+    /** A picture with a transparent surround, the shape a real emoji icon has. */
+    private fun emojiPng(colour: Int, size: Int): ByteArray {
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-        bitmap.eraseColor(colour)
+        val canvas = Canvas(bitmap)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = colour }
+        canvas.drawCircle(size / 2f, size / 2f, size / 2f * 0.4f, paint)
         val bytes = ByteArrayOutputStream()
         bitmap.compress(Bitmap.CompressFormat.PNG, 100, bytes)
         return bytes.toByteArray()
+    }
+
+    /** Whether the picture has any fully transparent pixel - a plain block would not. */
+    private fun hasTransparency(bitmap: Bitmap): Boolean {
+        val pixels = IntArray(bitmap.width * bitmap.height)
+        bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+        return pixels.any { pixel -> (pixel ushr 24) == 0 }
+    }
+
+    /** How many pixels of the picture are not fully transparent. */
+    private fun opaqueCount(bitmap: Bitmap): Int {
+        val pixels = IntArray(bitmap.width * bitmap.height)
+        bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+        return pixels.count { pixel -> (pixel ushr 24) != 0 }
     }
 
     /** How many pixels of [bitmap] are within a small distance of [colour]. */
@@ -283,15 +312,6 @@ internal class ReactionEmojiTest {
                 kotlin.math.abs(Color.green(pixel) - Color.green(colour)) <= 24 &&
                 kotlin.math.abs(Color.blue(pixel) - Color.blue(colour)) <= 24
         }
-    }
-
-    /** The colour most of a drawn tile is: its background, which is the id's own. */
-    private fun dominantColour(file: File): Int {
-        val bitmap = BitmapFactory.decodeFile(file.absolutePath)
-            ?: throw AssertionError("the fallback tile is not a picture: ${file.name}")
-        val pixels = IntArray(bitmap.width * bitmap.height)
-        bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-        return pixels.toList().groupingBy { it }.eachCount().maxByOrNull { it.value }!!.key
     }
 
     private fun rowCount(): Int = listView()?.adapter?.itemCount ?: 0

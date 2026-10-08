@@ -48,7 +48,10 @@ import io.github.baba983.nativedo.app.NativeDoMainTabsActivity;
 import io.github.baba983.nativedo.auth.LoginWebViewFragment;
 import io.github.baba983.nativedo.bookmarks.BookmarksFragment;
 import io.github.baba983.nativedo.core.di.AppContainer;
+import io.github.baba983.nativedo.core.session.AppSessionState;
 import io.github.baba983.nativedo.core.session.SessionSnapshot;
+import io.github.baba983.nativedo.sessionui.SessionUi;
+import io.github.baba983.nativedo.sessionui.SessionUiState;
 import io.github.baba983.nativedo.topic.DiscourseAvatars;
 import io.github.baba983.nativedo.topic.DiscourseLoader;
 
@@ -80,6 +83,8 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
     private static final int ROW_HELP_FAQ = 12;
     private static final int ROW_HELP_TOS = 13;
     private static final int ROW_HELP_PRIVACY = 14;
+    /** Signing in, offered in the account section whenever the session is not usable. */
+    private static final int ROW_SIGN_IN = 15;
 
     /** Upstream's header block: a 120dp avatar container and the two titles, 200dp minus the 12dp
      * the list adds above it ({@code SettingsActivity.fillItems}'s {@code asCustomShadow(topView,
@@ -92,6 +97,21 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
     private String avatarTemplate = "";
     /** The reader's trust level, once `/u/{username}.json` has answered; -1 until then. */
     private int trustLevel = -1;
+
+    /** Whether the session is usable: the account section and the header read from this. */
+    private boolean authenticated;
+    /** The session value the screen last acted on, so a change can be told from a repeat. */
+    private AppSessionState lastSessionState;
+    /** The state the header shows while the session is not usable; null while authenticated. */
+    private SessionUiState accountStateUi;
+    /** The session-state observer; cancelled with the views and started again with the next ones. */
+    private kotlinx.coroutines.Job sessionObserver;
+    /**
+     * Whether [createView]'s views are the live ones. The recovery WebView's completion callback can
+     * fire after this screen's views are gone (a destroyed tab), and it must not dereference or
+     * re-read onto them; the observer is dropped with the views for the same reason.
+     */
+    private boolean viewsAlive;
 
     private FrameLayout contentView;
     private UniversalRecyclerView listView;
@@ -157,18 +177,11 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
         additionNavigationBarHeight = hasMainTabs ? AndroidUtilities.dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS) : 0;
 
         container = NativeDo.container(getParentActivity());
-        SessionSnapshot snapshot = container.getSessionStore().snapshot();
-        if (snapshot != null) {
-            if (snapshot.getUsername() != null) {
-                username = snapshot.getUsername();
-            }
-            if (snapshot.getDisplayName() != null) {
-                displayName = snapshot.getDisplayName();
-            }
-            if (snapshot.getAvatarTemplate() != null) {
-                avatarTemplate = snapshot.getAvatarTemplate();
-            }
-        }
+        // The account the header and the account section name, taken from the session before the
+        // views are built; the observer keeps it truthful when the session changes while the tab is
+        // open.
+        lastSessionState = container.getSessionCoordinator().getSessionState().getValue();
+        applySession(lastSessionState);
 
         // Upstream's settings action bar floats over the list and its title only appears once the
         // header scrolls under it (SettingsActivity.updateActionBarVisible). The title view is
@@ -260,6 +273,8 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
         ViewCompat.requestApplyInsets(contentView);
         org.telegram.messenger.NotificationCenter.getGlobalInstance().addObserver(
                 themeObserver, org.telegram.messenger.NotificationCenter.needSetDayNightTheme);
+        observeSession();
+        viewsAlive = true;
         return contentView;
     }
 
@@ -294,6 +309,138 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
         if (listView != null && listView.adapter != null) {
             listView.adapter.update(true);
         }
+    }
+
+    // ------------------------------------------------------------------ session state
+
+    /**
+     * The tab host rebuilds a page's views (a theme switch) without destroying the fragment: the
+     * observer belongs to the views, so it is dropped here and started again from
+     * {@link #createView}.
+     */
+    @Override
+    public void clearViews() {
+        viewsAlive = false;
+        stopSessionObservation();
+        super.clearViews();
+    }
+
+    private void observeSession() {
+        stopSessionObservation();
+        sessionObserver = SessionUi.observe(container, state -> {
+            onSessionState(state);
+            return kotlin.Unit.INSTANCE;
+        });
+    }
+
+    private void stopSessionObservation() {
+        if (sessionObserver != null) {
+            SessionUi.cancel(sessionObserver);
+            sessionObserver = null;
+        }
+    }
+
+    /**
+     * A new session value. The first one for this view was already applied in {@link #createView},
+     * so a repeated value changes nothing. A different one re-derives the account the header names
+     * and re-reads its trust level: the rows are rebuilt so the account section never claims a
+     * session that is gone, and an account that changed is not kept on screen.
+     */
+    private void onSessionState(AppSessionState state) {
+        if (SessionUi.identity(lastSessionState).equals(SessionUi.identity(state))) {
+            return;
+        }
+        lastSessionState = state;
+        applySession(state);
+        refreshHeader();
+        if (authenticated) {
+            fetchTrustLevel();
+        }
+        if (listView != null && listView.adapter != null) {
+            listView.adapter.update(false);
+        }
+    }
+
+    /**
+     * The identity the header and the account section name, from the session's own snapshot. An
+     * expired session may keep the last snapshot (the header still knows whose account it was), but
+     * the account is no longer usable.
+     */
+    private void applySession(AppSessionState state) {
+        SessionSnapshot snapshot = null;
+        if (state instanceof AppSessionState.Authenticated) {
+            snapshot = ((AppSessionState.Authenticated) state).getSnapshot();
+        } else if (state instanceof AppSessionState.Expired) {
+            snapshot = ((AppSessionState.Expired) state).getSnapshot();
+        } else if (state instanceof AppSessionState.Restoring) {
+            snapshot = ((AppSessionState.Restoring) state).getSnapshot();
+        }
+        authenticated = state instanceof AppSessionState.Authenticated;
+        accountStateUi = SessionUi.stateFor(state);
+        username = snapshot != null && snapshot.getUsername() != null ? snapshot.getUsername() : "";
+        displayName = snapshot != null && snapshot.getDisplayName() != null ? snapshot.getDisplayName() : "";
+        avatarTemplate = snapshot != null && snapshot.getAvatarTemplate() != null ? snapshot.getAvatarTemplate() : "";
+        username = authenticated ? username : "";
+        displayName = authenticated ? displayName : "";
+        avatarTemplate = authenticated ? avatarTemplate : "";
+    }
+
+    /** Re-derives the header's title, subtitle and picture from the account just applied. */
+    private void refreshHeader() {
+        if (titleView != null) {
+            String title = authenticated
+                    ? (displayName.isEmpty() ? username : displayName)
+                    : "未登录";
+            titleView.setText(title);
+        }
+        if (subtitleView != null) {
+            subtitleView.setText(accountSubtitle());
+        }
+        if (container != null) {
+            avatarUser = DiscourseAvatars.INSTANCE.user(
+                    username, displayName, avatarTemplate, container.getBaseUrl());
+        }
+        if (avatarDrawable != null && avatarUser != null) {
+            avatarDrawable.setInfo(avatarUser);
+        }
+        bindAvatar();
+        if (authenticated) {
+            fetchAvatar();
+        }
+    }
+
+    /**
+     * A recovery/login completion ran: the observer will have applied the new session, but the
+     * header is rebuilt here as well so the screen is truthful even before the next emission. A
+     * completion that lands after this screen's views are gone changes nothing here - the observer
+     * belonged to those views, and the next [createView] applies the session it finds.
+     */
+    private void onSessionRecovered() {
+        if (!viewsAlive || container == null) {
+            return;
+        }
+        lastSessionState = container.getSessionCoordinator().getSessionState().getValue();
+        applySession(lastSessionState);
+        refreshHeader();
+        if (authenticated) {
+            fetchTrustLevel();
+        }
+        if (listView != null && listView.adapter != null) {
+            listView.adapter.update(true);
+        }
+    }
+
+    /** The account section's login action, or the recovery action, behind one WebView. */
+    private void openSessionWebView(boolean verification) {
+        if (getParentActivity() == null) {
+            return;
+        }
+        LoginWebViewFragment[] holder = new LoginWebViewFragment[1];
+        holder[0] = new LoginWebViewFragment(() -> {
+            holder[0].finishFragment();
+            onSessionRecovered();
+        }, verification);
+        presentFragment(holder[0]);
     }
 
     /** The page reaches the bottom of the window itself; the shell must not reserve the bar. */
@@ -332,7 +479,7 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
         titleView.setGravity(Gravity.CENTER);
         titleView.setSingleLine();
         titleView.setEllipsize(TextUtils.TruncateAt.END);
-        titleView.setText(displayName.isEmpty() ? username : displayName);
+        titleView.setText(authenticated ? (displayName.isEmpty() ? username : displayName) : "未登录");
         topView.addView(titleView, LayoutHelper.createFrame(
                 LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT,
                 Gravity.CENTER_HORIZONTAL | Gravity.TOP, 16, 138.333f - 12, 16, 0));
@@ -359,6 +506,9 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
 
     /** Upstream's account header line: the username, plus the reader's trust level once known. */
     private String accountSubtitle() {
+        if (!authenticated) {
+            return shortStateLabel(accountStateUi);
+        }
         if (username.isEmpty()) {
             return "";
         }
@@ -369,15 +519,40 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
         return subtitle;
     }
 
+    /** A one-line label for the header while the session is not usable. */
+    private static String shortStateLabel(SessionUiState state) {
+        if (state == null) {
+            return "";
+        }
+        switch (state) {
+            case SignIn:
+                return "未登录";
+            case Expired:
+                return "登录已失效";
+            case Challenge:
+                return "需要站点验证";
+            case Retry:
+            case Forbidden:
+                return "暂时无法验证登录";
+            case Restoring:
+            default:
+                return "正在同步登录状态";
+        }
+    }
+
     /**
      * The trust level is not in the session snapshot, so the reader's own profile payload is read
      * once for it. A failed read leaves the header as it was; the number is decoration, not state.
      */
     private void fetchTrustLevel() {
-        if (container == null || username.isEmpty()) {
+        if (container == null || !authenticated || username.isEmpty()) {
             return;
         }
-        SettingsLoader.INSTANCE.trustLevel(container, username, level -> {
+        final String asked = username;
+        SettingsLoader.INSTANCE.trustLevel(container, asked, level -> {
+            if (!asked.equals(username)) {
+                return kotlin.Unit.INSTANCE;
+            }
             trustLevel = level;
             if (subtitleView != null) {
                 subtitleView.setText(accountSubtitle());
@@ -462,13 +637,22 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
         items.add(UItem.asShadow(null));
 
         items.add(UItem.asHeader("账号"));
-        items.add(SettingCell.Factory.of(ROW_VERIFY,
-                IconBackgroundColors.GREEN.top, IconBackgroundColors.GREEN.bottom,
-                org.telegram.messenger.R.drawable.settings_privacy, "打开验证页", "重新通过站点的验证"));
-        items.add(SettingCell.Factory.of(ROW_DEVICE_LOGIN,
-                IconBackgroundColors.PURPLE.top, IconBackgroundColors.PURPLE.bottom,
-                org.telegram.messenger.R.drawable.settings_devices, "设备码登录（实验）", "在站内浏览器里确认授权码"));
-        items.add(UItem.asButton(ROW_SIGN_OUT, "退出登录").red());
+        if (authenticated) {
+            items.add(SettingCell.Factory.of(ROW_VERIFY,
+                    IconBackgroundColors.GREEN.top, IconBackgroundColors.GREEN.bottom,
+                    org.telegram.messenger.R.drawable.settings_privacy, "打开验证页", "重新通过站点的验证"));
+            items.add(SettingCell.Factory.of(ROW_DEVICE_LOGIN,
+                    IconBackgroundColors.PURPLE.top, IconBackgroundColors.PURPLE.bottom,
+                    org.telegram.messenger.R.drawable.settings_devices, "设备码登录（实验）", "在站内浏览器里确认授权码"));
+            items.add(UItem.asButton(ROW_SIGN_OUT, "退出登录").red());
+        } else {
+            // The session is not usable - signed out, expired or challenged. The account row is
+            // honest about that and offers the only thing that helps: signing in at the site.
+            items.add(UItem.asButton(ROW_SIGN_IN, "登录 linux.do"));
+            items.add(SettingCell.Factory.of(ROW_DEVICE_LOGIN,
+                    IconBackgroundColors.PURPLE.top, IconBackgroundColors.PURPLE.bottom,
+                    org.telegram.messenger.R.drawable.settings_devices, "设备码登录（实验）", "在站内浏览器里确认授权码"));
+        }
         items.add(UItem.asShadow(null));
 
         items.add(UItem.asHeader("帮助"));
@@ -520,7 +704,11 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
         } else if (item.id == ROW_BOOKMARKS) {
             presentFragment(new BookmarksFragment());
         } else if (item.id == ROW_VERIFY) {
-            presentFragment(new LoginWebViewFragment(null, true));
+            openSessionWebView(true);
+        } else if (item.id == ROW_SIGN_IN) {
+            // A challenged session recovers on the site's challenge page; a signed-out or expired
+            // one signs in on the login page.
+            openSessionWebView(accountStateUi == SessionUiState.Challenge);
         } else if (item.id == ROW_DEVICE_LOGIN) {
             presentFragment(new io.github.baba983.nativedo.auth.device.DeviceLoginFragment());
         } else if (item.id == ROW_SIGN_OUT) {
@@ -608,12 +796,14 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
 
     @Override
     public void onFragmentDestroy() {
+        viewsAlive = false;
         if (actionBarVisibleAnimator != null) {
             actionBarVisibleAnimator.cancel();
             actionBarVisibleAnimator = null;
         }
         org.telegram.messenger.NotificationCenter.getGlobalInstance().removeObserver(
                 themeObserver, org.telegram.messenger.NotificationCenter.needSetDayNightTheme);
+        stopSessionObservation();
         super.onFragmentDestroy();
     }
 }

@@ -29,10 +29,15 @@ import java.util.List;
 
 import io.github.baba983.nativedo.app.NativeDo;
 import io.github.baba983.nativedo.app.NativeDoMainTabsActivity;
+import io.github.baba983.nativedo.auth.LoginWebViewFragment;
 import io.github.baba983.nativedo.core.di.AppContainer;
 import io.github.baba983.nativedo.core.model.NotificationItem;
 import io.github.baba983.nativedo.core.model.NotificationPage;
+import io.github.baba983.nativedo.core.session.AppSessionState;
 import io.github.baba983.nativedo.feature.notifications.data.NotificationRepository;
+import io.github.baba983.nativedo.sessionui.SessionUi;
+import io.github.baba983.nativedo.sessionui.SessionUiAction;
+import io.github.baba983.nativedo.sessionui.SessionUiState;
 import io.github.baba983.nativedo.topic.DiscourseAvatars;
 import io.github.baba983.nativedo.topic.DiscourseLoader;
 import io.github.baba983.nativedo.topic.TopicFragment;
@@ -50,6 +55,8 @@ public class NotificationsFragment extends BaseFragment implements NativeDoMainT
 
     private static final int TYPE_NOTIFICATION = 0;
     private static final int TYPE_NOTE = 1;
+    /** The row a session state draws in place of the list: the state and the tap that acts on it. */
+    private static final int TYPE_STATE = 2;
 
     /** How close to the end the list comes before the next page is asked for. */
     private static final int LOAD_MORE_THRESHOLD = 3;
@@ -74,6 +81,23 @@ public class NotificationsFragment extends BaseFragment implements NativeDoMainT
     private int offset;
     /** How many notifications the site has in total; every page moves [offset] towards it. */
     private int total = Integer.MAX_VALUE;
+
+    /**
+     * The explicit session state the list shows in place of rows, or {@code null} while it shows
+     * content. Its value survives neither an identity change nor a view recreation: both drop it and
+     * read again.
+     */
+    private SessionUiState stateUi;
+    /** The session value the screen last acted on, so a change can be told from a repeat. */
+    private AppSessionState lastSessionState;
+    /**
+     * Bumped whenever the account changes or the views go away. A read captures it before it
+     * starts and drops its own answer if it no longer matches, so a late page from the previous
+     * account cannot repopulate the list.
+     */
+    private int loadEpoch;
+    /** The session-state observer; cancelled with the views and started again with the next ones. */
+    private kotlinx.coroutines.Job sessionObserver;
 
     /** Whether the screen is a page of the tab host, which adds the strip's height to the insets. */
     private boolean hasMainTabs;
@@ -140,7 +164,9 @@ public class NotificationsFragment extends BaseFragment implements NativeDoMainT
         listView.setClipToPadding(false);
         checkUi_listPadding();
         listView.setOnItemClickListener((view, position) -> {
-            if (position >= 0 && position < items.size()) {
+            if (stateUi != null) {
+                onStateAction();
+            } else if (position >= 0 && position < items.size()) {
                 open(items.get(position));
             }
         });
@@ -169,15 +195,149 @@ public class NotificationsFragment extends BaseFragment implements NativeDoMainT
         container = NativeDo.container(getParentActivity());
         org.telegram.messenger.NotificationCenter.getGlobalInstance().addObserver(
                 themeObserver, org.telegram.messenger.NotificationCenter.needSetDayNightTheme);
-        loadPage();
+        // The session is read before the list: an account with no usable session gets the explicit
+        // state (and the read is not even sent), and a tab opened before a login catches up the
+        // moment the session lands.
+        stateUi = null;
+        lastSessionState = container.getSessionCoordinator().getSessionState().getValue();
+        observeSession();
+        if (lastSessionState instanceof AppSessionState.Authenticated) {
+            loadPage();
+        }
         return fragmentView;
+    }
+
+    /**
+     * The tab host rebuilds a page's views (a theme switch) without destroying the fragment: the
+     * observer belongs to the views, so it is dropped here and started again from
+     * {@link #createView}. Bumping the epoch drops any read still in flight for the old views.
+     */
+    @Override
+    public void clearViews() {
+        stopSessionObservation();
+        loadEpoch++;
+        super.clearViews();
     }
 
     @Override
     public void onFragmentDestroy() {
         org.telegram.messenger.NotificationCenter.getGlobalInstance().removeObserver(
                 themeObserver, org.telegram.messenger.NotificationCenter.needSetDayNightTheme);
+        stopSessionObservation();
+        loadEpoch++;
         super.onFragmentDestroy();
+    }
+
+    private void observeSession() {
+        stopSessionObservation();
+        sessionObserver = SessionUi.observe(container, state -> {
+            onSessionState(state);
+            return kotlin.Unit.INSTANCE;
+        });
+    }
+
+    private void stopSessionObservation() {
+        if (sessionObserver != null) {
+            SessionUi.cancel(sessionObserver);
+            sessionObserver = null;
+        }
+    }
+
+    /**
+     * A new session value. The first one for this view was already acted on in {@link #createView},
+     * so a value equal to it changes nothing; anything else drops the old account's rows and, when
+     * the session is usable again, reads them again - immediately, so an open tab never keeps
+     * showing the previous account.
+     */
+    private void onSessionState(AppSessionState state) {
+        boolean identityChanged = !SessionUi.identity(lastSessionState).equals(SessionUi.identity(state));
+        lastSessionState = state;
+        if (identityChanged) {
+            loadEpoch++;
+            resetForReload();
+        }
+        if (state instanceof AppSessionState.Authenticated) {
+            if (identityChanged) {
+                stateUi = null;
+                notifyRowsChanged();
+                loadPage();
+            }
+        } else {
+            stateUi = SessionUi.stateFor(state);
+            loading = false;
+            notifyRowsChanged();
+        }
+    }
+
+    /** Drops every row and restarts the paging bookkeeping, so nothing of the old account stays. */
+    private void resetForReload() {
+        items.clear();
+        actors.clear();
+        empty = false;
+        loading = false;
+        offset = 0;
+        total = Integer.MAX_VALUE;
+    }
+
+    /** The tap on a state row: recover the session, or read again. */
+    private void onStateAction() {
+        if (stateUi == null) {
+            return;
+        }
+        SessionUiAction action = SessionUi.action(stateUi);
+        if (action == SessionUiAction.Retry) {
+            stateUi = null;
+            resetForReload();
+            notifyRowsChanged();
+            loadPage();
+            return;
+        }
+        openRecovery(action == SessionUiAction.OpenVerification);
+    }
+
+    /**
+     * The session is dealt with where the site can be: the recovery flow in the login WebView. The
+     * WebView's own completion publishes the usable session; this screen's observer re-reads the
+     * list when that changes the account, and the explicit completion re-reads it when it does not,
+     * so a cancelled verification neither recovers nor refreshes.
+     */
+    private void openRecovery(boolean verification) {
+        if (getParentActivity() == null) {
+            return;
+        }
+        final String identityAtStart = SessionUi.identity(lastSessionState);
+        LoginWebViewFragment[] holder = new LoginWebViewFragment[1];
+        holder[0] = new LoginWebViewFragment(() -> {
+            holder[0].finishFragment();
+            onRecoveryCompleted(identityAtStart);
+        }, verification);
+        presentFragment(holder[0]);
+    }
+
+    /**
+     * The recovery WebView's explicit completion ran: the reader confirmed it, so the session the
+     * site is holding is the one to read with. A completion that changed the account is already
+     * re-read by {@link #onSessionState} (its identity differs), so this reads only the
+     * same-account case - a challenge solved by the account already signed in, which publishes the
+     * same identity and would otherwise leave the failed page showing its challenge - exactly once.
+     * It only reads: it never cancels the observation and never writes the session.
+     */
+    private void onRecoveryCompleted(String identityAtStart) {
+        if (container == null) {
+            return;
+        }
+        AppSessionState now = container.getSessionCoordinator().getSessionState().getValue();
+        if (!SessionUi.identity(now).equals(identityAtStart)) {
+            // A different account (or a lost session): the observer's own identity change is the
+            // refresh, and reading again here would only duplicate it.
+            return;
+        }
+        lastSessionState = now;
+        loadEpoch++;
+        stateUi = null;
+        resetForReload();
+        notifyRowsChanged();
+        loadPage();
     }
 
     @Override
@@ -246,10 +406,20 @@ public class NotificationsFragment extends BaseFragment implements NativeDoMainT
         if (container == null || loading || offset >= total) {
             return;
         }
+        // Without a usable session there is nothing private to read: the state row is the screen.
+        if (!(lastSessionState instanceof AppSessionState.Authenticated)) {
+            return;
+        }
         loading = true;
         final int asked = offset;
+        // The account this read is for; if it changes before the page lands, the page is dropped.
+        final int epoch = loadEpoch;
         NotificationsLoader.INSTANCE.page(container, asked, page -> {
+            if (epoch != loadEpoch) {
+                return kotlin.Unit.INSTANCE;
+            }
             loading = false;
+            stateUi = null;
             offset = asked + page.getItems().size();
             total = page.getTotalRows();
             for (NotificationItem item : page.getItems()) {
@@ -261,16 +431,18 @@ public class NotificationsFragment extends BaseFragment implements NativeDoMainT
             fetchAvatars();
             return kotlin.Unit.INSTANCE;
         }, error -> {
+            if (epoch != loadEpoch) {
+                return kotlin.Unit.INSTANCE;
+            }
             loading = false;
-            // A page that never arrived still ends the shimmer: a skeleton that turns forever
-            // reads as "loading", and the read is over. The list stays as empty as it was.
-            if (listView != null) {
-                listView.setEmptyView(null);
-            }
-            if (progressView != null) {
-                progressView.setVisibility(View.GONE);
-            }
             FileLog.e("notifications failed", error);
+            // A read that did not arrive is its own explicit state, not a blank list - but only
+            // while there is nothing to read: a page that failed with rows already on screen leaves
+            // them standing, the way a topic page does, and the next scroll asks again.
+            if (items.isEmpty()) {
+                stateUi = SessionUi.stateForLoadFailure(error);
+            }
+            notifyRowsChanged();
             return kotlin.Unit.INSTANCE;
         });
     }
@@ -330,7 +502,7 @@ public class NotificationsFragment extends BaseFragment implements NativeDoMainT
         @Override
         public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
             Context context = parent.getContext();
-            if (viewType == TYPE_NOTE) {
+            if (viewType == TYPE_NOTE || viewType == TYPE_STATE) {
                 TextInfoPrivacyCell cell = new TextInfoPrivacyCell(context, resourceProvider);
                 cell.setLayoutParams(new RecyclerView.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -345,7 +517,13 @@ public class NotificationsFragment extends BaseFragment implements NativeDoMainT
         @Override
         public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
             if (holder.itemView instanceof TextInfoPrivacyCell) {
-                ((TextInfoPrivacyCell) holder.itemView).setText("还没有通知");
+                String text;
+                if (stateUi != null) {
+                    text = SessionUi.text(holder.itemView.getContext(), stateUi).toString();
+                } else {
+                    text = "还没有通知";
+                }
+                ((TextInfoPrivacyCell) holder.itemView).setText(text);
                 return;
             }
             NotificationItem item = items.get(position);
@@ -362,16 +540,25 @@ public class NotificationsFragment extends BaseFragment implements NativeDoMainT
 
         @Override
         public int getItemViewType(int position) {
+            if (stateUi != null) {
+                return TYPE_STATE;
+            }
             return empty ? TYPE_NOTE : TYPE_NOTIFICATION;
         }
 
         @Override
         public int getItemCount() {
+            if (stateUi != null) {
+                return 1;
+            }
             return empty ? 1 : items.size();
         }
 
         @Override
         public boolean isEnabled(RecyclerView.ViewHolder holder) {
+            if (stateUi != null) {
+                return SessionUi.hasAction(stateUi);
+            }
             if (empty || holder.itemView instanceof TextInfoPrivacyCell) {
                 return false;
             }

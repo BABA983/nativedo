@@ -2,17 +2,22 @@ package io.github.baba983.nativedo.topic;
 
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.graphics.RectF;
 import android.net.Uri;
+import android.view.View;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLoader;
 import org.telegram.messenger.FileLog;
+import org.telegram.messenger.ImageReceiver;
 import org.telegram.messenger.MessageObject;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_iv;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ArticleViewer;
+import org.telegram.ui.Cells.ChatMessageCell;
+import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.PhotoViewer;
 
 import java.io.File;
@@ -42,6 +47,11 @@ public final class ArticlePhotoViewer {
     }
 
     public static boolean open(BaseFragment fragment, MessageObject message, TL_iv.PageBlock block) {
+        return open(fragment, message, block, null);
+    }
+
+    public static boolean open(BaseFragment fragment, MessageObject message, TL_iv.PageBlock block,
+                               RecyclerListView list) {
         if (fragment == null || fragment.getParentActivity() == null || message == null
                 || message.messageOwner == null || message.richLayout == null || block == null) {
             return false;
@@ -62,7 +72,61 @@ public final class ArticlePhotoViewer {
         }
         PhotoViewer viewer = PhotoViewer.getInstance();
         viewer.setParentActivity(fragment.getParentActivity(), fragment.getResourceProvider());
-        return viewer.openPhoto(index, new BlocksAdapter(message, media), new PhotoViewer.EmptyPhotoViewerProvider());
+        return viewer.openPhoto(index, new BlocksAdapter(message, media), new SourceProvider(message, media, list));
+    }
+
+    /** ChatActivity's rich-media source lookup, using this topic's list and actual content insets. */
+    private static class SourceProvider extends PhotoViewer.EmptyPhotoViewerProvider {
+        private final MessageObject message;
+        private final List<TL_iv.PageBlock> blocks;
+        private final RecyclerListView list;
+
+        SourceProvider(MessageObject message, List<TL_iv.PageBlock> blocks, RecyclerListView list) {
+            this.message = message;
+            this.blocks = blocks;
+            this.list = list;
+        }
+
+        @Override
+        public PhotoViewer.PlaceProviderObject getPlaceForPhoto(MessageObject messageObject,
+                TLRPC.FileLocation fileLocation, int index, boolean needPreview, boolean closing) {
+            if (list == null || !list.isAttachedToWindow() || !list.isShown()
+                    || index < 0 || index >= blocks.size()) return null;
+            int[] listCoords = new int[2];
+            list.getLocationInWindow(listCoords);
+            for (int i = 0; i < list.getChildCount(); i++) {
+                View child = list.getChildAt(i);
+                if (!(child instanceof ChatMessageCell) || !child.isShown()) continue;
+                ChatMessageCell cell = (ChatMessageCell) child;
+                MessageObject current = cell.getMessageObject();
+                if (current != message || current.richLayout == null) continue;
+                int[] offset = new int[2];
+                ImageReceiver receiver = current.richLayout.findMediaImageReceiver(blocks.get(index), offset);
+                if (receiver == null) continue;
+                int[] coords = new int[2];
+                cell.getLocationInWindow(coords);
+                coords[0] += cell.getTextX() + offset[0];
+                coords[1] += cell.getTextY() + offset[1];
+                // A long text cell can stay attached while its photo is outside the viewport.
+                RectF bounds = new RectF(receiver.getDrawRegion());
+                bounds.offset(coords[0], coords[1]);
+                if (!bounds.intersect(listCoords[0] + list.getPaddingLeft(),
+                        listCoords[1] + list.getPaddingTop(),
+                        listCoords[0] + list.getWidth() - list.getPaddingRight(),
+                        listCoords[1] + list.getHeight() - list.getPaddingBottom())) continue;
+                PhotoViewer.PlaceProviderObject source = new PhotoViewer.PlaceProviderObject();
+                source.viewX = coords[0];
+                source.viewY = coords[1];
+                source.parentView = list;
+                source.imageReceiver = receiver;
+                source.thumb = receiver.getBitmapSafe();
+                source.radius = receiver.getRoundRadius(true);
+                source.clipTopAddition = list.getPaddingTop();
+                source.clipBottomAddition = list.getPaddingBottom();
+                return source;
+            }
+            return null;
+        }
     }
 
     /**

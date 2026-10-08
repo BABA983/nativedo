@@ -400,4 +400,14 @@ class TopicReadReporter(
 
     /** Whether the reader has read the whole topic, which is what clears a list row's badge. */
     fun readToTheEnd(): Boolean = highestFloor > 0 && reachedFloor >= highestFloor
+
+    /**
+     * The reader's monotonic reading high-water mark: the highest floor [advanceTo] was told the
+     * viewport reached. Read-only, for a consumer that has to know what is still unread below the
+     * viewport (the topic page-down target); it changes nothing this reporter reports.
+     */
+    val reachedFloorMark: Int get() = reachedFloor
+
+    /** The topic's last floor, as the site first answered it; 0 when no read named one. */
+    val highestFloorMark: Int get() = highestFloor
 }

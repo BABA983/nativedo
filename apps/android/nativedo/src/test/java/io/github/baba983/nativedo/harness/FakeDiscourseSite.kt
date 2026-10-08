@@ -76,8 +76,10 @@ internal class FakeDiscourseSite {
      * Every body the path was written with, in the order they arrived. A screen that reports its
      * state as it changes writes more than once, and the last write is not the whole story.
      */
-    fun requestBodiesFor(path: String): List<String> =
-        requestBodyLog.filter { it.first == path.trimStart('/') }.map { it.second }
+    fun requestBodiesFor(path: String): List<String> = synchronized(this) {
+        // Snapshot the log before filtering: it is appended on the MockWebServer thread.
+        requestBodyLog.toList().filter { it.first == path.trimStart('/') }.map { it.second }
+    }
 
     /** The CSRF token a write carried on [path]. */
     fun csrfHeaderFor(path: String): String? = csrfHeaders[path.trimStart('/')]
@@ -94,8 +96,12 @@ internal class FakeDiscourseSite {
     }
 
     /** The query strings the site was asked for on [path], in order. */
-    fun queriesFor(path: String): List<String> =
-        queries[path.trimStart('/')].orEmpty()
+    fun queriesFor(path: String): List<String> = synchronized(this) {
+        // A snapshot, not the live list: the dispatcher appends to it on the MockWebServer thread
+        // while a test iterates the result, and a test's `any { }`/`count { }` over the live list
+        // is a ConcurrentModificationException waiting to happen.
+        queries[path.trimStart('/')]?.toList().orEmpty()
+    }
 
     /** What the site saw on [path], by the path it was asked for. */
     fun cookieHeaderFor(path: String): String? = cookieHeaders[path.trimStart('/')]

@@ -17,6 +17,7 @@ import io.github.baba983.nativedo.harness.shadows.ShadowSQLiteCursor
 import io.github.baba983.nativedo.harness.shadows.ShadowSQLiteDatabase
 import io.github.baba983.nativedo.harness.shadows.ShadowSQLitePreparedStatement
 import io.github.baba983.nativedo.harness.shadows.ShadowUtilities
+import io.github.baba983.nativedo.topic.TopicFragment
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
@@ -305,6 +306,76 @@ internal class SearchTest {
         field.editText.performClick()
         // Let the 200ms open animation finish before the next gesture.
         harness.idleClock(400)
+    }
+
+    @Test
+    fun topicSearchScopesPostsFiltersForeignHitsAndOpensTheExactFloor() {
+        site.serveFixture("t/101.json", "topic-detail.json")
+        val response = JSONObject(harness.fixture("search.json"))
+        response.getJSONArray("posts").put(JSONObject(response.getJSONArray("posts").getJSONObject(0).toString())
+            .put("id", 9999).put("topic_id", 999).put("post_number", 8))
+        response.getJSONObject("grouped_search_result").put("more_posts", false)
+        site.serveJson("search.json", response.toString())
+        harness.bootApp()
+        harness.await("feed") { rowCount() == 2 }
+        harness.present(TopicFragment.forTopic(101, "Topic search"))
+        harness.await("topic") { drawnPostIds().isNotEmpty() }
+        openTopicSearch()
+        val field = harness.topFragment()!!.actionBar.createMenu().getItem(10).searchField
+        assertEquals("blank input does not ask the whole site", 0, site.queriesFor("search.json").size)
+        field.setText("topic:999")
+        harness.idleClock(500)
+        assertEquals("a typed scope override is refused", 0, site.queriesFor("search.json").size)
+        field.setText("NativeDo")
+        harness.await("scoped result") { rowCount() == 1 }
+        val query = java.net.URLDecoder.decode(site.queriesFor("search.json").single(), "UTF-8")
+        assertTrue(query.contains("q=NativeDo topic:101"))
+        assertTrue(query.contains("type_filter=posts"))
+        harness.renderApp("topic-search-results")
+        val list = firstView(android.R.id.content) { it is RecyclerListView && it.isShown } as RecyclerListView
+        list.clickItem(list.getChildAt(0), 0)
+        harness.await("exact floor") { site.requestPaths.contains("t/101/4.json") }
+        harness.assertNoTelegramSideEffects()
+    }
+
+    @Test
+    fun topicSearchRetriesTheSameQueryAndPaginatesWithoutDuplicateFloors() {
+        site.serveFixture("t/101.json", "topic-detail.json")
+        site.serveResponse("search.json") { MockResponse().setResponseCode(503) }
+        harness.bootApp()
+        harness.await("feed") { rowCount() == 2 }
+        harness.present(TopicFragment.forTopic(101, "Topic search"))
+        harness.await("topic") { drawnPostIds().isNotEmpty() }
+        openTopicSearch()
+        val field = harness.topFragment()!!.actionBar.createMenu().getItem(10).searchField
+        field.setText("NativeDo")
+        harness.await("error") { firstView(android.R.id.content) {
+            it is android.widget.TextView && it.text.toString().contains("点击重试") } != null }
+        harness.renderApp("topic-search-error")
+        site.serveResponse("search.json") { MockResponse().setHeader("Content-Type", "application/json")
+            .setBody(harness.fixture("search.json")) }
+        val state = firstView(android.R.id.content) { it is org.telegram.ui.Components.EmptyTextProgressView }!!
+        state.performClick()
+        harness.await("retry hits") { rowCount() == 2 }
+        // One post plus the production load-more row. Its next page repeats the first hit.
+        val list = firstView(android.R.id.content) { it is RecyclerListView && it.isShown } as RecyclerListView
+        harness.layoutApp()
+        list.clickItem(list.findViewHolderForAdapterPosition(1)!!.itemView, 1)
+        harness.await("page 1") { site.queriesFor("search.json").any { it.contains("page=1") } }
+        harness.await("no duplicate result") { rowCount() == 2 }
+        assertEquals(3, site.queriesFor("search.json").size)
+        field.setText("")
+        harness.await("cleared") { rowCount() == 0 }
+        harness.renderApp("topic-search-empty")
+        harness.assertNoTelegramSideEffects()
+    }
+
+    private fun openTopicSearch() {
+        harness.topFragment()!!.actionBar.createMenu().getItem(1).performClick()
+        harness.idle()
+        io.github.baba983.nativedo.harness.clickMenuItem(
+            io.github.baba983.nativedo.harness.latestItemOptionsMenu(harness.activity), "话题内搜索")
+        harness.await("topic search screen") { harness.topFragment()?.javaClass?.simpleName == "TopicSearchFragment" }
     }
 
     private fun type(query: String) {

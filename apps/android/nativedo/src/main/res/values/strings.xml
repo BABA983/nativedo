@@ -25,12 +25,32 @@
     -->
     <string name="topic_failed">没能读到这个话题\n点一下重试</string>
     <string name="topic_page_failed">这一页没能读出来，继续滑动会再试一次</string>
+    <!--
+      A stream page after the first that did not arrive while the topic is on screen. The rows and
+      the reader's place stay, and the hint is upstream's own Bulletin carrying an explicit retry
+      button: the copy names the tap, not a promise that scrolling alone will help.
+    -->
+    <string name="topic_page_retry_failed">这一页没能读出来，点按重试</string>
+    <!-- The stream-page failure hint's button: what its tap asks for. -->
+    <string name="topic_page_retry">重试</string>
+    <string name="topic_page_down_failed">这一页没能读出来，点按箭头重试</string>
     <string name="topic_failed_challenge">站点要求完成验证\n点一下打开验证页</string>
     <string name="topic_failed_login">登录已失效\n点一下重新登录</string>
     <string name="topic_failed_forbidden">站点拒绝了这次请求\n点一下重试</string>
     <string name="topic_failed_rate_limited">请求过于频繁\n点一下重试</string>
     <string name="topic_failed_network">网络不通\n点一下重试</string>
     <string name="reply_failed_verify">打开验证页</string>
+    <!--
+      The explicit session states a tab root shows in place of its own content. The line names the
+      action the tap takes, so a blank screen never has to stand for an expired session: the first
+      line is the state, the second is what tapping does.
+    -->
+    <string name="session_state_restoring">正在同步登录状态…</string>
+    <string name="session_state_sign_in">尚未登录\n点一下登录</string>
+    <string name="session_state_expired">登录已失效\n点一下重新登录</string>
+    <string name="session_state_challenge">站点要求完成验证\n点一下打开验证页</string>
+    <string name="session_state_retry">网络错误\n点一下重试</string>
+    <string name="session_state_forbidden">站点拒绝了这次请求\n点一下重试</string>
     <!--
       Upstream's appearance page is Telegram's "Chat Settings": its title and its rows talk about a
       chat list, chat backgrounds and messages. This client has topics and posts, so the words are
@@ -61,4 +81,13 @@
     <string name="search_tab_users">用户</string>
     <string name="search_tab_categories">分类</string>
     <string name="search_tab_tags">标签</string>
+
+    <!--
+      The home category strip's first tab. FilterTabsView builds its position tables - what the
+      selected capsule interpolates between while it travels - only for the folder it calls the
+      default one, and it renames that folder to this string while it measures. This client has
+      topics, not chats, so the folder is 全部.
+    -->
+    <string name="FilterAllChats">全部</string>
+    <string name="FilterAllChatsShort">全部</string>
 </resources>

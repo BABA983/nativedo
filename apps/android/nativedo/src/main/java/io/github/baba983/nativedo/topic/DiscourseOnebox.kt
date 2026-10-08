@@ -74,12 +74,14 @@ object DiscourseOnebox {
      * rendered: the site's name, the linked page's title and the description it found for it.
      */
     @JvmStatic
+    @JvmOverloads
     fun message(
         post: Post,
         card: Card,
         topicId: Long,
         users: HashMap<Long, TLRPC.User>,
         baseUrl: String,
+        replyTo: TLRPC.Message? = null,
     ): MessageObject {
         val user = DiscourseRows.author(post, baseUrl)
         users[user.id] = user
@@ -108,6 +110,9 @@ object DiscourseOnebox {
             user.id,
             media,
         )
+        // A onebox the floor's body opens with is that floor's first bubble, so it carries the reply
+        // header like any other first bubble (set before the MessageObject reads it).
+        DiscourseRows.applyReply(message, replyTo)
         return DiscourseRows.messageObject(message, users)
     }
 

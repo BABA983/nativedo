@@ -122,12 +122,14 @@ object DiscoursePolls {
      * author and the same floor as the body's own bubbles.
      */
     @JvmStatic
+    @JvmOverloads
     fun message(
         post: Post,
         poll: PostPoll,
         topicId: Long,
         users: HashMap<Long, TLRPC.User>,
         baseUrl: String,
+        replyTo: TLRPC.Message? = null,
     ): MessageObject {
         val user = DiscourseRows.author(post, baseUrl)
         users[user.id] = user
@@ -138,6 +140,9 @@ object DiscoursePolls {
             user.id,
             media(poll),
         )
+        // A poll the floor's body opens with is that floor's first bubble, so it carries the reply
+        // header like any other first bubble (set before the MessageObject reads it).
+        DiscourseRows.applyReply(message, replyTo)
         return DiscourseRows.messageObject(message, users)
     }
 }

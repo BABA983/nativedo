@@ -83,10 +83,11 @@ internal class ProfileRedesignTest {
     }
 
     /**
-     * The capsule's tap: the profile has to arrive as the header's own flight - upstream's
-     * `playProfileAnimation == 2` - seeded with the capsule avatar's screen X, and land on the topic
-     * author. A profile opened with the default transition leaves `playProfileAnimation` at 0 and
-     * the avatar does not move.
+     * The capsule's tap: the profile has to arrive as the header's own flight - upstream's ordinary
+     * header transition (`playProfileAnimation == 1`, `ChatAvatarContainer.openProfile`'s
+     * non-avatar branch) with the host's avatar flight (`avatarFlight`) carrying the capsule
+     * avatar's screen X - and land on the topic author. A profile opened with the default
+     * transition leaves `playProfileAnimation` at 0, its flight off, and the avatar does not move.
      */
     @Test
     fun theTopicHeaderCapsuleFliesTheAvatarIntoTheAuthorsProfile() {
@@ -113,7 +114,8 @@ internal class ProfileRedesignTest {
 
         val profile = harness.topFragment() as? ProfileFragment
             ?: throw AssertionError("the capsule tap did not open the profile")
-        assertEquals("the header animation", 2, field(profile, "playProfileAnimation"))
+        assertEquals("the ordinary header transition", 1, field(profile, "playProfileAnimation"))
+        assertEquals("the avatar flies", true, field(profile, "avatarFlight"))
         assertEquals(
             "the flight starts where the capsule avatar is",
             capsuleX,
