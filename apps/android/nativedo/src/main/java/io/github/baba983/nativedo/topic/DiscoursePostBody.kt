@@ -5,6 +5,7 @@ import org.jsoup.nodes.Element
 import org.jsoup.nodes.Node
 import org.jsoup.nodes.TextNode
 import org.jsoup.parser.Tag
+import java.net.URI
 
 /**
  * A cooked post body split at its polls.
@@ -62,6 +63,12 @@ object DiscoursePostBody {
             }
             aside.replaceWith(quote)
         }
+        // A cooked body also carries shapes upstream's importer cannot see: the site's spoiler
+        // markup, a code block's language class, and the embeds it does not support. Each is
+        // normalized to the shape upstream does understand, without changing the body's blocks.
+        normalizeSpoilers(body)
+        normalizeCodeLanguage(body)
+        replaceUnsupportedEmbeds(body)
         val segments = ArrayList<Segment>()
         // The segment markup is serialized from a sink under its own non-pretty document: a
         // detached element keeps jsoup's default pretty-printer, which would put back the
@@ -99,6 +106,171 @@ object DiscoursePostBody {
         }
         flush()
         return segments
+    }
+
+    // ---------------------------------------------------------------- cooked-input normalization
+
+    /** The element name upstream's importer reads as inline spoiler text. */
+    private const val SPOILER = "spoiler"
+
+    /** Discourse's inline and block spoiler wrappers, which upstream has no element for. */
+    private const val SPOILER_CLASS = "spoiler"
+
+    /**
+     * Block elements a spoiler may contain. The spoiler reaches their inline content and still
+     * leaves the block skeleton the importer builds its own blocks from, so a block spoiler never
+     * flattens the paragraph (or list, or quote) it wraps.
+     */
+    private val BLOCK_TAGS = setOf(
+        "p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "blockquote", "pre",
+        "table", "thead", "tbody", "tr", "td", "th", "div", "details", "summary", "figure",
+        "figcaption", "section", "article", "aside", "header", "footer", "nav", "dl", "dt", "dd",
+        "hr",
+    )
+
+    /**
+     * Turns Discourse's spoiler markup into upstream's `<spoiler>` text semantics. An inline
+     * `span.spoiler` becomes the `<spoiler>` element itself; a block `div.spoiler` keeps its block
+     * children and wraps only their inline content, so the secret reaches the importer as spoiler
+     * text without losing the paragraph it sat in. Media inside a spoiler carries `data-spoiler`,
+     * which is the attribute upstream's own photo and video blocks read.
+     */
+    private fun normalizeSpoilers(body: Element) {
+        for (span in body.select("span.$SPOILER_CLASS").toList()) {
+            markSpoilerMedia(span)
+            span.tagName(SPOILER)
+            span.removeClass(SPOILER_CLASS)
+        }
+        for (div in body.select("div.$SPOILER_CLASS").toList()) {
+            markSpoilerMedia(div)
+            spoil(div)
+            div.tagName("section")
+        }
+    }
+
+    private fun markSpoilerMedia(element: Element) {
+        for (media in element.select("img, video")) {
+            media.attr("data-spoiler", "1")
+        }
+    }
+
+    /** Spoils [element]'s inline content, keeping any media and block children where they are. */
+    private fun spoil(element: Element) {
+        wrapInlineRuns(element)
+        for (child in element.children().filter { it.normalName() in BLOCK_TAGS || isMedia(it) }) {
+            spoil(child)
+        }
+    }
+
+    /**
+     * Wraps each run of inline, non-media children of [element] in a `<spoiler>`. A picture or a
+     * clip is left alone: for upstream it is a block of its own, and the spoiler travels on its
+     * `data-spoiler` attribute rather than on an inline wrapper that would swallow the media. An
+     * inline emoji is not media here - it is content of the run, and stays inside the spoiler.
+     */
+    private fun wrapInlineRuns(element: Element) {
+        var inlineRun = ArrayList<Node>()
+        fun flush() {
+            if (inlineRun.isEmpty()) return
+            if (inlineRun.all { it is TextNode && it.wholeText.isBlank() }) {
+                inlineRun = ArrayList()
+                return
+            }
+            if (inlineRun.size == 1 && (inlineRun[0] as? Element)?.normalName() == SPOILER) {
+                inlineRun = ArrayList()
+                return
+            }
+            val spoiler = Element(Tag.valueOf(SPOILER), "")
+            inlineRun.first().before(spoiler)
+            spoiler.appendChildren(inlineRun)
+            inlineRun = ArrayList()
+        }
+        for (node in element.childNodes().toList()) {
+            val child = node as? Element
+            val standalone = child != null && (child.normalName() in BLOCK_TAGS
+                || child.normalName() == SPOILER || isMedia(child))
+            if (standalone) flush() else inlineRun.add(node)
+        }
+        flush()
+    }
+
+    /** A real media node to upstream; an inline `img.emoji`/`img.avatar` is content, not media. */
+    private fun isMedia(element: Element): Boolean {
+        if (element.normalName() == "video") return true
+        if (element.normalName() == "img") return !element.hasClass("emoji") && !element.hasClass("avatar")
+        return element.select("video").isNotEmpty() ||
+            element.select("img").any { !it.hasClass("emoji") && !it.hasClass("avatar") }
+    }
+
+    /** Discourse writes a fenced block's language as a `lang-*` / `language-*` class. */
+    private val LANGUAGE_CLASS = Regex("(?:^|\\s)(?:lang|language)-([A-Za-z0-9#+._-]+)(?=\\s|$)")
+
+    /**
+     * Moves a fenced block's language from the `lang-*` class Discourse writes onto the `language`
+     * attribute upstream reads (`RichHtml` looks at `language`/`lang`/`lng` on the `<pre>`). The
+     * text is untouched, so the block's whitespace reaches the importer exactly as written.
+     */
+    private fun normalizeCodeLanguage(body: Element) {
+        for (pre in body.select("pre")) {
+            // `RichHtml` reads any of these; don't override a language the cook already carries.
+            if (listOf("language", "lang", "lng").any { !pre.attr(it).isBlank() }) continue
+            val language = codeLanguageOf(pre.attr("class"))
+                ?: codeLanguageOf(pre.selectFirst("code")?.attr("class").orEmpty())
+            if (!language.isNullOrBlank()) pre.attr("language", language)
+        }
+    }
+
+    private fun codeLanguageOf(classes: String): String? {
+        val match = LANGUAGE_CLASS.find(classes) ?: return null
+        // `lang-auto` means "guess it": upstream must keep guessing rather than be handed the
+        // literal language "auto", which it would show and try to highlight.
+        return match.groupValues[1].takeUnless { it.equals("auto", ignoreCase = true) }
+    }
+
+    /**
+     * Replaces the embeds upstream drops (`audio`, and `iframe`/`embed`/`object`) with a readable
+     * labeled link. A reader may not be able to play a clip upstream has no block for, but the
+     * address it pointed at should still be visible and openable. An unopenable source - any
+     * scheme other than http(s), which a relative reference has none of - stays readable text and
+     * never becomes clickable, so a `javascript:` or `data:` URL cannot be followed.
+     */
+    private fun replaceUnsupportedEmbeds(body: Element) {
+        for (element in body.select("audio, iframe, embed, object").toList()) {
+            val source = embedSource(element).trim()
+            if (source.isEmpty()) {
+                val text = element.text().trim().ifEmpty { "嵌入内容（没有可用链接）" }
+                element.replaceWith(TextNode(text))
+                continue
+            }
+            val href = safeHref(source)
+            if (href == null) {
+                element.replaceWith(TextNode(source))
+            } else {
+                val label = element.text().trim().ifEmpty { source }
+                element.replaceWith(Element(Tag.valueOf("a"), "").attr("href", href).text(label))
+            }
+        }
+    }
+
+    private fun embedSource(element: Element): String = when (element.normalName()) {
+        "object" -> element.attr("data").ifBlank { element.attr("src") }
+        "audio" -> element.attr("src").ifBlank {
+            element.selectFirst("source[src]")?.attr("src").orEmpty()
+        }
+        else -> element.attr("src")
+    }
+
+    /**
+     * The href an embed's source may become. An HTTP(S) URL or a relative reference is safe; any
+     * other scheme (`javascript:`, `data:`, `file:`) is refused. A relative reference is left
+     * relative here; DiscourseImageBridge resolves it against the configured site before import.
+     */
+    private fun safeHref(source: String): String? {
+        val uri = runCatching { URI(source) }.getOrNull() ?: return null
+        return when (uri.scheme?.lowercase()) {
+            null, "http", "https" -> source
+            else -> null
+        }
     }
 
     /** ASCII whitespace only: NBSP (`\u00A0`) and the fullwidth space (`\u3000`) are content. */
