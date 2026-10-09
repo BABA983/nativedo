@@ -10,7 +10,7 @@ import org.telegram.ui.Components.ChatActivityEnterView;
  * with "nothing to do", so a screen states only the messages it has an answer for: the text changed,
  * and the send button was pressed.</p>
  */
-abstract class DiscourseComposerDelegate implements ChatActivityEnterView.ChatActivityEnterViewDelegate {
+public abstract class DiscourseComposerDelegate implements ChatActivityEnterView.ChatActivityEnterViewDelegate {
 
     @Override
     public void needSendTyping() {

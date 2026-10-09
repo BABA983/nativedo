@@ -85,6 +85,8 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
     private static final int ROW_HELP_PRIVACY = 14;
     /** Signing in, offered in the account section whenever the session is not usable. */
     private static final int ROW_SIGN_IN = 15;
+    /** The reader's private messages: the inbox, the sent box and the unread ones. */
+    private static final int ROW_MESSAGES = 16;
 
     /** Upstream's header block: a 120dp avatar container and the two titles, 200dp minus the 12dp
      * the list adds above it ({@code SettingsActivity.fillItems}'s {@code asCustomShadow(topView,
@@ -634,6 +636,9 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
         items.add(SettingCell.Factory.of(ROW_BOOKMARKS,
                 IconBackgroundColors.BLUE_ALT.top, IconBackgroundColors.BLUE_ALT.bottom,
                 org.telegram.messenger.R.drawable.outline_saved_24, "书签", "收藏的话题"));
+        items.add(SettingCell.Factory.of(ROW_MESSAGES,
+                IconBackgroundColors.GREEN.top, IconBackgroundColors.GREEN.bottom,
+                org.telegram.messenger.R.drawable.settings_devices, "私信", "收件箱、已发送与未读"));
         items.add(UItem.asShadow(null));
 
         items.add(UItem.asHeader("账号"));
@@ -703,6 +708,8 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
             presentFragment(new LiteModeSettingsActivity());
         } else if (item.id == ROW_BOOKMARKS) {
             presentFragment(new BookmarksFragment());
+        } else if (item.id == ROW_MESSAGES) {
+            presentFragment(new io.github.baba983.nativedo.messages.PrivateMessagesFragment());
         } else if (item.id == ROW_VERIFY) {
             openSessionWebView(true);
         } else if (item.id == ROW_SIGN_IN) {
