@@ -12,6 +12,11 @@ data class TopicDetail(
     val categoryId: Int = 0,
     /** The topic's original poster (`details.created_by`), when the site names one. */
     val createdBy: MentionCandidate? = null,
+    /**
+     * The reader's own notification level for this topic (`details.notification_level`): 0 mute,
+     * 1 regular, 2 tracking, 3 watching. Defaults to regular when the site did not name one.
+     */
+    val notificationLevel: Int = 1,
     /** The reader's own topic-level bookmark state (`bookmarked`), like a post's own flag. */
     val bookmarked: Boolean = false,
     val createdAt: String = "",
@@ -29,6 +34,11 @@ data class TopicDetail(
     val lastReadPostNumber: Int = 0,
     /** The post id at the user's Discourse read position, when the server provides it. */
     val lastReadPostId: Long? = null,
+    /**
+     * Whether this topic was answered from the persisted offline cache rather than the site. A live
+     * answer leaves it false; the UI suppresses writes and says so while it is true.
+     */
+    val fromCache: Boolean = false,
 )
 
 data class DiscourseEmojiCategory(

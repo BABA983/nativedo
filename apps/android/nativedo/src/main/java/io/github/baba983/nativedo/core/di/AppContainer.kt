@@ -12,6 +12,7 @@ import io.github.baba983.nativedo.core.network.DiscourseApiClient
 import io.github.baba983.nativedo.core.network.DiscourseApiService
 import io.github.baba983.nativedo.core.network.ImageRequestHeadersInterceptor
 import io.github.baba983.nativedo.core.network.NetworkJson
+import io.github.baba983.nativedo.core.network.ReadCacheScope
 import io.github.baba983.nativedo.core.network.RequestHeadersInterceptor
 import io.github.baba983.nativedo.core.network.SessionCookieInterceptor
 import io.github.baba983.nativedo.core.network.resolveNativeDoUserAgent
@@ -22,17 +23,23 @@ import io.github.baba983.nativedo.core.session.LegacyCookieMigration
 import io.github.baba983.nativedo.core.session.SessionCoordinator
 import io.github.baba983.nativedo.core.session.SharedCookieJar
 import io.github.baba983.nativedo.core.storage.CategoryStore
+import io.github.baba983.nativedo.core.storage.DiscourseReadCache
 import io.github.baba983.nativedo.core.storage.EmojiCatalogStore
 import io.github.baba983.nativedo.core.storage.NoCategoryPersistence
 import io.github.baba983.nativedo.core.storage.SessionStore
 import io.github.baba983.nativedo.core.storage.SharedPreferencesCategoryPersistence
+import io.github.baba983.nativedo.core.storage.SharedPreferencesDiscourseReadCachePersistence
 import io.github.baba983.nativedo.core.storage.SharedPreferencesEmojiCatalogStorePersistence
 import io.github.baba983.nativedo.core.storage.SharedPreferencesSessionStorePersistence
 import io.github.baba983.nativedo.core.storage.SharedPreferencesSvgSpriteStorePersistence
 import io.github.baba983.nativedo.core.storage.SvgSpriteStore
 import io.github.baba983.nativedo.core.web.DiscourseSvgSpriteLoader
 import io.github.baba983.nativedo.feature.bookmarks.data.BookmarkRepository
+import io.github.baba983.nativedo.feature.chat.data.ChatDraftStore
+import io.github.baba983.nativedo.feature.chat.data.ChatRepository
+import io.github.baba983.nativedo.feature.chat.data.SharedPreferencesChatDraftPersistence
 import io.github.baba983.nativedo.feature.notifications.data.NotificationRepository
+import io.github.baba983.nativedo.feature.messages.data.PrivateMessagesRepository
 import io.github.baba983.nativedo.feature.profile.data.ProfileFeedRepository
 import io.github.baba983.nativedo.feature.profile.data.ProfileRepository
 import io.github.baba983.nativedo.feature.topic.data.SharedPreferencesTopicReadPositionPersistence
@@ -67,6 +74,8 @@ class AppContainer(
     private val topicReplyDraftPreferences = appContext?.getSharedPreferences(TOPIC_REPLY_DRAFT_STORE_PREFS, Context.MODE_PRIVATE)
     private val topicReadPositionPreferences = appContext?.getSharedPreferences(TOPIC_READ_POSITION_STORE_PREFS, Context.MODE_PRIVATE)
     private val categoryPreferences = appContext?.getSharedPreferences(CATEGORY_STORE_PREFS, Context.MODE_PRIVATE)
+    private val readCachePreferences = appContext?.getSharedPreferences(READ_CACHE_PREFS, Context.MODE_PRIVATE)
+    private val chatDraftPreferences = appContext?.getSharedPreferences(CHAT_DRAFT_STORE_PREFS, Context.MODE_PRIVATE)
 
     val applicationScope: CoroutineScope? = applicationScope
 
@@ -94,6 +103,16 @@ class AppContainer(
                 EmojiCatalogStore(persistence = SharedPreferencesEmojiCatalogStorePersistence(preferences))
             }
             ?: EmojiCatalogStore()
+
+    /**
+     * The reads the reader has already made, kept so an outage can still draw them. It belongs to
+     * the container rather than a screen: the topic list and the topic screen both fall back through
+     * the one store `DiscourseApiClient` reads and writes.
+     */
+    val discourseReadCache: DiscourseReadCache =
+        readCachePreferences
+            ?.let { preferences -> DiscourseReadCache(SharedPreferencesDiscourseReadCachePersistence(preferences)) }
+            ?: DiscourseReadCache()
     val topicReplyDraftStore: TopicReplyDraftStore =
         topicReplyDraftPreferences
             ?.let { preferences ->
@@ -176,6 +195,23 @@ class AppContainer(
         BookmarkRepository(
             client = discourseApiClient,
         )
+    val privateMessagesRepository: PrivateMessagesRepository =
+        PrivateMessagesRepository(
+            client = discourseApiClient,
+        )
+    /**
+     * The public chat channels and their messages. The drafts belong to the container for the same
+     * reason the topic drafts do: a channel's half-written message outlives the screen that was
+     * writing it.
+     */
+    val chatRepository: io.github.baba983.nativedo.feature.chat.data.ChatRepository =
+        io.github.baba983.nativedo.feature.chat.data.ChatRepository(
+            client = discourseApiClient,
+        )
+    val chatDraftStore: ChatDraftStore =
+        chatDraftPreferences
+            ?.let { preferences -> ChatDraftStore(SharedPreferencesChatDraftPersistence(preferences)) }
+            ?: ChatDraftStore()
     val categoryStore: CategoryStore =
         CategoryStore(
             client = discourseApiClient,
@@ -219,6 +255,9 @@ class AppContainer(
             cookieJar = cookieJar,
             apiClient = discourseApiClient,
             applicationScope = applicationScope,
+            // A logout (explicit or server-proven) drops the session here, so the reads cached for
+            // the reader it belonged to are dropped with it - through the coordinator, not beside it.
+            onSessionCleared = { discourseReadCache.clear() },
         )
     val completeLoginUseCase: CompleteLoginUseCase =
         CompleteLoginUseCase(
@@ -253,6 +292,17 @@ class AppContainer(
             onLoginRequired = sessionCoordinator::requestLogin,
             hasAuthenticatedCookies = cookieJar::hasAuthenticatedCookies,
         )
+        // The reader a cached read belongs to: the persisted authenticated identity, never the
+        // anonymous session. No identity means no cache fill and no fallback.
+        discourseApiClient.setReadCache(
+            cache = discourseReadCache,
+            scope = {
+                sessionStore.snapshot()
+                    ?.username
+                    ?.takeIf { name -> name.isNotBlank() && !name.equals("anonymous", ignoreCase = true) }
+                    ?.let { name -> ReadCacheScope(site = baseUrl, username = name) }
+            },
+        )
     }
 
     private companion object {
@@ -264,6 +314,8 @@ class AppContainer(
         const val TOPIC_REPLY_DRAFT_STORE_PREFS: String = "nativedo.topic_reply_drafts"
         const val TOPIC_READ_POSITION_STORE_PREFS: String = "nativedo.topic_read_positions"
         const val CATEGORY_STORE_PREFS: String = "nativedo.categories"
+        const val READ_CACHE_PREFS: String = "nativedo.read_cache"
+        const val CHAT_DRAFT_STORE_PREFS: String = "nativedo.chat_drafts"
         const val DEVICE_LOGIN_PREFS: String = "nativedo.device_login"
         const val DEVICE_KEY_PREFS: String = "nativedo.device_key"
         const val DEVICE_CLIENT_ID_KEY: String = "client_id"

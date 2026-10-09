@@ -48,6 +48,12 @@ class SessionCoordinator(
     private val now: () -> Long = System::currentTimeMillis,
     applicationScope: CoroutineScope? = null,
     private val persistenceDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.IO,
+    /**
+     * Invoked synchronously whenever the coordinator itself drops the session (an explicit logout or
+     * a server-proven logout), so derived per-reader stores - the offline read cache - are cleared
+     * with it instead of being cleared behind the coordinator's back.
+     */
+    private val onSessionCleared: () -> Unit = {},
 ) {
     private val coordinatorScope = applicationScope
         ?: CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -157,6 +163,8 @@ class SessionCoordinator(
         SessionDiagnostics.record("auth_cookie_missing", cookieJar.revision(), accepted = false)
         _sessionState.value = if (cachedSnapshot == null) {
             sessionStore.clear()
+            // No cookies and no stored reader: the same drop the coordinator reports as a logout.
+            onSessionCleared()
             AppSessionState.Anonymous
         } else {
             AppSessionState.Expired(
@@ -255,6 +263,8 @@ class SessionCoordinator(
                     withContext(persistenceDispatcher) { sessionStore.flush() }
                     cookieJar.clearSessionCookies()
                 }
+                // The reader is gone: the reads cached for them go with the session.
+                onSessionCleared()
             }
             shouldEmit
         }
@@ -283,6 +293,8 @@ class SessionCoordinator(
                             sessionStore.flush()
                         }
                         cookieJar.clearSessionCookies()
+                        // The reader is gone: the reads cached for them go with the session.
+                        onSessionCleared()
                     }
                 }
                 _events.emit(SessionEvent.LogoutCompleted)

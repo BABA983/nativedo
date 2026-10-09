@@ -23,8 +23,30 @@ data class Post(
     val isBookmarked: Boolean = false,
     val cookedHtml: String,
     val imageUrls: List<String> = emptyList(),
+    /**
+     * What the site says about this post and the reader: `yours` is the site's own authorship, and
+     * `canEdit`/`canDelete`/`canRecover` are its permissions. The post menu is built from these -
+     * a username is never enough to offer a write the site would refuse.
+     */
+    val yours: Boolean = false,
+    val canEdit: Boolean = false,
+    val canDelete: Boolean = false,
+    val canRecover: Boolean = false,
+    /** The site's deletion state and timestamp; a deleted post keeps its content for its author. */
+    val isDeleted: Boolean = false,
+    val deletedAt: String = "",
+    /**
+     * The markdown the site stores. A post's own read (`GET /posts/{id}.json`) carries it and it is
+     * what an edit begins from; the topic window carries only cooked bodies and leaves this blank.
+     */
+    val raw: String = "",
     /** The post's polls, in the order the site sent them; the vote state travels in [PostPoll.votes]. */
     val polls: List<PostPoll> = emptyList(),
+    /**
+     * Whether this post came from the persisted offline cache rather than the site. A live answer
+     * leaves it false; a page of cached posts is recognised by any row carrying it.
+     */
+    val fromCache: Boolean = false,
 ) {
     /**
      * The same post with the reader's bookmark on it (or off it). What the site answered is what the

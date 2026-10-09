@@ -1,0 +1,59 @@
+{
+  "messages": [
+    {
+      "id": 9001,
+      "message": "欢迎来到站点反馈",
+      "cooked": "<p>欢迎来到站点反馈</p>",
+      "created_at": "2026-10-02T09:00:00.000Z",
+      "chat_channel_id": 71,
+      "user": {
+        "id": 7,
+        "username": "baba",
+        "name": "Baba",
+        "avatar_template": "/user_avatar/linux.do/baba/{size}/1.png"
+      }
+    },
+    {
+      "id": 9002,
+      "message": "构建脚本的事我们在这里聊",
+      "cooked": "<p>构建脚本的事我们在这里聊</p>",
+      "created_at": "2026-10-02T09:01:00.000Z",
+      "chat_channel_id": 71,
+      "user": {
+        "id": 8,
+        "username": "alice",
+        "name": "Alice",
+        "avatar_template": "/user_avatar/linux.do/alice/{size}/2.png"
+      }
+    },
+    {
+      "id": 9003,
+      "message": "好的，我看看",
+      "cooked": "<p>好的，我看看</p>",
+      "created_at": "2026-10-02T09:02:00.000Z",
+      "chat_channel_id": 71,
+      "user": {
+        "id": 7,
+        "username": "baba",
+        "name": "Baba",
+        "avatar_template": "/user_avatar/linux.do/baba/{size}/1.png"
+      },
+      "in_reply_to": {
+        "id": 9002,
+        "cooked": "<p>构建脚本的事我们在这里聊</p>",
+        "excerpt": "构建脚本的事我们在这里聊",
+        "user": {
+          "id": 8,
+          "username": "alice",
+          "name": "Alice",
+          "avatar_template": "/user_avatar/linux.do/alice/{size}/2.png"
+        }
+      }
+    }
+  ],
+  "meta": {
+    "target_message_id": 9002,
+    "can_load_more_past": false,
+    "can_load_more_future": false
+  }
+}

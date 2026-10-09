@@ -1,0 +1,34 @@
+{
+  "channel": {
+    "id": 71,
+    "title": "站点反馈",
+    "slug": "feedback",
+    "description": "对站点的反馈和建议",
+    "status": "open",
+    "memberships_count": 42,
+    "last_message": {
+      "id": 9003,
+      "message": "构建脚本的事我们在这里聊",
+      "cooked": "<p>构建脚本的事我们在这里聊</p>",
+      "created_at": "2026-10-02T09:02:00.000Z",
+      "chat_channel_id": 71,
+      "user": {
+        "id": 8,
+        "username": "alice",
+        "name": "Alice",
+        "avatar_template": "/user_avatar/linux.do/alice/{size}/2.png"
+      }
+    },
+    "current_user_membership": {
+      "following": true,
+      "last_read_message_id": 9002
+    },
+    "meta": {
+      "can_join_chat_channel": true,
+      "message_bus_last_ids": {
+        "channel_message_bus_last_id": 4100,
+        "new_messages": 4200
+      }
+    }
+  }
+}

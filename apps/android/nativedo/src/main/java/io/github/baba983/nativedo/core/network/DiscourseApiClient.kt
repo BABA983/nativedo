@@ -5,6 +5,11 @@ import io.github.baba983.nativedo.core.model.PostPoll
 import io.github.baba983.nativedo.core.model.PostReactionUsersGroup
 import io.github.baba983.nativedo.core.model.Bookmark
 import io.github.baba983.nativedo.core.model.CategorySummary
+import io.github.baba983.nativedo.core.model.ChatChannel
+import io.github.baba983.nativedo.core.model.ChatChannelPage
+import io.github.baba983.nativedo.core.model.ChatMembership
+import io.github.baba983.nativedo.core.model.ChatMessagePage
+import io.github.baba983.nativedo.core.model.CreatedTopic
 import io.github.baba983.nativedo.core.model.Tag
 import io.github.baba983.nativedo.core.model.SearchResult
 import io.github.baba983.nativedo.core.model.MentionSearchResult
@@ -27,6 +32,7 @@ import io.github.baba983.nativedo.core.session.SessionRequestAuth
 import io.github.baba983.nativedo.core.session.SessionRequestContext
 import io.github.baba983.nativedo.core.session.SessionUserSummary
 import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.JsonNull
@@ -43,6 +49,21 @@ import java.util.Locale
 import org.jsoup.Jsoup
 import retrofit2.HttpException
 
+/** The `archetype` a private message is created with; the site reads it to route the write. */
+private const val PRIVATE_MESSAGE_ARCHETYPE = "private_message"
+
+/** How many public channels one `GET /chat/api/channels.json` page asks for; the site's own default. */
+private const val CHAT_CHANNELS_PAGE_SIZE = 25
+
+/** How many messages one `GET /chat/api/channels/{id}/messages.json` window asks for. */
+private const val CHAT_MESSAGES_PAGE_SIZE = 50
+
+/** The message window direction before a target (`Chat::MessagesQuery::VALID_DIRECTIONS`). */
+const val CHAT_DIRECTION_PAST = "past"
+
+/** The message window direction after a target. */
+const val CHAT_DIRECTION_FUTURE = "future"
+
 class DiscourseApiClient(
     private val service: DiscourseApiService,
     /** The site's emoji table, when one is kept; see [emojiGroupsForDecoration]. */
@@ -57,6 +78,8 @@ class DiscourseApiClient(
     private var onSessionInvalidated: suspend (SessionExpiredReason, Int) -> Unit = { _, _ -> }
     private var onLoginRequired: suspend () -> Unit = {}
     private var hasAuthenticatedCookies: () -> Boolean = { true }
+    private var readCache: io.github.baba983.nativedo.core.storage.DiscourseReadCache? = null
+    private var readCacheScope: () -> ReadCacheScope? = { null }
 
     /**
      * Injects the session boundary this client reports to: every request
@@ -76,6 +99,22 @@ class DiscourseApiClient(
         this.onSessionInvalidated = onSessionInvalidated
         this.onLoginRequired = onLoginRequired
         this.hasAuthenticatedCookies = hasAuthenticatedCookies
+    }
+
+    /**
+     * Injects the offline cache and the reader the reads belong to. [scope] answers the site and
+     * authenticated username whose cache entries this client may read and write, or null when there
+     * is no authenticated reader - an anonymous session neither fills nor reads the cache, so no
+     * reader is ever served another's payload. The client combines it with the live request context
+     * (an authenticated or restoring session that still carries its cookies) before a read counts as
+     * cached; see [currentReadIdentity].
+     */
+    fun setReadCache(
+        cache: io.github.baba983.nativedo.core.storage.DiscourseReadCache,
+        scope: () -> ReadCacheScope?,
+    ) {
+        readCache = cache
+        this.readCacheScope = scope
     }
 
     override suspend fun fetchBootstrap(): ParsedBootstrap =
@@ -133,8 +172,32 @@ class DiscourseApiClient(
     suspend fun fetchLatestPage(page: Int): TopicListPage =
         runWithSessionBoundary { service.latest(page).toModel() }
 
+    /**
+     * The site's own new-topics list (`/new.json`). It is the reader's own list by the site's rule,
+     * so it carries the session and is cached like the feeds: an outage after a read draws that read.
+     */
     suspend fun fetchNewPage(page: Int): TopicListPage =
-        runWithSessionBoundary { service.newTopics(page).toModel() }
+        runWithSessionBoundary(requiresAuthentication = true) {
+            cachedRead(
+                keySuffix = "new|$page",
+                serializer = TopicListResponseDto.serializer(),
+                fetch = { service.newTopics(page) },
+                map = { response -> response.toModel() },
+                markFromCache = { cached -> cached.copy(fromCache = true) },
+            )
+        }
+
+    /** The reader's own unread feed (`/unread.json`); the same envelope `latest.json` answers with. */
+    suspend fun fetchUnreadPage(page: Int): TopicListPage =
+        runWithSessionBoundary(requiresAuthentication = true) {
+            cachedRead(
+                keySuffix = "unread|$page",
+                serializer = TopicListResponseDto.serializer(),
+                fetch = { service.unread(page) },
+                map = { response -> response.toModel() },
+                markFromCache = { cached -> cached.copy(fromCache = true) },
+            )
+        }
 
     suspend fun fetchTopPage(page: Int): TopicListPage =
         runWithSessionBoundary { service.topTopics(page).toModel() }
@@ -158,6 +221,171 @@ class DiscourseApiClient(
             service.bookmarks(username = username, page = page, limit = limit).toModel()
         }
 
+    /**
+     * The reader's private-message inbox, one page at a time. Like the bookmark list it is the
+     * reader's own by the site's rule, so the username is the session's - a private message is not
+     * something to look up. The answer is a standard `topic_list` envelope, so a page maps to
+     * [TopicListPage] the same way a feed does - including its `more_topics_url`, which is how the
+     * caller knows another page follows.
+     */
+    suspend fun fetchPrivateMessages(username: String, page: Int = 0): TopicListPage =
+        runWithSessionBoundary(requiresAuthentication = true) {
+            service.privateMessages(username = username, page = page).toModel()
+        }
+
+    /** `GET /topics/private-messages-sent/{username}.json`: the messages the reader sent. */
+    suspend fun fetchPrivateMessagesSent(username: String, page: Int = 0): TopicListPage =
+        runWithSessionBoundary(requiresAuthentication = true) {
+            service.privateMessagesSent(username = username, page = page).toModel()
+        }
+
+    /** `GET /topics/private-messages-unread/{username}.json`: the reader's unread messages. */
+    suspend fun fetchPrivateMessagesUnread(username: String, page: Int = 0): TopicListPage =
+        runWithSessionBoundary(requiresAuthentication = true) {
+            service.privateMessagesUnread(username = username, page = page).toModel()
+        }
+
+    // -----------------------------------------------------------------------------------------
+    // Discourse chat (public channels)
+    // -----------------------------------------------------------------------------------------
+
+    /**
+     * The public (category) channels the reader can see, one page at a time. It is the reader's own
+     * list by the site's rule - the site answers it for the session and marks each channel with the
+     * reader's own membership - so it carries the session. Direct-message channels are not here.
+     */
+    suspend fun fetchChatChannels(offset: Int, limit: Int = CHAT_CHANNELS_PAGE_SIZE): ChatChannelPage =
+        runWithSessionBoundary(requiresAuthentication = true) {
+            service.chatChannels(limit = limit, offset = offset).toModel()
+        }
+
+    /**
+     * One channel, with the reader's own membership and the live-update seeds. A site that answers
+     * no channel at all left nothing to open; that is a failure, not an empty channel.
+     */
+    suspend fun fetchChatChannel(channelId: Long): ChatChannel =
+        runWithSessionBoundary(requiresAuthentication = true) {
+            service.chatChannel(channelId).toModel()
+                ?: throw IOException("GET /chat/api/channels/$channelId.json answered no channel")
+        }
+
+    /**
+     * One window of a channel's messages. With no [targetMessageId] the site answers the newest
+     * window; with one and a [direction] of [CHAT_DIRECTION_PAST] or
+     * [CHAT_DIRECTION_FUTURE] it answers a window before or after that message. [fetchFromLastRead]
+     * asks the site to anchor on the reader's own last-read position.
+     */
+    suspend fun fetchChatMessages(
+        channelId: Long,
+        pageSize: Int = CHAT_MESSAGES_PAGE_SIZE,
+        targetMessageId: Long? = null,
+        direction: String? = null,
+        fetchFromLastRead: Boolean? = null,
+    ): ChatMessagePage =
+        runWithSessionBoundary(requiresAuthentication = true) {
+            service.chatChannelMessages(
+                channelId = channelId,
+                pageSize = pageSize,
+                targetMessageId = targetMessageId,
+                direction = direction,
+                fetchFromLastRead = fetchFromLastRead,
+            ).toModel()
+        }
+
+    /**
+     * Joins the channel. The site is the only one that decides whether this reader may join; it
+     * refuses the rest with the usual `errors` array through [readableRefusal], and an answer with
+     * no membership left nothing joined. Requires the session's CSRF token.
+     */
+    suspend fun joinChatChannel(channelId: Long): ChatMembership =
+        runWithSessionBoundary(requiresAuthentication = true) {
+            val csrfToken = chatCsrfToken()
+            readableRefusal {
+                service.joinChatChannel(channelId, csrfToken).membership?.toModel()
+                    ?: throw IOException(
+                        "POST /chat/api/channels/$channelId/memberships/me.json answered no membership",
+                    )
+            }
+        }
+
+    /**
+     * Sends one message and answers the id the site accepted. The acknowledgement is **not** the
+     * cooked message, so the caller reads the id back with [fetchChatMessages] (a window at that id)
+     * rather than drawing the write itself; a readback that fails keeps the accepted id, so the
+     * message is never silently resent. Requires the session's CSRF token.
+     */
+    suspend fun createChatMessage(
+        channelId: Long,
+        message: String,
+        inReplyToId: Long? = null,
+        stagedId: String? = null,
+    ): Long = runWithSessionBoundary(requiresAuthentication = true) {
+        val csrfToken = chatCsrfToken()
+        readableRefusal {
+            val answer = service.createChatMessage(
+                channelId = channelId,
+                message = message,
+                inReplyToId = inReplyToId,
+                stagedId = stagedId,
+                csrfToken = csrfToken,
+            )
+            if (answer.success != "OK") {
+                throw IOException("POST /chat/$channelId.json answered ${answer.success}")
+            }
+            answer.messageId
+                ?: throw IOException("POST /chat/$channelId.json answered no message_id")
+        }
+    }
+
+    /**
+     * Advances the reader's own last-read position in a channel to [messageId]. Requires the
+     * session's CSRF token.
+     */
+    suspend fun markChatChannelRead(channelId: Long, messageId: Long) =
+        runWithSessionBoundary(requiresAuthentication = true) {
+            val csrfToken = chatCsrfToken()
+            readableRefusal {
+                val answer = service.markChatChannelRead(channelId, messageId, csrfToken)
+                if (answer.success != "OK") {
+                    throw IOException("PUT /chat/api/channels/$channelId/read.json answered ${answer.success}")
+                }
+            }
+        }
+
+    private suspend fun chatCsrfToken(): String {
+        val owner = sessionContextProvider()
+        if (!owner.canUseAuthenticatedSession) throw LoginRequiredException()
+        val token = service.csrf().csrf
+        if (sessionContextProvider() != owner || !hasAuthenticatedCookies()) {
+            throw CancellationException("Session changed while acquiring chat CSRF")
+        }
+        return token
+    }
+
+    /**
+     * Starts a private message: the same `POST /posts.json` route a new topic takes, with
+     * `archetype=private_message` and `target_recipients` instead of a category. The site decides
+     * whether the reader may send to those people and refuses the rest through the usual `errors`
+     * array (surfaced by [readableRefusal]); the client never invents a permission answer. The
+     * answer carries the created topic, which is where the writer lands.
+     */
+    suspend fun createPrivateMessage(
+        title: String,
+        recipients: String,
+        raw: String,
+    ): CreatedTopic = runWithSessionBoundary(requiresAuthentication = true) {
+        val csrfToken = service.csrf().csrf
+        readableRefusal {
+            service.createPrivateMessage(
+                title = title,
+                raw = raw,
+                archetype = PRIVATE_MESSAGE_ARCHETYPE,
+                targetRecipients = recipients,
+                csrfToken = csrfToken,
+            ).toCreatedTopic()
+        }
+    }
+
     /** The categories a topic list filters by, as `/categories.json` answers them. */
     suspend fun fetchCategories(): List<CategorySummary> =
         runWithSessionBoundary { service.categories().toModel() }
@@ -173,19 +401,27 @@ class DiscourseApiClient(
         tag: Tag?,
         page: Int = 0,
     ): TopicListPage = runWithSessionBoundary {
-        val response = when {
-            category != null && tag != null -> service.categoryTagTopics(
-                categorySlug = category.slug,
-                categoryId = category.id,
-                tagSlug = tag.slug,
-                tagId = tag.id,
-                page = page,
-            )
-            category != null -> service.categoryLatest(slug = category.slug, id = category.id, page = page)
-            tag != null -> service.tagTopics(slug = tag.slug, page = page)
-            else -> service.latest(page)
-        }
-        response.toModel()
+        cachedRead(
+            keySuffix = "feed|${category?.id ?: -1}|${category?.slug.orEmpty()}|" +
+                "${tag?.id ?: -1}|${tag?.slug.orEmpty()}|$page",
+            serializer = TopicListResponseDto.serializer(),
+            fetch = {
+                when {
+                    category != null && tag != null -> service.categoryTagTopics(
+                        categorySlug = category.slug,
+                        categoryId = category.id,
+                        tagSlug = tag.slug,
+                        tagId = tag.id,
+                        page = page,
+                    )
+                    category != null -> service.categoryLatest(slug = category.slug, id = category.id, page = page)
+                    tag != null -> service.tagTopics(slug = tag.slug, page = page)
+                    else -> service.latest(page)
+                }
+            },
+            map = { response -> response.toModel() },
+            markFromCache = { cached -> cached.copy(fromCache = true) },
+        )
     }
 
     /** The site's tags, for the topic list's tag filter. */
@@ -193,24 +429,34 @@ class DiscourseApiClient(
 
     suspend fun fetchTopic(topicId: Long, postNumber: Int? = null): TopicDetail =
         runWithSessionBoundary {
-            // The body goes first. The emoji table is decoration, and asking the site for it up
-            // front is what used to turn a decorative failure into a topic that never loaded.
-            val response = if (postNumber == null) {
-                service.topic(topicId)
-            } else {
-                service.topicAtPost(topicId, postNumber)
-            }
-            val emojiGroups = emojiGroupsForDecoration()
-            response.toModel(
-                emojiCatalog = emojiGroups.toEmojiCatalog(),
-                emojiCategories = emojiGroups.toEmojiCategories(),
+            cachedRead(
+                keySuffix = "topic|$topicId|${postNumber ?: 0}",
+                serializer = TopicResponseDto.serializer(),
+                fetch = {
+                    if (postNumber == null) service.topic(topicId) else service.topicAtPost(topicId, postNumber)
+                },
+                map = { response ->
+                    // The emoji table is decoration, and asking the site for it up front is what
+                    // used to turn a decorative failure into a topic that never loaded.
+                    val emojiGroups = emojiGroupsForDecoration()
+                    response.toModel(
+                        emojiCatalog = emojiGroups.toEmojiCatalog(),
+                        emojiCategories = emojiGroups.toEmojiCategories(),
+                    )
+                },
+                markFromCache = { cached -> cached.copy(fromCache = true) },
             )
         }
 
     suspend fun fetchTopicPosts(topicId: Long, postIds: List<Long>): List<Post> =
         runWithSessionBoundary {
-            val response = service.topicPosts(id = topicId, postIds = postIds)
-            response.toModel(emojiCatalog = emojiGroupsForDecoration().toEmojiCatalog())
+            cachedRead(
+                keySuffix = "topicposts|$topicId|${postIds.joinToString(",")}",
+                serializer = TopicPostsResponseDto.serializer(),
+                fetch = { service.topicPosts(id = topicId, postIds = postIds) },
+                map = { response -> response.toModel(emojiCatalog = emojiGroupsForDecoration().toEmojiCatalog()) },
+                markFromCache = { cached -> cached.map { post -> post.copy(fromCache = true) } },
+            )
         }
 
     suspend fun fetchPostByNumber(topicId: Long, postNumber: Int): Post =
@@ -290,6 +536,53 @@ class DiscourseApiClient(
                     raw = raw,
                     csrfToken = csrfToken,
                 ).toModel()
+            }
+        }
+
+    /**
+     * One post on its own (`GET /posts/{id}.json`). Unlike a topic window this answer carries
+     * `raw` - the markdown the site stores, which is what an edit begins from - and the post's own
+     * permissions.
+     */
+    suspend fun fetchPost(postId: Long): Post =
+        runWithSessionBoundary {
+            service.post(postId).toModel(emojiCatalog = emojiGroupsForDecoration().toEmojiCatalog())
+        }
+
+    /**
+     * Edits one of the reader's own posts with the markdown the site stores. Discourse answers
+     * `{"post": {...}}`, and that post - its cooked body and its refreshed permissions - is what the
+     * caller rebuilds the row from; nothing here derives cooked from raw.
+     */
+    suspend fun updatePost(postId: Long, raw: String, editReason: String? = null): Post =
+        runWithSessionBoundary(requiresAuthentication = true) {
+            val csrfToken = service.csrf().csrf
+            readableRefusal {
+                service.updatePost(
+                    id = postId,
+                    raw = raw,
+                    editReason = editReason,
+                    csrfToken = csrfToken,
+                ).post.toModel(emojiCatalog = emojiGroupsForDecoration().toEmojiCatalog())
+            }
+        }
+
+    /** Deletes one of the reader's own posts. Discourse answers 204 with no body. */
+    suspend fun deletePost(postId: Long) =
+        runWithSessionBoundary(requiresAuthentication = true) {
+            val csrfToken = service.csrf().csrf
+            readableRefusal {
+                service.deletePost(postId, csrfToken)
+            }
+        }
+
+    /** Recovers (undeletes) a post. The answer is the recovered post, a bare post like `show`. */
+    suspend fun recoverPost(postId: Long): Post =
+        runWithSessionBoundary(requiresAuthentication = true) {
+            val csrfToken = service.csrf().csrf
+            readableRefusal {
+                service.recoverPost(postId, csrfToken)
+                    .toModel(emojiCatalog = emojiGroupsForDecoration().toEmojiCatalog())
             }
         }
 
@@ -526,6 +819,133 @@ class DiscourseApiClient(
             service.notifications(offset = offset, limit = limit).toModel()
         }
 
+    /**
+     * Marks the reader's own notifications read: one notification when [id] is given, every one of
+     * them when it is null (the site's `notifications#mark_read` takes an optional `id`). A refused
+     * write keeps the site's own message through [readableRefusal].
+     */
+    suspend fun markNotificationsRead(id: Long?) =
+        runWithSessionBoundary(requiresAuthentication = true) {
+            val csrfToken = service.csrf().csrf
+            readableRefusal {
+                service.markNotificationsRead(id = id, csrfToken = csrfToken).close()
+            }
+        }
+
+    /**
+     * Sets the reader's own notification level for one topic: `0` mute, `1` regular, `2` tracking,
+     * `3` watching (the web client's topic-tracking control). A refusal keeps the site's message.
+     */
+    suspend fun setTopicNotificationLevel(topicId: Long, level: Int) =
+        runWithSessionBoundary(requiresAuthentication = true) {
+            val csrfToken = service.csrf().csrf
+            readableRefusal {
+                service.setTopicNotificationLevel(topicId = topicId, level = level, csrfToken = csrfToken).close()
+            }
+        }
+
+    /**
+     * A read served from the site when it answers, and from the persisted offline cache when it
+     * does not. The cache entry holds the site's own DTO under the reader's stable identity - the
+     * site, the authenticated username and the route/query - so it survives a restart and can never
+     * be handed to another account. The session generation is deliberately not part of the key: a
+     * read that is still the same reader's is the same read across a re-login.
+     *
+     * <p>The generation is instead the per-flight fence. It is captured before [fetch] and checked
+     * again before the answer is cached, before a live answer is delivered and before a cached one is
+     * delivered: a read whose session moved on mid-flight must not write, must not be handed back as
+     * live, and must not be answered from the cache.</p>
+     *
+     * <p>Only a true transport outage falls back. A challenge, a refusal, a lost session, a session
+     * that changed mid-flight and a decode failure are all rethrown: the site was reached (or the
+     * answer is about the session), and stale content would say the wrong thing about it. The catch
+     * wraps [fetch] alone - a failure while [map] runs (the decorative emoji read, a decode) is the
+     * mapper's, not the transport's, so it can never be answered with cached rows.</p>
+     */
+    private suspend fun <D, T> cachedRead(
+        keySuffix: String,
+        serializer: KSerializer<D>,
+        fetch: suspend () -> D,
+        map: suspend (D) -> T,
+        markFromCache: (T) -> T,
+    ): T {
+        val cache = readCache
+        // The reader and the session generation this read runs under, captured before the fetch.
+        val identity = if (cache != null) currentReadIdentity() else null
+        // Persisted identity only: site + authenticated username + route/query, never the generation.
+        val key = identity?.let { "${it.site}|${it.username}|$keySuffix" }
+        val dto = try {
+            fetch()
+        } catch (error: Throwable) {
+            if (error is CancellationException) throw error
+            // A security error reached the site (or is about the session): never answer it with stale
+            // rows. Only a true transport outage, for a known reader, may fall back.
+            if (cache == null || key == null || identity == null || !isTransportOutage(error)) throw error
+            // A session that moved on while this read was out must not be answered with the previous
+            // generation's rows: the abort keeps the outage as the failure instead.
+            if (currentReadIdentity() != identity) throw error
+            // The site could not be reached: the last answer for this exact read is the best this
+            // client has. A cache miss - or an undecodable entry - keeps the outage as the failure.
+            val cached = cache.read(key) ?: throw error
+            val decoded = try {
+                NetworkJson.instance.decodeFromString(serializer, cached)
+            } catch (decodeError: Throwable) {
+                throw error
+            }
+            val value = map(decoded)
+            // Recheck after the map: the fence covers the fallback delivery too.
+            if (currentReadIdentity() != identity) throw error
+            return markFromCache(value)
+        }
+        // The site answered. Cache it only while the session this read ran under is still current.
+        if (cache != null && key != null) {
+            runCatching {
+                cache.write(key, NetworkJson.instance.encodeToString(serializer, dto)) {
+                    currentReadIdentity() == identity
+                }
+            }
+        }
+        val value = map(dto)
+        // Recheck after the map before delivery: a session that moved on while the read was out must
+        // not be handed this answer.
+        if (identity != null && currentReadIdentity() != identity) {
+            throw SessionChangedException()
+        }
+        return value
+    }
+
+    /**
+     * The reader a cached read belongs to: the site, the stored authenticated username and the
+     * session generation captured at the request. Null when there is no authenticated reader - the
+     * request context is anonymous or expired, the shared jar carries no authenticated cookies, or no
+     * identity is stored - so an anonymous install neither fills nor falls back to a cache. A mere
+     * persisted username while the session is Expired or Anonymous is not enough.
+     */
+    private fun currentReadIdentity(): ReadCacheIdentity? {
+        val scope = readCacheScope() ?: return null
+        if (scope.username.isBlank()) return null
+        val context = sessionContextProvider()
+        if (context.auth != SessionRequestAuth.Authenticated &&
+            context.auth != SessionRequestAuth.Restoring
+        ) {
+            return null
+        }
+        if (!hasAuthenticatedCookies()) return null
+        return ReadCacheIdentity(scope.site, scope.username, context.generation)
+    }
+
+    /**
+     * Whether a failure is a transport outage the cache may answer for. Everything that is not a
+     * plain [IOException] - an HTTP refusal, a decode failure - is excluded by type, and the two
+     * [IOException]s the session layer raises are excluded explicitly: a challenge is about the
+     * session, and a session that rotated mid-flight must be retried, not answered with stale rows.
+     */
+    private fun isTransportOutage(error: Throwable): Boolean =
+        error is IOException &&
+            error !is SessionRecoveryRequiredException &&
+            error !is DiscourseRefusalException &&
+            error !is SessionChangedException
+
     private suspend fun <T> runWithSessionBoundary(
         requiresAuthentication: Boolean = false,
         block: suspend () -> T,
@@ -638,3 +1058,20 @@ object BootstrapHtmlParser {
         }
     }
 }
+
+/**
+ * The site and authenticated username a cache entry belongs to. This half is stable across reads
+ * (it is the persisted key), so it is what AppContainer wires once from the session store; the
+ * session generation travels alongside it per read as the per-flight fence.
+ */
+data class ReadCacheScope(
+    val site: String,
+    val username: String,
+)
+
+/** The full cache identity: the site, the reader, and the session generation the read ran under. */
+data class ReadCacheIdentity(
+    val site: String,
+    val username: String,
+    val generation: Int,
+)

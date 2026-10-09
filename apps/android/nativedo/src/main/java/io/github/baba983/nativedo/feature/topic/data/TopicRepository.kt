@@ -58,6 +58,26 @@ open class TopicRepository protected constructor() {
         client.createPost(topicId = topicId, raw = raw, replyToPostNumber = replyToPostNumber)
     }
 
+    /** One post on its own, with the `raw` an edit begins from. */
+    open suspend fun loadPost(postId: Long): Result<Post> = runCatching {
+        client.fetchPost(postId)
+    }
+
+    /** Edits the reader's own post; the answer is the site's post (its cooked body, its permissions). */
+    open suspend fun editPost(postId: Long, raw: String, editReason: String? = null): Result<Post> = runCatching {
+        client.updatePost(postId = postId, raw = raw, editReason = editReason)
+    }
+
+    /** Deletes the reader's own post; the site answers no body. */
+    open suspend fun deletePost(postId: Long): Result<Unit> = runCatching {
+        client.deletePost(postId)
+    }
+
+    /** Recovers (undeletes) the reader's own post; the answer is the recovered post. */
+    open suspend fun recoverPost(postId: Long): Result<Post> = runCatching {
+        client.recoverPost(postId)
+    }
+
     open suspend fun loadReactionUsers(postId: Long): Result<List<PostReactionUsersGroup>> = runCatching {
         client.fetchReactionUsers(postId = postId)
     }

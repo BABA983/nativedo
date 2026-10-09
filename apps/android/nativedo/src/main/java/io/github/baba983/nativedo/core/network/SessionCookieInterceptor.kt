@@ -2,7 +2,6 @@ package io.github.baba983.nativedo.core.network
 
 import io.github.baba983.nativedo.core.session.SessionDiagnostics
 import io.github.baba983.nativedo.core.session.SharedCookieJar
-import java.io.IOException
 import okhttp3.Interceptor
 import okhttp3.Response
 import okio.Buffer
@@ -97,7 +96,7 @@ class SessionCookieInterceptor(private val cookieJar: SharedCookieJar) : Interce
         )
         if (bodyReadMustFail(response.isSuccessful, evidence, rotatedWhileInFlight)) {
             response.close()
-            throw IOException("Session changed while request was in flight")
+            throw SessionChangedException()
         }
         if (rotatedWhileInFlight) {
             SessionDiagnostics.record("fenced_read_returned", cookieJar.revision(), response.code)

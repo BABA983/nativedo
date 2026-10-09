@@ -73,6 +73,14 @@ class MessageBusSession(
     val clientId: String?
         get() = client?.clientId
 
+    /**
+     * The running poller, for a screen that wants to subscribe its own channels (the chat screen's
+     * `/chat/{id}` updates). Null while no session runs - signed out, backgrounded, or the initial
+     * bootstrap has not landed yet - and such a caller falls back to explicit refresh.
+     */
+    val runningClient: MessageBusClient?
+        get() = client
+
     /** Whether a poll loop is running right now (signed in and foregrounded). */
     val isPolling: Boolean
         get() = client?.isPolling == true
@@ -91,6 +99,13 @@ class MessageBusSession(
      */
     @Volatile
     private var generation = 0L
+
+    /**
+     * The newest readback request of the session; see [refreshNotificationCounts]. Guarded by
+     * [generationLock] and reset with the session, so only the latest readback a screen asked for
+     * can apply its page.
+     */
+    private var refreshToken = 0L
 
     init {
         scope.launch {
@@ -116,6 +131,56 @@ class MessageBusSession(
     fun clearIncomingTopics() {
         topicTracking?.clear()
         _incomingTopics.value = IncomingTopics()
+    }
+
+    /**
+     * Re-reads the site's own badge counts after a write that changed them (a mark-read), without
+     * restarting the bus: the bootstrap page carries the reader's counts, and the running
+     * [NotificationCountStateHolder] adopts them.
+     *
+     * <p>The readback is guarded three ways. Only the latest readback the screen asked for may
+     * apply - an older request that happens to finish first is dropped - so two concurrent
+     * readbacks cannot leave the stale one standing. The session [generation] is captured before
+     * the page is fetched and re-checked before it is applied, so a sign-out or a new reader that
+     * happened meanwhile drops it. The holder's revision is captured too: a channel message that
+     * arrives while the page is in flight is newer than a page rendered before it, so the readback
+     * is dropped and the live count stands. Without a running session (signed out) there is
+     * nothing to read for, and the call is a no-op.</p>
+     */
+    fun refreshNotificationCounts() {
+        val readback = synchronized(generationLock) {
+            val running = notificationState ?: return
+            refreshToken += 1
+            PendingReadback(running, generation, running.currentRevision(), refreshToken)
+        }
+        scope.launch {
+            MessageBusDiagnostics.event("notifications_refresh")
+            val html = try {
+                fetchBootstrapHtml()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                return@launch
+            }
+            val bootstrap = try {
+                MessageBusBootstrap.parse(html)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                return@launch
+            }
+            val counts = bootstrap.notificationCounts ?: return@launch
+            synchronized(generationLock) {
+                // The session moved on, or a newer readback was asked for meanwhile and this page
+                // is the older one: drop it, so whichever answer finishes first cannot beat the
+                // latest request. The holder's own revision still guards against a live message
+                // that arrived while even the newest readback was out.
+                if (readback.generation != generation || readback.token != refreshToken) {
+                    return@synchronized
+                }
+                readback.holder.applyReadback(counts, readback.revision)
+            }
+        }
     }
 
     /** Starts [listener] on the session's dispatcher; close the handle to detach it. */
@@ -263,6 +328,7 @@ class MessageBusSession(
 
     private fun stopSession(clearState: Boolean) = synchronized(generationLock) {
         generation += 1
+        refreshToken = 0
         startJob?.cancel()
         startJob = null
         client?.stop()
@@ -282,4 +348,12 @@ class MessageBusSession(
         client = null
         MessageBusDiagnostics.event("session_stopped")
     }
+
+    /** One in-flight readback: the holder and session it was started for, and the token of the request. */
+    private class PendingReadback(
+        val holder: NotificationCountStateHolder,
+        val generation: Long,
+        val revision: Long,
+        val token: Long,
+    )
 }

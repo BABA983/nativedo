@@ -20,6 +20,16 @@ open class NotificationRepository protected constructor() {
             client.fetchNotifications(offset = offset, limit = PAGE_SIZE)
         }
 
+    /**
+     * Marks notifications read on the site: the one with [id], or all of them when it is null. The
+     * caller only moves its own read state once this returns; the badge the server owns is re-read
+     * separately.
+     */
+    open suspend fun markRead(id: Long?): Result<Unit> =
+        runCatching {
+            client.markNotificationsRead(id)
+        }
+
     companion object {
         /** The page size the site is asked for; its own cap is 60. */
         const val PAGE_SIZE = 30

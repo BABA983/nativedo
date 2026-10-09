@@ -33,6 +33,7 @@
     ]
   },
   "details": {
+    "notification_level": 2,
     "created_by": {
       "username": "baba",
       "name": "Baba",

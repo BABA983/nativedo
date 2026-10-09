@@ -44,6 +44,17 @@ class NotificationCountStateHolder(
 
     val counts: StateFlow<NotificationUnreadCounts> = _counts.asStateFlow()
 
+    /**
+     * Serialises the two writers of [_counts]: an arriving channel message and a server readback
+     * ([applyReadback]). The readback carries the revision it saw when it started; a message that
+     * landed in the meantime moved the revision, so the slower readback is dropped rather than
+     * undoing a newer count.
+     */
+    private val lock = Any()
+
+    /** Bumped on every count this holder adopts (a live message, or a server readback). */
+    private var revision = 0L
+
     private val listener: MessageBusListener = { message -> onMessage(message) }
 
     init {
@@ -54,16 +65,38 @@ class NotificationCountStateHolder(
         client.unsubscribe(channel, listener)
     }
 
+    /** The revision a caller captures before a server read; pass it back to [applyReadback]. */
+    fun currentRevision(): Long = synchronized(lock) { revision }
+
+    /**
+     * Adopts counts the caller read back from the site (the bootstrap after a write). Dropped when
+     * a newer live message arrived since [startedRevision] was captured, so a readback that was in
+     * flight while the channel moved cannot roll the badge backwards. Returns whether it applied.
+     */
+    fun applyReadback(counts: NotificationUnreadCounts, startedRevision: Long): Boolean =
+        synchronized(lock) {
+            if (startedRevision != revision) {
+                false
+            } else {
+                revision += 1
+                _counts.value = counts
+                true
+            }
+        }
+
     private fun onMessage(message: MessageBusMessage) {
         if (message.channel != channel) return
         val body = message.data as? JsonObject ?: return
-        val current = _counts.value
-        _counts.value = NotificationUnreadCounts(
-            unread = (body["unread_notifications"] as? JsonPrimitive)?.intOrNull ?: current.unread,
-            highPriority = (body["unread_high_priority_notifications"] as? JsonPrimitive)?.intOrNull
-                ?: current.highPriority,
-            allUnread = (body["all_unread_notifications_count"] as? JsonPrimitive)?.intOrNull
-                ?: current.allUnread,
-        )
+        synchronized(lock) {
+            val current = _counts.value
+            revision += 1
+            _counts.value = NotificationUnreadCounts(
+                unread = (body["unread_notifications"] as? JsonPrimitive)?.intOrNull ?: current.unread,
+                highPriority = (body["unread_high_priority_notifications"] as? JsonPrimitive)?.intOrNull
+                    ?: current.highPriority,
+                allUnread = (body["all_unread_notifications_count"] as? JsonPrimitive)?.intOrNull
+                    ?: current.allUnread,
+            )
+        }
     }
 }

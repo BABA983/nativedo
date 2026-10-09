@@ -9,6 +9,15 @@ import io.github.baba983.nativedo.core.model.PostReactionUser
 import io.github.baba983.nativedo.core.model.PostReactionUsersGroup
 import io.github.baba983.nativedo.core.html.plainTextFromHtml
 import io.github.baba983.nativedo.core.model.Bookmark
+import io.github.baba983.nativedo.core.model.ChatChannel
+import io.github.baba983.nativedo.core.model.ChatChannelPage
+import io.github.baba983.nativedo.core.model.ChatLastMessage
+import io.github.baba983.nativedo.core.model.ChatMembership
+import io.github.baba983.nativedo.core.model.ChatMessage
+import io.github.baba983.nativedo.core.model.ChatMessagePage
+import io.github.baba983.nativedo.core.model.ChatReplyTarget
+import io.github.baba983.nativedo.core.model.ChatUser
+import io.github.baba983.nativedo.core.model.CreatedTopic
 import io.github.baba983.nativedo.core.model.Tag
 import io.github.baba983.nativedo.core.model.CategorySummary
 import io.github.baba983.nativedo.core.model.DiscourseEmoji
@@ -73,8 +82,37 @@ interface DiscourseApiService {
     @GET("new.json")
     suspend fun newTopics(@Query("page") page: Int): TopicListResponseDto
 
+    /** The reader's own unread feed; the same envelope `latest.json` answers with. */
+    @GET("unread.json")
+    suspend fun unread(@Query("page") page: Int): TopicListResponseDto
+
     @GET("top.json")
     suspend fun topTopics(@Query("page") page: Int): TopicListResponseDto
+
+    /**
+     * `GET /topics/private-messages/{username}.json`: the reader's private-message inbox, carried in
+     * the same `topic_list` envelope a public feed answers with. The site answers it only for the
+     * reader themselves, so the username is the session's own.
+     */
+    @GET("topics/private-messages/{username}.json")
+    suspend fun privateMessages(
+        @Path("username") username: String,
+        @Query("page") page: Int,
+    ): TopicListResponseDto
+
+    /** `GET /topics/private-messages-sent/{username}.json`: the messages the reader sent. */
+    @GET("topics/private-messages-sent/{username}.json")
+    suspend fun privateMessagesSent(
+        @Path("username") username: String,
+        @Query("page") page: Int,
+    ): TopicListResponseDto
+
+    /** `GET /topics/private-messages-unread/{username}.json`: the reader's unread messages. */
+    @GET("topics/private-messages-unread/{username}.json")
+    suspend fun privateMessagesUnread(
+        @Path("username") username: String,
+        @Query("page") page: Int,
+    ): TopicListResponseDto
 
     @GET("search.json")
     suspend fun search(
@@ -88,6 +126,18 @@ interface DiscourseApiService {
         @Query("offset") offset: Int,
         @Query("limit") limit: Int,
     ): NotificationsResponseDto
+
+    /**
+     * `PUT /notifications/mark-read.json`: mark the reader's own notifications read. With `id` it
+     * is that one notification; without it, every one of them (the site's own `mark-read` route,
+     * whose `id` parameter is optional). Requires `X-CSRF-Token`.
+     */
+    @FormUrlEncoded
+    @PUT("notifications/mark-read.json")
+    suspend fun markNotificationsRead(
+        @Field("id") id: Long?,
+        @Header("X-CSRF-Token") csrfToken: String,
+    ): ResponseBody
 
     @GET("u/search/users")
     suspend fun searchMentionUsers(
@@ -177,6 +227,49 @@ interface DiscourseApiService {
         @Query("after") afterPostNumber: Int,
     ): List<PostDto>
 
+    /**
+     * `GET /posts/{id}.json`: one post on its own. This is a post's own read - the same serializer
+     * `posts/by_number` answers with - and unlike a topic window it carries `raw`, the markdown an
+     * edit begins from. A moderator may read a deleted post; another reader gets a 404.
+     */
+    @GET("posts/{id}.json")
+    suspend fun post(@Path("id") id: Long): PostDto
+
+    /**
+     * `PUT /posts/{id}.json`: the edit route. Discourse's `posts#update` requires `post` and reads
+     * `post[raw]` (and optional `post[edit_reason]`), and answers `{"post": {...}}` - not a bare post
+     * like `show`.
+     */
+    @FormUrlEncoded
+    @PUT("posts/{id}.json")
+    suspend fun updatePost(
+        @Path("id") id: Long,
+        @Field("post[raw]") raw: String,
+        @Field("post[edit_reason]") editReason: String?,
+        @Header("X-CSRF-Token") csrfToken: String,
+    ): PostUpdateResponseDto
+
+    /**
+     * `DELETE /posts/{id}.json`: the delete route. Discourse's `posts#destroy` renders no body, so
+     * the site answers a bodyless `204`. Retrofit hands a `204`/`205` a null body, which a non-null
+     * `ResponseBody` return cannot accept; `Unit` is the return that reads a bodyless success.
+     */
+    @DELETE("posts/{id}.json")
+    suspend fun deletePost(
+        @Path("id") id: Long,
+        @Header("X-CSRF-Token") csrfToken: String,
+    ): Unit
+
+    /**
+     * `PUT /posts/{id}/recover.json`: the undelete route. Discourse's `posts#recover` renders the
+     * recovered post through the same helper `show` uses, so the answer is a bare post.
+     */
+    @PUT("posts/{id}/recover.json")
+    suspend fun recoverPost(
+        @Path("id") id: Long,
+        @Header("X-CSRF-Token") csrfToken: String,
+    ): PostDto
+
     @FormUrlEncoded
     @POST("posts.json")
     suspend fun createPost(
@@ -197,6 +290,23 @@ interface DiscourseApiService {
         @Field("title") title: String,
         @Field("category") categoryId: Int,
         @Field("raw") raw: String,
+        @Header("X-CSRF-Token") csrfToken: String,
+    ): PostDto
+
+    /**
+     * `POST /posts.json` as the site's own private-message composer sends it: the same route a new
+     * topic takes, with `archetype=private_message` and `target_recipients` (a comma-separated list
+     * of usernames) instead of a category. The site - not the client - decides whether the reader
+     * may send to those recipients and refuses the rest with the usual `errors` array. The field is
+     * `target_recipients`, not `target_usernames`. Requires `X-CSRF-Token`.
+     */
+    @FormUrlEncoded
+    @POST("posts.json")
+    suspend fun createPrivateMessage(
+        @Field("title") title: String,
+        @Field("raw") raw: String,
+        @Field("archetype") archetype: String,
+        @Field("target_recipients") targetRecipients: String,
         @Header("X-CSRF-Token") csrfToken: String,
     ): PostDto
 
@@ -249,6 +359,19 @@ interface DiscourseApiService {
     @PUT("t/{id}/remove_bookmarks.json")
     suspend fun removeTopicBookmarks(
         @Path("id") topicId: Long,
+        @Header("X-CSRF-Token") csrfToken: String,
+    ): ResponseBody
+
+    /**
+     * `POST /t/{id}/notifications.json`: the reader's own notification level for one topic, as the
+     * web client's topic-tracking control sends it - `0` mute, `1` regular, `2` tracking, `3`
+     * watching. Requires `X-CSRF-Token`; the site answers `{"success":"OK"}`.
+     */
+    @FormUrlEncoded
+    @POST("t/{id}/notifications.json")
+    suspend fun setTopicNotificationLevel(
+        @Path("id") topicId: Long,
+        @Field("notification_level") level: Int,
         @Header("X-CSRF-Token") csrfToken: String,
     ): ResponseBody
 
@@ -367,6 +490,76 @@ interface DiscourseApiService {
         @Query("offset") offset: Int,
         @Query("limit") limit: Int,
     ): UserActionsResponseDto
+
+    /**
+     * `GET /chat/api/channels.json?limit=25&offset=N`: the public (category) channels the reader can
+     * see, in the site's own order, one page at a time. Direct-message channels are not public and
+     * are not in this list. The envelope is `{channels:[...], meta:{load_more_url}}`, and each
+     * channel carries its own `status`, `current_user_membership` and `meta` (the live-update ids).
+     */
+    @GET("chat/api/channels.json")
+    suspend fun chatChannels(
+        @Query("limit") limit: Int,
+        @Query("offset") offset: Int,
+    ): ChatChannelsResponseDto
+
+    /** `GET /chat/api/channels/{id}.json`: one channel, with the reader's own membership. */
+    @GET("chat/api/channels/{id}.json")
+    suspend fun chatChannel(@Path("id") channelId: Long): ChatChannelResponseDto
+
+    /**
+     * `GET /chat/api/channels/{id}/messages.json`: one window of a channel's messages. With no
+     * `target_message_id` the site answers around the reader's last-read position; with one and a
+     * `direction` of `past` or `future` it answers a window before or after that message. The
+     * answer's own `meta` says whether another window follows in each direction.
+     */
+    @GET("chat/api/channels/{id}/messages.json")
+    suspend fun chatChannelMessages(
+        @Path("id") channelId: Long,
+        @Query("page_size") pageSize: Int,
+        @Query("target_message_id") targetMessageId: Long? = null,
+        @Query("direction") direction: String? = null,
+        @Query("fetch_from_last_read") fetchFromLastRead: Boolean? = null,
+    ): ChatMessagesResponseDto
+
+    /**
+     * `POST /chat/api/channels/{id}/memberships/me.json`: joins the channel. Discourse's
+     * `channels_current_user_membership#create` takes no body and answers `{membership:{...}}`.
+     * Requires `X-CSRF-Token`.
+     */
+    @POST("chat/api/channels/{id}/memberships/me.json")
+    suspend fun joinChatChannel(
+        @Path("id") channelId: Long,
+        @Header("X-CSRF-Token") csrfToken: String,
+    ): ChatMembershipResponseDto
+
+    /**
+     * `POST /chat/{id}.json` (the chat controller route, **not** `chat/api/...`): sends one message,
+     * as the web client sends it - form fields `message`, optional `in_reply_to_id` and `staged_id`.
+     * The answer is an acknowledgement only (`{success:"OK", message_id}`) - not the cooked message -
+     * so a client reads the accepted id back rather than drawing the write. Requires `X-CSRF-Token`.
+     */
+    @FormUrlEncoded
+    @POST("chat/{id}.json")
+    suspend fun createChatMessage(
+        @Path("id") channelId: Long,
+        @Field("message") message: String,
+        @Field("in_reply_to_id") inReplyToId: Long?,
+        @Field("staged_id") stagedId: String?,
+        @Header("X-CSRF-Token") csrfToken: String,
+    ): ChatWriteAckDto
+
+    /**
+     * `PUT /chat/api/channels/{id}/read.json`: advances the reader's last-read position, form field
+     * `message_id`. The site answers `{success:"OK"}`. Requires `X-CSRF-Token`.
+     */
+    @FormUrlEncoded
+    @PUT("chat/api/channels/{id}/read.json")
+    suspend fun markChatChannelRead(
+        @Path("id") channelId: Long,
+        @Field("message_id") messageId: Long,
+        @Header("X-CSRF-Token") csrfToken: String,
+    ): ChatAckDto
 }
 
 @Serializable
@@ -709,6 +902,12 @@ data class TopicDetailsDto(
     @SerialName("created_by")
     val createdBy: TopicCreatedByDto? = null,
     val participants: List<TopicParticipantDto> = emptyList(),
+    /**
+     * The reader's own notification level for this topic, as the site's topic view reports it:
+     * `0` mute, `1` regular, `2` tracking, `3` watching. Null when the site did not name one.
+     */
+    @SerialName("notification_level")
+    val notificationLevel: Int? = null,
 )
 
 /** `details.created_by`, the topic's original poster (Discourse's own BasicUserSerializer). */
@@ -758,6 +957,14 @@ data class PostDto(
     val postNumber: Int? = null,
     @SerialName("reply_to_post_number")
     val replyToPostNumber: Int? = null,
+    // A created topic answers with the post plus the topic it created. A reply carries none of
+    // these, so they are optional; a private message's own answer is what a client navigates by.
+    @SerialName("topic_id")
+    val topicId: Long? = null,
+    @SerialName("topic_slug")
+    val topicSlug: String? = null,
+    @SerialName("topic_title")
+    val topicTitle: String? = null,
     @SerialName("reply_count")
     val replyCount: Int = 0,
     val username: String,
@@ -782,6 +989,18 @@ data class PostDto(
     @SerialName("updated_at")
     val updatedAt: String = "",
     val version: Int = 1,
+    /** The site's own authorship and permissions for this post; the menu is built from these. */
+    val yours: Boolean? = null,
+    @SerialName("can_edit")
+    val canEdit: Boolean? = null,
+    @SerialName("can_delete")
+    val canDelete: Boolean? = null,
+    @SerialName("can_recover")
+    val canRecover: Boolean? = null,
+    @SerialName("deleted_at")
+    val deletedAt: String? = null,
+    /** The markdown the site stores; present on a post's own read, absent in a topic window. */
+    val raw: String? = null,
     @SerialName("reactions")
     val reactions: List<PostReactionDto> = emptyList(),
     @SerialName("current_user_reaction")
@@ -795,6 +1014,12 @@ data class PostDto(
     val polls: List<DiscoursePollDto> = emptyList(),
     @SerialName("polls_votes")
     val pollsVotes: Map<String, List<PollVoteDto>> = emptyMap(),
+)
+
+/** The answer to `PUT /posts/{id}.json`: Discourse's `posts#update` wraps the post under `post`. */
+@Serializable
+data class PostUpdateResponseDto(
+    val post: PostDto,
 )
 
 @Serializable
@@ -1349,6 +1574,7 @@ internal fun TopicResponseDto.toModel(
         categoryId = categoryId,
         bookmarked = bookmarked,
         createdBy = details?.createdBy?.toModel(),
+        notificationLevel = details?.notificationLevel ?: 1,
         posts = postStream.posts.map { post -> post.toModel(emojiCatalog = emojiCatalog) },
         participants = details?.participants.orEmpty().mapNotNull { participant ->
             participant.username.takeIf(String::isNotBlank)?.let { username ->
@@ -1495,6 +1721,13 @@ internal fun PostDto.toModel(
             )
         },
         isBookmarked = bookmarked == true,
+        yours = yours == true,
+        canEdit = canEdit == true,
+        canDelete = canDelete == true,
+        canRecover = canRecover == true,
+        isDeleted = deletedAt != null,
+        deletedAt = deletedAt.orEmpty(),
+        raw = raw.orEmpty(),
         cookedHtml = cookedHtml,
         imageUrls = Regex("<img[^>]+src=\\\"([^\\\"]+)\\\"")
             .findAll(cookedHtml)
@@ -1503,6 +1736,22 @@ internal fun PostDto.toModel(
         // The rendered body no longer needs the poll's state written into it: the poll is drawn
         // from this model, and the cooked HTML only says where the poll sits.
         polls = polls.map { poll -> poll.toModel(votes = pollsVotes[poll.name].orEmpty()) },
+    )
+}
+
+/**
+ * A write that created a topic - a new topic or a private message - answers with the post and the
+ * topic the site made for it. The topic id is the whole point: a private message has no list to
+ * return to, so its screen opens the topic the writer just created. A site that answers without one
+ * left nothing to open, and that is a failure rather than a silent success.
+ */
+internal fun PostDto.toCreatedTopic(): CreatedTopic {
+    val createdTopicId = topicId
+        ?: throw IllegalStateException("the site answered a created post without a topic id")
+    return CreatedTopic(
+        topicId = createdTopicId,
+        slug = topicSlug.orEmpty(),
+        title = topicTitle.orEmpty(),
     )
 }
 
@@ -1890,3 +2139,254 @@ private fun topicTagNameOrNull(element: JsonElement): String? = when (element) {
     }
     else -> null
 }
+
+// ---------------------------------------------------------------------------------------------
+// Discourse chat (public channels)
+// ---------------------------------------------------------------------------------------------
+
+@Serializable
+data class ChatChannelsResponseDto(
+    val channels: List<ChatChannelDto> = emptyList(),
+    val meta: ChatChannelsMetaDto? = null,
+)
+
+@Serializable
+data class ChatChannelsMetaDto(
+    @SerialName("load_more_url")
+    val loadMoreUrl: String? = null,
+)
+
+@Serializable
+data class ChatChannelResponseDto(
+    val channel: ChatChannelDto? = null,
+)
+
+@Serializable
+data class ChatChannelDto(
+    val id: Long,
+    val title: String = "",
+    val slug: String = "",
+    val description: String? = null,
+    val status: String = "open",
+    @SerialName("memberships_count")
+    val membershipsCount: Int = 0,
+    @SerialName("last_message")
+    val lastMessage: ChatLastMessageDto? = null,
+    @SerialName("current_user_membership")
+    val currentUserMembership: ChatMembershipDto? = null,
+    val meta: ChatChannelMetaDto? = null,
+)
+
+@Serializable
+data class ChatChannelMetaDto(
+    @SerialName("can_join_chat_channel")
+    val canJoin: Boolean = false,
+    @SerialName("message_bus_last_ids")
+    val messageBusLastIds: ChatMessageBusLastIdsDto? = null,
+)
+
+@Serializable
+data class ChatMessageBusLastIdsDto(
+    @SerialName("channel_message_bus_last_id")
+    val channelMessageBusLastId: Long? = null,
+    @SerialName("new_messages")
+    val newMessages: Long? = null,
+)
+
+@Serializable
+data class ChatLastMessageDto(
+    val id: Long = 0,
+    val message: String = "",
+    val cooked: String = "",
+    @SerialName("created_at")
+    val createdAt: String = "",
+    @SerialName("chat_channel_id")
+    val chatChannelId: Long? = null,
+    val user: ChatUserDto? = null,
+)
+
+/** The reader's membership, as the channel serializer and the membership serializer both carry it. */
+@Serializable
+data class ChatMembershipDto(
+    val following: Boolean = false,
+    @SerialName("last_read_message_id")
+    val lastReadMessageId: Long? = null,
+)
+
+@Serializable
+data class ChatMembershipResponseDto(
+    val membership: ChatMembershipDto? = null,
+)
+
+/** A chat participant, as `MessageUserSerializer` / `BasicUserSerializer` write one. */
+@Serializable
+data class ChatUserDto(
+    val id: Long? = null,
+    val username: String = "",
+    @SerialName("name")
+    val name: String? = null,
+    @SerialName("avatar_template")
+    val avatarTemplate: String = "",
+)
+
+@Serializable
+data class ChatMessageDto(
+    val id: Long,
+    val message: String = "",
+    val cooked: String = "",
+    @SerialName("created_at")
+    val createdAt: String = "",
+    @SerialName("chat_channel_id")
+    val chatChannelId: Long? = null,
+    val user: ChatUserDto? = null,
+    @SerialName("in_reply_to")
+    val inReplyTo: ChatInReplyToDto? = null,
+)
+
+@Serializable
+data class ChatInReplyToDto(
+    val id: Long,
+    val cooked: String = "",
+    val excerpt: String = "",
+    val user: ChatUserDto? = null,
+)
+
+@Serializable
+data class ChatMessagesResponseDto(
+    val messages: List<ChatMessageDto> = emptyList(),
+    val meta: ChatMessagesMetaDto? = null,
+)
+
+@Serializable
+data class ChatMessagesMetaDto(
+    @SerialName("can_load_more_past")
+    val canLoadMorePast: Boolean = false,
+    @SerialName("can_load_more_future")
+    val canLoadMoreFuture: Boolean = false,
+    @SerialName("target_message_id")
+    val targetMessageId: Long? = null,
+)
+
+/** `{success:"OK", message_id}` - a send's acknowledgement, which is not the cooked message. */
+@Serializable
+data class ChatWriteAckDto(
+    val success: String = "",
+    @SerialName("message_id")
+    val messageId: Long? = null,
+)
+
+/** `{success:"OK"}` - the site's acknowledgement of a read-position write. */
+@Serializable
+data class ChatAckDto(
+    val success: String = "",
+)
+
+internal fun ChatChannelsResponseDto.toModel(): ChatChannelPage = ChatChannelPage(
+    channels = channels.map(ChatChannelDto::toModel),
+    loadMoreUrl = meta?.loadMoreUrl,
+)
+
+internal fun ChatChannelResponseDto.toModel(): ChatChannel? = channel?.toModel()
+
+private fun ChatChannelDto.toModel(): ChatChannel = ChatChannel(
+    id = id,
+    title = title,
+    slug = slug,
+    description = description.orEmpty(),
+    status = status.ifBlank { "open" },
+    membershipsCount = membershipsCount,
+    lastMessage = lastMessage?.toModel(),
+    currentUserMembership = currentUserMembership?.toModel(),
+    canJoin = meta?.canJoin == true,
+    channelMessageBusLastId = meta?.messageBusLastIds?.channelMessageBusLastId,
+    newMessagesBusLastId = meta?.messageBusLastIds?.newMessages,
+)
+
+private fun ChatLastMessageDto.toModel(): ChatLastMessage = ChatLastMessage(
+    id = id,
+    message = message,
+    cooked = cooked,
+    createdAt = createdAt,
+    user = user?.toModel(),
+)
+
+internal fun ChatMembershipDto.toModel(): ChatMembership = ChatMembership(
+    following = following,
+    lastReadMessageId = lastReadMessageId,
+)
+
+private fun ChatUserDto.toModel(): ChatUser = ChatUser(
+    id = id ?: 0L,
+    username = username,
+    name = name.orEmpty(),
+    avatarTemplate = avatarTemplate,
+)
+
+internal fun ChatMessageDto.toModel(): ChatMessage = ChatMessage(
+    id = id,
+    message = message,
+    cooked = cooked,
+    createdAt = createdAt,
+    channelId = chatChannelId ?: 0L,
+    user = user?.toModel(),
+    inReplyTo = inReplyTo?.toModel(),
+)
+
+private fun ChatInReplyToDto.toModel(): ChatReplyTarget = ChatReplyTarget(
+    id = id,
+    cooked = cooked,
+    excerpt = excerpt,
+    user = user?.toModel(),
+)
+
+internal fun ChatMessagesResponseDto.toModel(): ChatMessagePage = ChatMessagePage(
+    messages = messages.map(ChatMessageDto::toModel),
+    canLoadMorePast = meta?.canLoadMorePast == true,
+    canLoadMoreFuture = meta?.canLoadMoreFuture == true,
+    targetMessageId = meta?.targetMessageId,
+)
+
+/** The payload of a `/chat/{id}/new-messages` event: `{type:"channel", message:{...}}`. */
+@Serializable
+internal data class ChatMessageBusNewMessagesDto(
+    val type: String = "",
+    @SerialName("channel_id")
+    val channelId: Long = 0L,
+    val message: ChatMessageDto? = null,
+)
+
+@Serializable
+internal data class ChatMessageBusEventDto(
+    val type: String = "",
+    @SerialName("chat_message")
+    val chatMessage: ChatMessageDto? = null,
+    @SerialName("deleted_id")
+    val deletedId: Long? = null,
+)
+
+/**
+ * One decoded `/chat/{id}` event: the site's own `type` and, for the message-carrying types, the
+ * message itself (or the id a `delete` names). A payload the client cannot decode answers null, so a
+ * live event it does not understand is dropped rather than drawn - explicit refresh is the fallback.
+ */
+data class ChatBusEvent(
+    val type: String,
+    val message: ChatMessage? = null,
+    val deletedId: Long? = null,
+)
+
+/** The `chat_message` of a `/chat/{id}` event, decoded with the HTTP read's own DTO. */
+fun decodeChatMessageBusEvent(element: JsonElement): ChatBusEvent? = runCatching {
+    val dto = NetworkJson.instance.decodeFromJsonElement(ChatMessageBusEventDto.serializer(), element)
+    ChatBusEvent(
+        type = dto.type,
+        message = dto.chatMessage?.toModel(),
+        deletedId = dto.deletedId,
+    )
+}.getOrNull()
+
+/** The `message` of a `/chat/{id}/new-messages` event, decoded with the HTTP read's own DTO. */
+fun decodeChatNewMessagesEvent(element: JsonElement): ChatBusEvent? = runCatching {
+    val dto = NetworkJson.instance.decodeFromJsonElement(ChatMessageBusNewMessagesDto.serializer(), element)
+    ChatBusEvent(type = dto.type, message = dto.message?.toModel())
+}.getOrNull()

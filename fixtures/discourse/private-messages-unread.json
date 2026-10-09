@@ -1,0 +1,37 @@
+{
+  "users": [
+    {
+      "id": 8,
+      "username": "alice",
+      "avatar_template": "/user_avatar/linux.do/alice/{size}/2.png"
+    }
+  ],
+  "topic_list": {
+    "more_topics_url": null,
+    "topics": [
+      {
+        "id": 5101,
+        "title": "关于构建脚本的私信",
+        "slug": "pm-build-scripts",
+        "posts_count": 3,
+        "reply_count": 2,
+        "views": 2,
+        "like_count": 0,
+        "last_posted_at": "2026-10-01T03:00:00.000Z",
+        "last_poster_username": "alice",
+        "category_id": null,
+        "tags": [],
+        "excerpt": "我把自己的构建脚本发给你看看",
+        "notification_level": 3,
+        "unread_posts": 2,
+        "unseen": false,
+        "posters": [
+          {
+            "description": "Most Recent Poster",
+            "user_id": 8
+          }
+        ]
+      }
+    ]
+  }
+}

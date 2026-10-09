@@ -143,6 +143,27 @@ internal class FakeDiscourseSite {
     }
 
     /**
+     * Serves [path] with an answer that depends on the request's method. Discourse's own
+     * `posts/{id}.json` answers a different body to `GET` (a bare post) and `PUT` (the post wrapped
+     * under `post`), and a `DELETE` of the same path answers no body at all, so a test that drives
+     * an edit or a delete has to say which verb it means.
+     */
+    fun serveFor(path: String, build: (String) -> MockResponse) {
+        methodResponses[path.trimStart('/')] = build
+    }
+
+    /**
+     * Serves [path] from the whole request line (query string included), for an answer that depends
+     * on what was asked rather than only on the method. A retry test that has to fail one exact
+     * query and answer another - a send's readback that fails while the first page succeeded - uses
+     * this.
+     */
+    fun serveResponseByQuery(path: String, build: (String) -> MockResponse) {
+        routes[path.trimStart('/')] = null
+        queryResponses[path.trimStart('/')] = build
+    }
+
+    /**
      * The path an avatar template turns into, with `{size}` filled in the way the client fills it.
      */
     fun avatarPath(template: String, size: Int = 96): String =
@@ -210,6 +231,8 @@ internal class FakeDiscourseSite {
                         .setBody(okio.Buffer().write(images[path]?.first ?: generatedAvatar(path)))
                 }
                 responses[path]?.let { build -> return build() }
+                queryResponses[path]?.let { build -> return build(request.path.orEmpty()) }
+                methodResponses[path]?.let { build -> return build(request.method.orEmpty()) }
                 images[path]?.let { (bytes, contentType) ->
                     return MockResponse()
                         .setResponseCode(200)
@@ -320,6 +343,8 @@ internal class FakeDiscourseSite {
     private val cookieHeaders = mutableMapOf<String, String>()
     private val images = mutableMapOf<String, Pair<ByteArray, String>>()
     private val responses = mutableMapOf<String, () -> MockResponse>()
+    private val queryResponses = mutableMapOf<String, (String) -> MockResponse>()
+    private val methodResponses = mutableMapOf<String, (String) -> MockResponse>()
     private var lastCookieHeader: String? = null
     /** The answer to every `message-bus/{clientId}/poll`; null means the route is not served. */
     private var messageBusPoll: ((String) -> String)? = null

@@ -1,0 +1,42 @@
+{
+  "users": [
+    {
+      "id": 7,
+      "username": "baba",
+      "avatar_template": "/user_avatar/linux.do/baba/{size}/1.png"
+    },
+    {
+      "id": 8,
+      "username": "alice",
+      "avatar_template": "/user_avatar/linux.do/alice/{size}/2.png"
+    }
+  ],
+  "topic_list": {
+    "more_topics_url": null,
+    "topics": [
+      {
+        "id": 5103,
+        "title": "回复：构建脚本",
+        "slug": "pm-re-build-scripts",
+        "posts_count": 2,
+        "reply_count": 1,
+        "views": 1,
+        "like_count": 0,
+        "last_posted_at": "2026-10-01T05:00:00.000Z",
+        "last_poster_username": "baba",
+        "category_id": null,
+        "tags": [],
+        "excerpt": "这是我这边用的写法",
+        "notification_level": 2,
+        "unread_posts": 0,
+        "unseen": false,
+        "posters": [
+          {
+            "description": "Original Poster",
+            "user_id": 7
+          }
+        ]
+      }
+    ]
+  }
+}

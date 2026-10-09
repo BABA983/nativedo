@@ -227,6 +227,189 @@ internal class MessageBusSessionTest {
 
     // ------------------------------------------------------------------------------------------
 
+    /**
+     * The badge is the site's count, so a mark-read re-reads the page the badge is seeded from.
+     * The failure this pins: a write that changes the count leaving the badge where it was until a
+     * channel message happens to arrive, which is not guaranteed and can be minutes late.
+     */
+    @Test
+    fun aServerReadbackMovesTheBadgeWithoutALiveMessage() {
+        val calls = java.util.concurrent.atomic.AtomicInteger(0)
+        val state = MutableStateFlow<AppSessionState>(authenticated("baba"))
+        val session = MessageBusSession(
+            httpClient = OkHttpClient(),
+            baseUrl = server.url("/"),
+            sessionState = state,
+            fetchBootstrapHtml = { if (calls.getAndIncrement() == 0) BOOTSTRAP_HTML else BOOTSTRAP_HTML_EMPTY },
+            scope = newScope(),
+        )
+
+        session.onForeground()
+        await("the badge seeded by the page") {
+            session.notificationCounts.value == NotificationUnreadCounts(4, 2, 5)
+        }
+
+        session.refreshNotificationCounts()
+        await("the badge to follow the re-read page") {
+            session.notificationCounts.value == NotificationUnreadCounts(0, 0, 0)
+        }
+        session.close()
+    }
+
+    /**
+     * A readback that lands after the reader signed out. The failure this pins: a page rendered for
+     * the old reader repainting the cleared badge of a signed-out app (or the next reader's).
+     */
+    @Test
+    fun aReadbackIsDroppedWhenTheSessionEnded() {
+        val gate = CountDownLatch(1)
+        val calls = java.util.concurrent.atomic.AtomicInteger(0)
+        val state = MutableStateFlow<AppSessionState>(authenticated("baba"))
+        val session = MessageBusSession(
+            httpClient = OkHttpClient(),
+            baseUrl = server.url("/"),
+            sessionState = state,
+            fetchBootstrapHtml = {
+                if (calls.getAndIncrement() == 0) {
+                    BOOTSTRAP_HTML
+                } else {
+                    gate.await(5, TimeUnit.SECONDS)
+                    BOOTSTRAP_HTML_SEVEN
+                }
+            },
+            scope = newScope(),
+        )
+
+        session.onForeground()
+        await("the badge seeded by the page") { session.notificationCounts.value.allUnread == 5 }
+
+        session.refreshNotificationCounts()
+        await("the readback to be in flight") { calls.get() >= 2 }
+
+        state.value = AppSessionState.Anonymous
+        await("the sign-out to clear the badge") {
+            session.clientId == null && session.notificationCounts.value == NotificationUnreadCounts()
+        }
+        gate.countDown()
+        Thread.sleep(300)
+        assertEquals(
+            "a readback for a reader who signed out must not repaint the badge",
+            NotificationUnreadCounts(),
+            session.notificationCounts.value,
+        )
+        session.close()
+    }
+
+    /**
+     * A channel message that arrives while the readback is out. The failure this pins: a slow page
+     * read undoing a count the channel has already moved past, which would show the reader a stale
+     * badge until the next message.
+     */
+    @Test
+    fun aReadbackLosesToANewerLiveMessage() {
+        val gate = CountDownLatch(1)
+        val calls = java.util.concurrent.atomic.AtomicInteger(0)
+        val state = MutableStateFlow<AppSessionState>(authenticated("baba"))
+        val session = MessageBusSession(
+            httpClient = OkHttpClient(),
+            baseUrl = server.url("/"),
+            sessionState = state,
+            fetchBootstrapHtml = {
+                if (calls.getAndIncrement() == 0) {
+                    BOOTSTRAP_HTML
+                } else {
+                    gate.await(5, TimeUnit.SECONDS)
+                    BOOTSTRAP_HTML_SEVEN
+                }
+            },
+            scope = newScope(),
+        )
+
+        session.onForeground()
+        await("the badge seeded by the page") { session.notificationCounts.value.allUnread == 5 }
+
+        session.refreshNotificationCounts()
+        await("the readback to be in flight") { calls.get() >= 2 }
+
+        // A poll answer is one JSON array of messages; a bare message object is not a batch and
+        // the client would skip it, so the live count would never arrive.
+        enqueued += "[" + message(
+            "/notification/7",
+            9999,
+            """{"unread_notifications":2,"unread_high_priority_notifications":1,"all_unread_notifications_count":3}""",
+        ) + "]"
+        await("the live message to move the badge") {
+            session.notificationCounts.value == NotificationUnreadCounts(2, 1, 3)
+        }
+
+        gate.countDown()
+        Thread.sleep(300)
+        assertEquals(
+            "a slow readback must not undo a newer live message",
+            NotificationUnreadCounts(2, 1, 3),
+            session.notificationCounts.value,
+        )
+        session.close()
+    }
+
+    /**
+     * Two readbacks out at once. The failure this pins: the one that started first - whose page is
+     * therefore the older - finishing first and bumping the revision the newer readback captured,
+     * so the newer (the one that should win) is dropped and the stale page stands. The session's
+     * latest-request-wins token has to settle it, not the order the fetches happen to finish in.
+     */
+    @Test
+    fun theNewerOfTwoConcurrentReadbacksWins() {
+        val older = CountDownLatch(1)
+        val newer = CountDownLatch(1)
+        val calls = java.util.concurrent.atomic.AtomicInteger(0)
+        val state = MutableStateFlow<AppSessionState>(authenticated("baba"))
+        val session = MessageBusSession(
+            httpClient = OkHttpClient(),
+            baseUrl = server.url("/"),
+            sessionState = state,
+            fetchBootstrapHtml = {
+                when (calls.getAndIncrement()) {
+                    0 -> BOOTSTRAP_HTML
+                    1 -> {
+                        older.await(5, TimeUnit.SECONDS)
+                        BOOTSTRAP_HTML_ONE
+                    }
+                    else -> {
+                        newer.await(5, TimeUnit.SECONDS)
+                        BOOTSTRAP_HTML_NINE
+                    }
+                }
+            },
+            scope = newScope(),
+        )
+
+        session.onForeground()
+        await("the badge seeded by the page") { session.notificationCounts.value.allUnread == 5 }
+
+        session.refreshNotificationCounts()
+        await("the older readback to be in flight") { calls.get() >= 2 }
+        session.refreshNotificationCounts()
+        await("the newer readback to be in flight") { calls.get() >= 3 }
+
+        // The older request finishes first; its page must not stand in the newer request's way.
+        older.countDown()
+        Thread.sleep(200)
+        newer.countDown()
+        await("the newer readback's counts to win") {
+            session.notificationCounts.value == NotificationUnreadCounts(9, 9, 9)
+        }
+        Thread.sleep(200)
+        assertEquals(
+            "the newest readback wins, not the one that happened to finish first",
+            NotificationUnreadCounts(9, 9, 9),
+            session.notificationCounts.value,
+        )
+        session.close()
+    }
+
+    // ------------------------------------------------------------------------------------------
+
     private fun newScope(): CoroutineScope {
         val dispatcher = java.util.concurrent.Executors.newFixedThreadPool(2).asCoroutineDispatcher()
         dispatchers += dispatcher
@@ -287,5 +470,21 @@ internal class MessageBusSessionTest {
         /** The shape linux.do ships: string-wrapped preloaded objects, ids and counts named. */
         const val BOOTSTRAP_HTML: String =
             """<html><body><div id="data-preloaded" data-preloaded='{"topicTrackingStateMeta":"{\"/latest\":4106,\"/new\":4107}","currentUser":"{\"id\":7,\"username\":\"baba\",\"notification_channel_position\":4108,\"unread_notifications\":4,\"unread_high_priority_notifications\":2,\"all_unread_notifications_count\":5}"}'></div></body></html>"""
+
+        /** The same page after a mark-read cleared the inbox. */
+        const val BOOTSTRAP_HTML_EMPTY: String =
+            """<html><body><div id="data-preloaded" data-preloaded='{"topicTrackingStateMeta":"{\"/latest\":4106,\"/new\":4107}","currentUser":"{\"id\":7,\"username\":\"baba\",\"notification_channel_position\":4108,\"unread_notifications\":0,\"unread_high_priority_notifications\":0,\"all_unread_notifications_count\":0}"}'></div></body></html>"""
+
+        /** A page carrying counts that differ from both the seed and the live message. */
+        const val BOOTSTRAP_HTML_SEVEN: String =
+            """<html><body><div id="data-preloaded" data-preloaded='{"topicTrackingStateMeta":"{\"/latest\":4106,\"/new\":4107}","currentUser":"{\"id\":7,\"username\":\"baba\",\"notification_channel_position\":4108,\"unread_notifications\":7,\"unread_high_priority_notifications\":7,\"all_unread_notifications_count\":7}"}'></div></body></html>"""
+
+        /** The older of two concurrent readbacks' pages. */
+        const val BOOTSTRAP_HTML_ONE: String =
+            """<html><body><div id="data-preloaded" data-preloaded='{"topicTrackingStateMeta":"{\"/latest\":4106,\"/new\":4107}","currentUser":"{\"id\":7,\"username\":\"baba\",\"notification_channel_position\":4108,\"unread_notifications\":1,\"unread_high_priority_notifications\":1,\"all_unread_notifications_count\":1}"}'></div></body></html>"""
+
+        /** The newer of two concurrent readbacks' pages; its counts must be the ones that stand. */
+        const val BOOTSTRAP_HTML_NINE: String =
+            """<html><body><div id="data-preloaded" data-preloaded='{"topicTrackingStateMeta":"{\"/latest\":4106,\"/new\":4107}","currentUser":"{\"id\":7,\"username\":\"baba\",\"notification_channel_position\":4108,\"unread_notifications\":9,\"unread_high_priority_notifications\":9,\"all_unread_notifications_count\":9}"}'></div></body></html>"""
     }
 }
