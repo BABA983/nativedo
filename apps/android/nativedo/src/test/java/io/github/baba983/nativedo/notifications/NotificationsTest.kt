@@ -21,7 +21,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -71,6 +70,8 @@ internal class NotificationsTest {
         site.start()
         site.serveFixture("notifications.json", "notifications.json")
         site.serveFixture("u/baba.json", "user-profile.json")
+        // A tap now also marks the notification read, so the write needs an answer.
+        site.serveJson("notifications/mark-read.json", """{"success":"OK"}""")
         // The mention notification of the fixture is floor 3 of its topic.
         site.serveJson("t/$TOPIC_ID/$FLOOR.json", topicAround(FLOOR))
         NativeDo.setContainerFactory { context -> site.authenticatedContainer(context) }
@@ -106,9 +107,12 @@ internal class NotificationsTest {
 
         // A notification opens its own post: the mention the fixture carries is on floor 3 of its
         // topic, not on that topic's first floor. The badge the fixture ends with has no post to
-        // open and is not a link at all.
+        // open; it stays tappable, but only to be marked read, never to open a topic.
         val list = listView()!!
-        assertFalse("a topic-less notification is not a link", isEnabled(rows.last()))
+        assertTrue(
+            "a topic-less notification is tappable so it can be marked read",
+            isEnabled(rows.last()),
+        )
 
         val mention = rows[1]
         list.clickItem(mention, positionOf(mention))

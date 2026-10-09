@@ -30,4 +30,21 @@ object NotificationsLoader {
                 .onFailure(onFailed)
         }
     }
+
+    /**
+     * Marks one notification read, or every one of them when [id] is null. The caller moves its own
+     * read state on [onDone] alone; [onFailed] carries the site's message for the retry it offers.
+     */
+    fun markRead(
+        container: AppContainer,
+        id: Long?,
+        onDone: () -> Unit,
+        onFailed: (Throwable) -> Unit,
+    ) {
+        scope.launch {
+            runCatching { container.notificationRepository.markRead(id).getOrThrow() }
+                .onSuccess { onDone() }
+                .onFailure(onFailed)
+        }
+    }
 }

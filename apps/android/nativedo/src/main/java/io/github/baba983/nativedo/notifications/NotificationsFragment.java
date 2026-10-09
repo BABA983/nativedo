@@ -58,6 +58,9 @@ public class NotificationsFragment extends BaseFragment implements NativeDoMainT
     /** The row a session state draws in place of the list: the state and the tap that acts on it. */
     private static final int TYPE_STATE = 2;
 
+    /** The action bar's own "mark everything read" item. */
+    private static final int MENU_ITEM_MARK_ALL_READ = 1;
+
     /** How close to the end the list comes before the next page is asked for. */
     private static final int LOAD_MORE_THRESHOLD = 3;
 
@@ -96,6 +99,11 @@ public class NotificationsFragment extends BaseFragment implements NativeDoMainT
      * account cannot repopulate the list.
      */
     private int loadEpoch;
+    /**
+     * Whether a mark-read write is out. One write at a time keeps a double tap from telling the
+     * site twice, and an all-read from overlapping a single row's write.
+     */
+    private boolean markReadInFlight;
     /** The session-state observer; cancelled with the views and started again with the next ones. */
     private kotlinx.coroutines.Job sessionObserver;
 
@@ -146,6 +154,12 @@ public class NotificationsFragment extends BaseFragment implements NativeDoMainT
         // The page carries its own bar: inside the tab host the bar belongs to the page's screen,
         // and the strip (a sibling of the pager) draws over the pages, never under them.
         actionBar.setAddToContainer(false);
+        // The bar owns one action: mark the whole inbox read. It is the site's own mark-read route
+        // with no id, and the only place the reader clears everything at once.
+        org.telegram.ui.ActionBar.ActionBarMenuItem markAllReadItem = actionBar.createMenu().addItem(
+                MENU_ITEM_MARK_ALL_READ, org.telegram.messenger.R.drawable.msg_markread);
+        markAllReadItem.setContentDescription("全部已读");
+        markAllReadItem.setOnClickListener(v -> markAllRead());
 
         listView = new RecyclerListView(context);
         listView.setLayoutManager(new LinearLayoutManager(context));
@@ -189,6 +203,12 @@ public class NotificationsFragment extends BaseFragment implements NativeDoMainT
         frame.addView(actionBar, LayoutHelper.createFrame(
                 LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP));
         fragmentView = frame;
+        org.telegram.ui.Components.Bulletin.addDelegate(this, new org.telegram.ui.Components.Bulletin.Delegate() {
+            @Override
+            public int getBottomOffset(int tag) {
+                return navigationBarHeight + additionNavigationBarHeight;
+            }
+        });
         ViewCompat.setOnApplyWindowInsetsListener(fragmentView, this::onInsetsInternal);
         actionBar.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> checkUi_contentTop());
         checkUi_contentTop();
@@ -391,15 +411,201 @@ public class NotificationsFragment extends BaseFragment implements NativeDoMainT
     }
 
     /**
-     * A notification opens the post it is about at that post's own floor. The site's topic-less
-     * notifications - a badge, likes it consolidated - have nothing to open, and their rows are not
-     * tappable.
+     * A tap on a notification does up to two things the site separates. Any notification is marked
+     * read - including the topic-less ones a badge or consolidated likes produce, which have
+     * nothing to open. One the site gave a post to also opens that post, but only once the read
+     * has been taken: navigating first would show the topic even after a refused read, and the row
+     * would go on saying it was unread. A notification already read opens at once; a topic-less one
+     * never opens.
      */
     private void open(NotificationItem item) {
-        if (!DiscourseNotifications.INSTANCE.hasDestination(item)) {
+        boolean opens = DiscourseNotifications.INSTANCE.hasDestination(item);
+        if (item.isRead()) {
+            if (opens) {
+                openFloor(item);
+            }
+            return;
+        }
+        markRead(item, opens);
+    }
+
+    /** Opens the post a notification is about, on the reader's own stack. */
+    private void openFloor(NotificationItem item) {
+        if (getParentActivity() == null) {
             return;
         }
         presentFragment(TopicFragment.forFloor(item.getTopicId(), item.getTitle(), item.getPostNumber()));
+    }
+
+    /**
+     * Marks one notification read on the site, then - only when the site took the write - moves the
+     * row and, if the tap was also meant to open a post, opens it. A write already out blocks a
+     * second one, so a double tap is one write. The callbacks carry the account and view generation
+     * the write started under; a late answer for a session that has since changed drops instead of
+     * marking the next account's rows or re-reading its badge. A refusal keeps the row as it was
+     * and says so, with the retry the failure offers.
+     */
+    private void markRead(NotificationItem item, boolean navigateOnSuccess) {
+        if (container == null || markReadInFlight) {
+            return;
+        }
+        markReadInFlight = true;
+        final long id = item.getId();
+        final NotificationItem target = item;
+        final WriteGuard guard = writeGuard();
+        NotificationsLoader.INSTANCE.markRead(container, id, () -> {
+            markReadInFlight = false;
+            if (guard.isStale()) {
+                return kotlin.Unit.INSTANCE;
+            }
+            markItemRead(id);
+            refreshBadge();
+            if (navigateOnSuccess) {
+                openFloor(target);
+            }
+            return kotlin.Unit.INSTANCE;
+        }, error -> {
+            markReadInFlight = false;
+            if (guard.isStale()) {
+                return kotlin.Unit.INSTANCE;
+            }
+            FileLog.e("mark notification read failed", error);
+            showMarkReadFailure(id);
+            return kotlin.Unit.INSTANCE;
+        });
+    }
+
+    /** The action bar's all-read item: the same write with no id, so the whole inbox goes read. */
+    private void markAllRead() {
+        if (container == null || markReadInFlight
+                || !(lastSessionState instanceof AppSessionState.Authenticated)) {
+            return;
+        }
+        markReadInFlight = true;
+        final WriteGuard guard = writeGuard();
+        // Only the rows on screen when the write started may be called read by its answer: a
+        // notification that arrives while the write is out was not part of it.
+        final List<Long> idsAtStart = new ArrayList<>();
+        for (NotificationItem item : items) {
+            idsAtStart.add(item.getId());
+        }
+        NotificationsLoader.INSTANCE.markRead(container, null, () -> {
+            markReadInFlight = false;
+            if (guard.isStale()) {
+                return kotlin.Unit.INSTANCE;
+            }
+            for (int index = 0; index < items.size(); index++) {
+                if (idsAtStart.contains(items.get(index).getId())) {
+                    items.set(index, DiscourseNotifications.INSTANCE.markedRead(items.get(index)));
+                }
+            }
+            notifyRowsChanged();
+            refreshBadge();
+            return kotlin.Unit.INSTANCE;
+        }, error -> {
+            markReadInFlight = false;
+            if (guard.isStale()) {
+                return kotlin.Unit.INSTANCE;
+            }
+            FileLog.e("mark all notifications read failed", error);
+            showMarkReadFailure(null);
+            return kotlin.Unit.INSTANCE;
+        });
+    }
+
+    /**
+     * The account and view generation a write started under: the view epoch, the session identity,
+     * and the coordinator's request generation. A callback whose guard no longer matches is for a
+     * screen or a reader that has moved on and must change nothing.
+     */
+    private WriteGuard writeGuard() {
+        return new WriteGuard(
+                loadEpoch,
+                SessionUi.identity(lastSessionState),
+                container == null ? 0 : container.getSessionCoordinator().currentRequestContext().getGeneration());
+    }
+
+    private final class WriteGuard {
+        private final int epoch;
+        private final String identity;
+        private final int sessionGeneration;
+
+        WriteGuard(int epoch, String identity, int sessionGeneration) {
+            this.epoch = epoch;
+            this.identity = identity;
+            this.sessionGeneration = sessionGeneration;
+        }
+
+        boolean isStale() {
+            if (epoch != loadEpoch) {
+                return true;
+            }
+            if (!SessionUi.identity(lastSessionState).equals(identity)) {
+                return true;
+            }
+            return container == null
+                    || container.getSessionCoordinator().currentRequestContext().getGeneration() != sessionGeneration;
+        }
+    }
+
+    /** Flips the row for [id] to read, once the site has taken the write. */
+    private void markItemRead(long id) {
+        for (int index = 0; index < items.size(); index++) {
+            if (items.get(index).getId() == id) {
+                items.set(index, DiscourseNotifications.INSTANCE.markedRead(items.get(index)));
+                notifyRowsChanged();
+                return;
+            }
+        }
+    }
+
+    private NotificationItem itemById(long id) {
+        for (NotificationItem item : items) {
+            if (item.getId() == id) {
+                return item;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The badge is the site's own count, so a write that changes it re-reads the page it is seeded
+     * from rather than moving the number here. The session guards that readback against a live
+     * channel message and an account change; this only asks for it.
+     */
+    private void refreshBadge() {
+        if (container != null) {
+            container.getMessageBusSession().refreshNotificationCounts();
+        }
+    }
+
+    /**
+     * A read the site refused. The row is left as it was and the failure is said in passing with
+     * the tap that tries again, so nothing the reader sees claims a change that did not happen.
+     */
+    private void showMarkReadFailure(Long id) {
+        if (getParentActivity() == null) {
+            return;
+        }
+        try {
+            org.telegram.ui.Components.BulletinFactory.of(this).createSimpleBulletin(
+                    org.telegram.messenger.R.raw.chats_infotip,
+                    "标记已读失败",
+                    "重试",
+                    org.telegram.ui.Components.Bulletin.DURATION_PROLONG,
+                    () -> {
+                        if (id == null) {
+                            markAllRead();
+                        } else {
+                            NotificationItem item = itemById(id);
+                            if (item != null) {
+                                open(item);
+                            }
+                        }
+                    }).show();
+        } catch (Exception bulletinError) {
+            FileLog.e(bulletinError);
+        }
     }
 
     private void loadPage() {
@@ -562,8 +768,9 @@ public class NotificationsFragment extends BaseFragment implements NativeDoMainT
             if (empty || holder.itemView instanceof TextInfoPrivacyCell) {
                 return false;
             }
-            // Only what the site gave a post to open is a link; a badge is not.
-            return DiscourseNotifications.INSTANCE.hasDestination(items.get(holder.getAdapterPosition()));
+            // Every notification is tappable: a tap marks it read, and one the site gave a post to
+            // also opens it. A topic-less notification marks read without pretending to open.
+            return true;
         }
     }
 }

@@ -20,6 +20,13 @@ object DiscourseNotifications {
     fun hasDestination(item: NotificationItem): Boolean = item.topicId > 0
 
     /**
+     * The same notification, read. A row's read state is the single `unread_count` it draws, and
+     * [NotificationItem] is immutable, so a success swaps the row for this copy rather than
+     * mutating the one the list holds.
+     */
+    fun markedRead(item: NotificationItem): NotificationItem = item.copy(isRead = true)
+
+    /**
      * One notification as a row: the topic it is about as the title, who did what under it, when the
      * site sent it, and the row's own unread badge while it is unread.
      */
