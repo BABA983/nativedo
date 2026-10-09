@@ -971,7 +971,36 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         pendingTopicId = 0;
         Integer floor = pendingFloor > 0 ? pendingFloor : null;
         pendingFloor = 0;
+        // A link that names the topic already on top is not a second screen: a link re-delivered to
+        // {@link #onNewIntent}, and a recreation that has already restored the topic, must not stack
+        // a duplicate of the screen the reader is reading. A cold start, and the login completion
+        // that follows it, reach here with the tab host on top, so they still open the topic.
+        if (isTopicOnTop(topicId, floor)) {
+            return;
+        }
         present(io.github.baba983.nativedo.topic.TopicFragment.forFloor(topicId, null, floor));
+    }
+
+    /** Whether the screen on top is the given topic at the same floor (no floor means the topic's). */
+    private boolean isTopicOnTop(long topicId, Integer floor) {
+        if (actionBarLayout == null) {
+            return false;
+        }
+        java.util.List<BaseFragment> stack = actionBarLayout.getFragmentStack();
+        if (stack.isEmpty()) {
+            return false;
+        }
+        BaseFragment top = stack.get(stack.size() - 1);
+        if (!(top instanceof io.github.baba983.nativedo.topic.TopicFragment)) {
+            return false;
+        }
+        Bundle args = top.getArguments();
+        if (args == null || args.getLong("topic_id", 0) != topicId) {
+            return false;
+        }
+        int onTopFloor = args.getInt("floor", 0);
+        int wantedFloor = floor == null ? 0 : floor;
+        return onTopFloor == wantedFloor;
     }
 
     /**

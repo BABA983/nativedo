@@ -60,7 +60,13 @@ internal class UpstreamUiHarness {
     val context: Context get() = RuntimeEnvironment.getApplication()
 
     /** The shell the app ships, driven through Robolectric's activity lifecycle. */
-    fun bootApp(): NativeDoActivity {
+    fun bootApp(): NativeDoActivity = bootApp(null)
+
+    /**
+     * The shell booted with [intent] as its launch intent, for a cold-start deep-link test; a null
+     * [intent] is the plain launch [bootApp] does.
+     */
+    fun bootApp(intent: android.content.Intent?): NativeDoActivity {
         prepareUpstream()
         resetImageLoader()
         resetPhotoViewer()
@@ -70,7 +76,12 @@ internal class UpstreamUiHarness {
         val pausedFrames = org.robolectric.shadows.ShadowChoreographer.isPaused()
         org.robolectric.shadows.ShadowChoreographer.setPaused(true)
         val app = try {
-            Robolectric.buildActivity(NativeDoActivity::class.java).setup().get()
+            val controller = if (intent == null) {
+                Robolectric.buildActivity(NativeDoActivity::class.java)
+            } else {
+                Robolectric.buildActivity(NativeDoActivity::class.java, intent)
+            }
+            controller.setup().get()
         } finally {
             org.robolectric.shadows.ShadowChoreographer.setPaused(pausedFrames)
         }

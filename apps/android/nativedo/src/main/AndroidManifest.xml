@@ -2,11 +2,15 @@
 <!--
   NativeDo's manifest. The application class and every upstream screen (PhotoViewer, Browser's
   activity, the theme styles) come from :TMessagesProj through manifest merging, so they are not
-  re-declared here. Only two things are ours:
+  re-declared here. What is ours:
 
-  * the launcher entry, which is our own activity;
+  * the launcher entry, which is our own activity, plus the app's own topic-link routes;
   * removing upstream's launcher alias, which points at Telegram's LaunchActivity — the Telegram
-    onboarding flow, not a shell this client can use.
+    onboarding flow, not a shell this client can use;
+  * removing Telegram's own deep-link entry routes (tg/tgb/tonsite/telegram.me/telegram.dog/t.me).
+    This client is not a Telegram app: a `tg://` or `t.me` link must not launch it, and no Telegram
+    scheme may be claimed on the site's behalf. Upstream's activities stay (they host the viewer,
+    the editor and the in-app browser); only the exported entry *routes* are dropped.
 
   The application class is ours too: upstream's answers the app id with null, which every
   FileProvider authority is built from.
@@ -42,6 +46,76 @@
                     android:scheme="https"
                     android:host="linux.do"
                     android:pathPrefix="/t/" />
+            </intent-filter>
+
+            <!--
+              The app's own topic aliases: `nativedo://topic/<id>[/<floor>]` and
+              `linuxdo://topic/<id>[/<floor>]`. The authority `topic` is the app's own token, not a
+              host, so these routes name no origin at all — the reader is already in the app. The
+              parser reads the path as an id (with an optional floor) and re-validates it, exactly
+              as it does for the site's own `/t/...` URLs.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="nativedo" android:host="topic" />
+                <data android:scheme="linuxdo" android:host="topic" />
+            </intent-filter>
+
+            <!--
+              The same aliases carrying the app-owned `/t/<slug>/<id>[/<floor>]` shape. The authority
+              must be the configured forum host, so the custom scheme cannot be used to point at any
+              other origin — a foreign host is refused by the parser as well.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="nativedo" android:host="linux.do" android:pathPrefix="/t/" />
+                <data android:scheme="linuxdo" android:host="linux.do" android:pathPrefix="/t/" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          Telegram's shell and share screens export the Telegram deep-link routes (tg, tgb, tonsite,
+          telegram.me/.dog/t.me). This client must claim none of them: the activities themselves are
+          kept because upstream's viewer/editor/browser glue reaches them, but their external entry
+          routes are removed here rather than by editing the upstream subtree. Each removal repeats
+          the filter's own actions, categories and data, which is how the merger identifies it.
+        -->
+        <activity android:name="org.telegram.ui.LaunchActivity">
+            <intent-filter tools:node="remove">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:host="telegram.me" android:scheme="http" />
+                <data android:host="telegram.me" android:scheme="https" />
+                <data android:host="telegram.dog" android:scheme="http" />
+                <data android:host="telegram.dog" android:scheme="https" />
+                <data android:host="t.me" android:scheme="http" />
+                <data android:host="t.me" android:scheme="https" />
+            </intent-filter>
+            <intent-filter tools:node="remove">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="tonsite" />
+            </intent-filter>
+            <intent-filter tools:node="remove">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="tg" />
+            </intent-filter>
+        </activity>
+
+        <activity android:name="org.telegram.ui.ShareActivity">
+            <intent-filter tools:node="remove">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="tgb" />
             </intent-filter>
         </activity>
 

@@ -33,9 +33,28 @@ data class DiscourseTopicLink(
 )
 
 /**
- * The app's entry point for a linux.do link, the same way the site's own URLs address a topic
- * (`/t/<slug>/<id>` and `/t/<slug>/<id>/<floor>`). A link that is not a same-origin topic is not a
- * link this client can open, so it answers null rather than guessing.
+ * The custom schemes this client owns for topic routing. They are aliases for one another and for
+ * the site's own `/t/...` URL: `nativedo://topic/<id>[/<floor>]` and
+ * `linuxdo://topic/<id>[/<floor>]`. They are *not* origins - the authority is a fixed app token,
+ * not a host - so they cannot name a forum other than the one the app is configured for.
+ */
+private const val SCHEME_NATIVEDO = "nativedo"
+private const val SCHEME_LINUXDO = "linuxdo"
+
+/** The app-owned authority that carries a bare topic id: `scheme://topic/<id>[/<floor>]`. */
+private const val TOPIC_AUTHORITY = "topic"
+
+/**
+ * The app's entry point for a topic link, in the shapes the app accepts:
+ *
+ *  * the site's own URL, same-origin with [baseUrl]: `/t/<slug>/<id>[/<floor>]`;
+ *  * the app's own aliases: `nativedo://topic/<id>[/<floor>]` and `linuxdo://topic/<id>[/<floor>]`;
+ *  * those same aliases carrying the `/t/<slug>/<id>[/<floor>]` shape, with the configured forum as
+ *    the authority so no other origin can be named.
+ *
+ * Anything else - a foreign host, userinfo, another scheme such as `tg` or `tgb`, a zero, negative,
+ * non-numeric or out-of-range id or floor - is not a link this client can open, so it answers null
+ * rather than guessing.
  */
 object DiscourseLinks {
 
@@ -43,8 +62,43 @@ object DiscourseLinks {
     fun topicLink(url: String?, baseUrl: String): DiscourseTopicLink? {
         val value = url?.trim().orEmpty()
         if (value.isEmpty()) return null
-        return parseSameOriginTopicLink(value, baseUrl)
+        return when (Uri.parse(value).scheme?.lowercase()) {
+            "http", "https" -> parseSameOriginTopicLink(value, baseUrl)
+            SCHEME_NATIVEDO, SCHEME_LINUXDO -> parseCustomSchemeTopicLink(value, baseUrl)
+            // `tg`, `tgb`, `tonsite` and every other scheme are not this app's to open.
+            else -> null
+        }
     }
+}
+
+/**
+ * A topic link under one of the app-owned custom schemes. The routing is fixed to this app and its
+ * configured forum, so there is no origin a caller can smuggle in:
+ *
+ *  * `scheme://topic/<id>[/<floor>]` - the authority is the app token `topic`, the path is the id
+ *    (with an optional floor);
+ *  * `scheme://<forum>/t/<slug?>/<id>[/<floor>]` - the authority must be the configured forum host,
+ *    and the path is read exactly as the site's own `/t/...` path is.
+ *
+ * Userinfo, an explicit port, an unknown authority, and ids/floors the site could not have are all
+ * refused. Query and fragment are not part of the route and are ignored, as they are for the site's
+ * URLs.
+ */
+private fun parseCustomSchemeTopicLink(value: String, baseUrl: String): DiscourseTopicLink? {
+    val uri = Uri.parse(value)
+    val scheme = uri.scheme?.lowercase()
+    if (scheme != SCHEME_NATIVEDO && scheme != SCHEME_LINUXDO) return null
+    if (uri.userInfo != null) return null
+    if (uri.port != -1) return null
+    val host = uri.host?.lowercase() ?: return null
+    val segments = uri.pathSegments
+    if (segments.any(String::isEmpty)) return null
+    if (host == TOPIC_AUTHORITY) {
+        return shortTopicLink(segments)
+    }
+    val base = baseUrl.toHttpUrlOrNull() ?: return null
+    if (host != base.host.lowercase()) return null
+    return topicPathLink(segments)
 }
 
 /**
@@ -70,7 +124,15 @@ object DiscourseLinks {
  */
 internal fun parseSameOriginTopicLink(value: String, baseUrl: String): DiscourseTopicLink? {
     val resolved = resolveSameOrigin(value, baseUrl) ?: return null
-    val segments = resolved.pathSegments
+    return topicPathLink(resolved.pathSegments)
+}
+
+/**
+ * The `/t/<slug?>/<id>[/<floor>]` path, read the way Discourse routes it, for both the site's own
+ * URLs and the app-owned `/t/...` shape carried by a custom scheme. Only the segments are read, so
+ * query, fragment and origin are the caller's concern.
+ */
+private fun topicPathLink(segments: List<String>): DiscourseTopicLink? {
     if (segments.size < 2 || segments.first() != "t") return null
     val after = segments.drop(1)
     if (after.any(String::isEmpty)) return null
@@ -93,6 +155,24 @@ internal fun parseSameOriginTopicLink(value: String, baseUrl: String): Discourse
         3 -> {
             id = topicId(after[1]) ?: return null
             floor = floorNumber(after[2]) ?: return null
+        }
+        else -> return null
+    }
+    return DiscourseTopicLink(topicId = id, floor = floor)
+}
+
+/** The app alias `//topic/<id>[/<floor>]`: the id, and the floor when the path names one. */
+private fun shortTopicLink(segments: List<String>): DiscourseTopicLink? {
+    val id: Long
+    val floor: Int
+    when (segments.size) {
+        1 -> {
+            id = topicId(segments[0]) ?: return null
+            floor = 0
+        }
+        2 -> {
+            id = topicId(segments[0]) ?: return null
+            floor = floorNumber(segments[1]) ?: return null
         }
         else -> return null
     }
