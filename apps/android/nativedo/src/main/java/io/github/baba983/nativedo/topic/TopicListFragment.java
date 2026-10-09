@@ -103,6 +103,13 @@ public class TopicListFragment extends BaseFragment
      */
     private static final int ALL_TAB_ID = 0;
 
+    /** The site's filterable latest list; the home tab's own feed. */
+    private static final String FEED_LATEST = "latest";
+    /** The home overflow's new-topics entrance: `/new.json`, no category or tag filter. */
+    private static final String FEED_NEW = "new";
+    /** The home overflow's unread entrance: `/unread.json`, no category or tag filter. */
+    private static final String FEED_UNREAD = "unread";
+
     /** The strip's own height, as upstream's chat list gives it (36 + 7 + 7). */
     private static final int TAB_STRIP_HEIGHT_DP = 50;
 
@@ -287,6 +294,12 @@ public class TopicListFragment extends BaseFragment
     private final List<Tag> tags = new ArrayList<>();
     /** The tag the list is filtered by, or null while it is not filtered by one. */
     private Tag selectedTag;
+    /**
+     * The feed this screen is: the site's filterable latest list, or one of the home overflow's
+     * two unfiltered entrances (`/new.json`, `/unread.json`). A mode that is not {@link #FEED_LATEST}
+     * carries no category strip and no tag filter - the site's routes for it are not filterable.
+     */
+    private String feedMode = FEED_LATEST;
     private AppContainer container;
     /** The tab whose feed the page in front shows, so a re-selection is not a reload. */
     private int selectedTabId = ALL_TAB_ID;
@@ -308,6 +321,8 @@ public class TopicListFragment extends BaseFragment
 
     @Override
     protected View createView(Context context) {
+        feedMode = arguments == null ? FEED_LATEST : arguments.getString("feed", FEED_LATEST);
+        final boolean filteredFeed = isFilteredFeed();
         hasMainTabs = arguments != null && arguments.getBoolean("hasMainTabs", false);
         additionNavigationBarHeight = hasMainTabs ? AndroidUtilities.dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS) : 0;
         additionFloatingButtonOffset = hasMainTabs ? AndroidUtilities.dp(DialogsActivity.MAIN_TABS_HEIGHT + DialogsActivity.MAIN_TABS_MARGIN) : 0;
@@ -344,8 +359,11 @@ public class TopicListFragment extends BaseFragment
         searchBarItem.setOnClickListener(v -> openSearchFromBar());
         // The tag filter is a filter, not a second strip: the list's own space belongs to the topics
         // (the topic list's strip is categories), so this is one item whose dialog holds the tags.
-        tagItem = actionBar.createMenu().addItem(TAG_ITEM, org.telegram.messenger.R.drawable.menu_tag_filter);
-        clearTagItem = actionBar.createMenu().addItem(CLEAR_TAG_ITEM, org.telegram.messenger.R.drawable.msg_close);
+        // The unfiltered feeds (new/unread) have no such routes on the site, so no such item.
+        if (filteredFeed) {
+            tagItem = actionBar.createMenu().addItem(TAG_ITEM, org.telegram.messenger.R.drawable.menu_tag_filter);
+            clearTagItem = actionBar.createMenu().addItem(CLEAR_TAG_ITEM, org.telegram.messenger.R.drawable.msg_close);
+        }
         // The options item goes last, so it is the rightmost - upstream's chat list puts its own
         // three-dot menu at that edge with the same id and icon.
         optionsItem = actionBar.createMenu().addItem(OPTIONS_ITEM, org.telegram.messenger.R.drawable.ic_ab_other);
@@ -568,6 +586,16 @@ public class TopicListFragment extends BaseFragment
                 LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT,
                 Gravity.TOP | Gravity.CENTER_HORIZONTAL, 0, 4, 0, 0));
         fragmentView = frame;
+        org.telegram.ui.Components.Bulletin.addDelegate(this, new org.telegram.ui.Components.Bulletin.Delegate() {
+            @Override
+            public int getBottomOffset(int tag) {
+                int bottom = navigationBarHeight + additionNavigationBarHeight;
+                if (fragmentView != null && startTopicButton != null && startTopicButton.getVisibility() == View.VISIBLE) {
+                    bottom = Math.max(bottom, fragmentView.getHeight() - (int) startTopicButton.getY() + AndroidUtilities.dp(4));
+                }
+                return bottom;
+            }
+        });
         ViewCompat.setOnApplyWindowInsetsListener(fragmentView, this::onInsetsInternal);
         actionBar.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> checkUi_contentTop());
         container = NativeDo.container(getParentActivity());
@@ -602,10 +630,14 @@ public class TopicListFragment extends BaseFragment
         checkUi_contentTop();
         checkUi_floatingButton();
         updateTagActions();
-        // The page in front reads its category; the pair starts on the all-topics tab.
+        // The page in front reads its category; the pair starts on the all-topics tab. A new/unread
+        // feed is the same screen with the site's own unfiltered route, so it builds no strip and
+        // no tag list.
         preparePage(viewPages[0], viewPages[0].selectedType, false);
-        loadCategories();
-        loadTags();
+        if (filteredFeed) {
+            loadCategories();
+            loadTags();
+        }
         return fragmentView;
     }
 
@@ -691,6 +723,8 @@ public class TopicListFragment extends BaseFragment
         boolean loaded;
         boolean loading;
         boolean failed;
+        /** Whether the rows on screen came from the offline cache rather than the site. */
+        boolean fromCache;
         /** The page number the next page's route is asked for; the first answer is page 0. */
         int nextPage = 1;
         /** Whether the last answer carried a {@code more_topics_url}: another page follows. */
@@ -877,6 +911,31 @@ public class TopicListFragment extends BaseFragment
         selectedTabId = page.selectedType;
     }
 
+    /** Whether this screen is the filterable latest list (as opposed to new/unread). */
+    private boolean isFilteredFeed() {
+        return FEED_LATEST.equals(feedMode);
+    }
+
+    /**
+     * Reads one page of the feed this screen is in: the filterable `latest` list (with the
+     * reader's chosen category and tag), or one of the site's own unfiltered routes. One call
+     * site, because which route that is is the mode's business and not the paging's.
+     */
+    private void loadFeed(
+            AppContainer container,
+            int tabId,
+            int pageNumber,
+            kotlin.jvm.functions.Function1<io.github.baba983.nativedo.core.model.TopicListPage, kotlin.Unit> onLoaded,
+            kotlin.jvm.functions.Function1<Throwable, kotlin.Unit> onFailed) {
+        if (FEED_NEW.equals(feedMode)) {
+            DiscourseLoader.INSTANCE.newTopics(container, pageNumber, onLoaded, onFailed);
+        } else if (FEED_UNREAD.equals(feedMode)) {
+            DiscourseLoader.INSTANCE.unreadTopics(container, pageNumber, onLoaded, onFailed);
+        } else {
+            DiscourseLoader.INSTANCE.feed(container, categoryOf(tabId), selectedTag, pageNumber, onLoaded, onFailed);
+        }
+    }
+
     private CategoryFeed feedFor(int tabId) {
         CategoryFeed feed = feedCache.get(tabId);
         if (feed == null) {
@@ -922,15 +981,17 @@ public class TopicListFragment extends BaseFragment
         feed.nextPage = 1;
         updatePageState(page);
         container = NativeDo.container(getParentActivity());
-        DiscourseLoader.INSTANCE.feed(container, categoryOf(feed.tabId), selectedTag, 0,
+        loadFeed(container, feed.tabId, 0,
                 loadedPage -> {
                     if (feed.generation != generation) {
                         return kotlin.Unit.INSTANCE;
                     }
+                    final boolean fromCache = loadedPage.getFromCache();
                     final List<TopicSummary> loaded = loadedPage.getTopics();
                     feed.loading = false;
                     feed.loaded = true;
                     feed.failed = false;
+                    feed.fromCache = fromCache;
                     feed.topics.clear();
                     feed.topics.addAll(loaded);
                     feed.hasMore = hasMoreTopics(loadedPage);
@@ -944,6 +1005,9 @@ public class TopicListFragment extends BaseFragment
                     if (page.feed == feed) {
                         page.adapter.notifyDataSetChanged();
                         updatePageState(page);
+                    }
+                    if (fromCache) {
+                        showCachedFeedNotice(page, feed);
                     }
                     // A new feed is a new list: the header's offset is read from what the list
                     // now holds.
@@ -982,14 +1046,18 @@ public class TopicListFragment extends BaseFragment
         feed.loadingMore = true;
         feed.moreFailed = false;
         page.adapter.notifyDataSetChanged();
-        DiscourseLoader.INSTANCE.feed(container, categoryOf(feed.tabId), selectedTag, pageNumber,
+        loadFeed(container, feed.tabId, pageNumber,
                 loadedPage -> {
                     if (feed.generation != generation) {
                         return kotlin.Unit.INSTANCE;
                     }
+                    final boolean fromCache = loadedPage.getFromCache();
                     feed.loadingMore = false;
                     feed.nextPage = pageNumber + 1;
                     feed.hasMore = hasMoreTopics(loadedPage);
+                    // A page appended from the cache keeps the list flagged as cached: writes that
+                    // assume the site's permissions must stay suppressed until a full read lands.
+                    feed.fromCache = feed.fromCache || fromCache;
                     for (TopicSummary topic : loadedPage.getTopics()) {
                         if (hasTopic(feed, topic.getId())) {
                             continue;
@@ -1001,6 +1069,7 @@ public class TopicListFragment extends BaseFragment
                     if (page.feed == feed) {
                         page.adapter.notifyDataSetChanged();
                     }
+                    updateOfflineMarker();
                     fetchAvatars(feed);
                     return kotlin.Unit.INSTANCE;
                 },
@@ -1082,6 +1151,68 @@ public class TopicListFragment extends BaseFragment
     }
 
     /**
+     * The list's own offline signal: the site could not be reached and the rows on screen are the
+     * last answer kept for this reader. Upstream's Bulletin carries the retry explicitly, so a reader
+     * who does not think to pull the list has a way to ask again; the read it starts clears the
+     * cached flag the moment the site answers.
+     */
+    private void showCachedFeedNotice(ViewPage page, CategoryFeed feed) {
+        if (getParentActivity() == null) {
+            return;
+        }
+        try {
+            org.telegram.ui.Components.BulletinFactory.of(this).createSimpleBulletin(
+                    org.telegram.messenger.R.raw.chats_infotip,
+                    org.telegram.messenger.ApplicationLoader.applicationContext.getString(
+                            R.string.topic_list_offline),
+                    org.telegram.messenger.ApplicationLoader.applicationContext.getString(
+                            R.string.topic_list_offline_retry),
+                    org.telegram.ui.Components.Bulletin.DURATION_PROLONG,
+                    () -> {
+                        requestFeed(page, feed);
+                    }).show();
+        } catch (Exception bulletinError) {
+            FileLog.e(bulletinError);
+        }
+    }
+
+    /**
+     * Whether a write must be suppressed because the list is showing cached rows whose permissions
+     * the site has not confirmed since. Says so in passing and refuses; a live read clears the flag.
+     */
+    private boolean denyWriteWhileOffline() {
+        final ViewPage page = currentPage();
+        if (page == null || page.feed == null || !page.feed.fromCache) {
+            return false;
+        }
+        try {
+            org.telegram.ui.Components.BulletinFactory.of(this).createErrorBulletin(
+                    org.telegram.messenger.ApplicationLoader.applicationContext.getString(
+                            R.string.topic_offline_readonly)).show();
+        } catch (Exception bulletinError) {
+            FileLog.e(bulletinError);
+        }
+        return true;
+    }
+
+    /**
+     * The list's persistent offline marker: while the feed in front came from the cache, the bar's
+     * own subtitle says so and keeps saying so (the Bulletin only says it once). A live read clears
+     * it. The Bulletin still carries the explicit retry for the screen the reader is on.
+     */
+    private void updateOfflineMarker() {
+        if (actionBar == null) {
+            return;
+        }
+        final ViewPage page = currentPage();
+        final boolean cached = page != null && page.feed != null && page.feed.fromCache;
+        actionBar.setSubtitle(cached
+                ? org.telegram.messenger.ApplicationLoader.applicationContext.getString(
+                        R.string.offline_indicator)
+                : null);
+    }
+
+    /**
      * The state a page draws while its feed is not in: upstream's shimmer while the page has no
      * feed yet (the list's empty view, so a kept feed shows nothing), the failure sentence when
      * the read did not arrive, or nothing once the feed is there. A loaded-but-empty feed is the
@@ -1092,6 +1223,9 @@ public class TopicListFragment extends BaseFragment
         if (page == null || page.emptyView == null || page.feed == null) {
             return;
         }
+        // The bar's own offline marker follows whatever feed is in front, so a kept (cached) feed
+        // still says so after a tab switch or a return to the screen.
+        updateOfflineMarker();
         final CategoryFeed feed = page.feed;
         if (feed.loaded) {
             page.emptyView.setVisibility(View.GONE);
@@ -2031,7 +2165,8 @@ public class TopicListFragment extends BaseFragment
             return;
         }
         Integer categoryId = selectedTabId == ALL_TAB_ID ? null : selectedTabId;
-        int count = incomingTopics.countForCategory(categoryId);
+        // The unfiltered new/unread feeds are already the answer to "what is new": no pill.
+        int count = isFilteredFeed() ? incomingTopics.countForCategory(categoryId) : 0;
         // The search owns the screen while it is open (its pager is where the rows go), so the
         // pill keeps its count but stays off the pager; showSearch re-asks when it closes.
         boolean show = count > 0 && !searching;
@@ -2163,6 +2298,9 @@ public class TopicListFragment extends BaseFragment
         io.addGap();
         io.add(org.telegram.messenger.R.drawable.outline_groups_24, "发新帖", this::presentNewTopic);
         io.add(org.telegram.messenger.R.drawable.outline_saved_24, "书签", this::presentBookmarks);
+        // The site's own new/unread lists: the same topic-list screen, in its unfiltered feed mode.
+        io.add(org.telegram.messenger.R.drawable.outline_groups_24, "新话题", this::presentNewTopics);
+        io.add(org.telegram.messenger.R.drawable.msg_folders_read, "未读", this::presentUnread);
         io.show();
         // Upstream raises its own chat-list menu by this constant; the popup otherwise hangs lower
         // than the icon it belongs to.
@@ -2189,6 +2327,9 @@ public class TopicListFragment extends BaseFragment
 
     /** The list's one action: the floating button and the menu's own 发新帖 row do the same thing. */
     private void presentNewTopic() {
+        if (denyWriteWhileOffline()) {
+            return;
+        }
         if (getParentActivity() instanceof io.github.baba983.nativedo.app.NativeDoActivity) {
             ((io.github.baba983.nativedo.app.NativeDoActivity) getParentActivity())
                     .present(NewTopicFragment.create());
@@ -2200,6 +2341,31 @@ public class TopicListFragment extends BaseFragment
         if (getParentActivity() instanceof io.github.baba983.nativedo.app.NativeDoActivity) {
             ((io.github.baba983.nativedo.app.NativeDoActivity) getParentActivity())
                     .present(new io.github.baba983.nativedo.bookmarks.BookmarksFragment());
+        }
+    }
+
+    /** The site's own new-topics list: this screen, opened in its unfiltered new feed mode. */
+    private void presentNewTopics() {
+        presentFeedMode(FEED_NEW);
+    }
+
+    /** The site's own unread list: this screen, opened in its unfiltered unread feed mode. */
+    private void presentUnread() {
+        presentFeedMode(FEED_UNREAD);
+    }
+
+    /**
+     * Opens this screen over the current one for one of the site's unfiltered feeds. The mode is
+     * carried in the bundle the same way the tab host carries {@code hasMainTabs}, so the pushed
+     * screen builds the same rows, shimmer and paging - just against `/new.json` or `/unread.json`
+     * and with no category strip or tag filter.
+     */
+    private void presentFeedMode(String mode) {
+        if (getParentActivity() instanceof io.github.baba983.nativedo.app.NativeDoActivity) {
+            Bundle args = new Bundle();
+            args.putString("feed", mode);
+            ((io.github.baba983.nativedo.app.NativeDoActivity) getParentActivity())
+                    .present(new TopicListFragment(args));
         }
     }
 
@@ -2234,8 +2400,9 @@ public class TopicListFragment extends BaseFragment
         // A categories read that failed (a challenge, an outage, a session that was not ready yet)
         // left the strip empty - and the swipe that switches categories is gated on the strip
         // having tabs, so the gesture went with it. The list is in front again, so it is asked
-        // once more; the cached answer, when there is one, is already up.
-        if (categories.isEmpty()) {
+        // once more; the cached answer, when there is one, is already up. A new/unread feed has no
+        // strip to fill.
+        if (isFilteredFeed() && categories.isEmpty()) {
             loadCategories();
         }
     }
@@ -2580,6 +2747,11 @@ public class TopicListFragment extends BaseFragment
         // While the search is open the title is faded out by the search's own progress
         // (updateTitlesContainerVisibility); its text waits for the fade to bring it back.
         if (searching) {
+            return;
+        }
+        // The unfiltered entrances name themselves: their feed is not the site's latest list.
+        if (!isFilteredFeed()) {
+            actionBar.setTitle(FEED_UNREAD.equals(feedMode) ? "未读" : "新话题");
             return;
         }
         CategorySummary category = categoryOf(selectedTabId);

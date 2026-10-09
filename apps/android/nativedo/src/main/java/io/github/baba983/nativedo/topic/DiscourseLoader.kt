@@ -82,6 +82,25 @@ object DiscourseLoader {
     }
 
     /**
+     * The reader's own notification level for one topic (0 mute, 1 regular, 2 tracking, 3
+     * watching), the same shape as a bookmark: the site is told first, and the caller moves the
+     * level it shows only once the site has taken it.
+     */
+    fun setTopicNotificationLevel(
+        container: AppContainer,
+        topicId: Long,
+        level: Int,
+        onDone: () -> Unit,
+        onFailed: (Throwable) -> Unit,
+    ) {
+        scope.launch {
+            runCatching { container.discourseApiClient.setTopicNotificationLevel(topicId, level) }
+                .onSuccess { onDone() }
+                .onFailure(onFailed)
+        }
+    }
+
+    /**
      * The name of one of the site's categories, from the shared category store the topic list
      * already fills. A category the site did not name (or a store that could not load) answers
      * null, which the reader sees as a subtitle without a category.
@@ -136,8 +155,8 @@ object DiscourseLoader {
     /**
      * One page of the topic list's feed for what the reader has chosen: nothing, a category, a
      * tag, or both - one call, because which route that is is the site's business and not the
-     * screen's. The whole page is handed back, because its `topic_list.more_topics_url` is what
-     * says whether another page follows.
+     * screen's. The whole page is handed back; its own {@code fromCache} says whether the site or
+     * the offline cache produced it, and its `topic_list.more_topics_url` says if another follows.
      */
     fun feed(
         container: AppContainer,
@@ -149,6 +168,34 @@ object DiscourseLoader {
     ) {
         scope.launch {
             runCatching { container.discourseApiClient.fetchFeed(category, tag, page) }
+                .onSuccess(onLoaded)
+                .onFailure(onFailed)
+        }
+    }
+
+    /** One page of the site's own new-topics list (`/new.json`); the topic list's unfiltered mode. */
+    fun newTopics(
+        container: AppContainer,
+        page: Int,
+        onLoaded: (io.github.baba983.nativedo.core.model.TopicListPage) -> Unit,
+        onFailed: (Throwable) -> Unit,
+    ) {
+        scope.launch {
+            runCatching { container.discourseApiClient.fetchNewPage(page) }
+                .onSuccess(onLoaded)
+                .onFailure(onFailed)
+        }
+    }
+
+    /** One page of the reader's own unread list (`/unread.json`); the topic list's unfiltered mode. */
+    fun unreadTopics(
+        container: AppContainer,
+        page: Int,
+        onLoaded: (io.github.baba983.nativedo.core.model.TopicListPage) -> Unit,
+        onFailed: (Throwable) -> Unit,
+    ) {
+        scope.launch {
+            runCatching { container.discourseApiClient.fetchUnreadPage(page) }
                 .onSuccess(onLoaded)
                 .onFailure(onFailed)
         }
@@ -180,7 +227,8 @@ object DiscourseLoader {
     /**
      * One topic, read from [postNumber] when it is given: the site answers such a request with the
      * window of posts around that floor instead of the head of the thread, which is what a jump to a
-     * floor from a feed row or a search result needs.
+     * floor from a feed row or a search result needs. The detail's own {@code fromCache} says
+     * whether the offline cache produced it.
      */
     fun topic(
         container: AppContainer,
@@ -286,6 +334,67 @@ object DiscourseLoader {
         scope.launch {
             runCatching { container.discourseApiClient.createPost(topicId, raw, replyToPostNumber) }
                 .onSuccess { onSent() }
+                .onFailure(onFailed)
+        }
+    }
+
+    /**
+     * One post on its own, with the site's `raw` markdown: what an edit begins from. A topic window
+     * carries only cooked bodies, so the post's own read is the one that can open the editor.
+     */
+    fun fetchPost(
+        container: AppContainer,
+        postId: Long,
+        onLoaded: (Post) -> Unit,
+        onFailed: (Throwable) -> Unit,
+    ) {
+        scope.launch {
+            runCatching { container.discourseApiClient.fetchPost(postId) }
+                .onSuccess(onLoaded)
+                .onFailure(onFailed)
+        }
+    }
+
+    /** Edits the reader's own post and reports the site's post, or the failure to show. */
+    fun editPost(
+        container: AppContainer,
+        postId: Long,
+        raw: String,
+        editReason: String?,
+        onEdited: (Post) -> Unit,
+        onFailed: (Throwable) -> Unit,
+    ) {
+        scope.launch {
+            runCatching { container.discourseApiClient.updatePost(postId, raw, editReason) }
+                .onSuccess(onEdited)
+                .onFailure(onFailed)
+        }
+    }
+
+    /** Deletes the reader's own post; the site answers no body, so success carries nothing. */
+    fun deletePost(
+        container: AppContainer,
+        postId: Long,
+        onDeleted: () -> Unit,
+        onFailed: (Throwable) -> Unit,
+    ) {
+        scope.launch {
+            runCatching { container.discourseApiClient.deletePost(postId) }
+                .onSuccess { onDeleted() }
+                .onFailure(onFailed)
+        }
+    }
+
+    /** Recovers (undeletes) the reader's own post and reports the site's post, or the failure. */
+    fun recoverPost(
+        container: AppContainer,
+        postId: Long,
+        onRecovered: (Post) -> Unit,
+        onFailed: (Throwable) -> Unit,
+    ) {
+        scope.launch {
+            runCatching { container.discourseApiClient.recoverPost(postId) }
+                .onSuccess(onRecovered)
                 .onFailure(onFailed)
         }
     }

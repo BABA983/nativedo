@@ -134,6 +134,8 @@ public class TopicFragment extends BaseFragment
     private static final int MENU_ITEM_OPEN_BROWSER = 4;
     private static final int MENU_ITEM_SEARCH = 5;
     private static final int MENU_ITEM_SHARE = 6;
+    /** The overflow's notification-level entry; its own ItemOptions carries the four choices. */
+    private static final int MENU_ITEM_NOTIFICATION = 7;
 
     /** Upstream fragments take their arguments through the constructor, not a setter. */
     public TopicFragment(android.os.Bundle args) {
@@ -258,6 +260,16 @@ public class TopicFragment extends BaseFragment
     private int listPaddingTop;
     /** The overflow item's 书签 row, whose label and icon follow [topicBookmarked]. */
     private org.telegram.ui.ActionBar.ActionBarMenuSubItem bookmarkMenuItem;
+    /** The overflow item's notification-level row; it opens the four checked choices. */
+    private org.telegram.ui.ActionBar.ActionBarMenuSubItem notificationLevelMenuItem;
+    /** The overflow item itself, which the level ItemOptions anchors on. */
+    private org.telegram.ui.ActionBar.ActionBarMenuItem overflowItem;
+    /**
+     * The reader's own notification level for this topic (`details.notification_level`): 0 mute,
+     * 1 regular, 2 tracking, 3 watching. It only moves when the site took a write, so a refusal
+     * leaves the row saying what it said.
+     */
+    private int topicNotificationLevel = 1;
     /**
      * ChatActivity's own first-load view (6984-7016): chats do not show the chat list's shimmer;
      * they show a centred ring on the service background while the first page of messages is on
@@ -367,6 +379,27 @@ public class TopicFragment extends BaseFragment
     /** True while a stored draft is being put back into the field, so the restore is not re-saved. */
     private boolean restoringDraft;
     private TopicReplyDraftKey replyDraftKey;
+    /**
+     * The floor the composer is editing, or -1 while it writes a reply. Edit and reply are separate
+     * modes over one field: starting an edit takes the reader's reply aside, and ending the edit
+     * puts that reply - text and target together - back untouched.
+     */
+    private int editFloor = -1;
+    /**
+     * The identity of the post under edit. An edit's write is sent against the post id and its
+     * answer applied to the floor its number names, so a window that reloaded between opening the
+     * editor and sending the edit cannot land the write on whatever floor now sits at [editFloor].
+     */
+    private long editPostId = -1;
+    private Integer editPostNumber;
+    /** The reply the field held when the edit began; it is what a cancel or a finish restores. */
+    private TopicReplyDraft editReplyBackup;
+    /** True while an edit write is in flight, so a second press is refused: one press, one write. */
+    private boolean sendingEdit;
+    /** True while a delete or a recover is in flight, so a second press is refused. */
+    private boolean sendingDelete;
+    /** Bumped when the screen is destroyed, so a late write callback cannot touch a dead view. */
+    private int editGeneration;
     /** Our own attach entry point, for the files upstream's button cannot offer (see its builder). */
     private View attachStrip;
     private android.widget.TextView attachStripLabel;
@@ -419,6 +452,12 @@ public class TopicFragment extends BaseFragment
     private TopicLoadFailure lastFailure;
     /** What a retry tap runs: the read that just failed, with the floor it asked for. */
     private Runnable retryAction;
+    /**
+     * Whether the rows on screen came from the offline cache rather than the site. While true the
+     * screen says so and refuses writes that assume the site's answer about permissions; a live read
+     * clears it.
+     */
+    private boolean showingCachedContent;
 
     public static TopicFragment forTopic(long topicId, String title) {
         android.os.Bundle args = new android.os.Bundle();
@@ -599,6 +638,8 @@ public class TopicFragment extends BaseFragment
                 } else if (id == MENU_ITEM_SEARCH) {
                     presentFragment(new io.github.baba983.nativedo.search.TopicSearchFragment(
                             TopicFragment.this.topicId, topicDetail == null ? null : topicDetail.getTitle()));
+                } else if (id == MENU_ITEM_NOTIFICATION) {
+                    showNotificationLevelOptions();
                 }
             }
         });
@@ -607,11 +648,13 @@ public class TopicFragment extends BaseFragment
         // created before setupGlass because that is where it is switched into glass mode
         // (ActionBar.java:245-248).
         org.telegram.ui.ActionBar.ActionBarMenu menu = actionBar.createMenu();
-        org.telegram.ui.ActionBar.ActionBarMenuItem overflowItem =
-                menu.addItem(MENU_ITEM_MORE, org.telegram.messenger.R.drawable.ic_ab_other);
+        overflowItem = menu.addItem(MENU_ITEM_MORE, org.telegram.messenger.R.drawable.ic_ab_other);
         overflowItem.setContentDescription("更多");
         bookmarkMenuItem = overflowItem.addSubItem(
                 MENU_ITEM_BOOKMARK, org.telegram.messenger.R.drawable.msg_fave, "书签");
+        notificationLevelMenuItem = overflowItem.addSubItem(
+                MENU_ITEM_NOTIFICATION, org.telegram.messenger.R.drawable.msg_folders_read, "");
+        updateNotificationLevelMenuItem();
         overflowItem.addSubItem(
                 MENU_ITEM_COPY_LINK, org.telegram.messenger.R.drawable.msg_link, "复制链接");
         overflowItem.addSubItem(
@@ -1433,6 +1476,7 @@ public class TopicFragment extends BaseFragment
                 // before the head arrived; the answer names a window nobody is looking at.
                 return kotlin.Unit.INSTANCE;
             }
+            noteServedFromCache(detail.getFromCache());
             int position = reporter.start(detail);
             // The head answer's header is bound even when its posts are not: a resumed read loads
             // a window next, and an answer that leaves details out must not leave the capsule
@@ -1467,6 +1511,7 @@ public class TopicFragment extends BaseFragment
             if (generation != windowGeneration) {
                 return kotlin.Unit.INSTANCE;
             }
+            noteServedFromCache(detail.getFromCache());
             show(detail, scrollTo);
             return kotlin.Unit.INSTANCE;
         }, error -> {
@@ -1528,6 +1573,7 @@ public class TopicFragment extends BaseFragment
                         // answer belongs to a page nobody is looking at.
                         return kotlin.Unit.INSTANCE;
                     }
+                    noteServedFromCache(detail.getFromCache());
                     Post root = findThreadParent(detail);
                     if (root == null) {
                         showTopicFailure(new java.io.IOException("原帖没有找到"));
@@ -1975,6 +2021,7 @@ public class TopicFragment extends BaseFragment
                 // nobody is looking at.
                 return kotlin.Unit.INSTANCE;
             }
+            noteServedFromCache(detail.getFromCache());
             pageDownJumping = false;
             show(detail, floor);
             return kotlin.Unit.INSTANCE;
@@ -2082,6 +2129,7 @@ public class TopicFragment extends BaseFragment
                         // Another reload or a leave overtook this one.
                         return kotlin.Unit.INSTANCE;
                     }
+                    noteServedFromCache(detail.getFromCache());
                     Post refreshed = findThreadParent(detail);
                     if (refreshed != null) {
                         threadReplyCount = Math.max(0, refreshed.getReplyCount());
@@ -2178,6 +2226,8 @@ public class TopicFragment extends BaseFragment
         topicDetail = detail;
         topicBookmarked = detail.getBookmarked();
         updateBookmarkMenuItem();
+        topicNotificationLevel = detail.getNotificationLevel();
+        updateNotificationLevelMenuItem();
         // The site's own title is the authoritative one; a link that named no title gets it here,
         // and it goes into the center capsule the way a chat's title does.
         bindHeader(detail);
@@ -2364,6 +2414,13 @@ public class TopicFragment extends BaseFragment
                 subtitle = composed;
             }
         }
+        // A persistent marker: while the rows on screen are the cache's, the capsule keeps saying so
+        // (the Bulletin only says it once). A live read calls this again and clears it.
+        if (showingCachedContent) {
+            String marker = org.telegram.messenger.ApplicationLoader.applicationContext.getString(
+                    io.github.baba983.nativedo.R.string.offline_indicator);
+            subtitle = subtitle == null ? marker : marker + " · " + subtitle;
+        }
         avatarContainer.setSubtitle(subtitle);
     }
 
@@ -2406,6 +2463,9 @@ public class TopicFragment extends BaseFragment
         if (container == null || topicId <= 0) {
             return;
         }
+        if (denyWriteWhileOffline()) {
+            return;
+        }
         boolean wanted = !topicBookmarked;
         DiscourseLoader.INSTANCE.setTopicBookmark(container, topicId, wanted, () -> {
             topicBookmarked = wanted;
@@ -2413,6 +2473,83 @@ public class TopicFragment extends BaseFragment
             return kotlin.Unit.INSTANCE;
         }, error -> {
             showError("书签失败", error);
+            return kotlin.Unit.INSTANCE;
+        });
+    }
+
+    /** The overflow's level row says what the reader's current level is. */
+    private void updateNotificationLevelMenuItem() {
+        if (notificationLevelMenuItem == null) {
+            return;
+        }
+        notificationLevelMenuItem.setTextAndIcon(
+                "通知级别 · " + notificationLevelLabel(topicNotificationLevel),
+                org.telegram.messenger.R.drawable.msg_folders_read);
+    }
+
+    private static String notificationLevelLabel(int level) {
+        switch (level) {
+            case 0:
+                return "静音";
+            case 2:
+                return "跟踪";
+            case 3:
+                return "关注";
+            default:
+                return "常规";
+        }
+    }
+
+    /**
+     * The four levels the web client's topic-tracking control offers, as upstream's own checked
+     * menu (the same {@link org.telegram.ui.Components.ItemOptions} the home options use). The
+     * reader's current level is the checked one; choosing another writes it.
+     */
+    private void showNotificationLevelOptions() {
+        if (getParentActivity() == null || overflowItem == null) {
+            return;
+        }
+        org.telegram.ui.Components.ItemOptions io =
+                org.telegram.ui.Components.ItemOptions.makeOptions(this, overflowItem);
+        io.setColors(getThemedColor(Theme.key_actionBarDefaultTitle), getThemedColor(Theme.key_actionBarDefaultTitle));
+        io.setDimAlpha(0x08);
+        io.addChecked(topicNotificationLevel == 0, "静音", () -> setTopicNotificationLevel(0));
+        io.addChecked(topicNotificationLevel == 1, "常规", () -> setTopicNotificationLevel(1));
+        io.addChecked(topicNotificationLevel == 2, "跟踪", () -> setTopicNotificationLevel(2));
+        io.addChecked(topicNotificationLevel == 3, "关注", () -> setTopicNotificationLevel(3));
+        io.show();
+        // Upstream raises its own topic menu by this constant; the popup otherwise hangs lower
+        // than the item it belongs to.
+        io.setTranslationY(-AndroidUtilities.dp(64));
+    }
+
+    /**
+     * Writes the reader's chosen level and only moves the row once the site has taken it. A
+     * refusal keeps the level the reader had and says so in passing; a level already in force is
+     * not written at all.
+     */
+    private void setTopicNotificationLevel(int level) {
+        if (container == null || topicId <= 0 || level == topicNotificationLevel) {
+            return;
+        }
+        if (denyWriteWhileOffline()) {
+            return;
+        }
+        final int wanted = level;
+        DiscourseLoader.INSTANCE.setTopicNotificationLevel(container, topicId, wanted, () -> {
+            topicNotificationLevel = wanted;
+            updateNotificationLevelMenuItem();
+            return kotlin.Unit.INSTANCE;
+        }, error -> {
+            org.telegram.messenger.FileLog.e("topic notification level failed", error);
+            if (getParentActivity() != null) {
+                try {
+                    org.telegram.ui.Components.BulletinFactory.of(this)
+                            .createErrorBulletin("设置失败，请重试").show();
+                } catch (Exception bulletinError) {
+                    org.telegram.messenger.FileLog.e(bulletinError);
+                }
+            }
             return kotlin.Unit.INSTANCE;
         });
     }
@@ -2647,6 +2784,8 @@ public class TopicFragment extends BaseFragment
         leaveTopic();
         // The screen is gone: any reply target still being read must not call back into it.
         bindGeneration++;
+        // And any edit write or post read still in flight belongs to the screen that left.
+        editGeneration++;
         // And any stream page or window read still in flight belongs to the screen that left.
         windowGeneration++;
         // The post menu is its own window; leaving the screen with it open would leave a stale menu
@@ -2770,6 +2909,9 @@ public class TopicFragment extends BaseFragment
         postByNumber.clear();
         replyTargetFloors.clear();
         replyRequestsInFlight.clear();
+        // A new window owns its own writes: a delete or recover still on its way belongs to the
+        // window that was here, and its flag must not block the one that replaces it.
+        sendingDelete = false;
         // Every floor of the window is known before any bubble is built, so a reply that answers a
         // floor carried *later* in the same window (Discourse lists a window in floor order, so the
         // answering floor is always built first) still finds its target.
@@ -3216,6 +3358,7 @@ public class TopicFragment extends BaseFragment
                 // nobody is looking at. The flag is the new window's to reset, not this callback's.
                 return kotlin.Unit.INSTANCE;
             }
+            noteServedFromCache(showingCachedContent || anyPostFromCache(loaded));
             loadingPage = false;
             nextPageStart = end;
             int firstNew = bubbles.size();
@@ -3303,6 +3446,7 @@ public class TopicFragment extends BaseFragment
                 // nobody is looking at.
                 return kotlin.Unit.INSTANCE;
             }
+            noteServedFromCache(showingCachedContent || anyPostFromCache(loaded));
             loadingBackward = false;
             if (loaded == null || loaded.isEmpty()) {
                 // The slice holds no visible posts (deleted, or not visible to this reader): the
@@ -3473,6 +3617,9 @@ public class TopicFragment extends BaseFragment
         if (container == null) {
             return;
         }
+        if (denyWriteWhileOffline()) {
+            return;
+        }
         DiscourseLoader.INSTANCE.toggleReaction(container, postId, reactionId, () -> {
             if (threadMode) {
                 // The floor is a row of this discussion page: refresh the page's own root and
@@ -3507,6 +3654,9 @@ public class TopicFragment extends BaseFragment
     private void vote(MessageObject message, PostPoll poll, PollVoteSelection selection) {
         int floor = floorOf(message);
         if (floor < 0 || container == null || poll == null || selection == null) {
+            return;
+        }
+        if (denyWriteWhileOffline()) {
             return;
         }
         Post post = floors.get(floor);
@@ -3600,6 +3750,21 @@ public class TopicFragment extends BaseFragment
                 () -> toggleBookmark(floor)));
         actions.add(new DiscourseReactionUi.Action(org.telegram.messenger.R.drawable.menu_reply, "回复",
                 () -> replyTo(floor)));
+        // The reader's own post: what the site says they may do to it, never a username. A field
+        // the site did not send (or sent false) leaves that action off rather than offering a write
+        // the site would refuse.
+        if (reactionPost.getCanEdit()) {
+            actions.add(new DiscourseReactionUi.Action(org.telegram.messenger.R.drawable.msg_edit, "编辑",
+                    () -> startEdit(floor)));
+        }
+        if (reactionPost.getCanRecover()) {
+            actions.add(new DiscourseReactionUi.Action(org.telegram.messenger.R.drawable.chats_undo, "恢复",
+                    () -> recoverFloor(floor)));
+        }
+        if (reactionPost.getCanDelete()) {
+            actions.add(new DiscourseReactionUi.Action(org.telegram.messenger.R.drawable.msg_delete, "删除",
+                    () -> confirmDelete(floor)));
+        }
         if (scrim instanceof ChatMessageCell && hasSelectableText((ChatMessageCell) scrim)) {
             actions.add(new DiscourseReactionUi.Action(org.telegram.messenger.R.drawable.msg_select, "选择文本",
                     () -> startTextSelection((ChatMessageCell) scrim)));
@@ -3659,6 +3824,9 @@ public class TopicFragment extends BaseFragment
      */
     private void toggleBookmark(int floor) {
         if (container == null || floor < 0 || floor >= floors.size()) {
+            return;
+        }
+        if (denyWriteWhileOffline()) {
             return;
         }
         Post post = floors.get(floor);
@@ -3779,6 +3947,11 @@ public class TopicFragment extends BaseFragment
         if (container == null || composer == null || restoringDraft) {
             return;
         }
+        if (editFloor >= 0) {
+            // The field holds the post being edited, not a reply: the reader's reply draft is kept
+            // aside and must not be overwritten with the edit's markdown.
+            return;
+        }
         CharSequence text = composer.getFieldText();
         String raw = text == null ? "" : text.toString();
         container.getTopicReplyDraftStore().save(draftKey(), new TopicReplyDraft(raw, replyToPostNumber));
@@ -3821,6 +3994,12 @@ public class TopicFragment extends BaseFragment
     private void ensureReplyPanel() {
         if (replyPanel == null && composer != null) {
             replyPanel = new DiscourseReplyPanel(composer, resourceProvider, () -> {
+                if (editFloor >= 0) {
+                    // The strip is the edit's own close button while an edit is open: the reader's
+                    // reply comes back exactly as it was.
+                    cancelEdit();
+                    return;
+                }
                 // The close button: the reader is no longer answering, so the target goes with the
                 // strip and the draft (text and target together) is written down.
                 replyToPostNumber = null;
@@ -3901,6 +4080,17 @@ public class TopicFragment extends BaseFragment
         if (container == null || raw.trim().isEmpty()) {
             return;
         }
+        if (denyWriteWhileOffline()) {
+            // The composer clears its own field before handing the text over, so a refused send has
+            // to put it back; the reader can press send again once the site is reachable.
+            if (composer != null && !raw.trim().isEmpty()) {
+                CharSequence current = composer.getFieldText();
+                if (current == null || current.length() == 0) {
+                    composer.setFieldText(raw);
+                }
+            }
+            return;
+        }
         DiscourseLoader.INSTANCE.reply(container, topicId, raw, replyToPostNumber, () -> {
             if (composer != null) {
                 composer.setFieldText("");
@@ -3936,6 +4126,420 @@ public class TopicFragment extends BaseFragment
 
     private void showReplyError(Throwable error) {
         showError("回复失败", error);
+    }
+
+    // ---- the reader's own posts: edit, delete, recover ----
+
+    /** The account this screen is reading as, so a write's answer is only drawn for its author. */
+    private String currentUsername() {
+        if (container == null) {
+            return "";
+        }
+        SessionSnapshot snapshot = container.getSessionStore().snapshot();
+        return snapshot == null ? "" : snapshot.getUsername();
+    }
+
+    private boolean sameAccount(String username) {
+        return username.equals(currentUsername());
+    }
+
+    /**
+     * The account the field's draft belongs to. The reply draft key is resolved when the field is
+     * opened and it carries the site, the account and the topic, so a write is that account's -
+     * never whoever happens to be signed in when the callback lands.
+     */
+    private String draftAccount() {
+        return container == null ? "" : draftKey().getUsername();
+    }
+
+    /**
+     * The session's operation generation right now. A logout and a fresh login of the same username
+     * bump it, so comparing it on an answer tells that apart from the write's own session - which a
+     * username comparison alone cannot.
+     */
+    private int sessionGeneration() {
+        if (container == null) {
+            return Integer.MIN_VALUE;
+        }
+        return container.getSessionCoordinator().currentRequestContext().getGeneration();
+    }
+
+    /** Whether the session a write went out under is still the live one. */
+    private boolean sameSession(int generation) {
+        return container != null
+                && container.getSessionCoordinator().currentRequestContext().getGeneration() == generation;
+    }
+
+    /**
+     * Whether a write's answer still belongs to the reader who sent it: the same session generation
+     * and the same account. A screen that has left, a window that reloaded, a different account, and
+     * a logout-and-login of the same name are all answered false, so the answer is dropped rather
+     * than drawn for the wrong reader.
+     */
+    private boolean writeStillOwned(int generation, String account) {
+        return sameSession(generation) && sameAccount(account);
+    }
+
+    /** What the composer's field holds right now, or "" when there is no field. */
+    private String fieldText() {
+        if (composer == null) {
+            return "";
+        }
+        CharSequence text = composer.getFieldText();
+        return text == null ? "" : text.toString();
+    }
+
+    /** Puts [text] into the field without letting the restore be written back as a reply draft. */
+    private void setFieldTextSilently(String text) {
+        if (composer == null) {
+            return;
+        }
+        restoringDraft = true;
+        try {
+            composer.setFieldText(text);
+        } finally {
+            restoringDraft = false;
+        }
+    }
+
+    /**
+     * The reader asked to edit one of their own posts. Only the site's own {@code can_edit} opens
+     * this - a username is never enough. The markdown is not in the topic window (that carries
+     * cooked bodies), so the post's own read supplies it and the editor opens on that, never on the
+     * cooked text.
+     */
+    private void startEdit(int floor) {
+        if (container == null || getParentActivity() == null
+                || floor < 0 || floor >= floors.size()
+                || editFloor >= 0 || sendingEdit) {
+            return;
+        }
+        if (denyWriteWhileOffline()) {
+            return;
+        }
+        final Post post = floors.get(floor);
+        if (!post.getCanEdit()) {
+            return;
+        }
+        final Integer number = post.getPostNumber();
+        final String account = draftAccount();
+        final int session = sessionGeneration();
+        // A new edit owns the callbacks it starts; a later one, a cancel, or the screen leaving
+        // drops this read instead of drawing into whatever replaced it.
+        final int generation = ++editGeneration;
+        DiscourseLoader.INSTANCE.fetchPost(container, post.getId(), loaded -> {
+            if (generation != editGeneration || !writeStillOwned(session, account)
+                    || getParentActivity() == null || composer == null) {
+                return kotlin.Unit.INSTANCE;
+            }
+            if (!loaded.getCanEdit()) {
+                // The site no longer offers the edit; nothing is opened.
+                return kotlin.Unit.INSTANCE;
+            }
+            // A reload under the read can have shifted the window: the editor opens on the floor
+            // the post's own number names now, not the index it sat at when the read began.
+            int resolved = number == null
+                    ? (floor < floors.size() ? floor : -1)
+                    : floorIndexForNumber(number);
+            if (resolved < 0) {
+                // The post is no longer in the window; there is nothing to open the editor on.
+                return kotlin.Unit.INSTANCE;
+            }
+            beginEditing(resolved, loaded);
+            return kotlin.Unit.INSTANCE;
+        }, error -> {
+            if (generation == editGeneration && writeStillOwned(session, account)) {
+                showError("编辑失败", error);
+            }
+            return kotlin.Unit.INSTANCE;
+        });
+    }
+
+    /**
+     * Puts the post's markdown into the field and switches the composer into edit mode. The reply
+     * the field held is set aside first: cancelling the edit, or finishing it, hands that reply
+     * back exactly as it was.
+     */
+    private void beginEditing(int floor, Post post) {
+        if (composer == null) {
+            return;
+        }
+        editReplyBackup = new TopicReplyDraft(fieldText(), replyToPostNumber);
+        replyToPostNumber = null;
+        editFloor = floor;
+        editPostId = post.getId();
+        editPostNumber = post.getPostNumber();
+        setFieldTextSilently(post.getRaw() == null ? "" : post.getRaw());
+        updateComposerActions();
+        ensureReplyPanel();
+        if (replyPanel != null) {
+            Integer number = post.getPostNumber();
+            // The strip is the edit's own label and its close button is the cancel.
+            replyPanel.show("编辑 #" + (number == null ? "?" : number.toString()), "", null);
+        }
+        composer.setFieldFocused();
+        AndroidUtilities.showKeyboard(composer.getEditField());
+    }
+
+    /** The strip's close button while an edit is open: the reader's own reply comes back. */
+    private void cancelEdit() {
+        if (editFloor < 0 || sendingEdit) {
+            return;
+        }
+        exitEditMode();
+    }
+
+    /**
+     * Ends edit mode and hands the reader's reply back. Both a cancel and a successful edit land
+     * here: on success the screen has already replaced the floor with the site's own post, and the
+     * reply the reader was writing is theirs, not the edit's.
+     */
+    private void exitEditMode() {
+        editFloor = -1;
+        editPostId = -1;
+        editPostNumber = null;
+        if (replyPanel != null) {
+            replyPanel.hide();
+        }
+        TopicReplyDraft backup = editReplyBackup;
+        editReplyBackup = null;
+        setFieldTextSilently(backup == null ? "" : backup.getRaw());
+        replyToPostNumber = backup == null ? null : backup.getReplyToPostNumber();
+        if (replyToPostNumber != null) {
+            applyReplyTarget();
+        }
+        updateComposerActions();
+        saveDraft();
+    }
+
+    /**
+     * Sends the edit. A second press while one is out is refused (one press, one write), and the
+     * answer is only applied while the same account is still signed in and this screen is alive.
+     */
+    private void sendEdit(String raw) {
+        if (container == null || editFloor < 0 || sendingEdit || raw.trim().isEmpty()) {
+            return;
+        }
+        if (denyWriteWhileOffline()) {
+            return;
+        }
+        final long postId = editPostId;
+        final Integer number = editPostNumber;
+        if (postId <= 0) {
+            return;
+        }
+        final String account = draftAccount();
+        if (!sameAccount(account)) {
+            // The field's draft belongs to another reader than the one signed in; the write is not
+            // this reader's to send.
+            return;
+        }
+        final int session = sessionGeneration();
+        final int generation = editGeneration;
+        sendingEdit = true;
+        updateComposerActions();
+        DiscourseLoader.INSTANCE.editPost(container, postId, raw, null, updated -> {
+            if (generation != editGeneration) {
+                return kotlin.Unit.INSTANCE;
+            }
+            if (!writeStillOwned(session, account)) {
+                // The signed-in reader changed under the write; the answer is not theirs to draw.
+                sendingEdit = false;
+                return kotlin.Unit.INSTANCE;
+            }
+            sendingEdit = false;
+            applyServerPost(number, updated);
+            exitEditMode();
+            return kotlin.Unit.INSTANCE;
+        }, error -> {
+            if (generation != editGeneration) {
+                return kotlin.Unit.INSTANCE;
+            }
+            sendingEdit = false;
+            if (!writeStillOwned(session, account)) {
+                // The refusal belongs to the reader who sent it, not to whoever is here now.
+                return kotlin.Unit.INSTANCE;
+            }
+            // The write did not land: the edit text stays in the field so the reader can send again.
+            if (composer != null && fieldText().isEmpty()) {
+                setFieldTextSilently(raw);
+            }
+            updateComposerActions();
+            showError("编辑失败", error);
+            return kotlin.Unit.INSTANCE;
+        });
+    }
+
+    /**
+     * Replaces the floor with the post the site answered - its cooked body and its refreshed
+     * permissions - and rebinds exactly that floor's rows. The floor is found by its own post number
+     * so a window that changed under the write cannot apply the answer to the wrong row, and nothing
+     * here derives cooked from raw.
+     */
+    private void applyServerPost(Integer postNumber, Post post) {
+        if (postNumber == null || post == null) {
+            return;
+        }
+        int floor = floorIndexForNumber(postNumber);
+        if (floor < 0) {
+            return;
+        }
+        floors.set(floor, post);
+        postByNumber.put(postNumber, post);
+        rebuildFloor(floor);
+        // The site's own cook can name media the floor did not draw before (an edit that added a
+        // picture): the rebuilt rows are handed to the same download path every other row goes
+        // through, so what the site cooked actually loads rather than leaving a placeholder.
+        refreshFloorMedia(floor);
+    }
+
+    /** Hands one floor's rebuilt rows to the media downloader, the path a freshly loaded row uses. */
+    private void refreshFloorMedia(int floor) {
+        for (int index = 0; index < bubbles.size(); index++) {
+            if (bubbleFloors.get(index) == floor) {
+                fetchPostMedia(index);
+            }
+        }
+    }
+
+    /** The reader's delete, behind the confirmation upstream's own AlertDialog draws. */
+    private void confirmDelete(int floor) {
+        if (getParentActivity() == null || floor < 0 || floor >= floors.size() || sendingDelete) {
+            return;
+        }
+        if (denyWriteWhileOffline()) {
+            return;
+        }
+        if (!floors.get(floor).getCanDelete()) {
+            return;
+        }
+        org.telegram.ui.ActionBar.AlertDialog.Builder builder =
+                new org.telegram.ui.ActionBar.AlertDialog.Builder(getParentActivity());
+        builder.setTitle("删除帖子");
+        builder.setMessage("删除后其他人将看不到这篇帖子。确定删除吗？");
+        builder.setPositiveButton("删除", (dialog, which) -> deleteFloor(floor));
+        builder.setNegativeButton("取消", null);
+        showDialog(builder.create());
+    }
+
+    private void deleteFloor(int floor) {
+        if (container == null || floor < 0 || floor >= floors.size() || sendingDelete) {
+            return;
+        }
+        if (denyWriteWhileOffline()) {
+            return;
+        }
+        final Post post = floors.get(floor);
+        if (!post.getCanDelete()) {
+            return;
+        }
+        final long postId = post.getId();
+        final Integer number = post.getPostNumber();
+        final String account = currentUsername();
+        final int session = sessionGeneration();
+        final int generation = bindGeneration;
+        sendingDelete = true;
+        DiscourseLoader.INSTANCE.deletePost(container, postId, () -> {
+            if (generation != bindGeneration || !writeStillOwned(session, account)) {
+                sendingDelete = false;
+                return kotlin.Unit.INSTANCE;
+            }
+            // The site removed it (its own 204 carries no body). Its permissions are the site's,
+            // not ours to guess: the row is refreshed from the post's own read rather than a
+            // made-up can_recover. The flag stays set until that read settles, so one confirmation
+            // still means one delete and the readback cannot race a second one.
+            DiscourseLoader.INSTANCE.fetchPost(container, postId, refreshed -> {
+                if (generation != bindGeneration || !writeStillOwned(session, account)) {
+                    sendingDelete = false;
+                    return kotlin.Unit.INSTANCE;
+                }
+                sendingDelete = false;
+                applyServerPost(number, refreshed);
+                return kotlin.Unit.INSTANCE;
+            }, readError -> {
+                if (generation != bindGeneration || !writeStillOwned(session, account)) {
+                    sendingDelete = false;
+                    return kotlin.Unit.INSTANCE;
+                }
+                sendingDelete = false;
+                // The delete landed but its readback did not: the row cannot be refreshed from an
+                // answer nobody got. This is not a refusal - nothing here resends the delete - and
+                // the reader is offered a reload that reads the topic again.
+                showDeleteRefreshFailure();
+                return kotlin.Unit.INSTANCE;
+            });
+            return kotlin.Unit.INSTANCE;
+        }, error -> {
+            if (generation != bindGeneration || !writeStillOwned(session, account)) {
+                sendingDelete = false;
+                return kotlin.Unit.INSTANCE;
+            }
+            sendingDelete = false;
+            // The site refused; the post is exactly as it was.
+            showError("删除失败", error);
+            return kotlin.Unit.INSTANCE;
+        });
+    }
+
+    /** The reader's undelete: the site answers the recovered post, which replaces the floor. */
+    private void recoverFloor(int floor) {
+        if (container == null || floor < 0 || floor >= floors.size() || sendingDelete) {
+            return;
+        }
+        if (denyWriteWhileOffline()) {
+            return;
+        }
+        final Post post = floors.get(floor);
+        if (!post.getCanRecover()) {
+            return;
+        }
+        final Integer number = post.getPostNumber();
+        final String account = currentUsername();
+        final int session = sessionGeneration();
+        final int generation = bindGeneration;
+        sendingDelete = true;
+        DiscourseLoader.INSTANCE.recoverPost(container, post.getId(), recovered -> {
+            if (generation != bindGeneration || !writeStillOwned(session, account)) {
+                sendingDelete = false;
+                return kotlin.Unit.INSTANCE;
+            }
+            sendingDelete = false;
+            applyServerPost(number, recovered);
+            return kotlin.Unit.INSTANCE;
+        }, error -> {
+            if (generation != bindGeneration || !writeStillOwned(session, account)) {
+                sendingDelete = false;
+                return kotlin.Unit.INSTANCE;
+            }
+            sendingDelete = false;
+            // The site refused; the post keeps the permission it had and is exactly as it was.
+            showError("恢复失败", error);
+            return kotlin.Unit.INSTANCE;
+        });
+    }
+
+    /**
+     * The delete landed (the site's own 204) but the post could not be read back. The row cannot be
+     * refreshed from an answer nobody got, and this is deliberately not the refusal dialog: nothing
+     * here resends the delete and the delete is not reported as failed. The reader's way out is a
+     * fresh read of the topic, which either shows the post as the site keeps it or - if the site
+     * never really took the write - shows it as it is. The reload is the only action.
+     */
+    private void showDeleteRefreshFailure() {
+        if (getParentActivity() == null) {
+            return;
+        }
+        org.telegram.ui.ActionBar.AlertDialog.Builder builder =
+                new org.telegram.ui.ActionBar.AlertDialog.Builder(getParentActivity());
+        builder.setTitle("帖子已删除");
+        builder.setMessage("帖子已删除，但没能读到它的最新状态。重新加载后可以看到。");
+        builder.setPositiveButton("重新加载", (dialog, which) -> {
+            if (container != null && topicId > 0) {
+                loadTopic(topicId);
+            }
+        });
+        builder.setNegativeButton("取消", null);
+        showDialog(builder.create());
     }
 
     private void showError(String title, Throwable error) {
@@ -4147,6 +4751,79 @@ public class TopicFragment extends BaseFragment
         }
     }
 
+    /**
+     * Whether any row of a page the site answered came from the offline cache. A page of cached
+     * posts is recognised by the first row that says so; an empty or live page says no.
+     */
+    private static boolean anyPostFromCache(List<Post> posts) {
+        if (posts == null) {
+            return false;
+        }
+        for (Post post : posts) {
+            if (post.getFromCache()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The read was served from the offline cache (or from the site). Sets the screen's cached flag
+     * and, on the first cached answer, says so and offers the retry. A live answer clears the flag,
+     * which is what lets writes go through again.
+     */
+    private void noteServedFromCache(boolean fromCache) {
+        boolean firstCached = fromCache && !showingCachedContent;
+        showingCachedContent = fromCache;
+        if (firstCached) {
+            if (topicDetail != null) {
+                bindSubtitle(topicDetail);
+            }
+            showCachedTopicNotice();
+        }
+    }
+
+    /**
+     * The topic's offline signal: the rows on screen are the last answer kept for this reader. The
+     * Bulletin carries the retry explicitly; its tap runs whatever read the screen last asked for, so
+     * a live answer clears the cached flag and writes are allowed again.
+     */
+    private void showCachedTopicNotice() {
+        if (getParentActivity() == null) {
+            return;
+        }
+        try {
+            org.telegram.ui.Components.BulletinFactory.of(this).createSimpleBulletin(
+                    org.telegram.messenger.R.raw.chats_infotip,
+                    org.telegram.messenger.ApplicationLoader.applicationContext.getString(
+                            io.github.baba983.nativedo.R.string.topic_offline),
+                    org.telegram.messenger.ApplicationLoader.applicationContext.getString(
+                            io.github.baba983.nativedo.R.string.topic_offline_retry),
+                    org.telegram.ui.Components.Bulletin.DURATION_PROLONG,
+                    this::runRetry).show();
+        } catch (Exception bulletinError) {
+            org.telegram.messenger.FileLog.e(bulletinError);
+        }
+    }
+
+    /**
+     * Whether a write must be suppressed because cached rows are on screen whose permissions the site
+     * has not confirmed since. Says so in passing and refuses; a live read clears the flag.
+     */
+    private boolean denyWriteWhileOffline() {
+        if (!showingCachedContent) {
+            return false;
+        }
+        try {
+            org.telegram.ui.Components.BulletinFactory.of(this).createErrorBulletin(
+                    org.telegram.messenger.ApplicationLoader.applicationContext.getString(
+                            io.github.baba983.nativedo.R.string.topic_offline_readonly)).show();
+        } catch (Exception bulletinError) {
+            org.telegram.messenger.FileLog.e(bulletinError);
+        }
+        return true;
+    }
+
     private String failureText(TopicLoadFailure reason, Throwable error) {
         int id;
         switch (reason) {
@@ -4181,6 +4858,11 @@ public class TopicFragment extends BaseFragment
         public void onMessageSend(CharSequence message, boolean notify, int scheduleDate, int scheduleRepeatPeriod, long payStars) {
             String raw = message == null ? "" : message.toString().trim();
             if (!raw.isEmpty()) {
+                if (editFloor >= 0) {
+                    // The field is the post being edited, not a reply: this press sends an edit.
+                    sendEdit(raw);
+                    return;
+                }
                 Integer target = replyToPostNumber;
                 if (target == null && threadMode && threadParentFloor > 0) {
                     // An ordinary answer on a discussion page answers its root floor. The target is

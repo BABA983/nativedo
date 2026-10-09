@@ -34,6 +34,28 @@
     <!-- The stream-page failure hint's button: what its tap asks for. -->
     <string name="topic_page_retry">重试</string>
     <string name="topic_page_down_failed">这一页没能读出来，点按箭头重试</string>
+    <!--
+      A topic list the site could not answer that was drawn from the cache instead. The Bulletin says
+      so, and its own button asks the site again; the rows on screen are the last answer, so the
+      reader is not left with an empty page.
+    -->
+    <string name="topic_list_offline">离线中，显示的是上次缓存的话题列表</string>
+    <!-- The offline list hint's own button, and the topic hint's: what the tap asks for. -->
+    <string name="topic_list_offline_retry">重试</string>
+    <!-- A topic drawn from the cache after the site could not be reached. -->
+    <string name="topic_offline">离线中，显示的是上次缓存的话题</string>
+    <string name="topic_offline_retry">重试</string>
+    <!--
+      The persistent offline marker the action bar carries while a screen shows cached rows: a short
+      word next to the title, so the state stays visible after the Bulletin has gone. The Bulletin
+      itself still carries the explicit retry.
+    -->
+    <string name="offline_indicator">离线</string>
+    <!--
+      A write attempted while a cached topic is on screen: the permissions behind the cached rows may
+      be stale, so nothing is sent until the site answers again.
+    -->
+    <string name="topic_offline_readonly">离线内容，请先重试刷新再操作</string>
     <string name="topic_failed_challenge">站点要求完成验证\n点一下打开验证页</string>
     <string name="topic_failed_login">登录已失效\n点一下重新登录</string>
     <string name="topic_failed_forbidden">站点拒绝了这次请求\n点一下重试</string>
