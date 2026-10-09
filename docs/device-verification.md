@@ -2538,3 +2538,248 @@ APK: `apps/android/nativedo/build/intermediates/apk/debug/nativedo-debug.apk`.
 SHA-256: `0e9f397a70cd197668810c27c047edf67f9bda5eab1066d7b5f5c95bea25fd37`.
 
 No APK was installed, no real-site reading history was written, and no commit was pushed.
+
+### 2026-10-08 — Notifications, own posts, private messages and offline reads (Linux orb only)
+
+Continued the four-feature plan on `spike/full-telegram-subtree`, using separate worker worktrees
+and integrating their changes into the main checkout. Builds and verification ran sequentially.
+The active target is `apps/android/telegram` / `:nativedo`, not the legacy `:app`. No Telegram
+subtree files changed; upstream cells, menus, dialogs, Bulletins and composer/editor components
+remain the UI infrastructure, with tgnet and Telegram's database disabled.
+
+Implemented scope:
+
+- Notifications: server-confirmed single/all mark-read, navigation after success, readable retry,
+  server count readback without restarting MessageBus; topic notification levels 0–3 and home
+  new/unread feeds.
+- Own posts: raw edit loading, existing composer/rich editor, update/delete/recover according to
+  server permissions, retained drafts on refusal, delete readback without replaying the write,
+  and stale-account/window callback guards. Bodyless DELETE 204 uses Retrofit's `Unit` path.
+- Native PMs: inbox/sent/unread routes, settings/profile entrances, existing composer/uploads,
+  site/account-scoped drafts and session guards. Sent messages retain unread replies. The header
+  names the active box; the flow switches inbox → sent → unread and checks the drawn rows.
+- Offline reads: network-first wire-payload cache for public feeds/topics/post slices, scoped to
+  site, reader and exact read request. Only transport failure may fall back; refusal, challenge,
+  parse error and session change may not. Logout clears the cache and rejects late writers under
+  the same lock. Cached permissions stay read-only, including mixed cached/live pages; drafts
+  survive, and persistent markers plus explicit retry remain until a live replacement arrives.
+  PM and notification lists are not cached.
+
+**Not implemented: OS-level background push.** Foreground MessageBus is not background delivery.
+No native push bridge/gateway is configured; this work does not add a battery-heavy polling service
+or claim reliable delivery after the app is suspended or killed.
+
+Final targeted command (from repository root):
+
+```bash
+./apps/android/telegram/gradlew -p apps/android/telegram \
+  -Dorg.gradle.jvmargs='-Xmx3g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8' \
+  --init-script /tmp/nativedo-verification.gradle :nativedo:testDebugUnitTest \
+  --tests '*NotificationsActionsTest' --tests '*TopicNotificationLevelTest' \
+  --tests '*HomeFeedModesTest' --tests '*OwnPostManagementTest' \
+  --tests '*PrivateMessagesTest' --tests '*PrivateMessageComposerTest' \
+  --tests '*OfflineReadingTest' --tests '*OfflineCacheIdentityTest' \
+  --tests '*MessageBusSessionTest' --quiet
+```
+
+Result: **65 tests / nine classes, zero failures/errors/skips**, after the final FAB-aware Bulletin
+offset and PM-header fixes. XML and log are retained in
+`.amp/in/artifacts/nativedo/verification/targeted-final/` and `targeted-final.log`.
+Regression red XML is retained as `mixed-cache-red.xml`, `offline-overlap-red.xml` and
+`pm-box-header-red.xml`; the last reproduced a missing active-box subtitle before its fix.
+
+An ordinary full run was OOM-killed; the test JVM reached roughly 18 GiB RSS and kernel evidence
+confirmed the kill (`full-oom.log`). Bounded verification used the temporary init script below,
+plus the daemon flags above. Recreate this script to repeat the command; it is not a production
+build setting. The full command is the targeted command with all `--tests` filters removed.
+
+```groovy
+gradle.projectsEvaluated {
+    allprojects {
+        tasks.withType(Test).configureEach {
+            maxParallelForks = 1
+            forkEvery = 5
+            maxHeapSize = '4g'
+        }
+    }
+}
+```
+
+The retained bounded full run, before the last two UI fixes, is **439 tests / 81 classes, five
+failures**, zero errors/skips (`verification/full-final/`, `full-final.log`):
+
+- `DiscourseEmojiRenderTest.cookedStandardAndCustomEmojiRenderAsArtworkBesideTextRuns`: null cell cast.
+- `HomeTabsTest.theSettingsTabOpensOurOwnSettingsScreen`: expected two feed reads, got three.
+- `TopicRepliesThreadTest.anOverlappingPageThenAnEmptyPageEndsTheThreadWithoutDuplicating`:
+  terminal reading affordance still visible.
+- `TopicRepliesThreadTest.theComposerSendsToTheRootFloorByDefaultAndHonoursAnExplicitTarget`:
+  explicit reply target expected floor 15, got 12.
+- `ComposerCapsuleTest.systemInsetsMoveTheIslandOnceAndKeepTheSendButtonAboveTheKeyboard`:
+  expected 2646, got 2715.
+
+Rechecking those four classes produced **41 tests, four failures** (`failures-recheck/` and log):
+the emoji failure and both thread failures remained; HomeTabs' keyboard-hide inset assertion
+failed instead (expected 2678, got 2715). Its settings-read assertion and ComposerCapsule passed.
+There is no unmodified baseline establishing whether these are pre-existing. Neither assertions
+nor gates were weakened, and the selected green run does **not** make the full gate green.
+
+Arm64 assemble passed with:
+
+```bash
+./apps/android/telegram/gradlew -p apps/android/telegram \
+  -Dorg.gradle.jvmargs='-Xmx3g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8' \
+  :nativedo:assembleDebug -Pandroid.injected.build.abi=arm64-v8a --max-workers=2 --quiet
+```
+
+APK: `apps/android/nativedo/build/intermediates/apk/debug/nativedo-debug.apk` (62 MiB).
+SHA-256: `2c0462bbc486bff9bd4dff8ab211b7d8e0bd6afc00a1f610fa769b7b97efb726`.
+ZIP inspection found only `lib/arm64-v8a/libtmessages.49.so` and
+`lib/arm64-v8a/liblanguage_id_l2c_jni.so`. Log: `verification/arm64-assemble.log`.
+All 85 Python script tests passed with
+`python3 -m unittest discover -s scripts/tests -t scripts/tests -p 'test_*.py'`.
+`telegram-hook-guard.sh`, `vendor-guard.sh --quick`, `telegram-deps.sh --verify` (15 pins, zero
+problems), and both staged/unstaged `git diff --check` passed.
+
+Inspected host renders under `.amp/in/artifacts/nativedo/` include notifications and mark-read
+success/refusal, notification-level selection, new/unread feeds, own-post edit/delete/recover
+and refusals, PM boxes/menu/composer/refusal, and cached home/topic light/night states. Final
+review surfaces:
+
+- Notifications: [all read](../.amp/in/artifacts/nativedo/notifications-all-read.png),
+  [notification levels](../.amp/in/artifacts/nativedo/topic-notification-level-menu.png).
+- Own posts: [edit](../.amp/in/artifacts/nativedo/own-post-edit.png),
+  [delete](../.amp/in/artifacts/nativedo/own-post-deleted.png),
+  [recover](../.amp/in/artifacts/nativedo/own-post-recovered.png).
+- PM: [inbox](../.amp/in/artifacts/nativedo/private-messages-inbox.png),
+  [sent](../.amp/in/artifacts/nativedo/private-messages-sent.png),
+  [unread](../.amp/in/artifacts/nativedo/private-messages-unread.png),
+  [menu](../.amp/in/artifacts/nativedo/private-messages-menu.png),
+  [composer](../.amp/in/artifacts/nativedo/private-message-composer.png),
+  [refusal](../.amp/in/artifacts/nativedo/private-message-refused.png).
+- Offline: [home light](../.amp/in/artifacts/nativedo/home-offline-cached.png),
+  [home night](../.amp/in/artifacts/nativedo/home-offline-cached-night.png),
+  [topic light](../.amp/in/artifacts/nativedo/topic-offline-cached.png),
+  [topic night](../.amp/in/artifacts/nativedo/topic-offline-cached-night.png).
+
+The final light home capture shows the persistent offline marker and retry clear of the tabs;
+the test also checks retry/FAB bounds. The FAB is not drawn in this capture, so the image alone
+does not prove FAB clearance. The night home capture retains the marker after the transient
+Bulletin expires. Topic-night renders still have white wallpaper although the header, bubbles,
+composer and marker recolor; complete night appearance remains unresolved. Synthetic avatars
+are intentional fixtures. Dialog/menu captures are harness composites, not proof of physical
+window placement or GPU rendering. Screenshots are retained review artifacts, not committed
+Paparazzi goldens or evidence of real-site writes.
+
+No device/emulator was available, no APK was installed, and no real-site mutation was performed.
+Physical IME/insets, background delivery, Cloudflare/session recovery against linux.do and real
+network behavior remain device/site checks. Changes are local, uncommitted and unpushed; the
+full regression gate and complete night appearance are not cleared for release.
+
+### Telegram-style PM, public chat, inline emoji and app links (2026-10-08, Linux orb)
+
+Continued the previous feature wave in the same checkout, with separately owned subagent work
+and serial Gradle integration. Public channels mean **linux.do Discourse Chat**, not Telegram
+accounts or network channels. Site enablement and account permissions have not been checked
+against linux.do; an unavailable/refused API has an explicit retry/recovery state.
+
+Delivered locally:
+
+- PM uses Telegram DialogCell rows, inbox/sent/unread tabs, an inset-aware compose FAB and an
+  overflow entry to public channels; PM and chat lists/conversation recolor for day/night.
+- Public channels support listing, joining, text conversation/reply targeting, sending and
+  readback, older history and manual refresh. Initial reads use the latest window. Accepted
+  message readback omits `direction=past`, because that exclusive cursor drops the accepted id.
+  A failed readback never resends the accepted write. Channel upload/video interaction remains
+  unimplemented; MessageBus attachment depends on the current foreground poller, with manual
+  refresh as fallback. This is not background OS push.
+- Draft ownership is captured rather than read from the current account at save time. Session
+  loss saves the owner's draft, clears/hides the field and fences stale callbacks; join/send/read
+  abort if the session changes during CSRF acquisition. Red chat/send/session/CSRF results are
+  retained under `telegram-style/verification/` before their production fixes.
+- Inline body emoji artwork fits its surrounding font metrics and follows larger fonts. Only
+  the one-line host call was added to upstream RichMessageLayout; button emoji and MTProto mode
+  keep upstream sizes. Test screenshots use controlled solid PNGs, not real laugh artwork.
+- Debug settings restore curated render topics and validated ID/link/floor jumps. App-owned
+  `nativedo://topic/<id>[/<floor>]` and `linuxdo://topic/<id>[/<floor>]` routes work alongside
+  same-origin HTTPS topics. Merged-manifest tests reject tg/tgb/tonsite and Telegram domains;
+  cold/warm entry, login-pending navigation and recreation are covered.
+
+The final selected regression is **125 tests / 16 classes, zero failures/errors/skips**. It
+covers notifications, topic notification levels, feed modes, own-post management, PM list and
+composer, offline reading/cache identity, MessageBusSession, public channels/conversation,
+emoji, comment threads, debug tools, app routing and URL validation. Reproduce from repository
+root with the temporary init script and daemon flags recorded immediately above:
+
+```bash
+./apps/android/telegram/gradlew -p apps/android/telegram \
+  -Dorg.gradle.jvmargs='-Xmx3g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8' \
+  --init-script /tmp/nativedo-verification.gradle :nativedo:testDebugUnitTest \
+  --tests '*NotificationsActionsTest' --tests '*TopicNotificationLevelTest' \
+  --tests '*HomeFeedModesTest' --tests '*OwnPostManagementTest' \
+  --tests '*PrivateMessagesTest' --tests '*PrivateMessageComposerTest' \
+  --tests '*OfflineReadingTest' --tests '*OfflineCacheIdentityTest' \
+  --tests '*MessageBusSessionTest' --tests '*ChatChannelTest' --tests '*PublicChannelsTest' \
+  --tests '*DiscourseEmojiRenderTest' --tests '*TopicRepliesThreadTest' \
+  --tests '*DebugMenuTest' --tests '*DeeplinkRoutingTest' --tests '*DiscourseLinksTest' --quiet
+```
+
+Log and XML: `.amp/in/artifacts/telegram-style/verification/targeted.log` and `targeted/`.
+The temporary init script was removed after verification; its content above is retained to
+make the run repeatable, not added to the production build.
+
+Final visual review found the debug fixture sheet's bottom-aligned child obscured its first row.
+A first-row/title bounds assertion reproduced this (`debug-sheet-red.xml`); top alignment fixes
+it. The debug class was rerun separately after this last change: **three tests, zero failures**
+(`debug-sheet-final.log` / `.xml`). The new sheet capture shows the first row and the rest of the
+fixture list fully below its title; the APK below was rebuilt after that correction. The 125-test
+selected run preceded this final debug-only alignment change.
+
+The retained full run is **468 tests / 86 classes, three failures**, zero errors/skips
+(`telegram-style/verification/full.log` and `full/`). This ran before the final cached-emoji
+reopen wait and debug screenshot-scroll corrections:
+
+- `DiscourseEmojiRenderTest.cookedStandardAndCustomEmojiRenderAsArtworkBesideTextRuns`: reopened
+  topic had no loaded cell when the artwork wait dereferenced it. The wait now first requires
+  a loaded cell; the final six-test emoji class passes, with unchanged artwork/text/cache assertions.
+- `HomeTabsTest.theSettingsTabOpensOurOwnSettingsScreen`: expected one feed read, got two.
+- `ComposerCapsuleTest.systemInsetsMoveTheIslandOnceAndKeepTheSendButtonAboveTheKeyboard`:
+  expected 2646, got 2715.
+
+The two comment-thread failures recorded in the previous wave now pass after awaiting the
+processed terminal page / accepted-reply reload, not merely request arrival or a row count that
+was already true. Assertions were not weakened. The user's intermittent large blank comment
+line was **not reproduced**: no paragraph breaks, reply-preview gaps or comment footers were
+removed on conjecture. A failing topic ID/floor and screenshot remain needed. Ordinary topic
+night renders still show white wallpaper; PM and public chat night surfaces are fixed. The
+selected green result is **not** a green full-suite gate or device acceptance.
+
+Arm64 assemble passed using the command in the previous record. Retained APK:
+`.amp/in/artifacts/nativedo/nativedo-debug-arm64.apk` (66 MiB), SHA-256
+`fdeffe479346b92c546eca9196131707b50a3f17ce4edc8811a0fd5d625a6e76`.
+Only `lib/arm64-v8a/libtmessages.49.so` and `liblanguage_id_l2c_jni.so` are packaged.
+Log: `telegram-style/verification/assemble.log`. All 85 Python script tests, hook guard,
+vendor guard, 15 dependency pins and staged/unstaged whitespace checks passed.
+
+Inspected final host renders (synthetic fixture content; not physical IME/GPU evidence):
+
+- PM: [inbox light](../.amp/in/artifacts/nativedo/pm-telegram-light.png),
+  [night](../.amp/in/artifacts/nativedo/pm-telegram-night.png),
+  [sent](../.amp/in/artifacts/nativedo/pm-telegram-sent.png),
+  [unread](../.amp/in/artifacts/nativedo/pm-telegram-unread.png),
+  [overflow](../.amp/in/artifacts/nativedo/pm-telegram-menu.png).
+- Chat: [conversation light](../.amp/in/artifacts/nativedo/chat-conversation-light.png),
+  [night](../.amp/in/artifacts/nativedo/chat-conversation-night.png),
+  [channel list light](../.amp/in/artifacts/nativedo/chat-channels-light.png),
+  [channel list night](../.amp/in/artifacts/nativedo/chat-channels-night.png),
+  [joined](../.amp/in/artifacts/nativedo/chat-join.png),
+  [accepted send](../.amp/in/artifacts/nativedo/chat-send.png),
+  [refusal](../.amp/in/artifacts/nativedo/chat-channel-error.png).
+- Emoji: [light](../.amp/in/artifacts/nativedo/render-fixes-emoji-light.png),
+  [night](../.amp/in/artifacts/nativedo/render-fixes-emoji-night.png).
+- Debug: [section](../.amp/in/artifacts/nativedo/debug-menu-section.png),
+  [fixture sheet](../.amp/in/artifacts/nativedo/debug-menu-fixtures.png),
+  [validated input](../.amp/in/artifacts/nativedo/debug-menu-input.png).
+
+No device was available, APK installed, real-site write performed or OS push claimed. All
+changes remain local, uncommitted and unpushed. The full gate, white topic-night wallpaper and
+comment reproduction remain open; this is a review/debug build, not release clearance.

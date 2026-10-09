@@ -1458,6 +1458,44 @@ stands, and the upstream component each row is meant to use.
 - 证据：`.amp/in/artifacts/folders-reactions-wave/tabs/renders/`（`home-folders-initial-loading.png` 条子在、只有"全部"、分类请求仍等待但列表已加载；`home-folders-selector-{before,mid,after}.png` 胶囊在"全部"、中间帧、落在"开发调优"）。
 - 后续模拟器点击录屏见 `docs/device-verification.md` 的本轮组合验证；仍未开真实 topic、未写真实 API、未清数据。
 
+### 通知闭环、自有帖子、原生私信与离线阅读（2026-10-08，Linux orb）
+
+- 通知：点击未读通知先提交已读，成功后才跳到对应楼层；没有话题目标的通知也能标记。
+  顶栏支持全部已读，失败保留原状态并给出重试。角标回读站点计数，不在本地猜减一。
+- 话题：溢出菜单提供静音/常规/跟踪/关注，首页溢出菜单提供新话题和未读入口。
+- 自有帖子：菜单由服务端 `can_edit`/`can_delete`/`can_recover` 驱动。编辑读取 raw，复用
+  Telegram 输入器与富文本工具，保留原回复草稿；删除确认后接受无 body 的 204，再读回帖子权限。
+  读回失败只提供重新加载，绝不重放已成功的删除。
+- 私信：设置页进入收件箱，菜单切换已发送/未读；个人资料页的私信入口进入原生写信页。
+  写信复用 `NewTopicFragment` 的输入器、附件与草稿存储，以收件人代替分类，提交
+  `archetype=private_message` + `target_recipients`，成功后打开私信话题并沿用普通回复流程。
+- 弱网：列表、话题窗口与增量帖子读网络优先，仅传输故障使用当前站点/账号的精确读缓存。
+  缓存跨进程保留，退出登录清除，有容量上限；缓存内容保持离线标识，不能据此修改内容。
+  网络恢复后的完整窗口替换解除只读；403、挑战、账号切换和坏 JSON 都不能冒充离线命中。
+- 全部继续使用 Telegram 的 `DialogCell`、`ChatMessageCell`、`ItemOptions`、`AlertDialog`、
+  `Bulletin` 等组件；tgnet 与 `cache4.db` 仍关闭，上游 subtree 未改动。
+- 本轮是 `FakeDiscourseSite` + production UI harness 验证，非真机或 linux.do 实站验收。
+  后台 OS 推送尚未实现，前台 MessageBus 长轮询不等于后台推送。验证结果见
+  `docs/device-verification.md`；没有向真实站点写入。
+
+### Telegram 风格私信、公开频道与调试入口（2026-10-08）
+
+- 私信采用 Telegram 的列表行、收件箱/已发送/未读标签与右下写信按钮；“更多 → 公共频道”
+  打开 **linux.do 的 Discourse Chat**，不是 Telegram 网络上的频道。
+- 公开频道列表、会话气泡与输入器复用 Telegram 组件，支持加入、发送、读回、较早历史与刷新。
+  加入权限与发言结果由站点决定；草稿按站点/账号/频道隔离。会话失效隐藏旧输入框，
+  获取 CSRF 期间会话发生变化则中止写入。现阶段是文本发言，频道附件上传未接入。
+- 频道前台更新复用 MessageBus；订阅依赖当前前台 poller，未就绪时可手动刷新，不是后台推送。
+  当前测试验证 FakeDiscourseSite 路由与生产页面，不证明 linux.do 已开启 Chat 或当前账号有权限。
+- 正文行内 emoji 随字体行高缩放，上游按钮中的 emoji 保持原尺寸。评论偶发空白行未复现，
+  暂未删除任何有意的段落间距、换行或评论页脚。
+- debug 设置页恢复“渲染测试帖”和“跳转话题”：支持 ID、本站链接以及自定义 scheme，可带楼层。
+  `nativedo://topic/8517/3`、`linuxdo://topic/8517/3` 和 `https://linux.do/t/example/8517/3`
+  都由 NativeDo 路由；不再注册 `tg`、`tgb`、`tonsite` 或 Telegram 的链接域名。
+  调试实现位于 `src/debug`，不会进入 release 源集。
+- 私信、频道日间/夜间截图与本轮日志在 `.amp/in/artifacts/nativedo/` 和
+  `.amp/in/artifacts/telegram-style/verification/`；详细验收边界见 `docs/device-verification.md`。
+
 ## Switch plan
 
 The full-subtree build now has its own CI job. Deleting the old stack has not started and needs
