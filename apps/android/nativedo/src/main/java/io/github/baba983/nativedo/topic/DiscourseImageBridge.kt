@@ -96,12 +96,37 @@ object DiscourseImageBridge {
         document.outputSettings().prettyPrint(false)
         val body = document.body()
         val images = ArrayList<PostImage>()
+        val mediaBlocks = ArrayList<Element>()
+        // Table cells carry rich text, not PageBlocks. Keep media at its authored position as a
+        // source link, rather than silently dropping it or moving it outside the table.
+        for (element in body.select("td img, th img, td video, th video")) {
+            if (element.hasClass("emoji") || element.hasClass("avatar")) continue
+            val source = if (element.normalName() == "img") originalSource(element, baseUrl)
+                else resolve(element.attr("src").ifBlank {
+                    element.selectFirst("source[src]")?.attr("src").orEmpty()
+                }, baseUrl)
+            if (source != null && (source.startsWith("https://") || source.startsWith("http://"))) {
+                val link = Element(Tag.valueOf("a"), "").attr("href", source).text(source)
+                val replacement = if (element.hasAttr("data-spoiler"))
+                    Element(Tag.valueOf("spoiler"), "").appendChild(link) else link
+                element.replaceWith(replacement)
+            }
+        }
+        // The cell's delegate passes external URLs straight to Browser; it does not resolve
+        // relative hrefs. Resolve here, where the configured site's base URL is available.
+        for (anchor in body.select("a[href]")) {
+            val href = anchor.attr("href")
+            if (runCatching { URI(href).scheme == null }.getOrDefault(false)) {
+                resolve(href, baseUrl)?.let { anchor.attr("href", it) }
+            }
+        }
         // A video is read before the wrappers around it go: Discourse puts the frame's shape on the
         // wrapper it wraps the tag in, and unwrapping would take that with it.
         val videos = ArrayList<PostVideo>()
         for (element in body.select("video")) {
             val video = postVideo(element, baseUrl) ?: continue
             videos += video
+            mediaBlocks += element
             this.videos[video.id] = video
             // Upstream reads a media tag's `src` as the id of a file it already holds - for a
             // video, whose block then draws its cover and plays the file, as it does for a photo.
@@ -117,6 +142,7 @@ object DiscourseImageBridge {
             val postImage = postImage(image, baseUrl) ?: continue
             images += postImage
             photos += photoOf(postImage)
+            mediaBlocks += image
             // Upstream reads the source of a media tag as the numeric key of a photo it holds, and
             // writes the same shape when its editor serialises a message.
             image.attr("src", postImage.id.toString())
@@ -149,8 +175,20 @@ object DiscourseImageBridge {
         for (wrapper in body.select(WRAPPERS)) {
             wrapper.unwrap()
         }
+        // Ordinary divs are structural wrappers; only Telegram's explicit rich gallery/button
+        // containers have their own semantics. Keep a section boundary so adjacent text divs
+        // stay separate paragraphs and heading/table children retain their own blocks.
+        for (wrapper in body.select("div")) {
+            val classes = wrapper.className().lowercase()
+            if (!classes.contains("collage") && !classes.contains("slideshow") && !classes.contains("button-row")) {
+                wrapper.tagName("section")
+            }
+        }
         val attachments = ArrayList<PostAttachment>()
         for (anchor in body.select(ATTACHMENT)) {
+            // Documents have no native spoiler cover. Keep a hidden attachment as a covered
+            // link, just as a table cell keeps it inline, rather than exposing its filename.
+            if (anchor.parents().any { it.normalName() in setOf("td", "th", "spoiler") }) continue
             val attachment = attachment(anchor, baseUrl) ?: continue
             attachments += attachment
             // The same shape as a photo: the importer reads `src` as the id of the file it holds,
@@ -167,6 +205,30 @@ object DiscourseImageBridge {
                 paragraph.replaceWith(replacement)
             } else {
                 anchor.replaceWith(replacement)
+            }
+            mediaBlocks += replacement
+        }
+        // Split text wrappers around prepared media, keeping their styles and authored order.
+        // Stop at semantic containers: a list/quote/details owns its media, not the outer body.
+        for (media in mediaBlocks) {
+            while (true) {
+                val parent = media.parent() ?: break
+                if (parent.normalName() in setOf("body", "blockquote", "li", "td", "th", "details", "pre", "code", "figure")) break
+                if (parent.normalName() == "div") break // gallery/button containers retained above
+                val children = parent.childNodes().toList()
+                val split = children.indexOf(media)
+                val before = parent.clone().empty().appendChildren(children.take(split))
+                val after = parent.clone().empty().appendChildren(children.drop(split + 1))
+                // An ordinary image link is navigation, not a lightbox download hint. Keep a
+                // separate link when its only visible child becomes a gallery media block.
+                if (parent.normalName() == "a" && parent.hasAttr("href") && children.size == 1) {
+                    if (media.hasAttr("data-spoiler")) after.appendElement("spoiler").text("打开链接")
+                    else after.text("打开链接")
+                }
+                if (before.text().isNotBlank() || before.select("img,video,animated-emoji,document,input").isNotEmpty()) parent.before(before)
+                parent.before(media)
+                if (after.text().isNotBlank() || after.select("img,video,animated-emoji,document,input").isNotEmpty()) parent.before(after)
+                parent.remove()
             }
         }
         return PreparedPostBody(body.html(), photos, images, attachments, videos, emojiImages.distinctBy { it.id })

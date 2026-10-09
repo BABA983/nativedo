@@ -33,6 +33,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.telegram.messenger.ApplicationLoader
+import org.telegram.messenger.RichMessageLayout
+import org.telegram.tgnet.tl.TL_iv
 import org.telegram.ui.PhotoViewer
 import org.telegram.ui.Components.ClippingImageView
 import org.telegram.ui.Components.RecyclerListView
@@ -91,6 +93,136 @@ internal class TopicImageTest {
         site.stop()
     }
 
+    /** Topic 2998428 puts a lightboxed image inside a heading, not in a separate paragraph. */
+    @Test
+    fun aLightboxInsideAHeadingStillDrawsAndOpensItsOriginal() {
+        site.serveCooked(TOPIC_ID, """
+            <p>Reset starts when the account is used.</p>
+            <h2><a class="anchor" href="#account"></a><strong>Account one:</strong><br>
+            <div class="lightbox-wrapper"><a class="lightbox" href="${site.url(ORIGINAL_PATH)}">
+            <img src="$IMAGE_PATH" width="320" height="180" alt="account quota">
+            <div class="meta">image 1600×900</div></a></div></h2>
+            <p>The text after the image remains readable.</p>
+        """.trimIndent())
+        harness.bootApp()
+        harness.await("home") { rowCount() == 2 }
+        harness.present(TopicFragment.forTopic(TOPIC_ID, "Heading image"))
+        harness.await("the post") { rowCount() == 1 }
+        harness.await("the original image to arrive") { site.cookieHeaderFor(ORIGINAL_PATH) != null }
+        harness.await("the heading's image to be drawn", iterations = 100) {
+            cyanPixels(retain(harness.renderApp("photo-heading-cell"))) > 1000
+        }
+        assertTrue("the heading's image opens its original in the viewer", openTheFirstImage())
+        val adapter = field(PhotoViewer.getInstance(), "pageBlocksAdapter") as PhotoViewer.PageBlocksAdapter
+        val decoded = BitmapFactory.decodeFile(adapter.getFile(0).absolutePath)
+        assertEquals(1600, decoded.width)
+        assertEquals(Color.CYAN, decoded.getPixel(799, 449))
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * A generic wrapper and a heading are text containers upstream's importer flattens, so a media
+     * block inside them used to lose both its text and its picture. The wrapper must keep the
+     * heading, the media block must keep its place between the two heading halves, and the photo
+     * must still be drawn and open its original.
+     */
+    @Test
+    fun aLightboxInsideAHeadingInsideAGenericWrapperKeepsTheHeadingOrderAndOriginal() {
+        site.serveCooked(TOPIC_ID, """
+            <p>Lead paragraph.</p>
+            <div class="post-body"><h2>Alpha<br>
+            <div class="lightbox-wrapper"><a class="lightbox" href="${site.url(ORIGINAL_PATH)}">
+            <img src="$IMAGE_PATH" width="320" height="180" alt="quota"><div class="meta">image 1600×900</div></a></div>
+            Omega</h2></div>
+            <p>Tail paragraph.</p>
+        """.trimIndent())
+        harness.bootApp()
+        harness.await("home") { rowCount() == 2 }
+        harness.present(TopicFragment.forTopic(TOPIC_ID, "Wrapped heading image"))
+        harness.await("the post") { rowCount() == 1 }
+        harness.await("the original image to arrive") { site.cookieHeaderFor(ORIGINAL_PATH) != null }
+        val message = laidOutCells().first().messageObject
+        val blocks = message.messageOwner.rich_message.blocks
+        println("photo: wrapped-heading blocks = " + blocks.map { it.javaClass.simpleName })
+        assertEquals("a generic wrapper must not flatten its children", 5, blocks.size)
+        assertEquals("Lead paragraph.", RichMessageLayout.getString(blocks[0].text))
+        val headings = blocks.filterIsInstance<TL_iv.pageBlockHeading2>()
+        assertEquals("the heading on either side of the media must survive as a heading",
+            listOf("Alpha", "Omega"), headings.map { RichMessageLayout.getString(it.text) })
+        assertTrue("the media must keep its place as a block between the two heading halves",
+            blocks[2] is TL_iv.pageBlockPhoto)
+        assertEquals("Tail paragraph.", RichMessageLayout.getString(blocks[4].text))
+        harness.await("the wrapped heading's image to be drawn", iterations = 100) {
+            cyanPixels(retain(harness.renderApp("photo-wrapped-heading-cell"))) > 1000
+        }
+        assertTrue("the wrapped heading's image opens its original", openTheFirstImage())
+        val adapter = field(PhotoViewer.getInstance(), "pageBlocksAdapter") as PhotoViewer.PageBlocksAdapter
+        val decoded = BitmapFactory.decodeFile(adapter.getFile(0).absolutePath)
+        assertEquals(1600, decoded.width)
+        assertEquals(Color.CYAN, decoded.getPixel(799, 449))
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * A full-size picture, a clip and a linked document written straight inside a heading or a
+     * paragraph (no lightbox wrapper) are content, not decoration, so each must survive as its own
+     * block between the text that surrounded it. Inline emoji and an avatar stay in the text.
+     */
+    @Test
+    fun bareContentImageVideoAndAttachmentSurviveInsideHeadingsAndParagraphs() {
+        val headingImage = "uploads/heading-photo.png"
+        val clip = "uploads/clip.mp4"
+        val guide = "uploads/guide.pdf"
+        site.serveImage(headingImage, solidPng(400, 200, Color.MAGENTA))
+        site.serveImage(guide, ByteArray(4096) { 32 }, contentType = "application/pdf")
+        site.serveCooked(TOPIC_ID, """
+            <h2>Halpha <img src="$headingImage" width="400" height="200"> Homega</h2>
+            <p>Palpha <video src="$clip" width="640" height="360"></video> Pomega</p>
+            <h2>Filebefore <a class="attachment" href="$guide">guide.pdf</a> Fileafter</h2>
+            <p>Deco <img class="emoji" alt=":smile:" width="160" height="160" src="uploads/decor-emoji.png"> stays inline</p>
+            <p><img class="avatar" width="320" height="320" src="uploads/decor-avatar.png"></p>
+        """.trimIndent())
+        harness.bootApp()
+        harness.await("home") { rowCount() == 2 }
+        harness.present(TopicFragment.forTopic(TOPIC_ID, "Bare media"))
+        harness.await("the post") { rowCount() == 1 }
+        harness.await("the heading image to be fetched") { site.cookieHeaderFor(headingImage) != null }
+        val message = laidOutCells().first().messageObject
+        val blocks = message.messageOwner.rich_message.blocks
+        println("photo: bare-media blocks = " + blocks.map { it.javaClass.simpleName })
+        val shape = blocks.map { block ->
+            when (block) {
+                is TL_iv.pageBlockPhoto -> "<photo>"
+                is TL_iv.pageBlockVideo -> "<video>"
+                is TL_iv.pageBlockDocument -> "<document>"
+                else -> RichMessageLayout.getString(block.text)
+            }
+        }
+        assertEquals(
+            "media in a heading or paragraph must survive as its own block between the surrounding text",
+            listOf(
+                "Halpha", "<photo>", "Homega",
+                "Palpha", "<video>", "Pomega",
+                "Filebefore", "<document>", "Fileafter",
+            ),
+            shape.take(9),
+        )
+        assertEquals("only the one content picture is a photo block; emoji and avatar stay inline", 1,
+            blocks.count { it is TL_iv.pageBlockPhoto })
+        assertTrue("an inline emoji keeps its readable label",
+            message.richLayout.joinedText.contains(":smile:"))
+        val video = blocks.filterIsInstance<TL_iv.pageBlockVideo>().single()
+        assertEquals("the clip block names the post's own source",
+            site.url(clip), DiscourseImageBridge.videoOf(video.video_id)?.url)
+        val document = blocks.filterIsInstance<TL_iv.pageBlockDocument>().single()
+        assertTrue("the linked file block is carried by the message's documents",
+            message.messageOwner.rich_message.documents.any { it.id == document.document_id })
+        harness.await("the bare heading image to be drawn", iterations = 100) {
+            magentaPixels(retain(harness.renderApp("photo-bare-media-cell"))) > 1000
+        }
+        harness.assertNoTelegramSideEffects()
+    }
+
     @Test
     fun aLightboxDownloadsTheOriginalWithTheSessionAndTheViewerActuallyUsesIt() {
         harness.bootApp()
@@ -132,7 +264,11 @@ internal class TopicImageTest {
         harness.assertNoTelegramSideEffects()
     }
 
-    /** Conflicting hints must not fetch a resize, and an ordinary linked picture is not a lightbox. */
+    /**
+     * Download hints and an unsorted srcset pick the original, an ordinary anchor's href is
+     * navigation and not the image's original, decorative inline pictures stay in the text, and a
+     * full-size content image wrapped in an ordinary link is still drawn from its own src.
+     */
     @Test
     fun downloadHintsAndUnsortedSrcsetChooseOriginalsWithoutPromotingInlineDecoration() {
         val chosen = listOf("uploads/download.png", "uploads/anchor-download.png", "uploads/wide.png", IMAGE_PATH)
@@ -163,15 +299,26 @@ internal class TopicImageTest {
         harness.await("all selected originals on disk") {
             prepared.images.all { image -> DiscourseImageBridge.localFiles(image).all { it.length() > 0 } }
         }
-        assertNull("lower-priority or ordinary href was not fetched", site.cookieHeaderFor("uploads/wrong.png"))
+        assertNull("the ordinary anchor href was never fetched as an original", site.cookieHeaderFor("uploads/wrong.png"))
+        val navigation = message.messageOwner.rich_message.blocks.flatMap { block ->
+            val text = block.text?.let { org.telegram.ui.iv.RichTextStyle.toSpannable(it) }
+            if (text is android.text.Spanned) text.getSpans(0, text.length,
+                org.telegram.ui.Components.URLSpanReplacement::class.java).map { it.url } else emptyList()
+        }
+        assertTrue("drawing a linked image must also preserve its navigation target: $navigation",
+            navigation.contains(site.url("uploads/wrong.png")))
         assertTrue(openTheFirstImage())
         val adapter = field(PhotoViewer.getInstance(), "pageBlocksAdapter") as PhotoViewer.PageBlocksAdapter
-        assertEquals("only the three lightboxes, not inline links or decoration, enter the gallery", 3, adapter.itemsCount)
+        assertEquals("the three lightboxes and the ordinary content image all enter the gallery",
+            4, adapter.itemsCount)
         for (index in 0 until adapter.itemsCount) {
             val bitmap = BitmapFactory.decodeFile(adapter.getFile(index).absolutePath)
             assertEquals(1600, bitmap.width)
             assertEquals(Color.CYAN, bitmap.getPixel(800, 450))
         }
+        assertEquals("the ordinary content image is drawn from its own src, not its anchor href",
+            prepared.images[3].id,
+            (adapter.getMedia(3) as org.telegram.tgnet.TLRPC.Photo).id)
         renderViewer("photo-hints-viewer")
         harness.assertNoTelegramSideEffects()
     }
@@ -299,6 +446,13 @@ internal class TopicImageTest {
         val pixels = IntArray(bitmap.width * bitmap.height)
         bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
         return pixels.count { Color.red(it) < 100 && Color.blue(it) > 200 && Color.green(it) > 200 }
+    }
+
+    private fun magentaPixels(file: File): Int {
+        val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return 0
+        val pixels = IntArray(bitmap.width * bitmap.height)
+        bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+        return pixels.count { Color.red(it) > 200 && Color.blue(it) > 200 && Color.green(it) < 100 }
     }
 
     private fun field(target: Any, name: String): Any? =

@@ -33,7 +33,9 @@ import org.telegram.tgnet.tl.TL_iv
 import org.telegram.ui.ActionBar.Theme
 import org.telegram.ui.Cells.ChatMessageCell
 import org.telegram.ui.Components.RecyclerListView
+import org.telegram.ui.Components.URLSpanReplacement
 import org.telegram.ui.iv.RichHtml
+import org.telegram.ui.iv.TableModel
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -245,6 +247,153 @@ internal class TopicBodyFidelityTest {
         harness.assertNoTelegramSideEffects()
     }
 
+    /**
+     * A post's own `<div>` groupings are not presentational the way `md-table` is: they wrap blocks.
+     * Upstream's importer reads an unclassified `<div>` as a single paragraph, so a heading and a
+     * table inside one used to be flattened out of existence. The wrapper must keep its children as
+     * their own blocks, in order, with the table still a grid.
+     */
+    @Test
+    fun genericWrapperKeepsHeadingsAndTableGridInOrder() {
+        open("<div class='post-content'>" +
+            "<h2>Heading Alpha</h2>" +
+            "<p>Paragraph Beta</p>" +
+            "<table><tbody><tr><td>left-top</td><td>right-top</td></tr>" +
+            "<tr><td>left-bottom</td><td>right-bottom</td></tr></tbody></table>" +
+            "<div>Paragraph Gamma</div><div>Paragraph Delta</div>" +
+            "</div>")
+        val rich = cell().messageObject.messageOwner.rich_message
+        println("body-wrapper: blocks = " + rich.blocks.map { it.javaClass.simpleName })
+        assertEquals("a generic wrapper must preserve each block boundary", 5, rich.blocks.size)
+        assertTrue("the heading must survive as a heading", rich.blocks[0] is TL_iv.pageBlockHeading2)
+        assertEquals("Heading Alpha", RichMessageLayout.getString(rich.blocks[0].text))
+        assertEquals("Paragraph Beta", RichMessageLayout.getString(rich.blocks[1].text))
+        val table = rich.blocks[2] as? TL_iv.pageBlockTable
+        assertNotNull("a table inside a generic wrapper must stay a grid", table)
+        assertEquals("two rows", 2, table!!.rows.size)
+        assertEquals("left-top", TableModel.readPlainText(table.rows[0].cells[0]))
+        assertEquals("right-top", TableModel.readPlainText(table.rows[0].cells[1]))
+        assertEquals("left-bottom", TableModel.readPlainText(table.rows[1].cells[0]))
+        assertEquals("right-bottom", TableModel.readPlainText(table.rows[1].cells[1]))
+        assertEquals("Paragraph Gamma", RichMessageLayout.getString(rich.blocks[3].text))
+        assertEquals("Paragraph Delta", RichMessageLayout.getString(rich.blocks[4].text))
+        renderTo("body-generic-wrapper-table")
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * Media written inside a list item, a quote or a details block belongs to that container. The
+     * picture must stay nested in its item (with the text on either side of it), and the item must
+     * not be lifted out of the list or the quote.
+     */
+    @Test
+    fun mediaInsideListsQuotesAndDetailsStaysNestedInItsContainer() {
+        open("<p>Lead paragraph.</p>" +
+            "<ul><li>list-alpha</li><li>list-beta <img width='240' height='120' src='/uploads/list-photo.png'> list-omega</li></ul>" +
+            "<blockquote><p>quote-lead</p><ul><li>quoted-alpha <img width='240' height='120' src='/uploads/quote-photo.png'></li>" +
+            "<li>quoted-omega</li></ul><p>quote-tail</p></blockquote>" +
+            "<details open><summary>Fold title</summary><p>fold-lead</p>" +
+            "<img width='240' height='120' src='/uploads/fold-photo.png'></details>" +
+            "<p>Tail paragraph.</p>", beforeBoot = {
+                site.serveImage("uploads/list-photo.png", solidPng(240, 120, Color.MAGENTA))
+                site.serveImage("uploads/quote-photo.png", solidPng(240, 120, Color.CYAN))
+                site.serveImage("uploads/fold-photo.png", solidPng(240, 120, Color.YELLOW))
+            })
+        val rich = cell().messageObject.messageOwner.rich_message
+        println("body-nested: top = " + rich.blocks.map { it.javaClass.simpleName })
+        assertTrue("no content photo may escape to the top level",
+            rich.blocks.none { it is TL_iv.pageBlockPhoto })
+        assertEquals("the list, quote and details stay top-level siblings, with lead and tail", 5, rich.blocks.size)
+
+        val list = rich.blocks[1] as TL_iv.pageBlockList
+        assertEquals("list-alpha", RichMessageLayout.getString((list.items[0] as TL_iv.TL_pageListItemText).text))
+        val listItem = list.items[1] as? TL_iv.TL_pageListItemBlocks
+        assertNotNull("a list item with a picture must keep it nested inside the item", listItem)
+        assertEquals("the item's text stays on either side of the picture",
+            listOf("list-beta", "list-omega"),
+            listItem!!.blocks.filterIsInstance<TL_iv.pageBlockParagraph>()
+                .map { RichMessageLayout.getString(it.text) })
+        val listPhotos = collectPhotos(listItem.blocks)
+        assertEquals("the list item owns one picture", 1, listPhotos.size)
+        assertTrue("the nested picture is a message photo", rich.photos.any { it.id == listPhotos.single() })
+
+        val quote = rich.blocks[2] as TL_iv.pageBlockBlockquoteBlocks
+        assertEquals("the quote owns its list's picture", 1, collectPhotos(quote.blocks).size)
+        val quotedItem = quote.blocks.filterIsInstance<TL_iv.pageBlockList>().single().items[0]
+        assertTrue("a quoted list item keeps its picture inside the quote",
+            quotedItem is TL_iv.TL_pageListItemBlocks)
+        assertEquals(1, collectPhotos((quotedItem as TL_iv.TL_pageListItemBlocks).blocks).size)
+
+        val details = rich.blocks[3] as TL_iv.pageBlockDetails
+        assertEquals("the details block owns its picture", 1, collectPhotos(details.blocks).size)
+
+        val joined = cell().messageObject.richLayout.joinedText.toString()
+        assertTrue("list text must survive in order: $joined",
+            joined.indexOf("list-alpha") < joined.indexOf("list-beta") &&
+                joined.indexOf("list-beta") < joined.indexOf("list-omega"))
+        assertTrue("quote text must survive in order: $joined",
+            joined.indexOf("quote-lead") < joined.indexOf("quoted-alpha") &&
+                joined.indexOf("quoted-alpha") < joined.indexOf("quote-tail"))
+        assertTrue("details text must survive: $joined", joined.contains("fold-lead"))
+        harness.await("the nested pictures decoded") {
+            harness.drawApp()
+            cell().messageObject.richLayout.blocks.filterIsInstance<RichMessageLayout.RichPhotoBlock>()
+                .count { it.imageReceiver.bitmap != null } >= 3
+        }
+        renderTo("body-nested-media")
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * A table cell holds inline text in upstream's model, so a picture written in one cannot be a
+     * media block. It must not vanish or be lifted out of the cell: it degrades to a tappable link
+     * to its own source, in place, between the text that surrounded it.
+     */
+    @Test
+    fun tableCellMediaDegradesToASourceLinkInPlace() {
+        val photo = "uploads/table-photo.png"
+        open("<div class='post-content'><table><tbody><tr>" +
+            "<td>before-cell</td>" +
+            "<td>cell-alpha <img width='320' height='180' src='/$photo'> cell-omega</td>" +
+            "<td>after-cell</td>" +
+            "</tr></tbody></table></div>", beforeBoot = {
+                site.serveImage(photo, solidPng(320, 180, Color.CYAN))
+            })
+        val rich = cell().messageObject.messageOwner.rich_message
+        assertTrue("a cell picture must not be promoted to a media block",
+            rich.blocks.none { it is TL_iv.pageBlockPhoto })
+        val table = rich.blocks.filterIsInstance<TL_iv.pageBlockTable>().firstOrNull()
+        assertNotNull("the generic wrapper must keep the table a grid", table)
+        assertEquals("the cell reads as its surrounding text with the source link in place",
+            listOf("before-cell", "cell-alpha ${site.url(photo)} cell-omega", "after-cell"),
+            table!!.rows[0].cells.map { TableModel.readPlainText(it) })
+        val styled = TableModel.readStyledText(table.rows[0].cells[1]) as android.text.Spannable
+        val links = styled.getSpans(0, styled.length, URLSpanReplacement::class.java)
+        assertEquals("the cell media degrades to a tappable link to its own source",
+            listOf(site.url(photo)), links.map { it.url })
+        assertTrue("nothing may be drawn as gallery media",
+            cell().messageObject.richLayout.blocks.none { it is RichMessageLayout.RichPhotoBlock })
+        renderTo("body-table-cell-source-link")
+        // The long source makes this grid wider than the viewport. Drag the production cell,
+        // rather than changing private scroll fields, to show the trailing column is reachable.
+        val tableBlock = cell().messageObject.richLayout.blocks
+            .filterIsInstance<RichMessageLayout.RichTableBlock>().single()
+        val start = cell().textX + tableBlock.padding.left + 100f
+        val y = cell().textY + tableBlock.currY + tableBlock.height / 2f
+        val now = SystemClock.uptimeMillis()
+        for ((action, x) in listOf(MotionEvent.ACTION_DOWN to start,
+            MotionEvent.ACTION_MOVE to start - 600f, MotionEvent.ACTION_CANCEL to start - 600f)) {
+            val event = MotionEvent.obtain(now, now + 100, action, x, y, 0)
+            val handled = cell().onTouchEvent(event)
+            if (action != MotionEvent.ACTION_CANCEL) {
+                assertTrue("the table must handle horizontal drag action $action", handled)
+            }
+            event.recycle()
+        }
+        renderTo("body-table-cell-source-link-scrolled")
+        harness.assertNoTelegramSideEffects()
+    }
+
     @Test
     fun nestedListsQuotesAndDetailsKeepTheirChildrenAndAuthors() {
         open("<p>Outside before</p><ol><li>First<ul><li>Nested A</li><li>Nested B</li></ul></li>" +
@@ -450,6 +599,27 @@ internal class TopicBodyFidelityTest {
         .first { File(it, "fixtures/discourse").isDirectory }
 
     private fun esc(s: CharSequence?): String = (s ?: "").toString().replace("\n", "\\n")
+
+    /** The id of every picture a block list carries, descending into the containers that own one. */
+    private fun collectPhotos(blocks: List<TL_iv.PageBlock>): List<Long> = blocks.flatMap { block ->
+        when (block) {
+            is TL_iv.pageBlockPhoto -> listOf(block.photo_id)
+            is TL_iv.pageBlockList -> block.items.flatMap { item ->
+                if (item is TL_iv.TL_pageListItemBlocks) collectPhotos(item.blocks) else emptyList()
+            }
+            is TL_iv.pageBlockOrderedList -> block.items.flatMap { item ->
+                if (item is TL_iv.TL_pageListOrderedItemBlocks) collectPhotos(item.blocks) else emptyList()
+            }
+            is TL_iv.pageBlockBlockquoteBlocks -> collectPhotos(block.blocks)
+            is TL_iv.pageBlockDetails -> collectPhotos(block.blocks)
+            else -> emptyList()
+        }
+    }
+
+    private fun solidPng(width: Int, height: Int, color: Int): ByteArray {
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).apply { eraseColor(color) }
+        return ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+    }
 
     private fun open(html: String, count: Int = 1, avatar: String = "", beforeBoot: () -> Unit = {}) {
         site.start()
