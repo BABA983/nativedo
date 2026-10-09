@@ -58,6 +58,30 @@ data class NewTopicDraftKey(
     }
 }
 
+/**
+ * A private message that is being written but has not been sent: the title, its recipients and the
+ * body. It is kept apart from [NewTopicDraft] on purpose - a half-written public topic and a
+ * half-written private message are different pieces of work, and the recipients belong to one of
+ * them only. There is no topic id yet, so the key is the account (and the site) alone.
+ */
+data class PrivateMessageDraft(
+    val title: String = "",
+    val recipients: String = "",
+    val raw: String = "",
+)
+
+data class PrivateMessageDraftKey(
+    val baseUrl: String,
+    val username: String,
+) {
+    internal fun preferencePrefix(): String = buildString {
+        append("pm|")
+        append(baseUrl.trim().trimEnd('/').lowercase())
+        append('|')
+        append(username.trim().lowercase())
+    }
+}
+
 class TopicReplyDraftStore(
     private val persistence: TopicReplyDraftPersistence = NoOpTopicReplyDraftPersistence,
 ) {
@@ -72,6 +96,13 @@ class TopicReplyDraftStore(
     fun saveNewTopic(key: NewTopicDraftKey, draft: NewTopicDraft) {
         persistence.saveNewTopic(key, draft)
     }
+
+    fun loadPrivateMessage(key: PrivateMessageDraftKey): PrivateMessageDraft =
+        persistence.loadPrivateMessage(key)
+
+    fun savePrivateMessage(key: PrivateMessageDraftKey, draft: PrivateMessageDraft) {
+        persistence.savePrivateMessage(key, draft)
+    }
 }
 
 interface TopicReplyDraftPersistence {
@@ -82,6 +113,10 @@ interface TopicReplyDraftPersistence {
     fun loadNewTopic(key: NewTopicDraftKey): NewTopicDraft
 
     fun saveNewTopic(key: NewTopicDraftKey, draft: NewTopicDraft)
+
+    fun loadPrivateMessage(key: PrivateMessageDraftKey): PrivateMessageDraft
+
+    fun savePrivateMessage(key: PrivateMessageDraftKey, draft: PrivateMessageDraft)
 }
 
 class SharedPreferencesTopicReplyDraftPersistence(
@@ -130,6 +165,28 @@ class SharedPreferencesTopicReplyDraftPersistence(
             ?: editor.remove("$prefix.category")
         editor.apply()
     }
+
+    override fun loadPrivateMessage(key: PrivateMessageDraftKey): PrivateMessageDraft {
+        val prefix = key.preferencePrefix()
+        return PrivateMessageDraft(
+            title = preferences.getString("$prefix.title", "").orEmpty(),
+            recipients = preferences.getString("$prefix.recipients", "").orEmpty(),
+            raw = preferences.getString("$prefix.raw", "").orEmpty(),
+        )
+    }
+
+    override fun savePrivateMessage(key: PrivateMessageDraftKey, draft: PrivateMessageDraft) {
+        val prefix = key.preferencePrefix()
+        val editor = preferences.edit()
+        if (draft.title.isBlank() && draft.recipients.isBlank() && draft.raw.isBlank()) {
+            editor.remove("$prefix.title").remove("$prefix.recipients").remove("$prefix.raw").apply()
+            return
+        }
+        editor.putString("$prefix.title", draft.title)
+        editor.putString("$prefix.recipients", draft.recipients)
+        editor.putString("$prefix.raw", draft.raw)
+        editor.apply()
+    }
 }
 
 private object NoOpTopicReplyDraftPersistence : TopicReplyDraftPersistence {
@@ -140,4 +197,8 @@ private object NoOpTopicReplyDraftPersistence : TopicReplyDraftPersistence {
     override fun loadNewTopic(key: NewTopicDraftKey): NewTopicDraft = NewTopicDraft()
 
     override fun saveNewTopic(key: NewTopicDraftKey, draft: NewTopicDraft) = Unit
+
+    override fun loadPrivateMessage(key: PrivateMessageDraftKey): PrivateMessageDraft = PrivateMessageDraft()
+
+    override fun savePrivateMessage(key: PrivateMessageDraftKey, draft: PrivateMessageDraft) = Unit
 }

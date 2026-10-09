@@ -82,6 +82,7 @@ import io.github.baba983.nativedo.sessionui.SessionUiState;
 import io.github.baba983.nativedo.topic.DiscourseAvatars;
 import io.github.baba983.nativedo.topic.DiscourseLoader;
 import io.github.baba983.nativedo.topic.DiscourseRows;
+import io.github.baba983.nativedo.topic.NewTopicFragment;
 import io.github.baba983.nativedo.topic.TopicFragment;
 
 /**
@@ -1378,17 +1379,18 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
     }
 
     /**
-     * 私信 opens the site's own composer in the in-app browser: Discourse writes a private message
-     * at `/new-message?username={u}`, and the browser shares this session's cookies, so the page
-     * arrives signed in. The action is only offered while the profile says the reader may send one.
+     * 私信 opens this client's own private-message composer, with the profile's own user filled in as
+     * its recipient. The action is only offered while the profile says the reader may send one
+     * ({@code can_send_private_message_to_user}), and the site still owns the final permission
+     * check: a write it refuses comes back as its own message. The composer writes a private message
+     * on the same {@code POST /posts.json} route a new topic takes, so nothing of the site's
+     * rendered {@code /new-message} page is needed.
      */
     private void openNewMessage() {
         if (getParentActivity() == null || container == null) {
             return;
         }
-        org.telegram.messenger.browser.Browser.openUrl(
-                getParentActivity(),
-                container.getBaseUrl().replaceAll("/+$", "") + "/new-message?username=" + username());
+        presentFragment(NewTopicFragment.privateMessage(username()));
     }
 
     /** 分享 hands the profile's site URL to the system share sheet, the clipboard as fallback. */

@@ -11,9 +11,13 @@ import android.widget.LinearLayout;
 import io.github.baba983.nativedo.app.NativeDo;
 import io.github.baba983.nativedo.core.di.AppContainer;
 import io.github.baba983.nativedo.core.model.CategorySummary;
+import io.github.baba983.nativedo.core.model.CreatedTopic;
 import io.github.baba983.nativedo.core.session.SessionSnapshot;
 import io.github.baba983.nativedo.feature.topic.data.NewTopicDraft;
 import io.github.baba983.nativedo.feature.topic.data.NewTopicDraftKey;
+import io.github.baba983.nativedo.feature.topic.data.PrivateMessageDraft;
+import io.github.baba983.nativedo.feature.topic.data.PrivateMessageDraftKey;
+import io.github.baba983.nativedo.messages.PrivateMessagesLoader;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLog;
@@ -47,9 +51,17 @@ public class NewTopicFragment extends BaseFragment {
     private static final int FIELD_HEIGHT_DP = 36;
     private static final int CATEGORY_ROW_HEIGHT_DP = 50;
 
+    /** The bundle flag that puts the same form into private-message mode, and the recipient to prefill. */
+    private static final String ARG_PRIVATE_MESSAGE = "private_message";
+    private static final String ARG_RECIPIENT = "recipient";
+
     private SizeNotifierFrameLayout contentView;
     private EditTextBoldCursor titleField;
     private TextSettingsCell categoryRow;
+    /** The recipients field, which stands in for the category row in private-message mode. */
+    private EditTextBoldCursor recipientsField;
+    /** The recipient a profile passed in, prefilled the first time the form is shown. */
+    private String initialRecipient;
     private ChatActivityEnterView composer;
     /** Upstream's floating-composer host: the island bubble the enter view rides in. */
     private org.telegram.ui.Components.chat.ChatInputViewsContainer inputViews;
@@ -68,6 +80,12 @@ public class NewTopicFragment extends BaseFragment {
     private NewTopicDraftKey formDraftKey;
     /** The category id a restored draft asked for, held until the site's categories arrive. */
     private Integer pendingCategoryId;
+    /** True when this form writes a private message instead of a public topic. */
+    private boolean privateMessageMode;
+    /** The private-message draft key, resolved once both the container and the session are known. */
+    private PrivateMessageDraftKey pmDraftKey;
+    /** Set once the fragment is destroyed, so a write that lands afterwards is dropped. */
+    private boolean destroyed;
 
     public NewTopicFragment(android.os.Bundle args) {
         super(args);
@@ -77,10 +95,28 @@ public class NewTopicFragment extends BaseFragment {
         return new NewTopicFragment(new android.os.Bundle());
     }
 
+    /**
+     * The same composer, writing a private message: the title and the body stay where they are, the
+     * category row becomes a recipients field, and [recipient] (a username an entry point already
+     * knows, such as a profile the reader pressed 私信 on) starts filled in. It is one screen because
+     * the two writes take the same route - {@code POST /posts.json} - and differ only in their
+     * fields, so a reader who can start a topic can start a private message in the field they know.
+     */
+    public static NewTopicFragment privateMessage(String recipient) {
+        android.os.Bundle args = new android.os.Bundle();
+        args.putBoolean(ARG_PRIVATE_MESSAGE, true);
+        if (recipient != null && !recipient.trim().isEmpty()) {
+            args.putString(ARG_RECIPIENT, recipient.trim());
+        }
+        return new NewTopicFragment(args);
+    }
+
     @Override
     protected View createView(Context context) {
         container = NativeDo.container(getParentActivity());
-        actionBar.setTitle("发新帖");
+        privateMessageMode = arguments != null && arguments.getBoolean(ARG_PRIVATE_MESSAGE, false);
+        initialRecipient = arguments == null ? null : arguments.getString(ARG_RECIPIENT);
+        actionBar.setTitle(privateMessageMode ? "写私信" : "发新帖");
         actionBar.setBackButtonImage(org.telegram.messenger.R.drawable.ic_ab_back);
         actionBar.setAllowOverlayTitle(true);
         actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
@@ -109,12 +145,20 @@ public class NewTopicFragment extends BaseFragment {
         titleField = createTitleField(context);
         form.addView(titleField, LayoutHelper.createLinear(
                 LayoutHelper.MATCH_PARENT, FIELD_HEIGHT_DP, 24, 12, 24, 0));
-        categoryRow = new TextSettingsCell(context, resourceProvider);
-        categoryRow.setBackground(Theme.createSelectorDrawable(
-                Theme.getColor(Theme.key_listSelector), 3));
-        categoryRow.setOnClickListener(v -> pickCategory());
-        form.addView(categoryRow, LayoutHelper.createLinear(
-                LayoutHelper.MATCH_PARENT, CATEGORY_ROW_HEIGHT_DP));
+        if (privateMessageMode) {
+            // A private message has no category; it names its recipients instead. The field is the
+            // same titled input the title uses, so the form reads as one row of names over a body.
+            recipientsField = createRecipientsField(context);
+            form.addView(recipientsField, LayoutHelper.createLinear(
+                    LayoutHelper.MATCH_PARENT, FIELD_HEIGHT_DP, 24, 8, 24, 0));
+        } else {
+            categoryRow = new TextSettingsCell(context, resourceProvider);
+            categoryRow.setBackground(Theme.createSelectorDrawable(
+                    Theme.getColor(Theme.key_listSelector), 3));
+            categoryRow.setOnClickListener(v -> pickCategory());
+            form.addView(categoryRow, LayoutHelper.createLinear(
+                    LayoutHelper.MATCH_PARENT, CATEGORY_ROW_HEIGHT_DP));
+        }
         contentView.addView(form, LayoutHelper.createFrame(
                 LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP));
 
@@ -149,9 +193,13 @@ public class NewTopicFragment extends BaseFragment {
                 this, container, composer, inputViews, inputInsets, glassHost, null);
         fragmentView = contentView;
         androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(contentView, this::onInsetsInternal);
-        showCategory();
-        loadCategories();
-        // A topic that was half-written is handed back whole: title, category and body.
+        if (privateMessageMode) {
+            applyInitialRecipient();
+        } else {
+            showCategory();
+            loadCategories();
+        }
+        // A half-written draft is handed back whole: title, recipients (or category) and body.
         loadDraft();
         return fragmentView;
     }
@@ -211,6 +259,80 @@ public class NewTopicFragment extends BaseFragment {
             }
         });
         return field;
+    }
+
+    /**
+     * Who a private message goes to: a comma-separated list of usernames, which is what the site's
+     * own {@code target_recipients} field takes. It is upstream's titled input, the same control the
+     * title uses, and a change in it is part of the draft.
+     */
+    private EditTextBoldCursor createRecipientsField(Context context) {
+        EditTextBoldCursor field = new EditTextBoldCursor(context) {
+            @Override
+            protected Theme.ResourcesProvider getResourcesProvider() {
+                return resourceProvider;
+            }
+        };
+        field.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+        field.setHintTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteHintText, resourceProvider));
+        field.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourceProvider));
+        field.setBackgroundDrawable(null);
+        field.setLineColors(
+                Theme.getColor(Theme.key_windowBackgroundWhiteInputField, resourceProvider),
+                Theme.getColor(Theme.key_windowBackgroundWhiteInputFieldActivated, resourceProvider),
+                Theme.getColor(Theme.key_text_RedRegular, resourceProvider));
+        field.setMaxLines(1);
+        field.setLines(1);
+        field.setSingleLine(true);
+        field.setGravity(LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT);
+        field.setInputType(InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        field.setImeOptions(EditorInfo.IME_ACTION_NEXT);
+        field.setHint("收件人（用逗号分隔）");
+        field.setOnEditorActionListener((view, actionId, event) -> {
+            if (actionId == EditorInfo.IME_ACTION_NEXT && composer != null) {
+                composer.setFieldFocused();
+                AndroidUtilities.showKeyboard(composer.getEditField());
+                return true;
+            }
+            return false;
+        });
+        field.setCursorColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourceProvider));
+        field.setCursorSize(AndroidUtilities.dp(20));
+        field.setCursorWidth(1.5f);
+        field.addTextChangedListener(new android.text.TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence text, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence text, int start, int before, int count) {
+            }
+
+            @Override
+            public void afterTextChanged(android.text.Editable text) {
+                updateComposerActions();
+                saveDraft();
+            }
+        });
+        return field;
+    }
+
+    /**
+     * The recipient an entry point already knew (a profile the reader pressed 私信 on) starts filled
+     * in - but only when the reader has no half-written message of their own in the draft, which is
+     * theirs and wins.
+     */
+    private void applyInitialRecipient() {
+        if (recipientsField == null || initialRecipient == null || initialRecipient.isEmpty()) {
+            return;
+        }
+        if (container != null) {
+            PrivateMessageDraft draft = container.getTopicReplyDraftStore().loadPrivateMessage(pmDraftKey());
+            if (!draft.getRecipients().isEmpty()) {
+                return;
+            }
+        }
+        recipientsField.setText(initialRecipient);
     }
 
     /**
@@ -331,15 +453,48 @@ public class NewTopicFragment extends BaseFragment {
         return formDraftKey = new NewTopicDraftKey(container == null ? "" : container.getBaseUrl(), username);
     }
 
-    /** Puts the form back: the title, the body, and the category once the site's list arrives. */
+    /**
+     * The key a private-message draft is stored under: the site and the account, kept apart from the
+     * public new-topic draft so the two half-written forms never overwrite each other.
+     */
+    private PrivateMessageDraftKey pmDraftKey() {
+        if (pmDraftKey != null) {
+            return pmDraftKey;
+        }
+        String username = "";
+        if (container != null) {
+            SessionSnapshot snapshot = container.getSessionStore().snapshot();
+            if (snapshot != null) {
+                username = snapshot.getUsername();
+            }
+        }
+        return pmDraftKey = new PrivateMessageDraftKey(container == null ? "" : container.getBaseUrl(), username);
+    }
+
+    /** Puts the form back: the title, the body, and the recipients (or the category) it carried. */
     private void loadDraft() {
         if (container == null) {
             return;
         }
-        NewTopicDraft draft = container.getTopicReplyDraftStore().loadNewTopic(draftKey());
-        pendingCategoryId = draft.getCategoryId();
         restoringDraft = true;
         try {
+            if (privateMessageMode) {
+                PrivateMessageDraft draft = container.getTopicReplyDraftStore().loadPrivateMessage(pmDraftKey());
+                pendingCategoryId = null;
+                if (titleField != null && !draft.getTitle().isEmpty()) {
+                    titleField.setText(draft.getTitle());
+                }
+                if (recipientsField != null && !draft.getRecipients().isEmpty()) {
+                    recipientsField.setText(draft.getRecipients());
+                }
+                if (composer != null && !draft.getRaw().isEmpty()) {
+                    composer.setFieldText(draft.getRaw());
+                }
+                updateComposerActions();
+                return;
+            }
+            NewTopicDraft draft = container.getTopicReplyDraftStore().loadNewTopic(draftKey());
+            pendingCategoryId = draft.getCategoryId();
             if (titleField != null && !draft.getTitle().isEmpty()) {
                 titleField.setText(draft.getTitle());
             }
@@ -376,14 +531,25 @@ public class NewTopicFragment extends BaseFragment {
         String title = titleField == null ? "" : titleField.getText().toString();
         String raw = composer == null || composer.getFieldText() == null
                 ? "" : composer.getFieldText().toString();
+        if (privateMessageMode) {
+            String recipients = recipientsField == null ? "" : recipientsField.getText().toString();
+            container.getTopicReplyDraftStore().savePrivateMessage(
+                    pmDraftKey(), new PrivateMessageDraft(title, recipients, raw));
+            return;
+        }
         Integer categoryId = category == null ? null : category.getId();
         container.getTopicReplyDraftStore().saveNewTopic(
                 draftKey(), new NewTopicDraft(title, categoryId, raw));
     }
 
-    /** Only a topic the site accepted earns this; a failure keeps the form for the next press. */
+    /** Only a write the site accepted earns this; a failure keeps the form for the next press. */
     private void clearDraft() {
         if (container == null) {
+            return;
+        }
+        if (privateMessageMode) {
+            container.getTopicReplyDraftStore().savePrivateMessage(
+                    pmDraftKey(), new PrivateMessageDraft("", "", ""));
             return;
         }
         container.getTopicReplyDraftStore().saveNewTopic(draftKey(), new NewTopicDraft("", null, ""));
@@ -423,6 +589,8 @@ public class NewTopicFragment extends BaseFragment {
 
     @Override
     public void onFragmentDestroy() {
+        // A write that has not landed yet must not be written into a screen that is gone.
+        destroyed = true;
         saveDraft();
         if (composerTools != null) {
             composerTools.onDestroy();
@@ -515,6 +683,10 @@ public class NewTopicFragment extends BaseFragment {
         if (raw.isEmpty()) {
             return;
         }
+        if (privateMessageMode) {
+            sendPrivateMessage(title, raw);
+            return;
+        }
         // A topic needs three things and the composer only knows the body, so a press that is missing
         // one of the other two says which, rather than doing nothing.
         String missing = title.isEmpty() ? "标题" : category == null ? "分类" : null;
@@ -539,6 +711,96 @@ public class NewTopicFragment extends BaseFragment {
             showError("发帖失败", error);
             return kotlin.Unit.INSTANCE;
         });
+    }
+
+    /**
+     * A private message goes the same route a topic does - {@code POST /posts.json} - with its
+     * recipients and the {@code private_message} archetype in place of a category. The site owns the
+     * permission check: a reader who may not message one of the recipients is refused with the
+     * site's own words, and nothing is treated as sent. The sender is read from the authenticated
+     * session at the press, and a completion that arrives after the account changed (or after this
+     * screen is gone) is dropped rather than written into the next account's screen.
+     */
+    private void sendPrivateMessage(String title, String raw) {
+        String recipients = recipientsField == null ? "" : recipientsField.getText().toString().trim();
+        String missing = title.isEmpty() ? "标题" : recipients.isEmpty() ? "收件人" : null;
+        if (missing != null) {
+            composer.setFieldText(raw);
+            showError("还不能发送", new java.io.IOException("请先填写" + missing));
+            return;
+        }
+        final String sender = pmDraftKey().getUsername();
+        if (sender.isEmpty() || !senderMatches(sender)) {
+            composer.setFieldText(raw);
+            saveDraft();
+            showError("还不能发送", new java.io.IOException("账号已改变，请重新打开私信编辑器"));
+            return;
+        }
+        final int generation = container.getSessionCoordinator().currentRequestContext().getGeneration();
+        sending = true;
+        updateComposerActions();
+        PrivateMessagesLoader.INSTANCE.send(container, title, recipients, raw, created -> {
+            sending = false;
+            if (destroyed || !senderMatches(sender)
+                    || generation != container.getSessionCoordinator().currentRequestContext().getGeneration()) {
+                return kotlin.Unit.INSTANCE;
+            }
+            onPrivateMessageCreated(created);
+            return kotlin.Unit.INSTANCE;
+        }, error -> {
+            sending = false;
+            if (destroyed || !senderMatches(sender)
+                    || generation != container.getSessionCoordinator().currentRequestContext().getGeneration()) {
+                return kotlin.Unit.INSTANCE;
+            }
+            if (composer != null) {
+                composer.setFieldText(raw);
+            }
+            saveDraft();
+            updateComposerActions();
+            showError("发送失败", error);
+            return kotlin.Unit.INSTANCE;
+        });
+    }
+
+    /** The signed-in username, or the empty string when there is no usable session. */
+    private String sessionUsername() {
+        if (container == null) {
+            return "";
+        }
+        SessionSnapshot snapshot = container.getSessionStore().snapshot();
+        if (snapshot == null) {
+            return "";
+        }
+        String username = snapshot.getUsername();
+        return username == null ? "" : username;
+    }
+
+    /** Whether the account a write was sent for is still the signed-in one. */
+    private boolean senderMatches(String sender) {
+        return sender.equals(sessionUsername());
+    }
+
+    /**
+     * The site made the topic for the message. A private message has no list the writer came from -
+     * it can start from a profile or the inbox - so the created topic is opened directly, the way a
+     * notification's own topic is, and this screen is replaced rather than left behind it.
+     */
+    private void onPrivateMessageCreated(CreatedTopic created) {
+        posted = true;
+        if (composer != null) {
+            composer.setFieldText("");
+        }
+        clearDraft();
+        String typed = titleField == null ? "" : titleField.getText().toString().trim();
+        String topicTitle = created.getTitle().isEmpty() ? typed : created.getTitle();
+        TopicFragment topic = TopicFragment.forTopic(created.getTopicId(), topicTitle);
+        if (getParentActivity() instanceof io.github.baba983.nativedo.app.NativeDoActivity) {
+            ((io.github.baba983.nativedo.app.NativeDoActivity) getParentActivity()).replace(topic);
+        } else {
+            presentFragment(topic);
+            finishFragment();
+        }
     }
 
     /**
@@ -574,6 +836,16 @@ public class NewTopicFragment extends BaseFragment {
 
     TextSettingsCell categoryRow() {
         return categoryRow;
+    }
+
+    /** The recipients field of a private message, for the harness; null on a public new topic. */
+    EditTextBoldCursor recipientsField() {
+        return recipientsField;
+    }
+
+    /** Whether this form writes a private message; the composer's own mode, for a screen test. */
+    boolean isPrivateMessageMode() {
+        return privateMessageMode;
     }
 
     /** What the composer tells us; the two messages this screen has an answer for. */
