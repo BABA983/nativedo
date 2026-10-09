@@ -323,8 +323,11 @@ internal class TopicRepliesThreadTest {
         )
 
         tapThreadStatus(thread)
-        harness.await("the empty terminal page") {
-            site.queriesFor("posts/$PARENT_ID/replies").size >= 3
+        // Wait for the terminal page to land and end the thread, not just to be asked for. The
+        // query count rises when the request reaches the site, before the empty answer is processed;
+        // awaiting it alone returns while the reading line is still up.
+        harness.await("the empty terminal page to end the thread") {
+            site.queriesFor("posts/$PARENT_ID/replies").size >= 3 && !thread.threadHasMore()
         }
         harness.idle()
         assertEquals("the count is still the site's", 20, bubblesOf(thread).first().getRepliesCount())
@@ -704,7 +707,13 @@ internal class TopicRepliesThreadTest {
         )
 
         // Explicit: reply to a loaded reply, and the body names that reply's floor.
-        harness.await("the reloaded thread") { floorsOf(thread).size == 3 }
+        // The accepted reply reloads the page: its success clears the reply target and re-reads the
+        // replies. The row count alone is already 3 before that reload lands, so it cannot gate it;
+        // without waiting for the reload's own read, its clearDraft can arrive after the explicit
+        // target is picked below and silently drop it, falling back to the root floor.
+        harness.await("the accepted reply's reload") {
+            site.queriesFor("posts/$PARENT_ID/replies").size >= 2 && floorsOf(thread).size == 3
+        }
         harness.layoutApp()
         harness.idleClock(200)
         val replyBubble = bubblesOf(thread).first { message ->

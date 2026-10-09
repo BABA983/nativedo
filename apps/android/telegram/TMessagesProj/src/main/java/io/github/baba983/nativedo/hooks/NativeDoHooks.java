@@ -513,6 +513,36 @@ public final class NativeDoHooks {
         return upstream;
     }
 
+    /**
+     * NativeDo: the drawn size of an inline custom emoji in a rich message body.
+     *
+     * <p>Upstream lays a body emoji out at {@code dp(4 + fontSize + 4)} drawn with scale {@code 1.2} -
+     * about 1.8x the text it sits in - so a Discourse {@code :laugh:} (and every other inline emoji)
+     * bulges out of its line. The only other thing the span contributes is its font metrics, and
+     * upstream already preserves those ({@code AnimatedEmojiSpan.preserveFontMetrics}) so the line
+     * box stays the text's own; shrinking the span's size therefore shrinks the artwork without
+     * touching line height. This sizes it to the body text's line height instead, so the emoji fills
+     * its line the way a glyph does, and a later font-size change moves it with the text.</p>
+     *
+     * <p>Upstream's own value is what ran at the call site before this hook: the span is built
+     * exactly as upstream builds it and only its drawn size is adjusted. A link-button label keeps
+     * upstream's size, so buttons read the same.</p>
+     *
+     * @param span the span upstream just built; null-safe.
+     * @param paint the body text paint, whose font metrics give the line height.
+     * @param inButton whether the emoji is a link-button label (left at upstream's size).
+     */
+    public static void inlineEmojiSpanForBody(
+            org.telegram.ui.Components.AnimatedEmojiSpan span, android.graphics.Paint paint, boolean inButton) {
+        if (span == null || paint == null || inButton || mtprotoEnabled) {
+            return;
+        }
+        final android.graphics.Paint.FontMetricsInt fm = paint.getFontMetricsInt();
+        final int lineHeight = Math.abs(fm.ascent) + Math.abs(fm.descent);
+        // The span draws a square of size * scale; upstream's body scale is 1.2 (1 for a button).
+        span.setSize(Math.max(1, Math.round(lineHeight / 1.2f)));
+    }
+
     /** The site's static PNG has no Lottie enter animation to wait for. */
     public static boolean hasReactionEnterAnimation(int account, String emoticon, boolean upstream) {
         if (!mtprotoEnabled && emoticon != null) {

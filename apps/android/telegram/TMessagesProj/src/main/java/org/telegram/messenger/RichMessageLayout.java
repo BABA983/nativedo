@@ -2130,6 +2130,7 @@ public class RichMessageLayout {
             } else {
                 emojiSpan = new AnimatedEmojiSpan(customEmoji.document_id, inButton ? 1 : 1.2f, null)
                     .setSize(dp(4 + fontSize + (inButton ? -2 : 4)));
+                io.github.baba983.nativedo.hooks.NativeDoHooks.inlineEmojiSpanForBody(emojiSpan, textPaint, inButton); // NativeDo: draw an inline emoji at the body text's size
             }
             out.setSpan(emojiSpan, start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         } else if (text instanceof TL_iv.textSpoiler) {

@@ -27,6 +27,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import org.telegram.messenger.ApplicationLoader
 import org.telegram.messenger.RichMessageLayout
+import org.telegram.messenger.SharedConfig
 import org.telegram.ui.ActionBar.Theme
 import org.telegram.ui.Cells.ChatMessageCell
 import org.telegram.ui.Components.AnimatedEmojiSpan
@@ -106,6 +107,11 @@ internal class DiscourseEmojiRenderTest {
         rebindPosts()
         renderTo("emoji-cooked-dark")
         switchTo(dark = false)
+        rebindPosts()
+        harness.await("both emoji after switching back to light") {
+            harness.drawApp()
+            emojiHolders().count { it.drawable?.imageReceiver?.bitmap != null } == 2
+        }
 
         val documentIds = emojiHolders().mapNotNull { it.span?.documentId }
         assertEquals("each emoji is its own document", 2, documentIds.distinct().size)
@@ -131,7 +137,8 @@ internal class DiscourseEmojiRenderTest {
         harness.present(TopicFragment.forTopic(TOPIC, "Emoji render"))
         harness.await("cached emoji to render after reopening") {
             harness.drawApp()
-            emojiHolders().count { it.drawable?.imageReceiver?.bitmap != null } == 2
+            cells().isNotEmpty() &&
+                emojiHolders().count { it.drawable?.imageReceiver?.bitmap != null } == 2
         }
         assertEquals("reopening must not redownload cached artwork", fetches,
             site.requestPaths.count { it.contains("-laugh.png") || it.contains("-wave.png") })
@@ -270,7 +277,126 @@ internal class DiscourseEmojiRenderTest {
         assertNoSideEffects()
     }
 
+    /**
+     * The requested size change: an inline emoji must draw inside the body text's line, not at
+     * upstream's `dp(fontSize + 8)` drawn with scale 1.2 (about 1.8x the text), which bulges out of
+     * the line box. The oracle is the artwork's real drawn square, measured off the rendered cell,
+     * against the body text paint's own line height - not a dp constant copied from the
+     * implementation - so a regression that restores the oversized span fails here.
+     */
+    @Test
+    fun inlineEmojiDrawsWithinTheBodyTextLine() {
+        val laugh = "emoji/${runToken()}-laugh.png"
+        openWith({ s ->
+            s.serveImage(laugh, solidPng(Color.rgb(255, 204, 0), 40))
+            "<p>中文 <b>粗体</b> <img class='emoji' alt=':laugh:' src='${s.url(laugh)}' " +
+                "width='20' height='20'> <a href='/x'>链接</a> English</p>"
+        })
+        harness.await("the emoji artwork") {
+            harness.drawApp()
+            emojiHolders().any { it.drawable?.imageReceiver?.bitmap != null }
+        }
+        harness.layoutApp()
+        harness.drawApp()
+        harness.drawApp()
+        renderTo("render-fixes-emoji-light", "nativedo")
+        switchTo(dark = true)
+        rebindPosts()
+        harness.drawApp()
+        harness.drawApp()
+        renderTo("render-fixes-emoji-night", "nativedo")
+        switchTo(dark = false)
+        rebindPosts()
+        harness.drawApp()
+        harness.drawApp()
+
+        val (drawn, line) = emojiSideAndTextLine()
+        assertTrue("the artwork must have been drawn: drawn=$drawn", drawn > 0f)
+        assertTrue(
+            "an inline emoji must not bulge past the body text line: drawn=$drawn line=$line",
+            drawn <= line * 1.1f,
+        )
+        assertTrue(
+            "an inline emoji must stay legible, not shrink away: drawn=$drawn line=$line",
+            drawn >= line * 0.5f,
+        )
+        assertNoSideEffects()
+    }
+
+    /**
+     * The emoji tracks the body font: at a larger body size the artwork must grow with the text and
+     * still fit the line, so a fixed pixel size - or one left at upstream's constant - cannot pass.
+     */
+    @Test
+    fun inlineEmojiTracksALargerBodyFont() {
+        val laugh = "emoji/${runToken()}-laugh.png"
+        val defaultFont = SharedConfig.fontSize
+        try {
+            openWith({ s ->
+                s.serveImage(laugh, solidPng(Color.rgb(255, 204, 0), 40))
+                "<p>中文 <img class='emoji' alt=':laugh:' src='${s.url(laugh)}' width='20' height='20'> " +
+                    "链接 English</p>"
+            })
+            harness.await("the default-size artwork") {
+                harness.drawApp()
+                emojiHolders().any { it.drawable?.imageReceiver?.bitmap != null }
+            }
+            harness.layoutApp()
+            harness.drawApp()
+            harness.drawApp()
+            val (smallDrawn, smallLine) = emojiSideAndTextLine()
+
+            SharedConfig.fontSize = defaultFont + 8
+            // The body is laid out from SharedConfig.fontSize when the message is built, so a fresh
+            // page is what carries the larger font into the real renderer.
+            harness.topFragment()!!.finishFragment()
+            harness.idleClock(600)
+            harness.present(TopicFragment.forTopic(TOPIC, "Emoji font"))
+            harness.await("the larger-size artwork") {
+                harness.drawApp()
+                list().adapter?.itemCount == 1 &&
+                    emojiHolders().any { it.drawable?.imageReceiver?.bitmap != null }
+            }
+            harness.layoutApp()
+            harness.drawApp()
+            harness.drawApp()
+            val (largeDrawn, largeLine) = emojiSideAndTextLine()
+
+            assertTrue(
+                "the emoji must not bulge past the line at the larger font: drawn=$largeDrawn line=$largeLine",
+                largeDrawn <= largeLine * 1.1f,
+            )
+            assertTrue(
+                "the emoji must stay legible at the larger font: drawn=$largeDrawn line=$largeLine",
+                largeDrawn >= largeLine * 0.5f,
+            )
+            assertTrue(
+                "a larger body font must draw a larger emoji: small=$smallDrawn large=$largeDrawn",
+                largeDrawn > smallDrawn,
+            )
+            assertTrue(
+                "a larger body font must give a taller text line: small=$smallLine large=$largeLine",
+                largeLine > smallLine,
+            )
+        } finally {
+            SharedConfig.fontSize = defaultFont
+        }
+        assertNoSideEffects()
+    }
+
     // ------------------------------------------------------------------ helpers
+
+    /**
+     * The rendered emoji's real drawn side and the body text's own line height, both in pixels. The
+     * drawn side is read off the holder's drawable bounds (a square of the span's measured size),
+     * which the production cell's own draw populated.
+     */
+    private fun emojiSideAndTextLine(): Pair<Float, Float> {
+        val holder = emojiHolders().first { it.drawable?.imageReceiver?.bitmap != null }
+        val metrics = cell().messageObject.richLayout.textPaint.fontMetricsInt
+        val line = (kotlin.math.abs(metrics.ascent) + kotlin.math.abs(metrics.descent)).toFloat()
+        return holder.drawableBounds.width().toFloat() to line
+    }
 
     private fun emojiHolders(): List<AnimatedEmojiSpan.AnimatedEmojiHolder> =
         richTextBlocks().flatMap { block -> block.text.animatedEmojiStack?.holders?.toList().orEmpty() }
