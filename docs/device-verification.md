@@ -2783,3 +2783,155 @@ Inspected final host renders (synthetic fixture content; not physical IME/GPU ev
 No device was available, APK installed, real-site write performed or OS push claimed. All
 changes remain local, uncommitted and unpushed. The full gate, white topic-night wallpaper and
 comment reproduction remain open; this is a review/debug build, not release clearance.
+
+## 2026-10-09 — topic 2998428 heading-photo regression (Linux host)
+
+The public HTML of `https://linux.do/t/topic/2998428` places its first lightbox inside an
+`h2` after a bold label and a line break. Telegram's `RichHtml` imports that heading as text
+only, dropping the nested photo. A production-wired `TopicImageTest` reproduced the missing
+photo before the fix; the retained red log is
+`.amp/in/artifacts/topic-2998428/verification/heading-red.log`.
+
+The NativeDo image bridge now splits text wrappers around prepared lightboxes, preserving
+text order/styles and omitting empty fragments. Ordinary inline images retain their existing
+behavior; Telegram's subtree is unchanged. The regression serves a cyan 1600×900 original and
+a magenta preview: it checks that the original is drawn, a tap opens the upstream viewer, and
+the viewer decodes the original's dimensions and pixels. The inspected
+[final render](../.amp/in/artifacts/topic-2998428/heading-image-fixed.png) uses this controlled
+image, not the real post's artwork; surrounding text is visible without an extra empty heading.
+
+Reproduce the selected gate from the repository root:
+
+```bash
+./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:testDebugUnitTest \
+  --tests '*TopicImageTest' --tests '*DiscourseCookedHtmlTest' \
+  --tests '*TopicBodyFidelityTest' --tests '*IncomingReplyTest' \
+  --tests '*TopicRepliesThreadTest' --quiet
+./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:assembleDebug \
+  -Pandroid.injected.build.abi=arm64-v8a --quiet
+```
+
+The selected gate passed **46 tests / five classes, zero failures/errors/skips**; XML and log
+are retained under `.amp/in/artifacts/topic-2998428/verification/`. Arm64 assemble exited zero.
+This is not a new full-suite result or a physical-device acceptance pass.
+The arm64-only APK is `.amp/in/artifacts/topic-2998428/nativedo-heading-image-debug-arm64.apk`,
+SHA-256 `b581a9872cdf2a6a634c868bc6b5ef64081128b73400eed45739da8d9b34dbeb`.
+
+The user's two comment screenshots show a blank reply-preview slot while the child's author,
+body and timestamp are already drawn; the later screenshot fills the same slot. The ordinary
+host comment render does not reproduce that quote-only delay. An initial-frame probe instead
+observed a whole-row insertion fade, which is a different symptom and was removed rather than
+used to justify disabling animations. No comment-animation change is claimed by this fix.
+The separate Mac runner's read-only diagnosis found only an emulator, with an older ordinary
+APK and a separate audit-modified review APK; neither proves behavior at this orb's HEAD.
+The parent-floor public JSON request was blocked by Cloudflare, so there is no actual payload
+or matching-version failure-frame capture. See the imported
+[read-only diagnostic](../.amp/in/artifacts/topic-2998428/comment-delay-diagnostic.md).
+The next reproduction needs a matching APK plus parent/reply payloads and failure-frame
+layout/draw state; missing-target network delay and upstream drawing gates remain hypotheses,
+not established causes.
+This was the initial narrow pass; the broader rendering and delivery status is recorded below.
+
+## 2026-10-09 — cooked HTML structure and semantics regression (Linux host)
+
+The broader pass preserves media and text order in headings and paragraphs, ordinary content
+images and linked-image navigation, generic wrapper block boundaries, and media nested inside
+lists, quotes and details. Adjacent direct-text `div`s remain separate paragraphs rather than
+being concatenated. Telegram's subtree, measurement and drawing code are unchanged.
+
+Discourse inline/block spoilers now retain covered text and media without flattening their
+containers. Hidden table-media fallback links and hidden attachment links stay covered.
+Fenced `lang-*` / `language-*` metadata reaches the upstream code block; indentation and inner
+line breaks are retained. Upstream's current rich-code style does not draw a separate language
+header; it uses the language for highlighting and the accessibility label.
+
+The rich model supports inline text, not media blocks, inside table cells. Images/videos there
+therefore remain at their authored position as source links. Unsupported `audio`, `iframe`,
+`embed` and `object` content gets a readable HTTP(S)/site-relative link or a no-source fallback;
+unsafe embed schemes stay non-clickable text. This is compatibility with cooked Discourse
+content, not a claim of arbitrary browser HTML/CSS parity or embedded audio playback.
+
+The final selected gate passed **74 tests / 12 classes, zero failures/errors/skips** after the
+linked-image, nested-spoiler and adjacent-div corrections. Retained log and XML:
+`.amp/in/artifacts/cooked-content/verification/selected.log` and `selected-xml/`.
+Failing-before-fix evidence is retained in that directory as `structure-red.log`,
+`linked-image-red.log`, `table-spoiler-red.log`, `nested-spoiler-red.log` and
+`block-boundary-red.log`. The tests drive production topic fragments, API parsing and upstream
+cells against `FakeDiscourseSite`, including photo-viewer original decoding, spoiler reveal and
+horizontal table dragging; they are host integration checks, not physical-device passes.
+
+For a conservative rerun, create this temporary init script outside the repository:
+
+```groovy
+// /tmp/nativedo-test-limits.gradle
+gradle.projectsEvaluated {
+    allprojects {
+        tasks.withType(org.gradle.api.tasks.testing.Test).configureEach {
+            maxHeapSize = '2g'
+            maxParallelForks = 1
+            forkEvery = 4
+        }
+    }
+}
+```
+
+Run Gradle sequentially from the repository root:
+
+```bash
+./apps/android/telegram/gradlew -p apps/android/telegram \
+  -I /tmp/nativedo-test-limits.gradle \
+  -Dorg.gradle.jvmargs='-Xmx2g -XX:MaxMetaspaceSize=768m' --no-daemon --max-workers=2 \
+  :nativedo:testDebugUnitTest --tests '*TopicImageTest' --tests '*TopicBodyFidelityTest' \
+  --tests '*TopicCookedSemanticsTest' --tests '*DiscourseCookedHtmlTest' \
+  --tests '*PostVideoTest' --tests '*AttachmentRenderTest' --tests '*DiscourseEmojiRenderTest' \
+  --tests '*WideTableLayoutTest' --tests '*PollTest' --tests '*OneboxTest' \
+  --tests '*IncomingReplyTest' --tests '*TopicRepliesThreadTest' --quiet
+# Omit the --tests filters for the full suite, keeping the same limits.
+./apps/android/telegram/gradlew -p apps/android/telegram \
+  -Dorg.gradle.jvmargs='-Xmx2g -XX:MaxMetaspaceSize=768m' --no-daemon --max-workers=2 \
+  :nativedo:assembleDebug -Pandroid.injected.build.abi=arm64-v8a --quiet
+```
+
+Two unsupervised full-run attempts ended with a disappeared Gradle daemon amid executor
+disconnects; neither is a full-suite result, and an OOM/whole-orb restart was not established.
+The final full run and sequential arm64 build were moved to the ad-hoc supervised
+`cooked-verification` service so client reconnection does not own their lifetime. The full run
+completed with **478 tests / 87 classes, two failures, zero errors/skips**. Log and XML are
+retained in `cooked-content/verification/full.log` and `full-xml/`:
+
+- `HomeTabsTest.theSettingsTabOpensOurOwnSettingsScreen`: expected two feed reads, got three.
+  The earlier full run also failed this test, then expecting one and getting two.
+- `HomeTabsTest.systemInsetsAndKeyboardLeaveTheTabsAndReplyReachable`: "the reply stays above
+  the keyboard" failed. This is not the earlier `ComposerCapsuleTest` inset failure, and is not
+  described as a proven pre-existing failure or attributed to a new root cause.
+
+All other tests passed, including this rendering wave. Neither failure was hidden or fixed
+outside this scope; the full-suite gate remains red.
+
+Arm64 assemble exited zero. The retained 68,354,491-byte APK is
+`.amp/in/artifacts/cooked-content/nativedo-cooked-debug-arm64.apk`, SHA-256
+`95ffa9ad0a4a14965497282ccfe2fec6bd159134f5f2dcc7af4e8b18294ce579`.
+Only `lib/arm64-v8a/libtmessages.49.so` and `liblanguage_id_l2c_jni.so` are packaged.
+The build log is `cooked-content/verification/assemble.log`. The temporary verification
+service was stopped after completion; its script and the invocation-only init script were
+removed, leaving the production Gradle configuration unchanged.
+
+Inspected host captures (controlled fixture artwork, not the real post's images):
+
+- [Wrapped heading photo](../.amp/in/artifacts/topic-fidelity-wave/photo/photo-wrapped-heading-cell.png)
+  and [bare image/video/document](../.amp/in/artifacts/topic-fidelity-wave/photo/photo-bare-media-cell.png).
+- [Generic wrapper and distinct paragraphs](../.amp/in/artifacts/rich-message-layout/body-generic-wrapper-table.png)
+  and [nested list/quote/details media](../.amp/in/artifacts/rich-message-layout/body-nested-media.png).
+  The nested-media capture reaches the viewport bottom; the remaining body is scrollable.
+  `list-omega` continues the same list item after its image, so it intentionally has no new bullet.
+- Table source-link [initial](../.amp/in/artifacts/rich-message-layout/body-table-cell-source-link.png)
+  and [after horizontal drag](../.amp/in/artifacts/rich-message-layout/body-table-cell-source-link-scrolled.png);
+  the trailing `after-cell` column is visible in the latter.
+- Spoiler [covered](../.amp/in/artifacts/nativedo/cooked-spoiler-hidden.png) and
+  [revealed](../.amp/in/artifacts/nativedo/cooked-spoiler-revealed.png),
+  [code indentation](../.amp/in/artifacts/nativedo/cooked-code-language.png), and
+  [embed fallbacks](../.amp/in/artifacts/nativedo/cooked-embed-fallbacks.png).
+
+Some fixture captures include an unrelated pagination retry banner; no pagination fix is
+claimed here. The user's intermittent quote-only blank preview remains unverified and is not
+claimed fixed by these HTML changes. No device install or real-site write was performed.
