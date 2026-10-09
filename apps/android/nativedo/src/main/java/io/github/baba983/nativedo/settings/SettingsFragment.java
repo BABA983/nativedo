@@ -115,6 +115,12 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
      */
     private boolean viewsAlive;
 
+    /**
+     * The debug-only dev-tools section, or {@code null} in a release build (see {@link DebugTools}).
+     * It is a field so the rows and their taps are built from one place.
+     */
+    private final DebugTools debugTools = DebugTools.load();
+
     private FrameLayout contentView;
     private UniversalRecyclerView listView;
     private View actionBarBackground;
@@ -675,6 +681,12 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
                 org.telegram.messenger.R.drawable.settings_policy, "隐私政策"));
         items.add(UItem.asShadow(null));
 
+        // The dev-tools section is only there in a debug build; in release debugTools is null and
+        // nothing is added.
+        if (debugTools != null && debugTools.isAvailable()) {
+            debugTools.fillItems(items);
+        }
+
         items.add(UItem.asCustomShadow(versionView));
     }
 
@@ -690,6 +702,10 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
     }
 
     private void onClick(UItem item) {
+        // The debug rows own their ids; a tap they handle ends here.
+        if (debugTools != null && debugTools.onItemClick(item.id, this)) {
+            return;
+        }
         if (item.id == ROW_THEME) {
             presentFragment(new ThemeActivity(ThemeActivity.THEME_TYPE_BASIC));
         } else if (item.id == ROW_OPEN_IN_APP) {
