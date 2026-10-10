@@ -80,8 +80,16 @@ internal class ProfileTransitionTest {
 
     @After
     fun tearDown() {
+        destroyShell()
         NativeDo.setContainerFactory { context -> site.authenticatedContainer(context) }
         site.stop()
+    }
+
+    private fun destroyShell() {
+        // Each capture boot must release the previous window's global theme observers.
+        runCatching { harness.activity }.getOrNull()?.let { activity ->
+            activity.javaClass.getDeclaredMethod("onDestroy").apply { isAccessible = true }.invoke(activity)
+        }
     }
 
     /**
@@ -272,6 +280,97 @@ internal class ProfileTransitionTest {
     }
 
     /**
+     * The site answers while the avatar is still on its way. The answer's model is taken (a landed
+     * read is a landed read), but its own views must wait for the landing: the action row is built
+     * from the answer's flags and shown, and the rows are rebuilt, both under the flying copy. On
+     * the old contract buildActions ran here, so the row popped into the header and the list
+     * re-laid out mid-flight. Upstream holds the profile's own notifications until the animation
+     * finishes (`setAnimationInProgress`/`onAnimationFinish`, ProfileActivity.java:9738-9783);
+     * this pins the same hand-over for the one answer this screen has.
+     *
+     * <p>The failures: an action row shown (or rows present) while the flight is still running, and
+     * an action row that appears only after the landing without the answer's own flags.</p>
+     */
+    @Test
+    fun aProfileAnswerDuringTheFlightWaitsForTheLanding() {
+        openTopic()
+        val gate = java.util.concurrent.CountDownLatch(1)
+        val response = JSONObject(harness.fixture("user-profile.json"))
+        response.getJSONObject("user").apply {
+            put("can_send_private_message_to_user", true)
+            put("can_follow", true)
+            put("is_followed", false)
+            put("can_mute_user", true)
+            put("muted", false)
+        }
+        site.serveImage("user_avatar/linux.do/baba/96/1.png", magentaPng(96, 96))
+        site.serveResponse("u/baba.json") {
+            gate.await(30, java.util.concurrent.TimeUnit.SECONDS)
+            okhttp3.mockwebserver.MockResponse()
+                .setHeader("Content-Type", "application/json")
+                .setBody(response.toString())
+        }
+        try {
+            val profile = tapCapsule()
+            freezeFlight(keepListeners = true)
+            val flight = field<android.animation.AnimatorSet>(actionBarLayout(), "currentAnimation")
+            flight.currentPlayTime = flight.duration / 2
+            harness.layoutApp()
+
+            val actions = field<View>(profile, "actionsView")
+            val list = field<RecyclerListView>(profile, "listView")
+            val actionVisibilityBefore = actions.visibility
+            val rowsBefore = list.adapter!!.itemCount
+            assertEquals("the action row starts hidden", View.GONE, actionVisibilityBefore)
+            assertFalse("no action before the answer", profile.hasAction(ProfileActionsView.KEY_SHARE))
+
+            // The site answers while the avatar is on its way.
+            gate.countDown()
+            harness.await("the profile answer to reach the fragment") {
+                field<Any?>(profile, "profile") != null
+            }
+            harness.layoutApp()
+
+            // The released screen is untouched: the answer's views wait outside the flight.
+            assertEquals(
+                "the loaded action row does not pop in mid-flight",
+                actionVisibilityBefore, actions.visibility,
+            )
+            assertEquals(
+                "the loaded rows do not appear mid-flight",
+                rowsBefore, list.adapter!!.itemCount,
+            )
+            assertFalse(
+                "no action is offered until the flight lands",
+                profile.hasAction(ProfileActionsView.KEY_SHARE),
+            )
+            copyToUiPolish(harness.renderAppFrame("profile-answer-during-flight", 0), "profile-answer-during-flight")
+
+            // The landing hands the answer over.
+            flight.end()
+            harness.layoutApp()
+            harness.idleClock(200)
+            harness.await("the rows after the landing") {
+                harness.layoutApp()
+                list.adapter!!.itemCount > rowsBefore
+            }
+            assertEquals(
+                "the action row is shown with the landing",
+                View.VISIBLE, actions.visibility,
+            )
+            assertTrue(
+                "the answer's own actions land with the flight",
+                profile.hasAction(ProfileActionsView.KEY_SHARE),
+            )
+            // The stock action capsules start their appear animation on their first draw.
+            repeat(25) { harness.idleClock(20); harness.drawApp() }
+            copyToUiPolish(harness.renderApp("profile-answer-landed"), "profile-answer-landed")
+        } finally {
+            gate.countDown()
+        }
+    }
+
+    /**
      * The ordinary opening's mid and end frames on both surfaces, as review captures: the flight
      * carries the profile's own palette at every step (its white-blend failure is even plainer on
      * the night surface), and the copies land under `profile-transition-v2`.
@@ -326,7 +425,17 @@ internal class ProfileTransitionTest {
         val target = java.io.File(rendered.parentFile.parentFile, "profile-transition-v2/${rendered.name}")
         target.parentFile?.mkdirs()
         rendered.copyTo(target, overwrite = true)
+        copyToUiPolish(rendered, rendered.nameWithoutExtension)
         println("opening-capture: wrote ${target.absolutePath} (${target.length()} bytes)")
+        return target
+    }
+
+    /** The states this pass asked to keep, under `.amp/in/artifacts/ui-polish/`. */
+    private fun copyToUiPolish(rendered: java.io.File, name: String): java.io.File {
+        val target = java.io.File(rendered.parentFile.parentFile, "ui-polish/$name.png")
+        target.parentFile?.mkdirs()
+        rendered.copyTo(target, overwrite = true)
+        println("ui-polish: wrote ${target.absolutePath} (${target.length()} bytes)")
         return target
     }
 
@@ -383,6 +492,29 @@ internal class ProfileTransitionTest {
                 "are the same spot (a jump at the end of the flight)",
             abs(landed[0] - rested[0]) <= 1 && abs(landed[1] - rested[1]) <= 1,
         )
+    }
+
+    /** Rebuilding views behind another screen must not reuse the old list's seeded offset. */
+    @Test
+    fun aProfileRebuiltBehindSettingsKeepsItsRoundHeaderOnReturn() {
+        val profile = openProfileFromCapsule()
+        val before = rect(avatarView(profile))
+        harness.present(io.github.baba983.nativedo.settings.SettingsFragment())
+        harness.await("settings above the profile") { harness.visibleFragment() is io.github.baba983.nativedo.settings.SettingsFragment }
+        switchTheme("Dark Blue", toDark = true)
+        (harness.activity as io.github.baba983.nativedo.app.NativeDoActivity).onBackPressed()
+        harness.await("the profile returns with its rows") {
+            harness.drawApp()
+            harness.visibleFragment() === profile && detailOf("信任等级") == "3"
+        }
+        repeat(20) { harness.idleClock(20); harness.drawApp() }
+        assertRect("the rebuilt header stays at its normal round rest", before, rect(avatarView(profile)))
+        val captured = harness.renderApp("profile-after-settings-theme")
+        val pixels = android.graphics.BitmapFactory.decodeFile(captured.absolutePath)
+        assertTrue("the returned page actually draws the selected night surface",
+            ColorUtils.calculateLuminance(pixels.getPixel(0, pixels.height / 2)) < 0.4)
+        copyToUiPolish(captured, "profile-after-settings-theme")
+        harness.assertNoTelegramSideEffects()
     }
 
     /**
@@ -717,6 +849,7 @@ internal class ProfileTransitionTest {
     }
 
     private fun openTopic() {
+        destroyShell()
         site.serveFixture("u/baba.json", "user-profile.json")
         site.serveFixture("u/baba/summary.json", "user-summary.json")
         site.serveImage("user_avatar/linux.do/baba/96/1.png", magentaPng(96, 96))
@@ -802,13 +935,13 @@ internal class ProfileTransitionTest {
     }
 
     /**
-     * The colour the header's backdrop actually paints: its transition colour while one is set,
-     * else the surface [TopView] falls back to (`TopView.onDraw`). A flight that bleeds to the
-     * avatar's average colour and then resets to the plain surface at the landing steps here.
+     * Read a drawn backdrop pixel, not a mirrored assumption about its fallback theme key.
+     * A flight that resets to a different surface at the landing steps here.
      */
     private fun backdropColor(profile: ProfileFragment): Int {
-        val transition = field<Int>(field(profile, "topView"), "transitionColor")
-        return if (transition != 0) transition else Theme.getColor(Theme.key_windowBackgroundWhite)
+        val bitmap = android.graphics.Bitmap.createBitmap(1, 1, android.graphics.Bitmap.Config.ARGB_8888)
+        field<View>(profile, "topView").draw(android.graphics.Canvas(bitmap))
+        return bitmap.getPixel(0, 0)
     }
 
     /** The same colour within a rounding step (a flight landing one channel off the surface is fine). */

@@ -102,6 +102,13 @@ internal class SettingsTabTest {
         assertTrue("the bookmarks entry is kept here as well", "书签" in rows)
         assertTrue("with the account the session belongs to", rows.any { it.startsWith("@baba") })
         assertTrue("and the in-app link choice", "在应用内打开链接" in rows)
+        // The session fixture has no avatar URL; its header must still draw initials, not a hole.
+        val avatar = viewsUnder(harness.activity.findViewById(android.R.id.content))
+            .filterIsInstance<org.telegram.ui.Components.BackupImageView>().first()
+        val picture = android.graphics.Bitmap.createBitmap(avatar.width, avatar.height, android.graphics.Bitmap.Config.ARGB_8888)
+        avatar.draw(android.graphics.Canvas(picture))
+        assertTrue("an account without an avatar URL has a visible fallback",
+            android.graphics.Color.alpha(picture.getPixel(picture.width / 2, picture.height / 2)) > 0)
         harness.renderApp("settings")
         harness.assertNoTelegramSideEffects()
 

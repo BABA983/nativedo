@@ -10,6 +10,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.os.Bundle;
+import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
@@ -44,6 +45,7 @@ import org.telegram.ui.ActionBar.SimpleTextView;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.DialogCell;
 import org.telegram.ui.Cells.HeaderCell;
+import org.telegram.ui.Cells.ShadowSectionCell;
 import org.telegram.ui.Cells.TextDetailCell;
 import org.telegram.ui.Cells.TextInfoPrivacyCell;
 import org.telegram.ui.Components.CubicBezierInterpolator;
@@ -130,6 +132,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
     private static final int TYPE_MEDIA = 6;
     /** The row a session state draws in place of the info rows: the state and the tap that acts on it. */
     private static final int TYPE_STATE = 7;
+    private static final int TYPE_SHADOW = 8;
 
     /** 话题: the topics the reader started (`/user_actions.json?filter=4`). */
     private static final int TAB_TOPICS = 0;
@@ -343,9 +346,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                     setAvatarExpandProgress(currentExpanAnimatorFracture);
                 }
                 applyThemeColors();
-                if (listView != null && listView.getAdapter() != null) {
-                    listView.getAdapter().notifyDataSetChanged();
-                }
+                runAfterFlight(this::notifyRowsChanged);
                 if (progressView != null) {
                     // The shimmer reads the theme colours at draw time; a redraw is its recolour.
                     progressView.invalidate();
@@ -363,6 +364,8 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
     /** The list's head room has been seeded once its width and its first rows are known. */
     private boolean headerSeeded;
     private int seededWidth;
+    /** View updates wait for the profile transition, like upstream's deferred notifications. */
+    private final java.util.ArrayDeque<Runnable> deferredUntilFlightEnd = new java.util.ArrayDeque<>();
     /** The site's larger avatar, drawn over the small one while the header is expanded. */
     private TLRPC.User expandedAvatarUser;
     private boolean expandedAvatarBound;
@@ -520,11 +523,11 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                         if (isPulledDown) {
                             final int actionBarHeight = ActionBar.getCurrentActionBarHeight()
                                     + (actionBar.getOccupyStatusBar() ? AndroidUtilities.statusBarHeight : 0);
-                            listView.smoothScrollBy(0, view.getTop() - listView.getMeasuredWidth()
+                            listView.smoothScrollBy(0, layoutManager.getDecoratedTop(view) - listView.getMeasuredWidth()
                                     - getActionsExtraHeight() + actionBarHeight,
                                     CubicBezierInterpolator.EASE_OUT_QUINT);
                         } else {
-                            listView.smoothScrollBy(0, view.getTop() - getHeaderExtraHeight(),
+                            listView.smoothScrollBy(0, layoutManager.getDecoratedTop(view) - getHeaderExtraHeight(),
                                     CubicBezierInterpolator.EASE_OUT_QUINT);
                         }
                     }
@@ -532,6 +535,9 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                 return result;
             }
         };
+        headerSeeded = false;
+        listView.setSections();
+        listView.applyPaddingToSections = false;
         // The scroll clamp is upstream's (ProfileActivity.java:4283-4312): the stretch is damped
         // while the finger drags it, and a scroll toward the rows gives the pull-down its rest.
         layoutManager = new LinearLayoutManager(context) {
@@ -539,7 +545,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             public int scrollVerticallyBy(int dy, RecyclerView.Recycler recycler, RecyclerView.State state) {
                 final View view = findViewByPosition(0);
                 if (view != null) {
-                    final int canScroll = view.getTop() - getHeaderExtraHeight();
+                    final int canScroll = getDecoratedTop(view) - getHeaderExtraHeight();
                     if (!allowPullingDown && canScroll > dy) {
                         dy = canScroll;
                         allowPullingDown = canPullDown();
@@ -575,7 +581,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         // (`fragmentView.setBackgroundColor(0)`, ProfileActivity.java:9986) and only restores the
         // cover through what the list and the header paint themselves. Without it a later
         // swipe-back drag shows the topic through the profile's rows.
-        listView.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundWhite));
+        listView.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundGray));
         listView.setPadding(0, getHeaderExtraHeight(), 0, listBottomPadding());
         // The rows of the info list are text to read; the tappable things are the action row's
         // buttons and the pages' own rows, each with their own click handling.
@@ -743,6 +749,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
     public void clearViews() {
         stopSessionObservation();
         loadEpoch++;
+        deferredUntilFlightEnd.clear();
         super.clearViews();
     }
 
@@ -752,6 +759,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                 themeObserver, org.telegram.messenger.NotificationCenter.needSetDayNightTheme);
         stopSessionObservation();
         loadEpoch++;
+        deferredUntilFlightEnd.clear();
         // A flight torn down mid-way (the host destroyed) must not leave the topic's header
         // hidden: the animator's own end listener restores it otherwise.
         if (previousTransitionActionBar != null) {
@@ -1040,7 +1048,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             if (epoch != loadEpoch) {
                 return kotlin.Unit.INSTANCE;
             }
-            stateUi = null;
+            // Accept the model now; rebuilding views mid-flight would move the landing target.
             profile = loaded;
             isFollowed = loaded.isFollowed();
             isMuted = loaded.getMuted();
@@ -1058,13 +1066,20 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                     loaded.getAvatarTemplate(),
                     container.getBaseUrl(),
                     DiscourseAvatars.EXPANDED_SIZE);
-            buildRows(loaded);
-            buildActions(loaded);
-            buildMedia();
-            notifyRowsChanged();
-            bindAvatar();
-            fetchAvatar();
-            loadSummary();
+            runAfterFlight(() -> {
+                // The views or session may have changed while this answer waited.
+                if (epoch != loadEpoch) {
+                    return;
+                }
+                stateUi = null;
+                buildRows(loaded);
+                buildActions(loaded);
+                buildMedia();
+                notifyRowsChanged();
+                bindAvatar();
+                fetchAvatar();
+                loadSummary();
+            });
             return kotlin.Unit.INSTANCE;
         };
         kotlin.jvm.functions.Function1<Throwable, kotlin.Unit> onFailed = error -> {
@@ -1075,8 +1090,13 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             // A profile that did not arrive is its own explicit state, not a blank screen: the
             // failure's kind decides whether the tap recovers the session or just reads again.
             stateUi = SessionUi.stateForLoadFailure(error);
-            buildStateRow();
-            notifyRowsChanged();
+            runAfterFlight(() -> {
+                if (epoch != loadEpoch) {
+                    return;
+                }
+                buildStateRow();
+                notifyRowsChanged();
+            });
             return kotlin.Unit.INSTANCE;
         };
         if (forceRefresh) {
@@ -1101,10 +1121,12 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                 return kotlin.Unit.INSTANCE;
             }
             summary = loaded;
-            if (profile != null) {
-                buildRows(profile);
-                notifyRowsChanged();
-            }
+            runAfterFlight(() -> {
+                if (epoch == loadEpoch && profile != null) {
+                    buildRows(profile);
+                    notifyRowsChanged();
+                }
+            });
             return kotlin.Unit.INSTANCE;
         }, error -> {
             FileLog.e("profile summary failed", error);
@@ -1142,9 +1164,14 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                 if (epoch != loadEpoch) {
                     return kotlin.Unit.INSTANCE;
                 }
-                // The head and every action row draw the same picture, so all of them are re-bound.
-                bindAvatar();
-                notifyRowsChanged();
+                // The header and action rows share the avatar; rebind them after the flight.
+                runAfterFlight(() -> {
+                    if (epoch != loadEpoch) {
+                        return;
+                    }
+                    bindAvatar();
+                    notifyRowsChanged();
+                });
                 return kotlin.Unit.INSTANCE;
             });
         }
@@ -1199,13 +1226,26 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
      * of dashes.
      */
     private void buildRows(UserProfile loaded) {
+        Row anchor = null;
+        int anchorOffset = 0;
+        if (listView != null) {
+            for (int i = 0; i < listView.getChildCount(); i++) {
+                View child = listView.getChildAt(i);
+                int position = listView.getChildAdapterPosition(child);
+                if (child.getBottom() > 0 && position >= 0 && position < rows.size()) {
+                    anchor = rows.get(position);
+                    anchorOffset = layoutManager.getDecoratedTop(child) - listView.getPaddingTop();
+                    break;
+                }
+            }
+        }
         rows.clear();
         // The site sends the bio as cooked HTML; the head and the bio row both draw text, so the
         // tags come off once, here.
         bioText = loaded.getBio() == null ? "" : org.jsoup.Jsoup.parse(loaded.getBio()).text().trim();
         if (!bioText.isEmpty()) {
-            rows.add(Row.section("关于我"));
             rows.add(Row.bio(bioText));
+            rows.add(Row.shadow("资料"));
         }
         rows.add(Row.section("资料"));
         addIfPresent("用户名", loaded.getUsername());
@@ -1217,6 +1257,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         addIfPresent("加入时间", date(loaded.getCreatedAt()));
         addIfPresent("最近活跃", date(loaded.getLastSeenAt()));
         addIfPresent("最后发帖", date(loaded.getLastPostedAt()));
+        rows.add(Row.shadow("统计"));
         rows.add(Row.section("统计"));
         // The summary's own numbers first: they are the ones the site's profile page shows, and a
         // summary the reader may not see leaves them out rather than printing zeroes.
@@ -1235,22 +1276,23 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         rows.add(Row.detail("关注者", String.valueOf(loaded.getTotalFollowers())));
         rows.add(Row.detail("关注中", String.valueOf(loaded.getTotalFollowing())));
         rows.add(Row.detail("被采纳回复", String.valueOf(loaded.getAcceptedAnswers())));
-        // Upstream separates the rows of a section with a divider, and the last row of each section
-        // ends the list's section rather than continuing it.
-        for (int index = 0; index < rows.size(); index++) {
-            Row row = rows.get(index);
-            if (row.type != TYPE_DETAIL) {
-                continue;
-            }
-            Row next = index + 1 < rows.size() ? rows.get(index + 1) : null;
-            row.divider = next != null && next.type == TYPE_DETAIL;
-        }
         // The tab area is the list's last row, and it is re-appended here whenever the rows are
         // rebuilt (a late summary read rebuilds them): a rows list without it would leave the
         // already-built tab area unreachable below the last stat row.
         if (mediaView != null) {
+            rows.add(Row.shadow("动态"));
             mediaRow = rows.size();
             rows.add(Row.media());
+        }
+        // Statistics insert above the reader. Preserve the same row, not its old adapter position.
+        if (anchor != null) {
+            for (int i = 0; i < rows.size(); i++) {
+                Row row = rows.get(i);
+                if (row.type == anchor.type && TextUtils.equals(row.label, anchor.label)) {
+                    layoutManager.scrollToPositionWithOffset(i, anchorOffset);
+                    break;
+                }
+            }
         }
     }
 
@@ -1279,13 +1321,6 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             return;
         }
         actionsView.mode = ownProfile ? ProfileActionsView.MODE_MY_PROFILE : ProfileActionsView.MODE_USER;
-        // The capsules' own colour, the way ProfileActivity gives them the profile's back colour
-        // (ProfileActivity.java:1334 calls setActionsColor with the peer colour); a linux.do user
-        // has no Telegram peer colour, so the avatar's own palette stands in, keyed by username.
-        actionsView.setActionsColor(
-                org.telegram.ui.Components.AvatarDrawable.getProfileBackColorForId(
-                        DiscourseRows.userId(username()), resourceProvider),
-                false);
         actionsView.beginApplyingActions();
         if (ownProfile) {
             actionsView.addBookmarks();
@@ -1555,11 +1590,11 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
      */
     private void applyThemeColors() {
         if (listView != null) {
-            listView.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundWhite));
+            listView.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundGray));
         }
         for (TabPageState page : tabPages) {
             if (page != null) {
-                page.listView.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundWhite));
+                page.listView.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundGray));
             }
         }
         if (mediaView != null) {
@@ -1653,7 +1688,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             listView.setClipToPadding(false);
             // The same page surface the info list carries: the pager area's own rows scroll over
             // it, and the fragment view behind has no background of its own after the flight.
-            listView.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundWhite));
+            listView.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundGray));
             listView.setPadding(0, AndroidUtilities.dp(ProfileSharedMediaView.PAGE_TOP_PADDING_DP), 0, listBottomPadding());
             listView.setOnItemClickListener((view, position) -> {
                 Object item = position >= 0 && position < items.size() ? items.get(position) : null;
@@ -1928,13 +1963,39 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                 bookmark.getTopicId(), bookmark.getTitle(), bookmark.getPostNumber()));
     }
 
-    private void notifyRowsChanged() {
-        settleHeaderInList();
-        if (listView != null && listView.getAdapter() != null) {
-            listView.getAdapter().notifyDataSetChanged();
+    /** Upstream also holds profile updates between setAnimationInProgress/onAnimationFinish. */
+    private void runAfterFlight(Runnable action) {
+        if (openAnimationInProgress) {
+            deferredUntilFlightEnd.add(action);
+        } else {
+            action.run();
         }
     }
 
+    /** The flight landed: hand every deferred answer to the views, in the order it arrived. */
+    private void drainDeferredUntilFlightEnd() {
+        while (!deferredUntilFlightEnd.isEmpty()) {
+            deferredUntilFlightEnd.poll().run();
+        }
+    }
+
+    /** RecyclerView forbids adapter notifications during its layout pass. */
+    private void notifyRowsChanged() {
+        if (listView != null && listView.isInLayout()) {
+            listView.post(this::flushRowsChanged);
+            return;
+        }
+        flushRowsChanged();
+    }
+
+    /** Rebind after a layout pass; row rebuilds preserve their semantic anchor in buildRows. */
+    private void flushRowsChanged() {
+        if (listView == null || listView.getAdapter() == null) {
+            return;
+        }
+        settleHeaderInList();
+        listView.getAdapter().notifyDataSetChanged();
+    }
 
     /**
      * The list carries the header's height as its own top padding, and the first row is seeded
@@ -2007,18 +2068,19 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             Context context = parent.getContext();
             switch (viewType) {
                 case TYPE_SECTION: {
-                    HeaderCell cell = new HeaderCell(context, resourceProvider);
+                    HeaderCell cell = new HeaderCell(context, 18, resourceProvider);
                     cell.setLayoutParams(new RecyclerView.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
                     return new RecyclerListView.Holder(cell);
                 }
-                case TYPE_BIO:
                 case TYPE_STATE: {
                     TextInfoPrivacyCell cell = new TextInfoPrivacyCell(context, resourceProvider);
                     cell.setLayoutParams(new RecyclerView.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
                     return new RecyclerListView.Holder(cell);
                 }
+                case TYPE_SHADOW:
+                    return new RecyclerListView.Holder(new ShadowSectionCell(context, resourceProvider));
                 case TYPE_MEDIA: {
                     // The tab area is a row of the info list the way SharedMediaLayout is a row of
                     // ProfileActivity's own list (ProfileActivity.java:10824, 14360): its height is
@@ -2028,10 +2090,11 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                         mediaView.setLayoutParams(new RecyclerView.LayoutParams(
                                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
                     }
+                    mediaView.setTag(RecyclerListView.TAG_NOT_SECTION);
                     return new RecyclerListView.Holder(mediaView);
                 }
                 default: {
-                    TextDetailCell cell = new TextDetailCell(context, resourceProvider, true, true);
+                    TextDetailCell cell = new TextDetailCell(context, 18, resourceProvider, true, true);
                     // The same one line `ProfileActivity` sets on every cell of its info block: a
                     // reader who hears the row hears the answer first.
                     cell.setContentDescriptionValueFirst(true);
@@ -2054,7 +2117,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                 // first argument is the answer and lands in its 16 dp line, the second is the field's
                 // name and lands in its 13 dp line (the phone number above the word "Mobile").
                 TextDetailCell cell = (TextDetailCell) holder.itemView;
-                cell.setTextAndValue(row.value, row.label, row.divider);
+                cell.setTextAndValue(row.value, row.label, false);
             }
         }
 
@@ -2132,7 +2195,8 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             }
         }
         RecyclerListView.Holder holder = child == null ? null : (RecyclerListView.Holder) listView.findContainingViewHolder(child);
-        int top = child == null ? 0 : child.getTop();
+        // Section decoration is spacing, not a pull on the avatar header.
+        int top = child == null ? 0 : layoutManager.getDecoratedTop(child);
         int adapterPosition = holder != null ? holder.getAdapterPosition() : RecyclerView.NO_POSITION;
         if (top >= 0 && adapterPosition == 0) {
             newOffset = top;
@@ -2555,7 +2619,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             justFullyExpanded = true;
             final int actionBarHeight = ActionBar.getCurrentActionBarHeight()
                     + (actionBar.getOccupyStatusBar() ? AndroidUtilities.statusBarHeight : 0);
-            listView.smoothScrollBy(0, view.getTop() - listView.getMeasuredWidth() - getActionsExtraHeight() + actionBarHeight,
+            listView.smoothScrollBy(0, layoutManager.getDecoratedTop(view) - listView.getMeasuredWidth() - getActionsExtraHeight() + actionBarHeight,
                     (int) expandAnimator.getDuration(), (Interpolator) expandAnimator.getInterpolator());
             listView.canStopFlinger = false;
         }
@@ -2883,6 +2947,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         if (openAnimationInProgress) {
             openAnimationInProgress = false;
         }
+        drainDeferredUntilFlightEnd();
         if (isOpen && !backward && playProfileAnimation != 0) {
             // The flight lands in the collapsed header's own layout - the round 96 dp avatar under
             // the action bar - so an ordinary tap opens a normal profile and the photo only opens
@@ -2926,7 +2991,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             int from = androidx.core.graphics.ColorUtils.setAlphaComponent(
                     getThemedColor(Theme.key_actionBarDefault), 0);
             topView.setTransitionColor(androidx.core.graphics.ColorUtils.blendARGB(
-                    from, getThemedColor(Theme.key_windowBackgroundWhite), progress));
+                    from, getThemedColor(Theme.key_windowBackgroundGray), progress));
         }
         updateActionsPosition();
         needLayout(true);
@@ -3186,9 +3251,8 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
 
     /**
      * Upstream's header backdrop (ProfileActivity.java:1214), the view that paints the screen's
-     * background over the rows scrolling under the header. Its peer-color gradient is left out;
-     * during the opening animation it carries the blend from the chat's header colour to the
-     * avatar's average colour (ProfileActivity.java:9820-9832).
+     * background over the rows scrolling under the header. The ordinary opening blends into
+     * the theme surface; the expanded photo supplies its own backdrop colour on a pull.
      */
     private class TopView extends FrameLayout {
 
@@ -3207,11 +3271,13 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
 
         @Override
         protected void onDraw(Canvas canvas) {
+            // Upstream also updates action colours while painting its header, including theme animation.
+            actionsView.setActionsColor(getThemedColor(Theme.key_windowBackgroundWhite), false);
             final int height = ActionBar.getCurrentActionBarHeight() + (actionBar.getOccupyStatusBar() ? AndroidUtilities.statusBarHeight : 0);
             final float v = height + extraHeight;
             final int y1 = (int) v;
             if (y1 != 0) {
-                paint.setColor(transitionColor != 0 ? transitionColor : getThemedColor(Theme.key_windowBackgroundWhite));
+                paint.setColor(transitionColor != 0 ? transitionColor : getThemedColor(Theme.key_windowBackgroundGray));
                 canvas.drawRect(0, 0, getMeasuredWidth(), y1, paint);
             }
         }
@@ -3306,7 +3372,6 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         final int type;
         final String label;
         final String value;
-        boolean divider;
 
         private Row(int type, String label, String value) {
             this.type = type;
@@ -3323,7 +3388,11 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         }
 
         static Row bio(String text) {
-            return new Row(TYPE_BIO, null, text);
+            return new Row(TYPE_BIO, "关于我", text);
+        }
+
+        static Row shadow(String section) {
+            return new Row(TYPE_SHADOW, section, null);
         }
 
         static Row media() {

@@ -148,7 +148,7 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
                     return;
                 }
                 if (contentView != null) {
-                    contentView.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundWhite));
+                    contentView.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundGray));
                 }
                 if (listView != null && listView.adapter != null) {
                     listView.adapter.update(false);
@@ -212,7 +212,7 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
         });
 
         contentView = new FrameLayout(context);
-        contentView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        contentView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
 
         listView = new UniversalRecyclerView(context, 0, 0, false,
                 (items, adapter) -> fillItems(items),
@@ -577,6 +577,8 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
         ImageLocation avatar = DiscourseAvatars.INSTANCE.imageLocation(avatarUser);
         if (avatar != null) {
             avatarView.setImage(avatar, "90_90", avatarDrawable, avatarUser);
+        } else {
+            avatarView.setImageDrawable(avatarDrawable);
         }
     }
 
@@ -592,13 +594,8 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
     }
 
     /**
-     * The rows, in upstream's order and with upstream's own icon set and gradient squares: 外观
-     * (upstream's chat settings), 链接 (the in-app browser choice, drawn as
-     * {@code WebBrowserSettings} draws it), 隐私 and 通知 (the reader's linux.do options, which
-     * upstream's account-driven pages cannot serve here), 数据与存储 (the caches this app fills),
-     * 省电 (upstream's {@code LiteModeSettingsActivity}), 我的 (the bookmarks), 账号 (the
-     * verification page, the device-code login and leaving the account) and upstream's help
-     * footer, whose rows point at linux.do's own pages.
+     * Upstream's cells and gradient icons, grouped into appearance, site preferences,
+     * personal items, account and help. Telegram-only account controls are not exposed.
      */
     private void fillItems(ArrayList<UItem> items) {
         items.add(UItem.asCustomShadow(topView, HEADER_HEIGHT_DP));
@@ -607,36 +604,24 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
         items.add(SettingCell.Factory.of(ROW_THEME,
                 IconBackgroundColors.ORANGE.top, IconBackgroundColors.ORANGE.bottom,
                 org.telegram.messenger.R.drawable.settings_chat, "主题", "配色与夜间模式"));
-        items.add(UItem.asShadow(null));
-
-        items.add(UItem.asHeader("链接"));
-        items.add(UItem.asRippleCheck(ROW_OPEN_IN_APP, "在应用内打开链接")
-                .setChecked(LinkOpenSettings.INSTANCE.isInApp(getContext())));
-        items.add(UItem.asShadow("关闭后普通链接交给系统的自定义标签页；本站话题链接仍在本应用内打开。"));
-
-        items.add(UItem.asHeader("隐私"));
-        items.add(SettingCell.Factory.of(ROW_PRIVACY,
-                IconBackgroundColors.GREEN.top, IconBackgroundColors.GREEN.bottom,
-                org.telegram.messenger.R.drawable.settings_privacy, "隐私", "资料可见性与私信"));
-        items.add(UItem.asShadow(null));
-
-        items.add(UItem.asHeader("通知"));
-        items.add(SettingCell.Factory.of(ROW_NOTIFICATIONS,
-                IconBackgroundColors.RED.top, IconBackgroundColors.RED.bottom,
-                org.telegram.messenger.R.drawable.settings_sounds, "通知", "点赞、提及与跟踪"));
-        items.add(UItem.asShadow(null));
-
-        items.add(UItem.asHeader("数据与存储"));
-        items.add(SettingCell.Factory.of(ROW_STORAGE,
-                IconBackgroundColors.BLUE_DEEP.top, IconBackgroundColors.BLUE_DEEP.bottom,
-                org.telegram.messenger.R.drawable.settings_data, "存储使用", "缓存占用与清理"));
-        items.add(UItem.asShadow(null));
-
-        items.add(UItem.asHeader("省电"));
         items.add(SettingCell.Factory.of(ROW_POWER,
                 IconBackgroundColors.ORANGE_DEEP.top, IconBackgroundColors.ORANGE_DEEP.bottom,
                 org.telegram.messenger.R.drawable.settings_power, "省电模式", "模糊与动画的取舍"));
         items.add(UItem.asShadow(null));
+
+        items.add(UItem.asHeader("偏好设置"));
+        items.add(SettingCell.Factory.of(ROW_PRIVACY,
+                IconBackgroundColors.GREEN.top, IconBackgroundColors.GREEN.bottom,
+                org.telegram.messenger.R.drawable.settings_privacy, "隐私", "资料可见性与私信"));
+        items.add(SettingCell.Factory.of(ROW_NOTIFICATIONS,
+                IconBackgroundColors.RED.top, IconBackgroundColors.RED.bottom,
+                org.telegram.messenger.R.drawable.settings_sounds, "通知", "点赞、提及与跟踪"));
+        items.add(SettingCell.Factory.of(ROW_STORAGE,
+                IconBackgroundColors.BLUE_DEEP.top, IconBackgroundColors.BLUE_DEEP.bottom,
+                org.telegram.messenger.R.drawable.settings_data, "存储使用", "缓存占用与清理"));
+        items.add(UItem.asRippleCheck(ROW_OPEN_IN_APP, "在应用内打开链接")
+                .setChecked(LinkOpenSettings.INSTANCE.isInApp(getContext())));
+        items.add(UItem.asShadow("关闭后普通链接交给系统的自定义标签页；本站话题链接仍在本应用内打开。"));
 
         items.add(UItem.asHeader("我的"));
         items.add(SettingCell.Factory.of(ROW_BOOKMARKS,

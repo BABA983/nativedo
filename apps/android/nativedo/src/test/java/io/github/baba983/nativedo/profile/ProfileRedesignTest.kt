@@ -197,6 +197,66 @@ internal class ProfileRedesignTest {
     }
 
     /**
+     * The summary's stats rows insert above what the reader is looking at. The reader scrolls the
+     * tab area to the top (the way the pinned media header is reached on the device); the summary
+     * lands afterwards and its rows go in above the tabs. The tab area must keep its place by
+     * semantic identity, not the old numeric adapter position, which now belongs to a stats row.
+     *
+     * <p>The failure this pins: the pinned tab area (and the header's own offset) stepping when a
+     * late summary lands. It is the viewport half of the answer-during-flight contract; the
+     * in-flight half is pinned in ProfileTransitionTest.</p>
+     */
+    @Test
+    fun aLateSummaryKeepsTheTabAreaWhereTheReaderPinnedIt() {
+        site.serveFixture("u/baba.json", "user-profile.json")
+        val gate = java.util.concurrent.CountDownLatch(1)
+        site.serveResponse("u/baba/summary.json") {
+            gate.await(30, java.util.concurrent.TimeUnit.SECONDS)
+            okhttp3.mockwebserver.MockResponse()
+                .setHeader("Content-Type", "application/json")
+                .setBody(harness.fixture("user-summary.json"))
+        }
+
+        harness.bootApp()
+        harness.await("the topic list to load") { listRowCount() == 2 }
+        harness.present(ProfileFragment.forUser("baba", "Baba"))
+        harness.await("the profile's info rows") {
+            harness.layoutApp()
+            detailValue("信任等级") == "3"
+        }
+        val profile = harness.visibleFragment() as ProfileFragment
+        val list = listView()!!
+
+        // The tab area is the info list's last row; scrolling to it is what pins it, the same thing
+        // the reader does to reach the tabs.
+        list.scrollToPosition(list.adapter!!.itemCount - 1)
+        harness.layoutApp()
+        val media = field<View>(profile, "mediaView")
+        val locationBefore = IntArray(2).also(media::getLocationOnScreen)
+        val rowsBefore = list.adapter!!.itemCount
+        val extraBefore = field<Float>(profile, "extraHeight")
+
+        // The summary lands now; its stats rows insert above the pinned tab area.
+        gate.countDown()
+        harness.await("the summary's rows") {
+            harness.layoutApp()
+            field<Any?>(profile, "summary") != null && list.adapter!!.itemCount > rowsBefore
+        }
+        harness.layoutApp()
+
+        assertEquals(
+            "the pinned tab area keeps the reader's place when the stats land above it",
+            locationBefore[1].toFloat(), IntArray(2).also(media::getLocationOnScreen)[1].toFloat(), 1f,
+        )
+        assertEquals(
+            "the header's own offset does not step with the inserted rows",
+            extraBefore, field<Float>(profile, "extraHeight"), 1f,
+        )
+        copyToUiPolish(harness.renderApp("profile-summary-anchored"), "profile-summary-anchored")
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
      * What the row shows is what the site said the reader may do: a profile with the follow, PM and
      * mute flags offers 私信/关注/静音/分享, the reader's own profile offers 书签/设置/分享, and a
      * profile without the fields does not fake them.
@@ -414,6 +474,15 @@ internal class ProfileRedesignTest {
             }
         }
         return null
+    }
+
+    /** The states this pass asked to keep, under `.amp/in/artifacts/ui-polish/`. */
+    private fun copyToUiPolish(rendered: java.io.File, name: String): java.io.File {
+        val target = java.io.File(rendered.parentFile.parentFile, "ui-polish/$name.png")
+        target.parentFile?.mkdirs()
+        rendered.copyTo(target, overwrite = true)
+        println("ui-polish: wrote ${target.absolutePath} (${target.length()} bytes)")
+        return target
     }
 
     private fun magentaPng(width: Int, height: Int): ByteArray {
