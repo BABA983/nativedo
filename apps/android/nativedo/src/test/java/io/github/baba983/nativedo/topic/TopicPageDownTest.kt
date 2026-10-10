@@ -24,6 +24,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -78,6 +79,8 @@ internal class TopicPageDownTest {
     private val harness = UpstreamUiHarness()
     private val site = FakeDiscourseSite()
     private val artifacts: java.io.File = java.io.File(repoRoot(), ".amp/in/artifacts/topic-pagedown")
+    private val polishArtifacts: java.io.File =
+        java.io.File(repoRoot(), ".amp/in/artifacts/ui-polish")
 
     @Before
     fun setUp() {
@@ -164,6 +167,87 @@ internal class TopicPageDownTest {
         println("pagedown: lower lastVisible=$lower remaining=$lowerRemaining badge=${badgeCount(fragment)}")
         assertEquals("the badge below", lowerRemaining, badgeCount(fragment))
         assertTrue("the badge shrinks as the reader scrolls down", lowerRemaining < topRemaining)
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * A viewport scroll that changes the badge animates it the way a chat's does: the reader sees
+     * the old and new digits in flight, not the new number swapped in at once. Telegram's chat sets
+     * the page-down count animated ({@code ChatActivitySideControlsButtonsLayout.setButtonCount}),
+     * and its stock {@code CounterView} draws the transition; a count set without animation is
+     * already the settled image the instant the scroll reports the new viewport.
+     *
+     * <p>Nothing here pins the animator: the two oracles are the pixels the badge draws (the
+     * counter's own view, drawn through its public {@code draw}), a real viewport scroll whose
+     * digits differ, and the settled number read through the badge's own text.</p>
+     */
+    @Test
+    fun aScrollThatChangesTheBadgeAnimatesTheStockCounter() {
+        serveLongTopic(ALL, lastRead = HIGHEST)
+
+        val fragment = openTopic()
+        harness.await("the whole topic") { floorsOf(fragment).size == ALL.size }
+        harness.layoutApp()
+        harness.idleClock(400)
+        scrollToTopAndSettle(fragment)
+        // The move to the top itself changed the count; let that change finish so the frame below
+        // is the resting old number, not the tail of the previous animation.
+        harness.idleClock(700)
+        // The badge's view is measured with the button; lay out once more so the counter has a real
+        // width before it is drawn.
+        harness.layoutApp()
+        // Finish the first scroll/show before sampling a successive count change while reading.
+        listView()!!.scrollBy(0, listView()!!.height / 2)
+        harness.idleClock(700)
+
+        val before = badgeCount(fragment)
+        val beforeFrame = drawCounter(fragment)
+        assertTrue("the badge starts at a two-digit count ($before)", before > 9)
+        assertTrue("the badge is drawn before the scroll", beforeFrame != null)
+
+        // A real viewport down: the last visible floor advances, so the stream posts below it - the
+        // badge's own count - drop, and the digits differ.
+        listView()!!.scrollBy(0, listView()!!.height - 120)
+        // The instant the scroll reports, before any frame runs: a counter that is animating still
+        // holds its old digits (its transition starts at progress 0), while one set without
+        // animation has already swapped to the settled image.
+        val immediate = drawCounter(fragment)
+        val sampled = ArrayList<android.graphics.Bitmap>()
+        repeat(8) {
+            // A full harness drain also runs future frame tasks and would skip the whole flight.
+            harness.idleClock(20, maxTasks = 1)
+            drawCounter(fragment)?.let { sampled += it }
+        }
+        harness.idleClock(800)
+        val settled = badgeCount(fragment)
+        val settledFrame = drawCounter(fragment)!!
+
+        println(
+            "pagedown: counter before=$before settled=$settled frames=${sampled.size} " +
+                "notSettled=${sampled.count { !it.sameAs(settledFrame) }}",
+        )
+        assertTrue("the scroll changed the badge ($before -> $settled)", settled < before)
+        assertFalse(
+            "the counter did not swap to the settled digits the instant the viewport moved",
+            immediate!!.sameAs(settledFrame),
+        )
+        val inFlight = sampled.firstOrNull { frame ->
+            val pixels = IntArray(frame.width * frame.height)
+            frame.getPixels(pixels, 0, frame.width, 0, 0, frame.width, frame.height)
+            pixels.any { android.graphics.Color.alpha(it) > 0 } &&
+                !frame.sameAs(beforeFrame!!) && !frame.sameAs(settledFrame)
+        }
+        assertTrue(
+            "the counter interpolates instead of delaying an instant digit swap",
+            inFlight != null,
+        )
+
+        writeFrame("topic-pagedown-counter-before", beforeFrame!!)
+        sampled.forEachIndexed { index, frame ->
+            writeFrame("topic-pagedown-counter-frame-$index", frame)
+        }
+        writeFrame("topic-pagedown-counter-inflight", inFlight!!)
+        writeFrame("topic-pagedown-counter-settled", settledFrame)
         harness.assertNoTelegramSideEffects()
     }
 
@@ -723,6 +807,49 @@ internal class TopicPageDownTest {
         textField.isAccessible = true
         val text = textField.get(drawable) as? CharSequence ?: return 0
         return text.toString().trim().toIntOrNull() ?: 0
+    }
+
+    /**
+     * The badge's own pixels at this instant: upstream's counter is a view, so drawing it through
+     * its public {@code draw} renders exactly the frame the reader sees - the old digits, a blend,
+     * or the settled ones - without reading the animator's state.
+     */
+    private fun drawCounter(fragment: TopicFragment): android.graphics.Bitmap? {
+        val counter = counterView(fragment) ?: return null
+        if (counter.width <= 0 || counter.height <= 0) return null
+        val bitmap = android.graphics.Bitmap.createBitmap(
+            counter.width,
+            counter.height,
+            android.graphics.Bitmap.Config.ARGB_8888,
+        )
+        counter.draw(android.graphics.Canvas(bitmap))
+        return bitmap
+    }
+
+    /** Upstream's counter, reached through the button's own view tree. */
+    private fun counterView(fragment: TopicFragment): org.telegram.ui.Components.CounterView? {
+        val button = pageDownButton(fragment) ?: return null
+        return firstCounter(button)
+    }
+
+    private fun firstCounter(view: View): org.telegram.ui.Components.CounterView? {
+        if (view is org.telegram.ui.Components.CounterView) return view
+        if (view is ViewGroup) {
+            for (index in 0 until view.childCount) {
+                firstCounter(view.getChildAt(index))?.let { return it }
+            }
+        }
+        return null
+    }
+
+    /** Retains a rendered badge frame under [polishArtifacts], the ui-polish animation artifact. */
+    private fun writeFrame(name: String, bitmap: android.graphics.Bitmap) {
+        val out = java.io.File(polishArtifacts, "$name.png")
+        out.parentFile?.mkdirs()
+        java.io.FileOutputStream(out).use {
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+        }
+        println("pagedown render: $out (${out.length()} bytes)")
     }
 
     /** The reporter's monotonic reading high-water mark, through its read-only accessor. */

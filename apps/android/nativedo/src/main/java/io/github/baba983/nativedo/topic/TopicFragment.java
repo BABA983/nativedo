@@ -1903,7 +1903,8 @@ public class TopicFragment extends BaseFragment
         // double tap cannot ask the site for the same window twice.
         threadPageDown.showLoading(pageDownJumping, true);
         threadPageDown.setEnabled(!pageDownJumping, true);
-        threadPageDown.setCount(show ? count : 0, false);
+        // ChatActivity animates viewport count changes through the stock CounterView.
+        threadPageDown.setCount(show ? count : 0, true);
         threadPageDown.setContentDescription(topicPageDownDescription(count));
         applyPageDownVisible(show, true);
     }
