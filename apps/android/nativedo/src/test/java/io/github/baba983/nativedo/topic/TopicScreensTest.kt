@@ -111,6 +111,34 @@ internal class TopicScreensTest {
         harness.assertNoTelegramSideEffects()
     }
 
+    /** A body mention follows the cell's public link action into the same native author profile. */
+    @Test
+    fun aBodyMentionOpensTheSameNativeProfileAsAnAuthorTap() {
+        site.serveCooked(TOPIC_ID, "<p>Hello <a class='mention' href='/u/baba'>@baba</a></p>")
+        site.serveFixture("u/baba.json", "user-profile.json")
+        harness.bootApp()
+        harness.await("home") { rowCount() == 2 }
+        harness.present(TopicFragment.forTopic(TOPIC_ID, "Mention"))
+        harness.await("the mention") { rowCount() == 1 }
+        harness.drawApp()
+        val cell = laidOutChildren().filterIsInstance<ChatMessageCell>().first()
+        val text = org.telegram.ui.iv.RichTextStyle.toSpannable(
+            cell.messageObject.messageOwner.rich_message.blocks.single().text) as android.text.Spanned
+        val link = text.getSpans(0, text.length, android.text.style.URLSpan::class.java).single()
+        cell.delegate.didPressUrl(cell, link, false)
+        assertTrue("same-site mentions open the native profile, not a web sheet",
+            harness.topFragment() is io.github.baba983.nativedo.profile.ProfileFragment)
+        assertEquals("baba", harness.topFragment()!!.arguments.getString("username"))
+        val profile = harness.topFragment() as io.github.baba983.nativedo.profile.ProfileFragment
+        harness.await("profile loaded") {
+            profile.hasAction(io.github.baba983.nativedo.profile.ProfileActionsView.KEY_SHARE)
+        }
+        assertTrue(site.requestPaths.contains("u/baba.json"))
+        repeat(25) { harness.idleClock(20); harness.drawApp() }
+        harness.renderApp("mention-native-profile")
+        harness.assertNoTelegramSideEffects()
+    }
+
     /** A complex Discourse body through the whole screen: the table must arrive as a table block. */
     @Test
     fun topicRendersRichDiscourseBody() {

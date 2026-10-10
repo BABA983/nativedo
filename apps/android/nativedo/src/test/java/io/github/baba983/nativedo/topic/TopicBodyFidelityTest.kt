@@ -395,6 +395,44 @@ internal class TopicBodyFidelityTest {
     }
 
     @Test
+    fun cookedListMarkersKeepTheirCheckedStateAndStartNumber() {
+        open("<ul><li class='task-list-item'><span class='chcklst-box checked'></span>Done</li>" +
+            "<li class='task-list-item'><p><span class='chcklst-box'></span>Pending</p></li>" +
+            "<li>Ordinary</li></ul><ol start='3'><li>Third</li><li>Fourth</li></ol>" +
+            "<ol start='0'><li>Zero</li><li>One</li></ol>" +
+            "<p>Inline <span class='chcklst-box checked'></span> remains readable</p>")
+        val blocks = cell().messageObject.messageOwner.rich_message.blocks
+        val tasks = blocks[0] as TL_iv.pageBlockList
+        assertTrue("the completed task must retain a checked marker", tasks.items[0].checkbox && tasks.items[0].checked)
+        assertTrue("the pending task must retain an unchecked marker", tasks.items[1].checkbox && !tasks.items[1].checked)
+        assertFalse("an ordinary bullet is not a checkbox", tasks.items[2].checkbox)
+        assertEquals(listOf("3.", "4."), (blocks[1] as TL_iv.pageBlockOrderedList).items.map { it.num })
+        assertEquals(listOf("0.", "1."), (blocks[2] as TL_iv.pageBlockOrderedList).items.map { it.num })
+        assertEquals("Inline ☑ remains readable", RichMessageLayout.getString(blocks[3].text))
+        renderTo("body-task-list-markers", "ui-polish")
+        harness.assertNoTelegramSideEffects()
+    }
+
+    @Test
+    fun aParagraphWrappedLightboxDoesNotCreatePhantomTextLines() {
+        open("<p>Before</p><p><div class='lightbox-wrapper'><a class='lightbox' href='/photo.png'>" +
+            "<img src='/photo.png' width='320' height='180'></a></div></p><p>After</p>",
+            beforeBoot = { site.serveImage("photo.png", solidPng(320, 180, Color.CYAN)) })
+        val blocks = cell().messageObject.messageOwner.rich_message.blocks
+        assertEquals("text, photo, text without parser-generated empty paragraphs", 3, blocks.size)
+        assertEquals("Before", RichMessageLayout.getString(blocks[0].text))
+        assertTrue(blocks[1] is TL_iv.pageBlockPhoto)
+        assertEquals("After", RichMessageLayout.getString(blocks[2].text))
+        harness.await("the wrapped photo decoded") {
+            harness.drawApp()
+            cell().messageObject.richLayout.blocks.filterIsInstance<RichMessageLayout.RichPhotoBlock>()
+                .any { it.imageReceiver.bitmap != null }
+        }
+        renderTo("body-lightbox-without-phantom-lines", "ui-polish")
+        harness.assertNoTelegramSideEffects()
+    }
+
+    @Test
     fun nestedListsQuotesAndDetailsKeepTheirChildrenAndAuthors() {
         open("<p>Outside before</p><ol><li>First<ul><li>Nested A</li><li>Nested B</li></ul></li>" +
             "<li>Second</li></ol><blockquote><p>Outer quote</p><blockquote><p>Inner quote</p>" +

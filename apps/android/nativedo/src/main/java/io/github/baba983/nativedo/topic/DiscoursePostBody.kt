@@ -46,6 +46,8 @@ object DiscoursePostBody {
         // verbatim, and collapse the text the way a browser collapses ASCII whitespace.
         document.outputSettings().prettyPrint(false)
         val body = document.body()
+        // Inline checkboxes become visible text before whitespace runs are collapsed.
+        normalizeChecklistMarkers(body)
         normalizeWhitespace(body)
         // Inline emoji stay as the site's own `img.emoji` here: DiscourseImageBridge turns each one
         // into the tag upstream's rich renderer draws (or its readable label) once it knows whether
@@ -109,6 +111,36 @@ object DiscoursePostBody {
     }
 
     // ---------------------------------------------------------------- cooked-input normalization
+
+    private fun normalizeChecklistMarkers(body: Element) {
+        for (box in body.select("span.chcklst-box")) {
+            val parent = box.parent()!!
+            val item = when {
+                parent.normalName() == "li" -> parent
+                parent.normalName() == "p" && parent.parent()?.normalName() == "li" &&
+                    isFirstContentChild(parent) -> parent.parent()
+                else -> null
+            }
+            val checked = box.hasClass("checked") || box.hasClass("permanent")
+            if (item != null && isFirstContentChild(box)) {
+                item.attr("data-checkbox", "1")
+                if (checked) item.attr("data-checked", "1") else item.removeAttr("data-checked")
+                box.remove()
+            } else {
+                // An inline box is content, not the list item's marker.
+                box.replaceWith(TextNode(if (checked) "☑" else "☐"))
+            }
+        }
+    }
+
+    private fun isFirstContentChild(element: Element): Boolean {
+        var previous = element.previousSibling()
+        while (previous != null) {
+            if (previous !is TextNode || previous.wholeText.isNotBlank()) return false
+            previous = previous.previousSibling()
+        }
+        return true
+    }
 
     /** The element name upstream's importer reads as inline spoiler text. */
     private const val SPOILER = "spoiler"

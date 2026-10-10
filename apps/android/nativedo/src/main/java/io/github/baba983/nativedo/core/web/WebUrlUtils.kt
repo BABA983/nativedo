@@ -69,6 +69,19 @@ object DiscourseLinks {
             else -> null
         }
     }
+
+    /** Plain same-origin profile pages; JSON endpoints and profile subpages stay web links. */
+    @JvmStatic
+    fun profileUsername(url: String?, baseUrl: String): String? {
+        val value = url?.trim()?.takeIf(String::isNotEmpty) ?: return null
+        val resolved = resolveSameOrigin(value, baseUrl) ?: return null
+        val path = resolved.pathSegments.dropLastWhile(String::isEmpty)
+        if (path.size != 2 || path[0] != "u") return null
+        val username = path[1]
+        return username.takeIf {
+            it.matches(Regex("[A-Za-z0-9_.-]+")) && !it.endsWith(".json", ignoreCase = true)
+        }
+    }
 }
 
 /**

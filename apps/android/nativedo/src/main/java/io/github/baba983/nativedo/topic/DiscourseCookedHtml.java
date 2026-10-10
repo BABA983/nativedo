@@ -47,6 +47,8 @@ public final class DiscourseCookedHtml {
             if (!(node instanceof Element)) continue;
             Element element = (Element) node;
             String tag = element.normalName();
+            // HTML5 closes a p around block lightboxes, leaving synthetic empty p siblings.
+            if (tag.equals("p") && element.childNodes().isEmpty()) continue;
             if (tag.equals("ul") || tag.equals("ol")) {
                 out.add(parseList(element));
             } else if (tag.equals("blockquote") && !element.className().toLowerCase().contains("pull")) {
@@ -106,6 +108,13 @@ public final class DiscourseCookedHtml {
         TL_iv.pageBlockOrderedList orderedList = ordered ? new TL_iv.pageBlockOrderedList() : null;
         TL_iv.pageBlockList unorderedList = ordered ? null : new TL_iv.pageBlockList();
         int counter = 1;
+        if (ordered && list.hasAttr("start")) {
+            try {
+                counter = Integer.parseInt(list.attr("start").trim());
+            } catch (NumberFormatException ignored) {
+                // Invalid HTML start attributes use the default marker.
+            }
+        }
         for (Element li : list.children()) {
             if (!li.normalName().equals("li")) continue;
             ArrayList<TL_iv.PageBlock> children = parseChildren(li);
