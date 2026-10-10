@@ -2935,3 +2935,168 @@ Inspected host captures (controlled fixture artwork, not the real post's images)
 Some fixture captures include an unrelated pagination retry banner; no pagination fix is
 claimed here. The user's intermittent quote-only blank preview remains unverified and is not
 claimed fixed by these HTML changes. No device install or real-site write was performed.
+
+## 2026-10-09 — Counter motion, profile loading stability and cooked edge cases (Linux host)
+
+Three workers covered the counter, the profile and a read-only cooked/link audit. Changes stay
+inside `:nativedo`; no Telegram subtree drawing, measurement or animation code was modified.
+
+Named failures exercised through production fragments and `FakeDiscourseSite`:
+
+- Ordinary-topic scrolling swapped the remaining-post digits without animation. The screen
+  now requests animation from the stock counter, like ChatActivity. The regression compares
+  actual drawn pixels before, during and after a real viewport scroll, including a nonblank
+  intermediate frame different from both endpoints; a delayed instant swap is not sufficient.
+- A profile answer during the avatar flight made actions and information rows appear before
+  the landing. View updates now wait for the transition-end callback, with the existing epoch
+  fence checked again when applying them. No fixed extra delay or disabled animation is used.
+- A late summary inserted statistics above the pinned media tabs. Preserving the old adapter
+  position displaced the tabs from screen Y=168 to Y=1296 in the red run. Rebuilding now retains
+  the same semantic row and its offset; both tab position and header offset are checked.
+  The action-row height was already a constant 74dp, not the cause of this displacement.
+- HTML5 repair of a paragraph-wrapped block lightbox created two empty paragraphs: five blocks
+  instead of text/photo/text. Empty paragraphs with zero child nodes are skipped; paragraphs
+  containing explicit `<br>` or other inline content are not broadly stripped.
+- Cooked checklists lost checked/unchecked markers, and ordered lists lost `start`, including
+  start 0. Leading checklist spans become upstream checkbox markers; inline boxes remain text.
+  The glyph replacement precedes whitespace normalization so its following separator survives.
+- A cooked same-site @mention opened a web sheet. Plain same-origin `/u/name` now opens the
+  native profile. JSON endpoints, subpages, foreign origins/ports/schemes and credential-bearing
+  links are not promoted to native profiles.
+
+Retained results under `.amp/in/artifacts/ui-polish/verification/`:
+
+| Gate | Tests | Failures / errors / skips | Evidence |
+| --- | ---: | --- | --- |
+| Six regressions before fixes | 6 | 6 / 0 / 0 | `red.log`, `red-xml/` |
+| First expanded run | 139 | 2 / 0 / 0 | `first.log`, `first-xml/` |
+| Six regressions after corrections | 6 | 0 / 0 / 0 | `regression.log`, `regression-xml/` |
+| Expanded affected-surface gate | 139 (21 classes) | 0 / 0 / 0 | `green.log`, `green-xml/` |
+| Final successive-scroll animation capture | 1 | 0 / 0 / 0 | `animation-final.log`, `animation-final-xml/` |
+
+The two intermediate failures were the inline checkbox's missing separator and an animation
+sampler that drained future frame tasks before drawing. The whitespace ordering was corrected;
+sampling bounds the main-looper task drain instead of weakening the intermediate-pixel assertion.
+The final capture samples a successive count change (52 → 48), after initial layout/show settles.
+
+The 139-test gate contains 138 retained tests in 20 classes plus one temporary profile-link
+boundary probe (5 accepted URLs, 14 refused URLs). The probe was removed after it passed; its XML
+is retained, and it is not an additional committed unit test. The final sampler was rerun after
+that removal and the capture refinement. This is not a new full-suite result: the earlier
+478-test full run's two HomeTabs failures remain recorded above and are not claimed resolved.
+
+Re-run the retained expanded gate with the temporary init script shown in the preceding section:
+
+```bash
+./apps/android/telegram/gradlew -p apps/android/telegram \
+  -I /tmp/nativedo-test-limits.gradle \
+  -Dorg.gradle.jvmargs='-Xmx2g -XX:MaxMetaspaceSize=768m' --no-daemon --max-workers=2 \
+  :nativedo:testDebugUnitTest \
+  --tests '*ProfileScreenTest' --tests '*ProfileRedesignTest' --tests '*ProfileTransitionTest' \
+  --tests '*ProfileTabsTest' --tests '*ProfileStatusBarTest' \
+  --tests '*TopicPageDownTest' --tests '*TopicBodyFidelityTest' --tests '*TopicScreensTest' \
+  --tests '*TopicHistoryPagingTest' --tests '*TopicPagingTest' --tests '*TopicFadeBandTest' \
+  --tests '*TopicImageTest' --tests '*TopicCookedSemanticsTest' --tests '*DiscourseCookedHtmlTest' \
+  --tests '*TopicHeaderAvatarTest' --tests '*TopicReplyFidelityTest' --tests '*TopicRepliesThreadTest' \
+  --tests '*DiscourseLinksTest' --tests '*DeeplinkRoutingTest' --tests '*PrivateMessageComposerTest' \
+  --quiet
+```
+
+Gradle gates ran serially as the ad-hoc supervised `ui-polish-verification` orb service; the
+service was stopped and invocation scripts removed after completion. `telegram-hook-guard.sh`
+also passed. Arm64 assemble exited zero (`verification/assemble.log`); the retained APK is
+`.amp/in/artifacts/ui-polish/nativedo-ui-polish-debug-arm64.apk`, 68,354,491 bytes, SHA-256
+`714aa690b0be40f1b67193f62a995c28ae373673fb1353dab0a59d30e30274c5`.
+Only arm64 `libtmessages.49.so` and `liblanguage_id_l2c_jni.so` are packaged.
+
+Inspected review evidence (native Canvas/Skia host renders, not device passes):
+
+- [Counter before / in-flight / settled](../.amp/in/artifacts/ui-polish/topic-counter-comparison.png),
+  and [frame-by-frame slowed sample sequence](../.amp/in/artifacts/ui-polish/topic-counter-samples-slowed.mp4).
+  The clip contains only the real captured frames, with deliberately stretched playback timing;
+  it is not device frame-pacing evidence or an interpolated mock animation.
+- Profile [loaded own-profile actions](../.amp/in/artifacts/ui-polish/profile-answer-landed.png),
+  [answer held during flight](../.amp/in/artifacts/ui-polish/profile-answer-during-flight.png),
+  and [tabs after late summary](../.amp/in/artifacts/ui-polish/profile-summary-anchored.png).
+- [Dark settled header](../.amp/in/artifacts/ui-polish/profile-opening-dark-end.png) and
+  [dark mid-flight header](../.amp/in/artifacts/ui-polish/profile-opening-dark-mid.png).
+  Frozen transition frames still composite the outgoing topic; they are not settled-page captures.
+- [List markers](../.amp/in/artifacts/ui-polish/body-task-list-markers.png),
+  [lightbox without phantom lines](../.amp/in/artifacts/ui-polish/body-lightbox-without-phantom-lines.png),
+  and [mention's native profile](../.amp/in/artifacts/nativedo/mention-native-profile.png).
+
+The session is `baba`, so those profile captures correctly offer 书签 / 设置 / 分享. Magenta/cyan
+artwork and `Compose user` are controlled fixtures. The harness uses AT_MOST height; it cannot
+certify device-window sizing, GPU smoothness or touch hand-feel. No device install or real-site
+write was performed. This expands concrete edge-case coverage, not a promise of all HTML tags
+or combinations. The user's intermittent quote-only delayed preview still needs matching APK
+and real parent/reply JSON to diagnose and is not claimed fixed here.
+
+## 2026-10-10 — Telegram-style settings and profile groups (Linux host)
+
+The active `:nativedo` screens reuse upstream `RecyclerListView` sections,
+`ShadowSectionCell`, `HeaderCell`, `TextDetailCell`, `SettingCell` and check rows.
+Gray page surfaces surround rounded theme-colored cards. Profile information uses the same
+value-above-caption convention as Telegram's phone/username rows; the multiline bio uses
+that cell too and is omitted when empty. Settings groups appearance and site preferences
+without inventing Telegram-only phone, password or account functionality.
+
+Named failures exercised before their fixes:
+
+- A session with no avatar URL left the settings header transparent. The existing screen-flow
+  test now draws its real avatar view and checks that the fallback is visible (red: 1/1 failed).
+- Returning from Settings after a theme switch reused the previous list's header-seeding state.
+  The avatar moved horizontally; a new list now resets that state (red: 1/1 failed).
+- Section decoration was counted as avatar pull distance. Header tracking, semantic anchors,
+  the scroll clamp and release/expand settling now consistently use decorated positions.
+- A capture test booted two shells but destroyed only the last. Its orphaned shell also handled
+  the next theme notification: the probe counted two hosts, and a retained actual-pixel night
+  surface assertion failed even though avatar geometry passed. Each replacement boot now
+  destroys the preceding shell through its real lifecycle. The probe then counted one host;
+  the 11-test transition class and its night-surface assertion passed. No production theme
+  animation was disabled or rewritten to accommodate this test interference.
+
+Final serial gates, after removing temporary capture tests and diagnostic prints:
+
+| Gate | Result | Retained evidence |
+| --- | --- | --- |
+| Eight profile/settings test classes | 32 tests; 0 failures/errors/skips | `verification/final/test-xml/`, `final/test.log` |
+| Arm64 `:nativedo:assembleDebug` | Exit 0 | `verification/final/assemble.log` |
+| `scripts/telegram-hook-guard.sh` | OK; no upstream subtree edits | `verification/final/hook-guard.log` |
+| `git diff --check` | Exit 0 | Local diff check |
+
+Evidence paths in this section are under `.amp/in/artifacts/telegram-profile-settings/`.
+The final command and temporary Gradle configuration are retained as
+`verification/final-invocation.sh.txt` and `verification/final-limits.gradle.txt`.
+They select `ProfileScreenTest`, `ProfileRedesignTest`, `ProfileTransitionTest`,
+`ProfileTabsTest`, `ProfileStatusBarTest`, `SettingsTabTest`, `PreferencesTest` and `StorageTest`,
+with a 2 GiB test heap, one parallel fork and four classes per worker. This is an affected-surface
+gate, not a new full-suite result; the earlier full suite's HomeTabs failures are not claimed fixed.
+The earlier mixed-worker failure remains in `verification/mixed-workers/`; the stronger
+night-surface red/green runs and host-count probes remain in `observer-red/` and `observer-green/`.
+
+Three temporary capture cases passed and produced the following inspected native Canvas/Skia
+renders through production fragments, real tab touches and `FakeDiscourseSite`:
+
+- [Light settings/profile](../.amp/in/artifacts/telegram-profile-settings/light-default.png)
+  and [dark settings/profile](../.amp/in/artifacts/telegram-profile-settings/dark-default.png).
+- [Light scrolled groups](../.amp/in/artifacts/telegram-profile-settings/light-scrolled.png)
+  and [dark scrolled groups](../.amp/in/artifacts/telegram-profile-settings/dark-scrolled.png).
+- [Settings bottom in both themes](../.amp/in/artifacts/telegram-profile-settings/settings-bottom.png).
+- [Long and empty bio](../.amp/in/artifacts/telegram-profile-settings/bio-edge-cases.png).
+- [Final dark profile after Settings and Back](../.amp/in/artifacts/telegram-profile-settings/profile-theme-return-verified.png),
+  checked after the final shared-worker gate, not the earlier misleading capture.
+
+The capture source and XML remain in `verification/capture-source.kt.txt` and
+`verification/capture-final.xml`; the temporary test itself was removed. The corrected tap sends
+DOWN/UP before draining the paused looper. An earlier capture drained between them and became
+a long press/tab reselection, expanding the avatar; it was not an ordinary-open or Insets defect.
+Magenta avatars and `Compose user` are fixture content. Floating tabs intentionally cover part of
+the scrolling list; the bottom capture verifies that the last settings rows clear the tabs.
+These host content renders cannot certify device system bars, GPU pacing or gesture hand-feel.
+No emulator/device install, real-site write, commit or push was performed for this wave.
+
+The retained debug APK is `nativedo-telegram-style-debug-arm64.apk`, 68,354,491 bytes, SHA-256
+`14ce9f0e2e150c7e89741672cbcdc4d45fc78865424cfc108a18322227264e86`.
+The supervised verification service was stopped after completion; temporary invocation scripts
+and probes were removed from the source tree and `/tmp`.
