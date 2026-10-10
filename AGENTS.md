@@ -1,140 +1,106 @@
 # AGENTS.md
 
-## Telegram-Derived Code
+## Start here
 
-Telegram source lives in the standalone `:TMessagesProj` Gradle module at
-`apps/android/TMessagesProj/src/main/java/org/telegram/...` (upstream package kept,
-so files diff cleanly and imports stay byte-identical). `:app` depends on
-`:TMessagesProj`; a smaller class of **native ports** in `:app` mirrors an upstream
-component's shape but binds to NativeDo models (e.g.
-`io.github.baba983.nativedo.ui.topic.TopicCell` ←
-`org/telegram/ui/Cells/DialogCell.java`).
+This is a native linux.do client, not a generic Discourse SDK or a Telegram fork.
+Android is active; iOS is a scaffold.
 
-We are a linux.do client, not a Telegram fork: the snapshot advances only when
-a product goal needs upstream code, never on every upstream release.
+- [README.md](README.md): setup, run and check commands.
+- [docs/README.md](docs/README.md): current design knowledge; read the relevant theme.
+- [docs/code-layout.md](docs/code-layout.md): ownership and language boundaries.
+- [contracts/discourse/README.md](contracts/discourse/README.md): wire/auth semantics;
+  keep matching `fixtures/discourse` payloads aligned when these change.
 
-### Where the truth lives
+## Active Android build
 
-- **`vendor-overlay.json`** — the only human-owned vendor file, and it is small:
-  the pin, the sync policy, and the *exceptions* (`native`, `upstream_ports`,
-  `derived_from`, `forced_exact`, `reference`, `resources`).
-- **Everything else is derived** from that overlay + the pristine checkout +
-  the files on disk. There is no committed lock file, no per-file `modified`
-  flag, and no per-file notes to maintain. `scripts/vendor-index.sh` prints the
-  derived provenance for any path.
-- **`scripts/vendor-guard.sh`** — run it before committing any change under
-  `apps/android/TMessagesProj/**` or to the overlay. It reports problems with the
-  command that fixes them; `--compile` also builds `:TMessagesProj`.
-- **`VENDOR.md`** — the workflow (setup, diff, bump, check the pristine tree).
-- **`docs/code-layout.md`** — directory layout, language choice, façade policy.
-  Read before moving files or adding a façade.
+`apps/android/nativedo` builds against the full `apps/android/telegram` subtree.
+Our code belongs in `nativedo`, not at an upstream `org.telegram.*` path.
+The sole host seam inside the subtree is `NativeDoHooks` and its narrow call sites.
 
-### Rules
+- Read the pinned upstream source before changing Telegram integration. Preserve
+  upstream rendering, measurement, gesture, animation and recycling behavior.
+- The subtree import is the pin; advance it deliberately with `git subtree` for
+  a product goal, not on every upstream release. Do not hand-maintain a second pin.
+- Run `scripts/telegram-hook-guard.sh` for subtree changes. Its allowed host hooks
+  are not permission to rewrite upstream behavior. Extend a hook only when a
+  concrete product boundary needs it; keep callbacks instance-bound when appropriate.
+- Keep tgnet and Telegram database initialization off. NativeDo owns Discourse
+  transport, session and storage. Synthetic Telegram presentation objects do not
+  authorize Telegram account/network activity.
+- Keep copied license headers. Adapted ports carry SPDX `GPL-2.0-or-later` and
+  one short upstream attribution, not structured port-status comment blocks.
 
-1. **`org.telegram.*` code is an upstream mirror.** Before changing any of it,
-   read the upstream file: `scripts/vendor-diff.sh <local-path>` (add `--pinned`
-   to see how far the file has drifted from the pinned copy). Don't rewrite
-   semantics from memory; if you need different behavior, make it lazy.
-2. **Our own code must not hide at an upstream path.** If a file under
-   `:TMessagesProj` is NativeDo code (a stub, shim, or re-designed port), list it in
-   the overlay's `native` array. That is the difference between "copy we
-   re-sync" and "our file that happens to sit in `org.telegram.*`". A
-   `:TMessagesProj` file with no upstream counterpart at the pin is classified as a
-   shim automatically.
-3. **Respect `forced_exact`.** Overlay entries list `gesture`, `animation`,
-   `measurement`, `drawing`, `recycling` for components whose hand-feel must
-   stay upstream-shaped: keep method shape, signatures (return types,
-   parameters, overload set), constants (`dp(10)`, `0.3f`, `>= 3000`,
-   `clamp(150, 600)`, `< 1px` snap), imports/short type names, and branch
-   structure. The guard prints the gate to run when you touch one: the
-   file's entry in `scripts/vendor_guard.py` (`FORCED_EXACT_TESTS_BY_PATH`), or
-   the shared default gate while it has none — `:app:verifyPaparazziDebug` when
-   the gate is a screenshot class. A forced-exact file does not need a
-   constant-mirror unit test (see Testing); the mapping names only tests that pin
-   an observable outcome.
-4. **Adding upstream files needs no bookkeeping.** Copy them (`scripts/auto-vendor-copy.sh`
-   bulk-copies javac's missing classes) and commit: provenance is derived.
-   Rewriting a file's `upstream` mapping or marking our own code is a one-line
-   overlay edit.
-5. **Host wiring is expected** — package/import adjustments, AndroidX or
-   project-local type substitutions, `R.*` / `Theme.getColor(Theme.key_*)`
-   rewrites, constructor/callback glue. It must not change the branch
-   structure, constants, or measurement/drawing/gesture/animation/recycling
-   behavior of a `forced_exact` subsystem.
-6. **License headers on copied files stay.** That's how compliance works.
-7. **Comment surface stays minimal.** Vendored files keep the upstream
-   GPL/SPDX header. `:app` ports keep an SPDX `GPL-2.0-or-later` header plus one
-   short attribution line naming the upstream path — no structured
-   `PORT-MODE` / `EXACT-SUBSYSTEMS` / `OMITTED` blocks (retired; they went
-   stale). A one-line `TODO(<topic>):` at a call site is fine.
-8. **Files listed in the overlay's `reference` block** intentionally track an
-   older upstream commit. Don't "fix" them to the pin; removing a path from
-   `reference` is a deliberate decision.
+## Legacy stack only
+
+`apps/android/app` and standalone `apps/android/TMessagesProj` remain in the tree.
+They use [VENDOR.md](VENDOR.md) and `vendor-overlay.json`, **not** the subtree model.
+
+- Read `scripts/vendor-diff.sh <path>` before changing a mirror (`--pinned` for
+  drift against the pin). Native ports/shims must be classified honestly in the overlay.
+- Respect `forced_exact`: preserve method shape, signatures, constants, imports
+  and branch structure of listed gesture/animation/measurement/drawing/recycling
+  subsystems. Host wiring must not alter them; run the observable gate the guard names.
+- `reference` paths intentionally use older baselines; do not silently re-sync them.
+- Run `scripts/vendor-guard.sh --compile` for legacy vendor or overlay changes.
+  The pre-commit quick guard does not replace compile or the named visual gate.
+- Do not delete the legacy stack, its tooling or goldens without explicit agreement.
+
+## Network and session
+
+Prefer standard Discourse JSON endpoints over scraping. Login is WebView-backed
+and cookie-based; do not introduce native username/password handling. Account for
+`_t`, `_forum_session`, `cf_clearance`, bootstrap parsing and `/session/csrf`.
+Use visible WebView recovery rather than brittle Cloudflare workarounds. A challenge
+is not logout; an authenticated cookie does not prove a native write will be accepted.
+Never log credentials, cookie values or sensitive request/response content.
 
 ## Testing
 
-- **Never write unit tests after you write code.** A test written against code you just wrote restates the implementation: it pins the behavior you happened to choose instead of a failure mode, so it cannot tell you the choice was wrong.
-- **Highly prefer E2E tests as the sole testing mechanism.** Use them to verify complex features work. At the end of E2E tests, produce a verifiable and repeatable artifact (a committed golden, a captured log, a checked-in transcript) so the result can be re-checked without repeating the run by hand.
-- **If you must test a system in isolation, first write down all the ways it could fail, then write the code.** A test earns its place only by encoding a named failure mode — a race, a persistence/isolation rule, a wire round-trip, an error or retry path, an accessibility contract. Anything whose only oracle is a constant, a class shape, or a value copied from the implementation is not a test; delete it.
+- **Highly prefer E2E as the sole testing mechanism.** Drive the shipped flow and
+  leave reviewable, repeatable evidence (a golden, captured log or transcript).
+  Host/fake-site tests are not device/live-site passes.
+- **Never write unit tests after you write code.** If
+  isolation is necessary, write down the failure modes first, then encode a race,
+  persistence/isolation rule, wire round-trip, error/retry path or accessibility contract
+  E2E cannot reach. Constants, getter round-trips and "flag was set" are not oracles.
+- Follow [testing](docs/testing.md) for evidence scope. No mandatory append to a
+  verification Markdown log; report each run with the change it verifies.
+- Run Gradle sequentially; use `--quiet` when possible. Commands live in README.
+- Legacy Paparazzi pixel verification and platform-baseline rules live in
+  [testing](docs/testing.md#choose-the-gate-for-the-build).
+- Docs-only changes need accuracy, consistency and local-link checks, not an APK build.
 
-Read the three together: E2E is the default and rule 3 is the only exception, so an isolated test has to name the failure mode E2E cannot reach. The device passes recorded in `docs/device-verification.md` are the current E2E mechanism: drive the flow on hardware and write the verdict plus its evidence there. Paparazzi goldens are the retained artifact for the visual half — they render shipped surfaces through production wiring and `:app:verifyPaparazziDebug` is the gate. Do not add a unit test that re-asserts a `dp()` value, a getter round-trip, a "flag was set", or a mapping a device pass shows directly. `FORCED_EXACT_TESTS_BY_PATH` in `scripts/vendor_guard.py` follows the same rule: it maps a forced-exact file to a retained observable gate, never to a constant mirror.
+## Maintaining documentation
 
-## Build, Lint, And Test
-
-- Do not run gradlew commands in parallel; add `--quiet` when possible.
-- **All unit tests:** `./apps/android/gradlew -p apps/android :app:testDebugUnitTest --quiet`
-- **Single test class:** `./apps/android/gradlew -p apps/android :app:testDebugUnitTest --tests 'io.github.baba983.nativedo.feature.home.ui.HomeViewModelTest' --quiet`
-- **Paparazzi screenshots:** plain `testDebugUnitTest` only exercises rendering; pixel
-  verification runs via `./apps/android/gradlew -p apps/android :app:verifyPaparazziDebug`
-  (or `runUnitAndScreenshotTests`, which is the same task and what CI runs). Goldens live in
-  `apps/android/app/src/test/snapshots/<platform>/images` and are committed; papering over the
-  host is not possible (layoutlib's Skia paints text a little differently per OS), so there is
-  one set per platform — `linux` (what CI verifies) and `macos` — and each checkout
-  records/verifies only its own, because the `:app` build script points Paparazzi's
-  `paparazzi.snapshot.dir` at `snapshots/$platform`. Either way `verifyPaparazziDebug` is a real
-  local gate — a diff is either an intentional UI change or a bug. After an intentional UI
-  change, re-record on the platforms you can run (`:app:recordPaparazziDebug`), and the other
-  set is re-recorded wherever it is verified (the orb/CI for Linux); include both in the same
-  commit. Snapshot names follow `<package>_<Class>_<method>[Theme].png`.
-- **Assemble (runtime/resource changes):** `./apps/android/gradlew -p apps/android :app:assembleDebug --quiet`
-- **Telegram-derived changes:** `./scripts/vendor-guard.sh --compile` (index + isolation +
-  forced-exact + `:TMessagesProj` compile). The same check runs in `.githooks/pre-commit`
-  (`--quick`) and in CI.
-- For docs-only changes, verification can be limited to checking the edited Markdown for accuracy and consistency.
-
-## Project reference
-
-- `../telegram` — pristine Telegram checkout (`scripts/vendor-setup.sh --print-dir`); primary reference for UI components, animations, gesture interactions (swipe, long-press, pull-to-refresh), navigation transitions, and list performance patterns.
-- `/Users/baba/Documents/workspace_github/stripe-android` — modern Android SDK reference for architecture and code patterns.
-- `/Users/baba/Documents/workspace_github/fluxdo` — reference for linux.do-specific Discourse features and flows.
-- <https://docs.discourse.org/> — canonical Discourse API documentation.
-
-## Project Scope
-
-- This repository builds a native client for `https://linux.do/`, not a generic Discourse SDK.
-- Android is the active implementation target under `apps/android`; `apps/ios` is reserved for future parity work.
-
-## Source Of Truth
-
-- Start with `README.md` for the current project layout and local run commands.
-- Treat `contracts/discourse/*.md` as the canonical reference for endpoints, models, and auth/session flow.
-- Treat `fixtures/discourse/*` as the sample payloads that should stay aligned with the contracts.
-
-## Network And Auth
-
-- `linux.do` is a Discourse site. Prefer standard Discourse JSON endpoints and documented session flows over ad-hoc scraping.
-- Login is WebView-backed and cookie-based. Do not introduce native username/password handling unless the user explicitly asks for a different auth strategy.
-- Session-sensitive changes must account for `_t`, `_forum_session`, `cf_clearance`, bootstrap HTML parsing, and `/session/csrf`.
-- If you change auth, cookies, CSRF, or endpoint semantics, update the matching files in `contracts/discourse/` and `fixtures/discourse/` in the same task when appropriate.
-- Cloudflare handling should favor a reliable WebView fallback over brittle native workarounds.
+- Before user-visible or cross-module behavior changes, explain the goal, non-goals,
+  constraints, alternatives and verification approach. Put durable design choices in
+  a proposal section of the relevant existing page; simple local changes can stay
+  in the discussion. This does not require a new document or a fixed template.
+- Update the existing topic in place. Document durable decisions, rationale and
+  boundaries; link to code/contracts rather than copying their inventories.
+- Distinguish proposals, accepted-but-unimplemented decisions and current behavior.
+  Label dated observations and the build they describe; do not present any of these
+  as implemented behavior in another build.
+- When finishing a change, reconcile affected design pages, contracts, fixtures and
+  links in the same change. Replace implemented proposals with current descriptions;
+  merge duplicate explanations and delete obsolete text or pages. Keep unresolved
+  constraints only while they still matter.
+- When sources disagree, inspect the matching build's code/tests and protocol source.
+  Code establishes current behavior, not automatically intended product behavior:
+  distinguish stale documentation from an implementation defect, and surface an
+  unresolved discrepancy rather than silently deciding which to preserve.
+- Do not append development diaries, test totals, APK hashes or per-run screenshots
+  to README/design pages. Keep run evidence with the change; history belongs in Git.
+- Do not create raw-source or archive directories by default. Retain a source only
+  when it is necessary to reproduce a contract or decision; fixtures already serve that role.
+- Add a page only for a distinct maintained question; link it from `docs/README.md`.
+  A design discussion in a thread does not automatically deserve a permanent document.
 
 ## CodeGraph
 
-In repositories indexed by CodeGraph (a `.codegraph/` directory exists at the repo root), reach for it BEFORE grep/find or reading files when you need to understand or locate code:
+When `.codegraph/` exists, use `codegraph_explore` (MCP) or
+`codegraph explore "<symbols or question>"` before grep/read for code discovery.
+If unavailable, use normal source discovery; do not index just to satisfy this rule.
 
-- **MCP tool** (when available): `codegraph_explore` answers most code questions in one call — the relevant symbols' verbatim source plus the call paths between them, including dynamic-dispatch hops grep can't follow. Name a file or symbol in the query to read its current line-numbered source. If it's listed but deferred, load it by name via tool search.
-- **Shell** (always works): `codegraph explore "<symbol names or question>"` prints the same output.
-
-If there is no `.codegraph/` directory, skip CodeGraph entirely — indexing is the user's decision.
-
-<!-- CODEGRAPH_END -->
+Reference sources: the pinned Telegram subtree (or `scripts/vendor-setup.sh --print-dir`
+for legacy diffs) and [Discourse API docs](https://docs.discourse.org/).

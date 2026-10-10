@@ -38,13 +38,17 @@ These are screen-facing model semantics shared between Android today and iOS lat
 ## Local topic viewport
 
 The highest read post remains monotonic and is reported through topic timings.
-The local exit viewport is separate: site/account/topic scoped post number and
-pixel offset relative to list content padding. It may move backward and is never
-sent as a lower read position. Explicit post links override this viewport; list
-navigation restores it before falling back to read progress. Position restoration
-must yield to a user drag. Debug builds offer a from-top entry that ignores and
-does not overwrite the stored viewport; `NativeDoTopicScroll` logs programmatic
-positioning and layout movement without post content or account identity.
+The active `:nativedo` screen opens an explicit post link or resumes from the greater
+of server progress and the local read floor. It does not consume the exit viewport
+store or restore a saved pixel offset.
+
+**Legacy `:app` only:** the local exit viewport is a separate site/account/topic
+scoped post number and pixel offset relative to list content padding. It may move
+backward and is never sent as a lower read position. Explicit post links override
+this viewport; list navigation restores it before falling back to read progress.
+Position restoration must yield to a user drag. Legacy debug builds offer a from-top
+entry that ignores and does not overwrite the stored viewport; `NativeDoTopicScroll`
+logs programmatic positioning and layout movement without post content or account identity.
 
 ## Discourse Chat (public channels)
 

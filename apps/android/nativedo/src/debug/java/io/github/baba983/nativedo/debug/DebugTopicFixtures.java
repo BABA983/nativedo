@@ -8,9 +8,6 @@ import java.util.List;
 /**
  * Curated linux.do topics for native render QA. Debug-only (this file lives in {@code src/debug}),
  * and read-only: a jump opens the topic, it never writes to the site.
- *
- * <p>Keep the labels and ids in sync with {@code docs/note.md}, which is where they were first
- * collected.</p>
  */
 public final class DebugTopicFixtures {
 
