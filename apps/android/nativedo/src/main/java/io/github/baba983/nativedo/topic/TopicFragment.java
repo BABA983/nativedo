@@ -17,6 +17,7 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.FileLoader;
 import org.telegram.messenger.ImageLocation;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
@@ -242,6 +243,13 @@ public class TopicFragment extends BaseFragment
     private org.telegram.ui.Components.ChatAvatarContainer avatarContainer;
     /** The bar's blur source; the post list is the content it records. */
     private io.github.baba983.nativedo.app.GlassPanelHost glassHost;
+    private io.github.baba983.nativedo.search.TopicSearch topicSearch;
+    private TopicDetail searchReadingDetail;
+    private List<Post> searchReadingPosts;
+    private Runnable searchReadingRetry;
+    private int searchReadingPosition;
+    private int searchReadingOffset;
+    private org.telegram.ui.Components.RecyclerAnimationScrollHelper searchScroll;
     /**
      * ChatActivity's own top and bottom blur band ({@code chatActivityFadeView},
      * ChatActivity.java:6969-6973): the status bar and the bar's gaps show the recorded content
@@ -313,6 +321,9 @@ public class TopicFragment extends BaseFragment
                     // Every view that draws from the source holds a cached frame until it is
                     // invalidated, the capsules' bar included.
                     glassHost.invalidateAttachedViews();
+                }
+                if (topicSearch != null) {
+                    topicSearch.updateColors();
                 }
                 if (fadeView != null) {
                     // ChatActivity is rebuilt on a theme change and builds the band again; this
@@ -636,8 +647,7 @@ public class TopicFragment extends BaseFragment
                 } else if (id == MENU_ITEM_OPEN_BROWSER) {
                     openTopicInBrowser();
                 } else if (id == MENU_ITEM_SEARCH) {
-                    presentFragment(new io.github.baba983.nativedo.search.TopicSearchFragment(
-                            TopicFragment.this.topicId, topicDetail == null ? null : topicDetail.getTitle()));
+                    openTopicSearch();
                 } else if (id == MENU_ITEM_NOTIFICATION) {
                     showNotificationLevelOptions();
                 }
@@ -1199,7 +1209,7 @@ public class TopicFragment extends BaseFragment
             return;
         }
         boolean hasText = composer.getEditField() != null && composer.getEditField().length() > 0;
-        int wanted = hasText ? View.VISIBLE : View.GONE;
+        int wanted = hasText && topicSearch == null ? View.VISIBLE : View.GONE;
         if (attachStrip.getVisibility() != wanted) {
             attachStrip.setVisibility(wanted);
             // The strip is an overlay on the list, so the list keeps its last post clear of it too
@@ -1257,6 +1267,10 @@ public class TopicFragment extends BaseFragment
         if (fadeView == null) {
             return;
         }
+        if (topicSearch != null) {
+            fadeView.setFadeZoneBottom(listView.getPaddingBottom());
+            return;
+        }
         // The zone covers the whole input, capsule included: the enter view's own measured height
         // (it grows with a second line or the emoji panel) rather than a fixed strip, so the band
         // always sits under whatever the input became.
@@ -1295,6 +1309,13 @@ public class TopicFragment extends BaseFragment
     /** Writes the list's paddings from what the bar and the composer need, together. */
     private void applyListPadding() {
         if (listView == null) {
+            return;
+        }
+        if (topicSearch != null) {
+            int bottom = inputInsets == null ? bottomInset
+                    : Math.max(bottomInset, Math.round(inputInsets.getAnimatedMaxBottomInset()));
+            listView.setPadding(0, listPaddingTop, 0, AndroidUtilities.dp(64) + bottom);
+            topicSearch.updateInsets(listPaddingTop, bottom);
             return;
         }
         // The list keeps the real input clear, not a guessed strip: the enter view's own measured
@@ -1801,6 +1822,9 @@ public class TopicFragment extends BaseFragment
      * only while the root is the whole thread.
      */
     private void updateThreadStatus() {
+        if (topicSearch != null) {
+            return;
+        }
         if (!threadMode) {
             // An ordinary read floats the same button over the same composer; its state is the
             // stream below the viewport, not a thread's cursor.
@@ -1881,7 +1905,7 @@ public class TopicFragment extends BaseFragment
      * would send the reader after a post that is not there.</p>
      */
     private void updateTopicPageDown() {
-        if (threadMode || threadPageDown == null) {
+        if (topicSearch != null || threadMode || threadPageDown == null) {
             return;
         }
         int count = 0;
@@ -2233,7 +2257,9 @@ public class TopicFragment extends BaseFragment
         // and it goes into the center capsule the way a chat's title does.
         bindHeader(detail);
         streamPostIds = detail.getStreamPostIds();
-        reporter.start(detail);
+        if (reporter != null) {
+            reporter.start(detail);
+        }
         bind(detail);
         if (scrollTo > 0) {
             scrollToFloor(scrollTo);
@@ -2636,6 +2662,10 @@ public class TopicFragment extends BaseFragment
      * position rather than the position alone.
      */
     private void reportViewport() {
+        // The saved reading window also fences a queued callback after the search UI is destroyed.
+        if (searchReadingPosts != null) {
+            return;
+        }
         // An ordinary read's page-down button follows the viewport: the badge and the target are
         // recomputed from where the list is now, on every scroll and every layout.
         if (!threadMode) {
@@ -2678,7 +2708,7 @@ public class TopicFragment extends BaseFragment
     @Override
     public void onResume() {
         super.onResume();
-        if (reporter != null) {
+        if (reporter != null && topicSearch == null) {
             reporter.setForeground(true);
         }
         // The failure hint is upstream's Bulletin, which anchors itself above whatever the screen's
@@ -2717,6 +2747,12 @@ public class TopicFragment extends BaseFragment
      */
     @Override
     public boolean onBackPressed(boolean invoked) {
+        if (topicSearch != null) {
+            if (invoked) {
+                closeTopicSearch();
+            }
+            return false;
+        }
         if (composerTools != null && composerTools.onBackPressed(invoked)) {
             return false;
         }
@@ -2746,6 +2782,13 @@ public class TopicFragment extends BaseFragment
 
     @Override
     public void onFragmentDestroy() {
+        if (topicSearch != null) {
+            topicSearch.destroy();
+            topicSearch = null;
+        }
+        if (searchScroll != null) {
+            searchScroll.cancel();
+        }
         if (reporter != null) {
             // The screen is gone: the ticker must be too, or it keeps crediting floors of a topic
             // nobody is looking at.
@@ -2826,8 +2869,126 @@ public class TopicFragment extends BaseFragment
         // the top is then the first floor the site really has at or after it.
         int index = rowIndexOrAfter(floor);
         if (index >= 0) {
-            listView.scrollToPosition(index);
+            if (topicSearch != null) {
+                final int generation = windowGeneration;
+                listView.post(() -> {
+                    if (topicSearch == null || generation != windowGeneration) {
+                        return;
+                    }
+                    // No unfenced animator-finished callback may scroll an older query after Back.
+                    listView.getItemAnimator().endAnimations();
+                    searchScroll.scrollToPosition(index, AndroidUtilities.dp(12), false, true);
+                    View view = listView.getLayoutManager().findViewByPosition(index);
+                    if (view instanceof ChatMessageCell) {
+                        ((ChatMessageCell) view).setHighlightedAnimated();
+                    }
+                });
+            } else {
+                listView.scrollToPosition(index);
+            }
         }
+    }
+
+    private void openTopicSearch() {
+        if (topicSearch != null || topicDetail == null || loadingWindow) {
+            return;
+        }
+        LinearLayoutManager manager = (LinearLayoutManager) listView.getLayoutManager();
+        searchReadingPosition = Math.max(0, manager.findFirstVisibleItemPosition());
+        View anchor = manager.findViewByPosition(searchReadingPosition);
+        searchReadingOffset = anchor == null ? 0 : anchor.getTop() - listView.getPaddingTop();
+        searchReadingDetail = topicDetail;
+        searchReadingPosts = new ArrayList<>(floors);
+        searchReadingRetry = retryAction;
+        org.telegram.ui.Components.Bulletin.hideVisible();
+        if (threadMode) {
+            threadGeneration++;
+            threadLoading = false;
+        }
+        supersedeWindow();
+        loadingWindow = false;
+        if (reporter != null) {
+            reporter.setForeground(false);
+        }
+        if (textSelectionHelper != null) {
+            textSelectionHelper.clear();
+        }
+        listView.stopScroll();
+        searchScroll = new org.telegram.ui.Components.RecyclerAnimationScrollHelper(listView, manager);
+        actionBar.setVisibility(View.INVISIBLE);
+        inputViews.setVisibility(View.GONE);
+        attachStrip.setVisibility(View.GONE);
+        applyPageDownVisible(false, false);
+        threadEmptyCell.setVisibility(View.GONE);
+        topicSearch = new io.github.baba983.nativedo.search.TopicSearch(
+                getContext(), container, topicId, (android.widget.FrameLayout) fragmentView,
+                listView, glassHost, resourceProvider, listPaddingTop, bottomInset,
+                new io.github.baba983.nativedo.search.TopicSearch.Host() {
+                    @Override public void queryChanged() {
+                        searchScroll.cancel();
+                        supersedeWindow();
+                        loadingWindow = false;
+                        showProgressView(false);
+                    }
+                    @Override public void navigate(int floor, boolean forward) {
+                        searchScroll.cancel();
+                        searchScroll.setScrollDirection(forward
+                                ? org.telegram.ui.Components.RecyclerAnimationScrollHelper.SCROLL_DIRECTION_DOWN
+                                : org.telegram.ui.Components.RecyclerAnimationScrollHelper.SCROLL_DIRECTION_UP);
+                        boolean loaded = false;
+                        for (Post post : floors) {
+                            if (post.getPostNumber() != null && post.getPostNumber() == floor) {
+                                loaded = true;
+                                break;
+                            }
+                        }
+                        // Even an already-loaded target supersedes a previous target's late response.
+                        supersedeWindow();
+                        loadingWindow = false;
+                        if (loaded) {
+                            scrollToFloor(floor);
+                        } else {
+                            loadWindow(floor, floor);
+                        }
+                    }
+                    @Override public void close() { closeTopicSearch(); }
+                });
+        applyListPadding();
+    }
+
+    private void closeTopicSearch() {
+        searchScroll.cancel();
+        topicSearch.destroy();
+        topicSearch = null;
+        supersedeWindow();
+        loadingWindow = false;
+        showProgressView(false);
+        if (failureView != null) {
+            failureView.setVisibility(View.GONE);
+        }
+        topicDetail = searchReadingDetail;
+        streamPostIds = topicDetail.getStreamPostIds();
+        noteServedFromCache(topicDetail.getFromCache());
+        windowStart = streamPositionBefore(searchReadingPosts);
+        nextPageStart = streamPositionAfter(searchReadingPosts);
+        bindPosts(searchReadingPosts);
+        searchReadingPosts = null;
+        searchReadingDetail = null;
+        retryAction = searchReadingRetry;
+        searchReadingRetry = null;
+        bindHeader(topicDetail);
+        actionBar.setVisibility(View.VISIBLE);
+        inputViews.setVisibility(View.VISIBLE);
+        updateAttachStrip();
+        applyListPadding();
+        ((LinearLayoutManager) listView.getLayoutManager()).scrollToPositionWithOffset(
+                searchReadingPosition, searchReadingOffset);
+        if (reporter != null) {
+            reporter.start(topicDetail);
+            reporter.setForeground(true);
+        }
+        updateThreadStatus();
+        listView.post(this::reportViewport);
     }
 
     /**
@@ -3303,6 +3464,9 @@ public class TopicFragment extends BaseFragment
      * Telegram's own chat loads near either end (ChatActivity.checkScrollForLoad:13773).
      */
     private void maybeLoadNextPage(int dy) {
+        if (topicSearch != null) {
+            return;
+        }
         if (threadMode) {
             // A discussion page pages its replies, not the topic's stream.
             maybeLoadThreadReplies(dy);
@@ -4920,9 +5084,8 @@ public class TopicFragment extends BaseFragment
     }
 
     /**
-     * The media blocks size themselves from the photo, so a cell can be bound before its image
-     * exists; re-binding the row is what makes the cell ask again and find the file. A document
-     * does the same with its button state, which only turns into "open" once the file is there.
+     * Media blocks can be bound before their local files exist. Refresh retained photo receivers
+     * when the cache fills, then rebind the row for its other assets and download-button state.
      */
     private void fetchPostMedia(int index) {
         if (container == null || index < 0 || index >= bubbles.size()) {
@@ -4936,6 +5099,9 @@ public class TopicFragment extends BaseFragment
             if (listView != null && listView.getAdapter() != null) {
                 int at = bubbles.indexOf(message);
                 if (at >= 0) {
+                    // Retained cells need upstream's refresh signals when local assets arrive.
+                    message.forceUpdate = true;
+                    message.reactionsChanged = true;
                     listView.getAdapter().notifyItemChanged(at);
                 }
             }
@@ -5002,6 +5168,26 @@ public class TopicFragment extends BaseFragment
             onReady.run();
         };
         DiscourseLoader.INSTANCE.cacheImages(container, images, () -> {
+            if (bubbles.contains(message) && message.richLayout != null) {
+                for (RichMessageLayout.RichBlock block : message.richLayout.blocks) {
+                    if (!(block instanceof RichMessageLayout.RichPhotoBlock)) continue;
+                    RichMessageLayout.RichPhotoBlock photo = (RichMessageLayout.RichPhotoBlock) block;
+                    if (photo.sizeFull == null) continue;
+                    FileLoader loader = FileLoader.getInstance(0);
+                    if (!loader.getPathToAttach(photo.sizeFull, true).exists()
+                            && !loader.getPathToAttach(photo.sizeFull, false).exists()) continue;
+                    if (photo.imageReceiver.getBitmap() != null) continue;
+                    // RichPhotoBlock.applyImage(true): retained blocks may have been built before
+                    // the local file existed. Cancel the pending Telegram file request so setImage
+                    // retries the same key against our cache; keep the layout and its state.
+                    photo.imageReceiver.cancelLoadImage();
+                    photo.imageReceiver.setImage(null, null,
+                            ImageLocation.getForPhoto(photo.sizeFull, photo.photo), null,
+                            photo.strippedSize == null ? null : ImageLocation.getForPhoto(photo.strippedSize, photo.photo),
+                            "b1", null, photo.sizeFull.size, null, message, 1);
+                    photo.updateButtonState(true);
+                }
+            }
             onReady.run();
             return kotlin.Unit.INSTANCE;
         });

@@ -2057,6 +2057,9 @@ public class TopicListFragment extends BaseFragment
         // The pill's feed, the strip's own theme listener and the reader's read-mark listener do
         // not outlive the screen: a destroyed page leaves no listener behind that would draw into
         // a dead view.
+        if (searchPanel != null) {
+            searchPanel.destroy();
+        }
         if (incomingTopicsObserver != null) {
             incomingTopicsObserver.close();
             incomingTopicsObserver = null;
@@ -2624,7 +2627,9 @@ public class TopicListFragment extends BaseFragment
         // The search is closed by back before the screen behind it is left: true says the stack may
         // pop, false says this screen took the back.
         if (searching) {
-            closeSearch();
+            if (invoked) {
+                closeSearch();
+            }
             return false;
         }
         return super.onBackPressed(invoked);
@@ -2649,6 +2654,12 @@ public class TopicListFragment extends BaseFragment
         @Override
         public void filterByCategory(CategorySummary category) {
             closeSearch();
+            // Search includes children even though the default home strip only lists parents.
+            // Keep the selected category's own slug/id so the tap opens its feed, not its parent.
+            if (categoryOf(category.getId()) == null) {
+                categories.add(category);
+                buildTabs();
+            }
             // The strip's own selection, completed: this is the same step the reader's tap makes,
             // so the indicator and the page pair animate the same way. A category already in
             // front is read again - the search asked for it, which is a statement of its own.

@@ -271,6 +271,44 @@ internal class ReactionEmojiTest {
         harness.assertNoTelegramSideEffects()
     }
 
+    /** The replies endpoint omits icon URLs; the same catalog artwork must still reach its chips. */
+    @Test
+    fun replyChipsUseTheSameSiteArtworkAsTopicChips() {
+        site.serveJson("emojis.json", JSONObject().put("custom", JSONArray().put(
+            JSONObject().put("name", mappedId).put("url", site.url(mappedPath)),
+        )).toString())
+        val reply = JSONObject(harness.fixture("topic-detail.json"))
+            .getJSONObject("post_stream").getJSONArray("posts").getJSONObject(0)
+            .put("id", 1002).put("post_number", 2).put("reply_to_post_number", 1)
+            .put("cooked", "<p>回复里的回应图标</p>")
+            .put("reactions", JSONArray().put(JSONObject().put("id", mappedId).put("count", 2)))
+        site.serveJson("posts/1001/replies", JSONArray().put(reply).toString())
+        harness.bootApp()
+        harness.await("the topic list") { rowCount() == 2 }
+        harness.present(TopicFragment.forTopic(TOPIC_ID, "Reaction artwork"))
+        harness.await("the topic chip") {
+            harness.drawApp()
+            laidOutCells().firstOrNull()?.let { chip(it, mappedId)?.imageReceiver?.bitmap }?.let {
+                colourCount(it, servedMagenta) > 0
+            } == true
+        }
+        val topic = harness.visibleFragment() as TopicFragment
+        val footerCell = firstCell()
+        footerCell.delegate.didPressCommentButton(footerCell)
+        harness.await("the reply page") { harness.visibleFragment() !== topic }
+        harness.await("the reply rows") { harness.layoutApp(); rowCount() == 2 }
+        harness.await("the reply chip's decoded artwork") {
+            harness.drawApp()
+            laidOutCells().firstOrNull { it.messageObject.id == 1002 }
+                ?.let { chip(it, mappedId)?.imageReceiver?.bitmap } != null
+        }
+        val bitmap = chip(laidOutCells().first { it.messageObject.id == 1002 }, mappedId)!!.imageReceiver!!.bitmap!!
+        harness.renderApp("comments-site-reaction-artwork")
+        assertTrue("the reply draws the same site picture, not a system-emoji fallback",
+            colourCount(bitmap, servedMagenta) > 0)
+        harness.assertNoTelegramSideEffects()
+    }
+
     private fun firstCell(): ChatMessageCell =
         laidOutCells().firstOrNull { it.messageObject != null }
             ?: throw AssertionError("the topic drew no message cell")

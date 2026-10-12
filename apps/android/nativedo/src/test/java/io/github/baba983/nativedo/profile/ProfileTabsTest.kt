@@ -315,6 +315,90 @@ internal class ProfileTabsTest {
 
     // ------------------------------------------------------------------------------------------
 
+    /** A first-tab header must follow measured bounds even when its scroll offset does not change. */
+    @Test
+    fun aProfileOpenedAsTheFirstTabPositionsItsHeaderWithoutAScroll() {
+        site.serveFixture("u/baba.json", "user-profile.json")
+        harness.bootApp()
+        harness.await("the topic list") { listRowCount() == 2 }
+        harness.present(io.github.baba983.nativedo.app.NativeDoMainTabsActivity.forTab(3))
+        harness.await("the own profile") { harness.visibleFragment() is ProfileFragment }
+        val profile = harness.visibleFragment() as ProfileFragment
+        harness.await("the own profile's rows") { harness.layoutApp(); detailValue("信任等级") == "3" }
+        repeat(25) { harness.idleClock(20); harness.drawApp() }
+
+        val name = field<org.telegram.ui.ActionBar.SimpleTextView>(profile, "nameTextView")
+        val avatar = field<View>(profile, "avatarContainer")
+        val namePosition = IntArray(2)
+        val avatarPosition = IntArray(2)
+        name.getLocationOnScreen(namePosition)
+        avatar.getLocationOnScreen(avatarPosition)
+        assertEquals("the name is centered, not left at its construction margin",
+            harness.width / 2f, namePosition[0] + name.getExactWidth() * name.scaleX / 2f, 4f)
+        assertTrue("the name is below the avatar",
+            namePosition[1] >= avatarPosition[1] + avatar.height * avatar.scaleY)
+        assertTrue("the avatar clears the status bar", avatarPosition[1] >= AndroidUtilities.statusBarHeight)
+        val root = profile.fragmentView
+        val resizedWidth = harness.width - AndroidUtilities.dp(48f)
+        root.measure(View.MeasureSpec.makeMeasureSpec(resizedWidth, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(root.height, View.MeasureSpec.EXACTLY))
+        root.layout(root.left, root.top, root.left + resizedWidth, root.bottom)
+        name.getLocationOnScreen(namePosition)
+        val rootPosition = IntArray(2)
+        root.getLocationOnScreen(rootPosition)
+        assertEquals("a later layout positions the header without waiting for a scroll",
+            rootPosition[0] + resizedWidth / 2f,
+            namePosition[0] + name.getExactWidth() * name.scaleX / 2f, 4f)
+        harness.renderApp("profile-first-tab")
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /** Downward deltas unwind the page before the profile; inner deltas must not feed back to itself. */
+    @Test
+    fun pinnedActivityScrollingUnwindsTheInnerListBeforeTheProfile() {
+        site.serveJsonFor("user_actions.json") { path ->
+            actionsPage(path.substringAfter("filter=").substringBefore('&'), 0)
+        }
+        site.serveFixture("u/baba.json", "user-profile.json")
+        harness.bootApp()
+        harness.await("the topic list") { listRowCount() == 2 }
+        harness.present(ProfileFragment.forRoot("baba", "Baba"))
+        val profile = harness.visibleFragment() as ProfileFragment
+        val media = awaitMedia(profile)
+        val outer = listView()!!
+        val manager = outer.layoutManager as androidx.recyclerview.widget.LinearLayoutManager
+        manager.scrollToPositionWithOffset(field<Int>(profile, "mediaRow"), -outer.paddingTop)
+        harness.layoutApp()
+        harness.await("the activity rows") {
+            harness.layoutApp()
+            val page = media.pager.viewPages[0] as? ViewGroup
+            (page?.getChildAt(0) as? RecyclerListView)?.adapter?.itemCount == 20
+        }
+        val inner = (media.pager.viewPages[0] as ViewGroup).getChildAt(0) as RecyclerListView
+        val innerManager = inner.layoutManager as androidx.recyclerview.widget.LinearLayoutManager
+        inner.scrollBy(0, AndroidUtilities.dp(240f))
+        val before = innerManager.findFirstVisibleItemPosition()
+        assertTrue("the page has scrolled beyond its first row", before > 0)
+        val pinnedTop = media.top
+        val consumed = IntArray(2)
+        outer.startNestedScroll(androidx.core.view.ViewCompat.SCROLL_AXIS_VERTICAL)
+        outer.dispatchNestedPreScroll(0, -AndroidUtilities.dp(120f), consumed, null)
+        assertEquals("the downward scroll belongs to the activity page first",
+            -AndroidUtilities.dp(120f), consumed[1])
+        assertEquals("the profile stays pinned", pinnedTop, media.top)
+        assertTrue("the activity page moved toward its beginning",
+            innerManager.findFirstVisibleItemPosition() < before)
+        outer.stopNestedScroll()
+
+        consumed.fill(0)
+        inner.startNestedScroll(androidx.core.view.ViewCompat.SCROLL_AXIS_VERTICAL)
+        inner.dispatchNestedPreScroll(0, AndroidUtilities.dp(80f), consumed, null)
+        assertEquals("an inner scroll is not re-consumed by that same list", 0, consumed[1])
+        inner.stopNestedScroll()
+        harness.renderApp("profile-activity-scroll")
+        harness.assertNoTelegramSideEffects()
+    }
+
     /** The profile's tab area, built and measured once the profile answered. */
     private fun awaitMedia(profile: ProfileFragment): ProfileSharedMediaView {
         var media: ProfileSharedMediaView? = null

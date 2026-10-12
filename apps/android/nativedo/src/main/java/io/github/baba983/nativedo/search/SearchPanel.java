@@ -1,3 +1,12 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Search state and animation wiring adapted from Telegram's SearchViewPager.
+/*
+ * This is the source code of Telegram for Android v. 5.x.x.
+ * It is licensed under GNU GPL v. 2 or later.
+ * You should have received a copy of the license in this archive (see LICENSE).
+ *
+ * Copyright Nikolai Kudashov, 2013-2018.
+ */
 package io.github.baba983.nativedo.search;
 
 import android.content.Context;
@@ -14,6 +23,8 @@ import androidx.recyclerview.widget.RecyclerView;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.ImageLocation;
+import org.telegram.messenger.MessageObject;
+import org.telegram.messenger.MessagesController;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.DialogCell;
@@ -21,6 +32,7 @@ import org.telegram.ui.Cells.HashtagSearchCell;
 import org.telegram.ui.Cells.ProfileSearchCell;
 import org.telegram.ui.Components.FlickerLoadingView;
 import org.telegram.ui.Components.LayoutHelper;
+import org.telegram.ui.Components.RecyclerItemsEnterAnimator;
 import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.Components.StickerEmptyView;
 import org.telegram.ui.Components.ViewPagerFixed;
@@ -30,7 +42,9 @@ import org.telegram.ui.DialogsActivity;
 import org.telegram.ui.SearchTabsAndFiltersLayout;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 
 import io.github.baba983.nativedo.R;
 import io.github.baba983.nativedo.app.GlassPanelHost;
@@ -40,7 +54,6 @@ import io.github.baba983.nativedo.core.model.SearchResult;
 import io.github.baba983.nativedo.core.model.SearchUserSummary;
 import io.github.baba983.nativedo.core.model.Tag;
 import io.github.baba983.nativedo.core.model.TopicSummary;
-import io.github.baba983.nativedo.feature.topic.data.TopicReadMarks;
 import io.github.baba983.nativedo.topic.CategoryLabels;
 import io.github.baba983.nativedo.topic.DiscourseAvatars;
 import io.github.baba983.nativedo.topic.DiscourseLoader;
@@ -113,6 +126,8 @@ public class SearchPanel extends FrameLayout {
     private AppContainer container;
     private String query = "";
     private Runnable pendingSearch;
+    private int requestGeneration;
+    private boolean destroyed;
     private boolean categoriesRequested;
     private boolean tagsRequested;
     /** Whether the site's own list (categories, tags) has been read; drives that page's state. */
@@ -193,17 +208,38 @@ public class SearchPanel extends FrameLayout {
      * stops, and an answer to a query the reader has since changed is dropped.
      */
     public void search(String text) {
+        if (destroyed) {
+            return;
+        }
         query = text == null ? "" : text.trim();
+        requestGeneration++;
         if (pendingSearch != null) {
             AndroidUtilities.cancelRunOnUIThread(pendingSearch);
             pendingSearch = null;
         }
-        if (query.isEmpty()) {
-            for (int page = PAGE_TOPICS; page <= PAGE_USERS; page++) {
+        topicHits.clear();
+        postHits.clear();
+        userHits.clear();
+        topicPeers.clear();
+        postPeers.clear();
+        userPeers.clear();
+        for (int page = PAGE_TOPICS; page <= PAGE_USERS; page++) {
+            pages.get(page).listView.scrollToPosition(0);
+            if (query.isEmpty()) {
                 pages.get(page).showIdle();
+            } else {
+                pages.get(page).showLoading();
             }
-            applySiteLists();
+        }
+        applySiteLists();
+        if (query.isEmpty()) {
             return;
+        }
+        if (!categoriesLoaded) {
+            pages.get(PAGE_CATEGORIES).showLoading();
+        }
+        if (!tagsLoaded) {
+            pages.get(PAGE_TAGS).showLoading();
         }
         ensureSiteLists();
         pendingSearch = () -> {
@@ -215,15 +251,20 @@ public class SearchPanel extends FrameLayout {
 
     /** The search is closing: drop what is pending and put the pages back to their idle state. */
     public void clear() {
+        search("");
+    }
+
+    /** The owning fragment is gone; queued work must not update its retained views. */
+    public void destroy() {
+        destroyed = true;
+        requestGeneration++;
         if (pendingSearch != null) {
             AndroidUtilities.cancelRunOnUIThread(pendingSearch);
             pendingSearch = null;
         }
-        query = "";
-        for (int page = PAGE_TOPICS; page <= PAGE_USERS; page++) {
-            pages.get(page).showIdle();
+        for (Page page : pages) {
+            page.itemsEnterAnimator.cancel();
         }
-        applySiteLists();
     }
 
     /** Retries the query in the field, for the empty state's own tap. */
@@ -247,9 +288,7 @@ public class SearchPanel extends FrameLayout {
         glassHost.updateColors();
         tabsContainer.updateColors();
         for (Page page : pages) {
-            if (page.listView != null) {
-                page.listView.invalidate();
-            }
+            page.notifyRows();
             // The pages are not rebuilt on the switch, so the empty view's text takes the new
             // colours the way upstream's own search re-applies them (FilteredSearchView:1965-1966).
             page.updateEmptyViewColors();
@@ -266,16 +305,13 @@ public class SearchPanel extends FrameLayout {
         return (FlickerLoadingView) pages.get(page).emptyView.progressView;
     }
 
-    /** Moves to a page the way a tap on a pill does; upstream's own pager API. */
-    void selectPage(int page) {
-        pager.scrollToPosition(page);
-    }
-
     private void askTheSite() {
-        if (container == null) {
+        if (container == null || destroyed || query.isEmpty()) {
             return;
         }
         final String asked = query;
+        final int generation = ++requestGeneration;
+        ensureSiteLists();
         for (int page = PAGE_TOPICS; page <= PAGE_USERS; page++) {
             pages.get(page).showLoading();
         }
@@ -288,13 +324,13 @@ public class SearchPanel extends FrameLayout {
             pages.get(PAGE_TAGS).showLoading();
         }
         DiscourseLoader.INSTANCE.search(container, asked, result -> {
-            if (asked.equals(query)) {
+            if (!destroyed && generation == requestGeneration) {
                 applyResults(result);
             }
             return kotlin.Unit.INSTANCE;
         }, error -> {
             FileLog.e("search failed", error);
-            if (asked.equals(query)) {
+            if (!destroyed && generation == requestGeneration) {
                 for (int page = PAGE_TOPICS; page <= PAGE_USERS; page++) {
                     pages.get(page).showFailure();
                 }
@@ -342,17 +378,19 @@ public class SearchPanel extends FrameLayout {
             categoriesRequested = true;
             DiscourseLoader.INSTANCE.categories(container,
                     loaded -> {
-                        allCategories.clear();
-                        for (CategorySummary category : loaded) {
-                            if (category.getParentCategoryId() == null) {
-                                allCategories.add(category);
-                            }
+                        if (destroyed) {
+                            return kotlin.Unit.INSTANCE;
                         }
+                        allCategories.clear();
+                        allCategories.addAll(loaded);
                         categoriesLoaded = true;
                         applySiteLists();
                         return kotlin.Unit.INSTANCE;
                     },
                     error -> {
+                        if (destroyed) {
+                            return kotlin.Unit.INSTANCE;
+                        }
                         categoriesRequested = false;
                         FileLog.e("search categories failed", error);
                         if (!query.isEmpty() && !categoriesLoaded) {
@@ -365,6 +403,9 @@ public class SearchPanel extends FrameLayout {
             tagsRequested = true;
             DiscourseLoader.INSTANCE.tags(container,
                     loaded -> {
+                        if (destroyed) {
+                            return kotlin.Unit.INSTANCE;
+                        }
                         allTags.clear();
                         allTags.addAll(loaded);
                         tagsLoaded = true;
@@ -372,6 +413,9 @@ public class SearchPanel extends FrameLayout {
                         return kotlin.Unit.INSTANCE;
                     },
                     error -> {
+                        if (destroyed) {
+                            return kotlin.Unit.INSTANCE;
+                        }
                         tagsRequested = false;
                         FileLog.e("search tags failed", error);
                         if (!query.isEmpty() && !tagsLoaded) {
@@ -386,14 +430,14 @@ public class SearchPanel extends FrameLayout {
     private void applySiteLists() {
         categoryHits.clear();
         tagHits.clear();
-        String needle = query.toLowerCase();
+        String needle = query.toLowerCase(Locale.ROOT);
         for (CategorySummary category : allCategories) {
-            if (needle.isEmpty() || category.getName().toLowerCase().contains(needle)) {
+            if (needle.isEmpty() || category.getName().toLowerCase(Locale.ROOT).contains(needle)) {
                 categoryHits.add(category);
             }
         }
         for (Tag tag : allTags) {
-            if (needle.isEmpty() || tag.getName().toLowerCase().contains(needle)) {
+            if (needle.isEmpty() || tag.getName().toLowerCase(Locale.ROOT).contains(needle)) {
                 tagHits.add(tag);
             }
         }
@@ -441,8 +485,10 @@ public class SearchPanel extends FrameLayout {
             return;
         }
         DiscourseLoader.INSTANCE.cacheAvatar(container, url, peer, () -> {
-            for (int page = PAGE_TOPICS; page <= PAGE_USERS; page++) {
-                pages.get(page).notifyRows();
+            if (!destroyed) {
+                for (int page = PAGE_TOPICS; page <= PAGE_USERS; page++) {
+                    pages.get(page).notifyRows();
+                }
             }
             return kotlin.Unit.INSTANCE;
         });
@@ -504,6 +550,7 @@ public class SearchPanel extends FrameLayout {
         final RecyclerListView listView;
         final StickerEmptyView emptyView;
         final PageAdapter adapter;
+        final RecyclerItemsEnterAnimator itemsEnterAnimator;
 
         Page(int kind, CharSequence title) {
             this.kind = kind;
@@ -515,6 +562,8 @@ public class SearchPanel extends FrameLayout {
             adapter = new PageAdapter(kind);
             listView.setAdapter(adapter);
             listView.setVerticalScrollBarEnabled(false);
+            listView.setClipToPadding(false);
+            itemsEnterAnimator = new RecyclerItemsEnterAnimator(listView, true);
             // The pill capsule floats over the rows the way the home strip does: the pages keep
             // the capsule's height as padding (plus the 4dp the field's own blur reaches below
             // its bounds), so the first row starts under it and the rows scroll beneath
@@ -524,8 +573,9 @@ public class SearchPanel extends FrameLayout {
                     0, AndroidUtilities.dp(4));
             listView.setOnItemClickListener((view, position) -> adapter.open(position));
 
-            FlickerLoadingView loadingView = new FlickerLoadingView(context);
+            FlickerLoadingView loadingView = new FlickerLoadingView(context, resourcesProvider);
             loadingView.setViewType(upstreamLoadingViewType(kind));
+            loadingView.setPaddingTop(listView.getPaddingTop());
             emptyView = new StickerEmptyView(
                     context, loadingView, StickerEmptyView.STICKER_TYPE_SEARCH, resourcesProvider);
             emptyView.subtitle.setVisibility(View.GONE);
@@ -536,6 +586,8 @@ public class SearchPanel extends FrameLayout {
                     LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
             container.addView(listView, LayoutHelper.createFrame(
                     LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+            listView.setAnimateEmptyView(true, RecyclerListView.EMPTY_VIEW_ANIMATION_TYPE_ALPHA);
+            listView.setEmptyView(emptyView);
             showIdle();
         }
 
@@ -545,14 +597,10 @@ public class SearchPanel extends FrameLayout {
 
         /** The rows changed: the list is told, and the empty view follows what is there now. */
         private void refresh(boolean loading, int emptyTitle) {
-            adapter.notifyDataSetChanged();
+            itemsEnterAnimator.cancel();
             emptyView.title.setText(getContext().getString(emptyTitle));
-            if (!loading && adapter.getItemCount() > 0) {
-                emptyView.setVisibility(View.GONE);
-                return;
-            }
-            emptyView.setVisibility(View.VISIBLE);
-            emptyView.showProgress(loading, false);
+            emptyView.showProgress(loading, listView.isAttachedToWindow());
+            adapter.notifyDataSetChanged();
         }
 
         /** Nothing asked yet: the empty view says how to start. */
@@ -568,6 +616,9 @@ public class SearchPanel extends FrameLayout {
         /** An answer arrived; the empty view only remains if it has nothing for this page. */
         void showResults() {
             refresh(false, R.string.search_no_results);
+            if (listView.isAttachedToWindow() && adapter.getItemCount() > 0) {
+                itemsEnterAnimator.showItemsAnimated(0);
+            }
         }
 
         void showFailure() {
@@ -676,16 +727,23 @@ public class SearchPanel extends FrameLayout {
                 ProfileSearchCell cell = (ProfileSearchCell) holder.itemView;
                 SearchUserSummary person = userHits.get(position);
                 TLRPC.User peer = position < userPeers.size() ? userPeers.get(position) : null;
-                cell.setData(peer, null, person.getName(), "@" + person.getUsername(), false, false);
+                cell.setData(peer, null, highlight(person.getName()), highlight("@" + person.getUsername()), false, false);
+                cell.useSeparator = position < getItemCount() - 1;
                 bindAvatar(cell.avatarImage, peer);
                 return;
             }
             if (kind == PAGE_CATEGORIES) {
-                ((HashtagSearchCell) holder.itemView).setText(CategoryLabels.of(categoryHits.get(position)));
+                HashtagSearchCell cell = (HashtagSearchCell) holder.itemView;
+                cell.setText(highlight(CategoryLabels.of(categoryHits.get(position))));
+                cell.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
+                cell.setNeedDivider(position < getItemCount() - 1);
                 return;
             }
             if (kind == PAGE_TAGS) {
-                ((HashtagSearchCell) holder.itemView).setText("#" + tagHits.get(position).getName());
+                HashtagSearchCell cell = (HashtagSearchCell) holder.itemView;
+                cell.setText(highlight("#" + tagHits.get(position).getName()));
+                cell.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
+                cell.setNeedDivider(position < getItemCount() - 1);
                 return;
             }
             boolean postHit = kind == PAGE_POSTS;
@@ -693,8 +751,28 @@ public class SearchPanel extends FrameLayout {
             List<TLRPC.User> peers = postHit ? postPeers : topicPeers;
             TopicSummary topic = hits.get(position);
             DialogCell cell = (DialogCell) holder.itemView;
-            cell.setDialog(DiscourseRows.topicRow(topic, TopicReadMarks.INSTANCE.isReadInFull(topic.getId())));
-            bindAvatar(cell.avatarImage, position < peers.size() ? peers.get(position) : null);
+            TLRPC.User peer = peers.get(position);
+            MessagesController.getInstance(0).putUser(peer, true);
+            DialogCell.CustomDialog row = DiscourseRows.topicRow(topic, false);
+            TLRPC.TL_message message = new TLRPC.TL_message();
+            message.id = (int) (topic.getTargetPostId() == null ? topic.getId() : topic.getTargetPostId());
+            message.date = row.date;
+            message.message = row.message;
+            message.from_id = DiscourseRows.replierPeer(topic.getAuthorUsername());
+            message.peer_id = message.from_id;
+            HashMap<Long, TLRPC.User> users = new HashMap<>();
+            users.put(peer.id, peer);
+            MessageObject object = DiscourseRows.messageObject(message, users);
+            object.setQuery(query);
+            cell.setTitleOverride(topic.getTitle());
+            cell.setDialog(peer.id, object, row.date, false, false);
+            cell.useSeparator = position < getItemCount() - 1;
+            bindAvatar(cell.avatarImage, peer);
+        }
+
+        private CharSequence highlight(CharSequence text) {
+            CharSequence marked = AndroidUtilities.highlightText(text, query.toLowerCase(Locale.ROOT), resourcesProvider);
+            return marked == null ? text : marked;
         }
 
         private void bindAvatar(org.telegram.messenger.ImageReceiver avatarImage, TLRPC.User peer) {

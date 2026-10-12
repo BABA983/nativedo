@@ -15,6 +15,8 @@ import androidx.core.graphics.ColorUtils;
 import androidx.dynamicanimation.animation.FloatValueHolder;
 import androidx.dynamicanimation.animation.SpringAnimation;
 import androidx.dynamicanimation.animation.SpringForce;
+import androidx.recyclerview.widget.DefaultItemAnimator;
+import androidx.recyclerview.widget.RecyclerView;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ImageReceiver;
@@ -53,6 +55,12 @@ public class PostListView extends RecyclerListView {
     private AvatarSource avatarSource;
     private TextSelectionHelper.ChatListTextSelectionHelper textSelectionHelper;
     private SwipeReplyListener swipeReplyListener;
+    private java.util.function.Consumer<ChatMessageCell> searchHighlighter;
+
+    public void setSearchHighlighter(java.util.function.Consumer<ChatMessageCell> highlighter) {
+        searchHighlighter = highlighter;
+        invalidateViews();
+    }
 
     /**
      * The initials a row shows while its author's picture is on its way. The cell builds one of its
@@ -109,6 +117,17 @@ public class PostListView extends RecyclerListView {
 
     public PostListView(Context context) {
         super(context);
+        DefaultItemAnimator animator = new DefaultItemAnimator() {
+            @Override
+            protected void onAddAnimationUpdate(RecyclerView.ViewHolder holder) {
+                // ChatMessageCell bakes alpha into its reply/reaction drawing. ViewPropertyAnimator
+                // bypasses its setAlpha override, unlike upstream's chat-list ObjectAnimator.
+                holder.itemView.invalidate();
+            }
+        };
+        // A rich body has one attached cell. Asset rebinds must not cross-fade two owners of it.
+        animator.setSupportsChangeAnimations(false);
+        setItemAnimator(animator);
         outlineActionBackgroundPaint.setStyle(Paint.Style.STROKE);
         outlineActionBackgroundPaint.setStrokeCap(Paint.Cap.ROUND);
         outlineActionBackgroundPaint.setStrokeWidth(AndroidUtilities.dp(2));
@@ -519,6 +538,9 @@ public class PostListView extends RecyclerListView {
 
     @Override
     public boolean drawChild(Canvas canvas, View child, long drawingTime) {
+        if (searchHighlighter != null && child instanceof ChatMessageCell) {
+            searchHighlighter.accept((ChatMessageCell) child);
+        }
         // Only the bubble at the bottom of a floor's run carries the author's avatar: a chat draws it
         // under a run of messages by one author, and a bubble the run pins to the one below it is
         // not that last bubble.

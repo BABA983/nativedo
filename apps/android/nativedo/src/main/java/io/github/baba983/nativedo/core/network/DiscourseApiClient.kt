@@ -509,7 +509,9 @@ class DiscourseApiClient(
 
     suspend fun fetchPostReplies(postId: Long, afterPostNumber: Int = 1): List<Post> =
         runWithSessionBoundary {
-            service.postReplies(postId = postId, afterPostNumber = afterPostNumber).map { post -> post.toModel() }
+            val replies = service.postReplies(postId = postId, afterPostNumber = afterPostNumber)
+            val emojiCatalog = emojiGroupsForDecoration().toEmojiCatalog()
+            replies.map { post -> post.toModel(emojiCatalog = emojiCatalog) }
         }
 
     suspend fun createPost(topicId: Long, raw: String, replyToPostNumber: Int?): Post =

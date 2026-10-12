@@ -62,6 +62,46 @@ and inset ownership. Keep the bar in its content host when following that upstre
 layout, so PhotoViewer transitions do not scale the body independently of the bar.
 Wallpaper fade and content-sampling glass are different sources, not interchangeable.
 
+Message-row animations are also a host contract: `ChatMessageCell` paints reply
+previews and reactions using its own alpha. `PostListView` invalidates on each
+addition-animation update, including completion; asset rebinds reuse the cell
+instead of cross-fading two cells attached to the same rich layout. When local
+assets arrive, the host marks the retained message and reactions for upstream
+refresh; a notification alone does not rebuild an unchanged message's images.
+For a retained `RichPhotoBlock`, the host cancels its unfulfilled image request
+and reapplies upstream's full-photo receiver parameters after the file is cached.
+Reusing the same image key without cancellation can leave the old request waiting
+for Telegram transport; rebuilding the whole layout would discard expanded details
+and other reading state. Already decoded photos are left alone.
+
+Profile header transforms are recomputed after child layout, not only when a
+scroll changes the header offset. Pinned activity pages follow upstream's nested
+scroll ownership: forward only the outer list's remainder into the current page,
+and unwind that page on negative deltas before moving the outer profile. An inner
+list's own nested request must not be fed back into itself.
+
+### Homepage search
+
+`DialogsActivity`'s homepage field-to-ActionBar transition is distinct from
+`ChatActivity`'s in-topic search. These entrances deliberately do not look identical.
+[SearchPanel](../apps/android/nativedo/src/main/java/io/github/baba983/nativedo/search/SearchPanel.java)
+wires each Discourse result page's `RecyclerListView` to its `StickerEmptyView`;
+the list owns loading/empty/result visibility. The skeleton uses the same tabs
+inset through `FlickerLoadingView.setPaddingTop`, not ordinary View padding.
+New results use `RecyclerItemsEnterAnimator` and upstream text highlighting;
+topic/post rows use message-result `DialogCell` binding rather than altering
+`CustomDialog`. A changed query clears old generic hits immediately; cached
+categories and tags refilter immediately. Request generations fence late answers,
+including an A → B → A query, closing and destruction. Telegram transport remains off.
+
+Discourse categories remain site categories, not Telegram's hint-peer carousel.
+Search includes child categories; explicitly choosing one adds its own feed tab
+instead of silently opening the parent. Top-level tabs remain the default home
+strip. The [search flow](../apps/android/nativedo/src/test/java/io/github/baba983/nativedo/search/SearchTest.kt)
+checks query replacement, clear/retry, stale answers, category navigation and Back
+through the production-wired host harness. Real IME/GPU/gesture timing still needs
+a device pass.
+
 ## Upstream updates
 
 The subtree import is the source pin. Materialize native dependencies from its

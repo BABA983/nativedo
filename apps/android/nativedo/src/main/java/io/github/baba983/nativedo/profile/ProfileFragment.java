@@ -3305,6 +3305,11 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             settleHeaderInList();
             super.onLayout(changed, left, top, right, bottom);
             checkListViewScroll();
+            // Root tabs can lay out again without a scroll or another onResume/pre-draw hook.
+            // Header translations depend on the children's measured bounds, not just extraHeight.
+            if (!openAnimationInProgress) {
+                needLayout(false);
+            }
         }
 
         @Override
@@ -3328,7 +3333,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             // ProfileActivity.NestedFrameLayout.onNestedScroll: an upward drag the outer list
             // cannot take continues into the page's list while the tab area is pinned.
             RecyclerListView pageList = currentPageList();
-            if (pageList != null && mediaView != null && mediaView.getTop() <= 0) {
+            if (target == listView && pageList != null && mediaView != null && mediaView.getTop() == 0) {
                 consumed[1] = dyUnconsumed;
                 pageList.scrollBy(0, dyUnconsumed);
             }
@@ -3344,11 +3349,11 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         public void onNestedPreScroll(@NonNull View target, int dx, int dy, @NonNull int[] consumed, int type) {
             // ProfileActivity.NestedFrameLayout.onNestedPreScroll: a drag down the pinned tab area
             // returns its page to the top before the outer list scrolls back up.
-            if (mediaView == null || listView == null) {
+            if (target != listView || mediaView == null || listView == null) {
                 return;
             }
             int top = mediaView.getTop();
-            if (dy > 0 && top <= 0) {
+            if (dy < 0 && top <= 0) {
                 RecyclerListView pageList = currentPageList();
                 if (pageList != null) {
                     LinearLayoutManager manager = (LinearLayoutManager) pageList.getLayoutManager();
@@ -3358,7 +3363,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                         int childTop = holder != null ? holder.getTop() : -1;
                         int paddingTop = pageList.getPaddingTop();
                         if (childTop != paddingTop || pos != 0) {
-                            consumed[1] = dy;
+                            consumed[1] = pos != 0 ? dy : Math.max(dy, childTop - paddingTop);
                             pageList.scrollBy(0, dy);
                         }
                     }

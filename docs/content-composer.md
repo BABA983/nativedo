@@ -33,7 +33,9 @@ from rendering its cover. Never retain recycled view/block instances as a data c
 
 Polls and reactions are site resources despite their Telegram-shaped controls.
 Respect server permissions, topic `valid_reactions`, hidden results and incomplete
-voter/user lists. A drawn upstream affordance is not proof its Telegram-account
+voter/user lists. Topic posts and comment replies resolve reaction IDs through the
+same site emoji catalog even when the replies endpoint omits individual icon URLs.
+A drawn upstream affordance is not proof its Telegram-account
 action is supported by this host; rank-based polls and richer voter UI need their
 own product wiring rather than pretending a tap supplies the missing semantics.
 

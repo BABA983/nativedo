@@ -34,6 +34,26 @@ The legacy `:app` page restores the exit viewport before falling back to read
 progress; explicit floor links and a user drag take precedence. See the
 [scoped viewport contract](../contracts/discourse/models.md#local-topic-viewport).
 
+### Same-screen topic search
+
+The active build hosts [topic search](../apps/android/nativedo/src/main/java/io/github/baba983/nativedo/search/TopicSearch.kt)
+inside the existing topic with Telegram's message/list search interaction. It reuses
+the upstream search field, message-result cells, search side controls and animated
+scrolling; Discourse remains the sole search/window
+transport. Calendar and author controls are out of scope rather than dead buttons.
+Both modes share query, selected floor and paginated results. Counts are explicitly
+partial while the server advertises another page; a failed page retries that page.
+
+Search temporarily suspends ordinary stream paging and read-position reporting.
+Closing restores the saved window and pixel anchor without losing the composer
+draft. Query changes, closing and destruction fence late search/window responses.
+Rich bodies use their actual Telegram text layouts and rounded marked-range paths,
+preserving existing HTML marks; plain messages use upstream text highlighting.
+The [search flow](../apps/android/nativedo/src/test/java/io/github/baba983/nativedo/search/SearchTest.kt)
+covers Chinese rich paragraphs, quotes/code, both modes, previous/next windows,
+retry, theme change and restoration with the production-wired host harness. Device/GPU
+scroll timing still requires Android evidence; host captures are not device passes.
+
 [TopicReadReporter](../apps/android/nativedo/src/main/java/io/github/baba983/nativedo/feature/topic/data/TopicReadReporter.kt)
 reports dwell deltas, not lifetime totals. Background time and an idle open screen
 are not reading. Transient failures back off; a challenge blocks automatic reports

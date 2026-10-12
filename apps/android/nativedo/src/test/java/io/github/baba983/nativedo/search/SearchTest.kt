@@ -267,6 +267,9 @@ internal class SearchTest {
             "the bar's title has left",
             titles.alpha < 0.01f || titles.visibility != View.VISIBLE,
         )
+        assertTrue("predictive Back only probes", !harness.topFragment()!!.onBackPressed(false))
+        harness.idleClock(400)
+        assertTrue("probing Back keeps search open", titles.alpha < 0.01f)
 
         // The close button is the field's own x: it comes back down and the title returns.
         val closeIcon = FragmentSearchField::class.java
@@ -300,6 +303,120 @@ internal class SearchTest {
         harness.assertNoTelegramSideEffects()
     }
 
+    /** A new query must never put a skeleton behind clickable hits from the previous query. */
+    @Test
+    fun changingTheQueryClearsOldHitsAndBlankInputFencesThePendingAnswer() {
+        harness.bootApp()
+        harness.await("feed") { rowCount() == 2 }
+        openSearch()
+        type(QUERY)
+        val panel = searchPanel()!!
+        harness.await("first results") { panel.pageList(SearchPanel.PAGE_TOPICS).adapter!!.itemCount == 1 }
+        val release = java.util.concurrent.CountDownLatch(1)
+        site.serveResponse("search.json") {
+            release.await(10, java.util.concurrent.TimeUnit.SECONDS)
+            MockResponse().setHeader("Content-Type", "application/json").setBody(harness.fixture("search.json"))
+        }
+        try {
+            val priorCallbacks = siteCallbacks()
+            searchField()!!.editText.setText("another")
+            assertEquals("old rows cannot be mistaken for the new query", 0,
+                panel.pageList(SearchPanel.PAGE_TOPICS).adapter!!.itemCount)
+            harness.idleClock(2 * SEARCH_DELAY_MS)
+            harness.await("second request") { site.queriesFor("search.json").size == 2 }
+            val pendingCallbacks = siteCallbacks() - priorCallbacks.toSet()
+            harness.renderApp("search-query-replacement-loading")
+            assertTrue("results and shimmer are mutually exclusive", !panel.pageList(SearchPanel.PAGE_TOPICS).isShown)
+            type("")
+            release.countDown()
+            awaitSiteCallbacks(pendingCallbacks)
+            assertEquals("clear removes old results", 0, panel.pageList(SearchPanel.PAGE_TOPICS).adapter!!.itemCount)
+            harness.renderApp("search-query-cleared")
+            harness.assertNoTelegramSideEffects()
+        } finally { release.countDown() }
+    }
+
+    /** Same text is not the same request: an older A must not overwrite a later A after B. */
+    @Test
+    fun returningToTheSameQueryKeepsTheNewestAnswerAndRetryStillWorks() {
+        val release = java.util.concurrent.CountDownLatch(1)
+        val requests = java.util.concurrent.atomic.AtomicInteger()
+        val empty = """{"topics":[],"posts":[],"users":[],"grouped_search_result":{}}"""
+        site.serveResponse("search.json") {
+            if (requests.incrementAndGet() == 1) {
+                release.await(10, java.util.concurrent.TimeUnit.SECONDS)
+                MockResponse().setHeader("Content-Type", "application/json").setBody(empty)
+            } else MockResponse().setResponseCode(503)
+        }
+        harness.bootApp()
+        harness.await("feed") { rowCount() == 2 }
+        openSearch()
+        try {
+            val priorCallbacks = siteCallbacks()
+            type(QUERY)
+            harness.await("older A pending") { requests.get() == 1 }
+            val olderCallbacks = siteCallbacks() - priorCallbacks.toSet()
+            type("B")
+            type(QUERY)
+            val panel = searchPanel()!!
+            harness.await("newer A failed") { firstView(android.R.id.content) {
+                it is android.widget.TextView && it.isShown && it.text.toString().contains("点一下重试") } != null }
+            harness.renderApp("search-global-error")
+            site.serveResponse("search.json") { MockResponse().setHeader("Content-Type", "application/json")
+                .setBody(harness.fixture("search.json")) }
+            val state = firstView(android.R.id.content) {
+                it is org.telegram.ui.Components.StickerEmptyView && it.isShown }!!
+            state.performClick()
+            harness.await("newest A hits") { panel.pageList(SearchPanel.PAGE_TOPICS).adapter!!.itemCount == 1 }
+            release.countDown()
+            awaitSiteCallbacks(olderCallbacks)
+            assertEquals("the older empty A cannot erase the new result", 1,
+                panel.pageList(SearchPanel.PAGE_TOPICS).adapter!!.itemCount)
+            harness.renderApp("search-global-retry-result")
+            harness.assertNoTelegramSideEffects()
+        } finally { release.countDown() }
+    }
+
+    @Test
+    fun cachedCategoriesAndTagsRefilterAndAChildCategoryOpensItsOwnFeed() {
+        site.serveFixture("c/domestic-lv1/99/l/latest.json", "latest-topics.json")
+        harness.bootApp()
+        harness.await("feed") { rowCount() == 2 }
+        openSearch()
+        type("开发")
+        val panel = searchPanel()!!
+        harness.await("category match") { panel.pageList(SearchPanel.PAGE_CATEGORIES).adapter!!.itemCount == 1 }
+        selectPage(SearchPanel.PAGE_CATEGORIES)
+        harness.renderApp("search-category-result")
+        type("android")
+        harness.await("cached tag match") { panel.pageList(SearchPanel.PAGE_TAGS).adapter!!.itemCount == 1 }
+        assertEquals("the category match follows the changed query", 0,
+            panel.pageList(SearchPanel.PAGE_CATEGORIES).adapter!!.itemCount)
+        selectPage(SearchPanel.PAGE_TAGS)
+        harness.renderApp("search-tag-result")
+        type("一号")
+        harness.await("child category") { panel.pageList(SearchPanel.PAGE_CATEGORIES).adapter!!.itemCount == 1 }
+        selectPage(SearchPanel.PAGE_CATEGORIES)
+        harness.renderApp("search-child-category-result")
+        val list = panel.pageList(SearchPanel.PAGE_CATEGORIES)
+        list.clickItem(list.getChildAt(0), 0)
+        harness.await("real child category feed") { site.requestPaths.contains("c/domestic-lv1/99/l/latest.json") }
+        harness.assertNoTelegramSideEffects()
+    }
+
+    // A callback-completion barrier, not a timed sleep: assertions above must observe the
+    // late answer after the real loader has processed it, even when the correct UI stays unchanged.
+    private fun siteCallbacks(): List<kotlinx.coroutines.Job> {
+        val scope = io.github.baba983.nativedo.topic.DiscourseLoader::class.java
+            .getDeclaredField("scope").apply { isAccessible = true }.get(null) as kotlinx.coroutines.CoroutineScope
+        return scope.coroutineContext[kotlinx.coroutines.Job]!!.children.toList()
+    }
+
+    private fun awaitSiteCallbacks(callbacks: List<kotlinx.coroutines.Job>) {
+        assertTrue("the pending request was captured", callbacks.isNotEmpty())
+        harness.await("site callbacks completed") { callbacks.none { it.isActive } }
+    }
+
     /** The field on the home screen, the way the reader reaches it: a tap. */
     private fun openSearch() {
         val field = searchField()!!
@@ -321,7 +438,9 @@ internal class SearchTest {
         harness.present(TopicFragment.forTopic(101, "Topic search"))
         harness.await("topic") { drawnPostIds().isNotEmpty() }
         openTopicSearch()
-        val field = harness.topFragment()!!.actionBar.createMenu().getItem(10).searchField
+        val topic = harness.topFragment()
+        val field = searchField()!!.editText
+        searchControl("显示为列表").performClick()
         assertEquals("blank input does not ask the whole site", 0, site.queriesFor("search.json").size)
         field.setText("topic:999")
         harness.idleClock(500)
@@ -335,6 +454,7 @@ internal class SearchTest {
         val list = firstView(android.R.id.content) { it is RecyclerListView && it.isShown } as RecyclerListView
         list.clickItem(list.getChildAt(0), 0)
         harness.await("exact floor") { site.requestPaths.contains("t/101/4.json") }
+        assertTrue("a search hit stays in the same topic screen", harness.topFragment() === topic)
         harness.assertNoTelegramSideEffects()
     }
 
@@ -347,14 +467,15 @@ internal class SearchTest {
         harness.present(TopicFragment.forTopic(101, "Topic search"))
         harness.await("topic") { drawnPostIds().isNotEmpty() }
         openTopicSearch()
-        val field = harness.topFragment()!!.actionBar.createMenu().getItem(10).searchField
+        val field = searchField()!!.editText
+        searchControl("显示为列表").performClick()
         field.setText("NativeDo")
         harness.await("error") { firstView(android.R.id.content) {
             it is android.widget.TextView && it.text.toString().contains("点击重试") } != null }
         harness.renderApp("topic-search-error")
         site.serveResponse("search.json") { MockResponse().setHeader("Content-Type", "application/json")
             .setBody(harness.fixture("search.json")) }
-        val state = firstView(android.R.id.content) { it is org.telegram.ui.Components.EmptyTextProgressView }!!
+        val state = firstView(android.R.id.content) { it is org.telegram.ui.Components.EmptyTextProgressView && it.isShown }!!
         state.performClick()
         harness.await("retry hits") { rowCount() == 2 }
         // One post plus the production load-more row. Its next page repeats the first hit.
@@ -370,12 +491,69 @@ internal class SearchTest {
         harness.assertNoTelegramSideEffects()
     }
 
+    /** Search changes windows, not screens; closing it restores the reader's context and draft. */
+    @Test
+    fun topicSearchNavigatesBothWaysHighlightsChineseAndRestoresTheReadingWindow() {
+        val initial = JSONObject(topicAround(1))
+        initial.getJSONObject("post_stream").getJSONArray("posts").getJSONObject(0)
+            .put("cooked", "<p>不太好，太少了。</p><blockquote><p>这里也太少</p></blockquote><pre><code>太多代码</code></pre>")
+        site.serveJson("t/101.json", initial.toString())
+        site.serveJson("t/101/1.json", initial.toString())
+        val response = JSONObject(harness.fixture("search.json"))
+        val hit = response.getJSONArray("posts").getJSONObject(0)
+        hit.put("post_number", 1).put("id", 1001).put("blurb", "不太好，太少了")
+        response.getJSONArray("posts").put(JSONObject(hit.toString()).put("id", 1004).put("post_number", 4))
+        response.getJSONObject("grouped_search_result").put("more_posts", false)
+        site.serveJson("search.json", response.toString())
+        harness.bootApp()
+        harness.await("feed") { rowCount() == 2 }
+        harness.present(TopicFragment.forTopic(101, "Topic search"))
+        harness.await("initial window") { harness.layoutApp(); drawnPostIds().contains(1001) }
+        val topic = harness.topFragment()!!
+        val composer = firstView(android.R.id.content) { it is org.telegram.ui.Components.ChatActivityEnterView }
+            as org.telegram.ui.Components.ChatActivityEnterView
+        composer.editField!!.setText("保留这个草稿")
+        openTopicSearch()
+        searchField()!!.editText.setText("太")
+        harness.await("first search result") {
+            harness.drawApp()
+            firstView(android.R.id.content) { it.contentDescription?.toString() == "第 1 条，共 2 条" } != null
+        }
+        harness.renderApp("topic-search-chat-chinese")
+        searchControl("下一条搜索结果").performClick()
+        harness.await("next result's window") { harness.layoutApp(); drawnPostIds().contains(1004) }
+        searchControl("上一条搜索结果").performClick()
+        harness.await("previous result's window") { harness.layoutApp(); drawnPostIds().contains(1001) }
+        searchControl("显示为列表").performClick()
+        harness.renderApp("topic-search-list-chinese")
+        org.telegram.ui.ActionBar.Theme.applyTheme(org.telegram.ui.ActionBar.Theme.getTheme("Dark Blue"), false, true)
+        org.telegram.messenger.NotificationCenter.getGlobalInstance().postNotificationName(
+            org.telegram.messenger.NotificationCenter.didSetNewTheme)
+        harness.renderApp("topic-search-list-dark")
+        searchControl("显示为消息").performClick()
+        harness.renderApp("topic-search-chat-dark")
+        assertTrue("predictive Back only probes", !topic.onBackPressed(false))
+        assertTrue(searchField()!!.isShown)
+        assertTrue("Back exits search, not the topic", !topic.onBackPressed(true))
+        harness.await("reading window restored") { harness.layoutApp(); drawnPostIds().contains(1001) }
+        assertTrue(harness.topFragment() === topic)
+        assertEquals("保留这个草稿", composer.editField!!.text.toString())
+        assertTrue("the search field is gone", searchField()?.isShown != true)
+        harness.assertNoTelegramSideEffects()
+    }
+
+    private fun searchControl(description: String): View =
+        firstView(android.R.id.content) { it.isShown && it.contentDescription?.toString() == description }
+            ?: throw AssertionError("missing search control: $description")
+
     private fun openTopicSearch() {
+        val topic = harness.topFragment()
         harness.topFragment()!!.actionBar.createMenu().getItem(1).performClick()
         harness.idle()
         io.github.baba983.nativedo.harness.clickMenuItem(
             io.github.baba983.nativedo.harness.latestItemOptionsMenu(harness.activity), "话题内搜索")
-        harness.await("topic search screen") { harness.topFragment()?.javaClass?.simpleName == "TopicSearchFragment" }
+        assertTrue("topic search must not push another screen", harness.topFragment() === topic)
+        harness.await("in-topic search field") { searchField()?.isShown == true }
     }
 
     private fun type(query: String) {
@@ -384,9 +562,15 @@ internal class SearchTest {
         harness.idleClock(2 * SEARCH_DELAY_MS)
     }
 
-    /** Moves to a page and lets the pager's own scroll animation finish. */
+    /** Tap the shipped pill: the pager-only API bypasses the tab indicator's animation. */
     private fun selectPage(page: Int) {
-        searchPanel()!!.selectPage(page)
+        harness.layoutApp()
+        val tabs = firstView(android.R.id.content) { it is org.telegram.ui.Components.ViewPagerFixed.TabsView }
+            as org.telegram.ui.Components.ViewPagerFixed.TabsView
+        val list = tabs.listView
+        list.scrollToPosition(page)
+        harness.layoutApp()
+        list.clickItem(list.findViewHolderForAdapterPosition(page)!!.itemView, page)
         harness.idleClock(700)
         harness.layoutApp()
     }
@@ -457,7 +641,7 @@ internal class SearchTest {
             ?.let { findList(it) }?.adapter?.itemCount ?: 0
 
     private fun findList(view: View): RecyclerListView? {
-        if (view is RecyclerListView && view.parent !is org.telegram.ui.Components.FilterTabsView) return view
+        if (view is RecyclerListView && view.isShown && view.parent !is org.telegram.ui.Components.FilterTabsView) return view
         if (view is ViewGroup) {
             for (index in 0 until view.childCount) {
                 findList(view.getChildAt(index))?.let { return it }
