@@ -251,6 +251,14 @@ public class TopicFragment extends BaseFragment
     private int searchReadingOffset;
     private org.telegram.ui.Components.RecyclerAnimationScrollHelper searchScroll;
     /**
+     * The bar's search width factor (ActionBar:2244): while the search field owns the bar the
+     * center glass capsule must span it instead of the avatar container's own width, or the hint
+     * is drawn left of the capsule. ChatActivity drives the same factor from its search animation
+     * (ChatActivity:46603-46608).
+     */
+    private android.animation.ValueAnimator searchFactorAnimator;
+    private float searchFactorValue;
+    /**
      * ChatActivity's own top and bottom blur band ({@code chatActivityFadeView},
      * ChatActivity.java:6969-6973): the status bar and the bar's gaps show the recorded content
      * through a fading glass strip instead of raw text scrolling by.
@@ -260,6 +268,14 @@ public class TopicFragment extends BaseFragment
     private int bottomInset;
     /** The topic as last read; the capsule and the bookmark item draw from it. */
     private TopicDetail topicDetail;
+    /**
+     * The site's own suggestion for what to read after this topic - the first valid entry of the
+     * topic read's `suggested_topics` that is not this topic - or null when it suggested none.
+     * Nothing here invents one, reorders the site's list or claims an unread.
+     */
+    private io.github.baba983.nativedo.core.model.TopicSummary nextTopicCandidate;
+    /** Set the moment a release asks for the candidate, so no late callback asks twice. */
+    private boolean nextTopicNavigationStarted;
     /** The topic's original poster, as the synthetic user the rows also draw. */
     private TLRPC.User topicAuthor;
     /** The reader's own topic-level bookmark, mirrored from the site's answer. */
@@ -272,6 +288,13 @@ public class TopicFragment extends BaseFragment
     private org.telegram.ui.ActionBar.ActionBarMenuSubItem notificationLevelMenuItem;
     /** The overflow item itself, which the level ItemOptions anchors on. */
     private org.telegram.ui.ActionBar.ActionBarMenuItem overflowItem;
+    /**
+     * The bar's real search item (ChatActivity:4244-4248 wires the same one). Its own
+     * EditTextBoldCursor is the in-topic search field, so the bar's back capsule stays and the
+     * search capsule replaces the center/menu while it is open. The item is held GONE: the reader
+     * opens it from the overflow's 话题内搜索 row, never from an icon of its own on the bar.
+     */
+    private org.telegram.ui.ActionBar.ActionBarMenuItem searchItem;
     /**
      * The reader's own notification level for this topic (`details.notification_level`): 0 mute,
      * 1 regular, 2 tracking, 3 watching. It only moves when the site took a write, so a refusal
@@ -354,6 +377,9 @@ public class TopicFragment extends BaseFragment
                 if (this.threadEmptyCell != null) {
                     // The service pill re-reads its paints on every draw; a redraw is the recolor.
                     this.threadEmptyCell.invalidate();
+                }
+                if (this.failureView != null) {
+                    this.failureView.invalidate();
                 }
                 if (actionBar != null) {
                     actionBar.updateColors();
@@ -458,7 +484,7 @@ public class TopicFragment extends BaseFragment
     /** The reader's place in this topic, and the report of it the site asks for. */
     private TopicReadReporter reporter;
     /** What is shown instead of the list when the topic could not be read at all. */
-    private org.telegram.ui.Components.EmptyTextProgressView failureView;
+    private org.telegram.ui.Cells.ChatActionCell failureView;
     /** Why the last read failed, in the terms the retry tap acts on. */
     private TopicLoadFailure lastFailure;
     /** What a retry tap runs: the read that just failed, with the floor it asked for. */
@@ -647,7 +673,7 @@ public class TopicFragment extends BaseFragment
                 } else if (id == MENU_ITEM_OPEN_BROWSER) {
                     openTopicInBrowser();
                 } else if (id == MENU_ITEM_SEARCH) {
-                    openTopicSearch();
+                    openTopicSearchFromMenu();
                 } else if (id == MENU_ITEM_NOTIFICATION) {
                     showNotificationLevelOptions();
                 }
@@ -671,8 +697,61 @@ public class TopicFragment extends BaseFragment
                 MENU_ITEM_SHARE, org.telegram.messenger.R.drawable.msg_share, "分享");
         overflowItem.addSubItem(
                 MENU_ITEM_OPEN_BROWSER, org.telegram.messenger.R.drawable.msg_openin, "在浏览器打开");
+        // The reader's entry to the in-topic search: a row of the overflow, never an icon of its
+        // own on the bar. This is the topic's 话题内搜索 item; the bar's real search field sits
+        // behind it (the GONE searchItem below) and this row opens it (openTopicSearchFromMenu).
         overflowItem.addSubItem(
                 MENU_ITEM_SEARCH, org.telegram.messenger.R.drawable.msg_search, "话题内搜索");
+        // The chat header's own search: a real ActionBar search item, not a drawn imitation and not
+        // an invisible bar. It is kept GONE so the bar's right side stays the single overflow
+        // capsule; the overflow's 话题内搜索 row above is what expands it. Opening hands the field
+        // to this screen (onSearchExpand), its clear button empties the query, the bar's back
+        // capsule and hardware Back collapse it (onSearchCollapse), and the menu is switched into
+        // glass mode by setupGlass below (ChatActivity:4244-4248; ActionBarMenuItem.toggleSearch,
+        // ActionBar:1304-1326).
+        searchItem = menu.addItem(MENU_ITEM_SEARCH, org.telegram.messenger.R.drawable.msg_search);
+        searchItem.setContentDescription("话题内搜索");
+        searchItem.setIsSearchField(true);
+        searchItem.setSearchPaddingStart(7);
+        searchItem.setSearchFieldHint("搜索当前话题");
+        searchItem.setActionBarMenuItemSearchListener(
+                new org.telegram.ui.ActionBar.ActionBarMenuItem.ActionBarMenuItemSearchListener() {
+            @Override
+            public void onSearchExpand() {
+                if (!openTopicSearch()) {
+                    // The window is not readable yet (a load is in flight): do not leave an empty
+                    // search capsule with no session behind it. The collapse is posted because this
+                    // callback runs inside the expand, before ActionBar has marked its own field
+                    // visible; closeSearchField is a no-op until then (ActionBar:1308-1313).
+                    actionBar.post(() -> actionBar.closeSearchField(false));
+                }
+            }
+
+            @Override
+            public void onSearchCollapse() {
+                onTopicSearchCollapsed();
+            }
+
+            @Override
+            public void onTextChanged(android.widget.EditText editText) {
+                if (topicSearch != null) {
+                    topicSearch.changeQuery(editText.getText().toString());
+                }
+            }
+
+            @Override
+            public void onSearchPressed(android.widget.EditText editText) {
+                if (topicSearch != null) {
+                    topicSearch.onImeSearch();
+                }
+            }
+        });
+        // GONE, not merely un-drawn: ActionBar sizes the glass menu circle from the visible items'
+        // span (ActionBarMenu.getItemsWidth skips a GONE item, ActionBar:2203-2217), so a hidden
+        // search item leaves the overflow capsule exactly as it is instead of reserving a second
+        // icon next to it. ActionBarMenuItem.toggleSearch re-shows the item on every collapse
+        // (ActionBarMenuItem:987), so restoreBarMenu puts it back to GONE after each close.
+        searchItem.setVisibility(View.GONE);
 
         sharedResources = new org.telegram.messenger.ChatMessageSharedResources(context);
         SizeNotifierFrameLayout contentView = new SizeNotifierFrameLayout(context) {
@@ -728,10 +807,10 @@ public class TopicFragment extends BaseFragment
         listView.setClipToPadding(false);
         listView.setAvatarSource(senderId -> users.get(senderId));
         // Upstream's own chat-list manager: it is the one whose vertical scroll the swipe gesture
-        // switches off while a post is being dragged (the ported processTouchEvent).
+        // switches off while a post is being dragged (the ported processTouchEvent). The list makes
+        // it, so it can carry the pull the reader makes once the stream is at its end.
         androidx.recyclerview.widget.GridLayoutManagerFixed layoutManager =
-                new androidx.recyclerview.widget.GridLayoutManagerFixed(
-                        context, 1000, LinearLayoutManager.VERTICAL, false);
+                listView.createChatLayoutManager(context);
         layoutManager.setSpanSizeLookup(new androidx.recyclerview.widget.GridLayoutManager.SpanSizeLookup() {
             @Override
             public int getSpanSize(int position) {
@@ -739,6 +818,19 @@ public class TopicFragment extends BaseFragment
             }
         });
         listView.setLayoutManager(layoutManager);
+        // The pull from the end of the stream: the list owns the gesture, this screen owns the site's
+        // candidate and the states that forbid the pull (see canPullNextTopic).
+        listView.setNextTopicPullHost(new PostListView.NextTopicPullHost() {
+            @Override
+            public boolean canPullNextTopic() {
+                return TopicFragment.this.canPullNextTopic();
+            }
+
+            @Override
+            public void onPullNextTopic() {
+                openNextTopicFromPull();
+            }
+        });
         listView.setAdapter(new PostAdapter());
         // One leftward drag on a post is the menu's 回复: the composer opens on that floor.
         listView.setSwipeReplyListener(cell -> {
@@ -943,26 +1035,28 @@ public class TopicFragment extends BaseFragment
         progressView.addView(progressBar, org.telegram.ui.Components.LayoutHelper.createFrame(
                 32, 32, Gravity.CENTER));
 
-        // A read that failed left the list empty, which reads the same as a topic with no posts.
-        // This says which it was, and a tap on it either retries the read or opens the login WebView
-        // when the session is what is wrong.
-        failureView = new org.telegram.ui.Components.EmptyTextProgressView(context);
-        failureView.setText(context.getString(io.github.baba983.nativedo.R.string.topic_failed));
-        failureView.showTextView();
+        // The same wallpaper-backed service bubble a chat uses for its empty notice. A failure
+        // offers retry or session recovery, without exposing the transport's diagnostic message.
+        failureView = new org.telegram.ui.Cells.ChatActionCell(context, false, resourceProvider);
+        failureView.setCustomText(context.getString(io.github.baba983.nativedo.R.string.topic_failed));
         failureView.setVisibility(View.GONE);
-        // The view consumes touches in its own constructor; the tap that acts has to get through.
-        failureView.setOnTouchListener(null);
+        failureView.setOnActionClickListener(view -> onFailureTap());
         failureView.setOnClickListener(view -> onFailureTap());
         contentView.addView(failureView, org.telegram.ui.Components.LayoutHelper.createFrame(
                 org.telegram.ui.Components.LayoutHelper.MATCH_PARENT,
-                org.telegram.ui.Components.LayoutHelper.MATCH_PARENT));
+                org.telegram.ui.Components.LayoutHelper.WRAP_CONTENT, Gravity.CENTER, 24, 0, 24, 0));
+        failureView.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) ->
+                failureView.setVisiblePart(t, contentView.getHeight()));
 
         // The center capsule is the chat's own ChatAvatarContainer in glass mode, added to the bar
         // the way ChatActivity adds it (4134-4162, 4224: WRAP_CONTENT next to MATCH_PARENT, margins
-        // 52/52). The bar itself draws the back, center and menu capsules around it and animates
-        // their widths (ActionBar.java:2219-2270), and setupGlass is what turns the three glass
-        // drawables on with the chat header's own provider (ActionBar.java:210-255;
-        // ChatActivity:4569-4572). The list is the content the capsules' blur source records.
+        // 52/52). The right margin is the single-icon one: this bar carries only the overflow
+        // capsule - the in-topic search is a row inside that menu, not an icon beside it - so the
+        // title stops before the one icon the way a chat header with a lone overflow does. The bar
+        // itself draws the back, center and menu capsules around it and animates their widths
+        // (ActionBar.java:2219-2270), and setupGlass is what turns the three glass drawables on with
+        // the chat header's own provider (ActionBar.java:210-255; ChatActivity:4569-4572). The list
+        // is the content the capsules' blur source records.
         avatarContainer = new org.telegram.ui.Components.ChatAvatarContainer(
                 context, this, false, resourceProvider);
         avatarContainer.setGlassMode();
@@ -973,7 +1067,7 @@ public class TopicFragment extends BaseFragment
         // avatar or name (ChatActivity opens the profile from its own listener the same way).
         avatarContainer.setOnClickListener(view -> openTopicAuthorProfile());
         if (title != null && !title.trim().isEmpty()) {
-            avatarContainer.setTitle(title.trim());
+            setCapsuleTitle(title.trim());
         }
         actionBar.setChatAvatarContainer(avatarContainer);
         actionBar.addView(avatarContainer, 0, org.telegram.ui.Components.LayoutHelper.createFrame(
@@ -1673,7 +1767,7 @@ public class TopicFragment extends BaseFragment
                 ? topicDetail.getTitle().trim()
                 : (getArguments() == null ? null : getArguments().getString(ARG_TOPIC_TITLE));
         if (title != null && !title.trim().isEmpty()) {
-            avatarContainer.setTitle(title.trim());
+            setCapsuleTitle(title.trim());
         }
         if (root != null && container != null) {
             bindTopicAuthorUser(
@@ -2249,6 +2343,8 @@ public class TopicFragment extends BaseFragment
             failureView.setVisibility(View.GONE);
         }
         topicDetail = detail;
+        nextTopicNavigationStarted = false;
+        bindNextTopicCandidate(detail.getSuggestedTopics(), detail.getId());
         topicBookmarked = detail.getBookmarked();
         updateBookmarkMenuItem();
         topicNotificationLevel = detail.getNotificationLevel();
@@ -2271,7 +2367,125 @@ public class TopicFragment extends BaseFragment
         return kotlin.Unit.INSTANCE;
     }
 
-    /** Whether the answer the site gave already carries that floor, which needs no second read. */
+    /**
+     * Takes the site's own suggestion for what to read next: the first entry of this topic read's
+     * `suggested_topics` that is a real topic other than this one, kept in the order the site
+     * ranked it. The initial window or final incremental page can supply it; binding the candidate
+     * never resets the floors, header or scroll, or re-arms a release already navigating.
+     */
+    private void bindNextTopicCandidate(
+            List<io.github.baba983.nativedo.core.model.TopicSummary> suggested, long topicId) {
+        if (nextTopicNavigationStarted) {
+            return;
+        }
+        nextTopicCandidate = null;
+        for (io.github.baba983.nativedo.core.model.TopicSummary topic : suggested) {
+            if (topic == null || topic.getId() <= 0 || topic.getId() == topicId) {
+                continue;
+            }
+            String title = topic.getTitle();
+            if (title == null || title.trim().isEmpty()) {
+                continue;
+            }
+            nextTopicCandidate = topic;
+            break;
+        }
+        if (listView != null) {
+            listView.pullDrawable().setTarget(nextTopicCandidate == null ? null : nextTopicCandidate.getTitle());
+            listView.invalidate();
+        }
+    }
+
+    /**
+     * Whether the reader may pull the end of this list into the next topic right now. The screen
+     * owns the answer because it owns the states: the in-topic search, a discussion page, offline
+     * content, a page or window still loading or failed, a text selection, and a composer the
+     * reader is writing in (a draft or an attachment) or with its keyboard up all keep the pull
+     * away. A topic the site suggested nothing for keeps it away too.
+     */
+    private boolean canPullNextTopic() {
+        if (nextTopicCandidate == null || listView == null) {
+            return false;
+        }
+        if (threadMode || topicSearch != null || showingCachedContent) {
+            return false;
+        }
+        if (textSelectionHelper != null && textSelectionHelper.isInSelectionMode()) {
+            return false;
+        }
+        if (composer != null && composer.getEditField() != null
+                && composer.getEditField().length() > 0) {
+            return false;
+        }
+        if (uploadingAttachment || editFloor >= 0) {
+            return false;
+        }
+        if (attachStrip != null && attachStrip.getVisibility() == View.VISIBLE) {
+            return false;
+        }
+        if (composer != null && (composer.isKeyboardVisible() || composer.isWaitingForKeyboard())) {
+            return false;
+        }
+        // The real end of the stream, with no page or window still coming and no edge latched: a
+        // topic with more pages, one still loading, or one whose page failed must not navigate.
+        if (loadingPage || loadingWindow || loadingBackward
+                || nextPageStart < streamPostIds.size() || nextPageFailed || previousPageFailed) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * The reader let go past the threshold: play the card's own check animation, then open the
+     * candidate through the existing navigation, replacing this screen so a chain of topics does
+     * not stack and Back still returns to the list the reader came from. A release already asked
+     * for, a screen that outlived the request, or a candidate that is gone by the time the card
+     * settles all decline instead of navigating.
+     */
+    private void openNextTopicFromPull() {
+        if (nextTopicNavigationStarted) {
+            return;
+        }
+        final io.github.baba983.nativedo.core.model.TopicSummary candidate = nextTopicCandidate;
+        if (candidate == null || !canPullNextTopic()) {
+            if (listView != null) {
+                listView.cancelNextTopicPull();
+            }
+            return;
+        }
+        nextTopicNavigationStarted = true;
+        final int generation = windowGeneration;
+        Runnable navigate = () -> {
+            // The screen left, or another window replaced this one, while the card settled: the
+            // release belongs to a screen nobody is looking at.
+            if (generation != windowGeneration || listView == null) {
+                return;
+            }
+            openNextTopic(candidate);
+        };
+        if (listView != null && listView.pullDrawable().animationIsRunning()) {
+            listView.pullDrawable().runOnAnimationFinish(navigate);
+        } else {
+            navigate.run();
+        }
+    }
+
+    private void openNextTopic(io.github.baba983.nativedo.core.model.TopicSummary candidate) {
+        if (listView != null) {
+            listView.cancelNextTopicPull();
+        }
+        TopicFragment next = TopicFragment.forTopic(candidate);
+        if (getParentActivity() instanceof NativeDoActivity) {
+            // Replace, so continuous reading does not stack a screen per topic; Back returns to the
+            // list the reader came from.
+            ((NativeDoActivity) getParentActivity()).replace(next);
+        } else {
+            presentFragment(next);
+        }
+    }
+
+    /**
+     * Whether the answer the site gave already carries that floor, which needs no second read. */
     private static boolean carriesFloor(TopicDetail detail, int postNumber) {
         for (Post post : detail.getPosts()) {
             Integer number = post.getPostNumber();
@@ -2400,10 +2614,26 @@ public class TopicFragment extends BaseFragment
         }
         String loadedTitle = detail.getTitle();
         if (loadedTitle != null && !loadedTitle.trim().isEmpty()) {
-            avatarContainer.setTitle(loadedTitle.trim());
+            setCapsuleTitle(loadedTitle.trim());
         }
         bindTopicAuthor(detail);
         bindSubtitle(detail);
+    }
+
+    // SimpleTextView can retain its empty-title bounds after a late title arrives. Re-measure
+    // changed text so the marquee's hardware layer does not clip it to the old height.
+    private void setCapsuleTitle(String title) {
+        if (avatarContainer == null || title == null || title.trim().isEmpty()) {
+            return;
+        }
+        String trimmed = title.trim();
+        org.telegram.ui.ActionBar.SimpleTextView titleView = avatarContainer.getTitleTextView();
+        CharSequence before = titleView == null ? null : titleView.getText();
+        avatarContainer.setTitle(trimmed);
+        if (titleView != null
+                && !android.text.TextUtils.equals(titleView.getText(), before)) {
+            titleView.requestLayout();
+        }
     }
 
     /**
@@ -2747,9 +2977,16 @@ public class TopicFragment extends BaseFragment
      */
     @Override
     public boolean onBackPressed(boolean invoked) {
-        if (topicSearch != null) {
+        if (topicSearch != null || (actionBar != null && actionBar.isSearchFieldVisible())) {
             if (invoked) {
-                closeTopicSearch();
+                // The bar's own search field and the back capsule's lifecycle: collapsing it runs
+                // onSearchCollapse, which restores the capsule and the reading window. When the
+                // fragment is driven directly (no ActionBarLayout in front), close the session here.
+                if (actionBar != null && actionBar.isSearchFieldVisible()) {
+                    actionBar.closeSearchField();
+                } else {
+                    closeTopicSearch();
+                }
             }
             return false;
         }
@@ -2786,6 +3023,12 @@ public class TopicFragment extends BaseFragment
             topicSearch.destroy();
             topicSearch = null;
         }
+        // The screen is gone: a block that outlives it must not call back to start a fetch for a row
+        // nobody is looking at.
+        for (Map.Entry<String, Runnable> entry : photoStarters.entrySet()) {
+            DiscourseImageBridge.INSTANCE.clearPhotoStarter(entry.getKey(), entry.getValue());
+        }
+        photoStarters.clear();
         if (searchScroll != null) {
             searchScroll.cancel();
         }
@@ -2889,9 +3132,55 @@ public class TopicFragment extends BaseFragment
         }
     }
 
-    private void openTopicSearch() {
-        if (topicSearch != null || topicDetail == null || loadingWindow) {
+    /**
+     * The overflow's 话题内搜索 row opens the bar's own search item. This is the item's own expand
+     * animation and its own field, the same path a tap on a shown search icon took
+     * ({@link org.telegram.ui.ActionBar.ActionBarMenuItem#openSearch}); the item itself is GONE, so
+     * nothing on the bar has to be tapped twice.
+     */
+    private void openTopicSearchFromMenu() {
+        if (searchItem == null) {
             return;
+        }
+        searchItem.openSearch(true);
+        final android.widget.EditText field = searchItem.getSearchField();
+        if (field == null) {
+            return;
+        }
+        // The overflow is a focusable window of its own. While it plays out its close, the bar's
+        // own window has no focus (and on the very first open the field has no size yet), so the
+        // expand's own showKeyboard is dropped and the keyboard would only appear on a second open.
+        // Ask for the IME again once this window really has focus - the field is focused and laid
+        // out by then, and a re-open finds exactly this state - instead of guessing a delay.
+        if (field.hasWindowFocus()) {
+            AndroidUtilities.showKeyboard(field);
+            return;
+        }
+        field.getViewTreeObserver().addOnWindowFocusChangeListener(
+                new android.view.ViewTreeObserver.OnWindowFocusChangeListener() {
+                    @Override
+                    public void onWindowFocusChanged(boolean hasFocus) {
+                        if (!hasFocus) {
+                            return;
+                        }
+                        field.getViewTreeObserver().removeOnWindowFocusChangeListener(this);
+                        if (searchItem != null && searchItem.isSearchFieldVisible()) {
+                            AndroidUtilities.showKeyboard(field);
+                        }
+                    }
+                });
+    }
+
+    /**
+     * Opens the session behind the bar's own search item (ActionBarMenuItem's onSearchExpand).
+     * Returns false when the window cannot be read yet; the caller then collapses the field again.
+     */
+    private boolean openTopicSearch() {
+        if (topicSearch != null) {
+            return true;
+        }
+        if (topicDetail == null || loadingWindow) {
+            return false;
         }
         LinearLayoutManager manager = (LinearLayoutManager) listView.getLayoutManager();
         searchReadingPosition = Math.max(0, manager.findFirstVisibleItemPosition());
@@ -2915,14 +3204,25 @@ public class TopicFragment extends BaseFragment
         }
         listView.stopScroll();
         searchScroll = new org.telegram.ui.Components.RecyclerAnimationScrollHelper(listView, manager);
-        actionBar.setVisibility(View.INVISIBLE);
+        // The bar stays where it is: the search capsule is its own item's field, and the back
+        // capsule is what closes it. Only the chat's own bottom islands go away.
+        showTopicCapsule(false);
+        // The menu's own item goes too, not just its icon: ActionBar sizes the glass menu circle
+        // from the visible items' span (checkMenuItemsWidth, ActionBar.java:2203-2217; drawn at
+        // 2266-2270), so a still-visible overflow leaves an empty circle on the right and stops
+        // the search capsule short. A GONE item is not counted, so the circle collapses and the
+        // capsule reaches the edge. Close and Back restore it (closeTopicSearch).
+        if (overflowItem != null) {
+            overflowItem.setVisibility(View.GONE);
+        }
         inputViews.setVisibility(View.GONE);
         attachStrip.setVisibility(View.GONE);
         applyPageDownVisible(false, false);
         threadEmptyCell.setVisibility(View.GONE);
         topicSearch = new io.github.baba983.nativedo.search.TopicSearch(
                 getContext(), container, topicId, (android.widget.FrameLayout) fragmentView,
-                listView, glassHost, resourceProvider, listPaddingTop, bottomInset,
+                listView, searchItem.getSearchField(), actionBar, glassHost, resourceProvider,
+                listPaddingTop, bottomInset,
                 new io.github.baba983.nativedo.search.TopicSearch.Host() {
                     @Override public void queryChanged() {
                         searchScroll.cancel();
@@ -2951,9 +3251,78 @@ public class TopicFragment extends BaseFragment
                             loadWindow(floor, floor);
                         }
                     }
-                    @Override public void close() { closeTopicSearch(); }
                 });
         applyListPadding();
+        return true;
+    }
+
+    /** Collapse: the bar's field is already on its way out; restore the capsule and the topic. */
+    private void onTopicSearchCollapsed() {
+        showTopicCapsule(true);
+        // Whether or not a session was behind the field, the bar's right side is the overflow
+        // again: toggleSearch re-showed the search item on the way out (ActionBarMenuItem:987).
+        restoreBarMenu();
+        if (topicSearch != null) {
+            closeTopicSearch();
+        }
+    }
+
+    /**
+     * The bar's menu is whole again: the overflow item was GONE while the search field owned the
+     * bar, which is what collapsed its glass circle (openTopicSearch). The search item itself never
+     * stands on its own - ActionBarMenuItem.toggleSearch re-shows it on every collapse
+     * (ActionBarMenuItem:987) and the reader's entry is the overflow's own row - so it is held GONE
+     * here, which is also what keeps it from reserving width next to the overflow
+     * (ActionBarMenu.getItemsWidth skips a GONE item, ActionBar:2203-2217).
+     */
+    private void restoreBarMenu() {
+        if (overflowItem != null) {
+            overflowItem.setVisibility(View.VISIBLE);
+        }
+        if (searchItem != null) {
+            searchItem.setVisibility(View.GONE);
+        }
+    }
+
+    /** The center capsule fades with the bar's own search animation (ActionBar:1207-1219). */
+    private void showTopicCapsule(boolean visible) {
+        if (avatarContainer == null) {
+            return;
+        }
+        avatarContainer.animate().cancel();
+        if (visible) {
+            avatarContainer.setVisibility(View.VISIBLE);
+        }
+        avatarContainer.animate().alpha(visible ? 1f : 0f).setDuration(150)
+                .withEndAction(() -> {
+                    if (!visible && avatarContainer != null) {
+                        avatarContainer.setVisibility(View.GONE);
+                    }
+                }).start();
+        animateSearchFactor(visible ? 0f : 1f);
+    }
+
+    /**
+     * ActionBar sizes its center glass capsule from the avatar container and re-centres it until
+     * {@link org.telegram.ui.ActionBar.ActionBar#setSearchFactor} tells it the search field owns
+     * the bar (ActionBar:2244): only at factor 1 does the capsule span {@code leftDefault..
+     * rightDefault}, which is where the bar lays the search field across the menu
+     * (ActionBar.onLayout, {@code menuLeft}). It moves with the capsule's own 150ms fade.
+     */
+    private void animateSearchFactor(float to) {
+        if (actionBar == null || searchFactorValue == to) {
+            return;
+        }
+        if (searchFactorAnimator != null) {
+            searchFactorAnimator.cancel();
+        }
+        searchFactorAnimator = android.animation.ValueAnimator.ofFloat(searchFactorValue, to);
+        searchFactorAnimator.setDuration(150);
+        searchFactorAnimator.addUpdateListener(animation -> {
+            searchFactorValue = (float) animation.getAnimatedValue();
+            actionBar.setSearchFactor(searchFactorValue);
+        });
+        searchFactorAnimator.start();
     }
 
     private void closeTopicSearch() {
@@ -2977,7 +3346,10 @@ public class TopicFragment extends BaseFragment
         retryAction = searchReadingRetry;
         searchReadingRetry = null;
         bindHeader(topicDetail);
-        actionBar.setVisibility(View.VISIBLE);
+        // The bar's menu is whole again: the overflow item was GONE while the search field owned
+        // the bar, which is what collapsed its glass circle (openTopicSearch), and the search item
+        // is held GONE so it never stands as its own icon.
+        restoreBarMenu();
         inputViews.setVisibility(View.VISIBLE);
         updateAttachStrip();
         applyListPadding();
@@ -3141,7 +3513,7 @@ public class TopicFragment extends BaseFragment
                     // Every floor that answers this target is rebuilt by its own current identity,
                     // not by an index captured when the read began; and the target's author is
                     // registered so the stock reply header can name it.
-                    rebuildFloorsReplyingTo(targetNumber, floors.size());
+                    rebuildFloorsReplyingTo(targetNumber, floors.size(), true);
                     registerUsersInController();
                 }
                 return kotlin.Unit.INSTANCE;
@@ -3161,12 +3533,19 @@ public class TopicFragment extends BaseFragment
      * Rebuilds every floor at index below [maxFloorExclusive] whose reply names [targetNumber]. A
      * floor is found by its own current identity, so a rebuild is never applied to whatever floor
      * happens to sit at an index captured earlier.
+     *
+     * <p>Async reply targets update the existing row. Paging callers keep adapter notifications:
+     * their inserted rows have not been laid out yet, so visible-position lookups are stale.</p>
      */
-    private void rebuildFloorsReplyingTo(int targetNumber, int maxFloorExclusive) {
+    private void rebuildFloorsReplyingTo(int targetNumber, int maxFloorExclusive, boolean inPlace) {
         for (int floor = 0; floor < maxFloorExclusive && floor < floors.size(); floor++) {
             Integer number = floors.get(floor).getReplyToPostNumber();
             if (number != null && number == targetNumber) {
-                rebuildFloor(floor);
+                if (inPlace) {
+                    refreshReplyInPlace(floor);
+                } else {
+                    rebuildFloor(floor);
+                }
             }
         }
     }
@@ -3514,16 +3893,20 @@ public class TopicFragment extends BaseFragment
         }
         final int generation = windowGeneration;
         final int end = Math.min(nextPageStart + PAGE_SIZE, streamPostIds.size());
+        // The slice that reaches the real end of the stream is the one the site answers the read-on
+        // suggestion with: the head window of a topic a next page follows carries none.
+        final boolean lastStreamPage = end >= streamPostIds.size();
         List<Long> page = new ArrayList<>(streamPostIds.subList(nextPageStart, end));
         loadingPage = true;
         final long topicId = getArguments() == null ? 0 : getArguments().getLong(ARG_TOPIC_ID, 0);
-        DiscourseLoader.INSTANCE.topicPosts(container, topicId, page, loaded -> {
+        DiscourseLoader.INSTANCE.topicPosts(container, topicId, page, lastStreamPage, pagePayload -> {
             if (generation != windowGeneration) {
                 // The window moved on while this page was on its way; the rows belong to a window
                 // nobody is looking at. The flag is the new window's to reset, not this callback's.
                 return kotlin.Unit.INSTANCE;
             }
-            noteServedFromCache(showingCachedContent || anyPostFromCache(loaded));
+            List<Post> loaded = pagePayload.getPosts();
+            noteServedFromCache(showingCachedContent || pagePayload.getFromCache() || anyPostFromCache(loaded));
             loadingPage = false;
             nextPageStart = end;
             int firstNew = bubbles.size();
@@ -3554,7 +3937,7 @@ public class TopicFragment extends BaseFragment
             for (Post post : loaded) {
                 Integer number = post.getPostNumber();
                 if (number != null) {
-                    rebuildFloorsReplyingTo(number, floorsBefore);
+                    rebuildFloorsReplyingTo(number, floorsBefore, false);
                 }
             }
             // And a floor the page just brought may answer one an earlier page carried: that floor's
@@ -3568,11 +3951,17 @@ public class TopicFragment extends BaseFragment
             for (Integer parent : parentsToRefresh) {
                 int parentFloor = floorIndexForNumber(parent);
                 if (parentFloor >= 0 && parentFloor < floorsBefore) {
+                    // Keep footer rebuilds on paging's adapter update path alongside its new rows.
                     rebuildFloor(parentFloor);
                 }
             }
             for (int index = firstNew; index < bubbles.size(); index++) {
                 fetchPostMedia(index);
+            }
+            if (lastStreamPage) {
+                // The real end of the stream: the site's own suggestion for what to read next came
+                // with this page. Bind it without resetting the list, the header or the scroll.
+                bindNextTopicCandidate(pagePayload.getSuggestedTopics(), topicId);
             }
             return kotlin.Unit.INSTANCE;
         }, error -> {
@@ -3605,13 +3994,14 @@ public class TopicFragment extends BaseFragment
         }
         loadingBackward = true;
         final long topicId = getArguments() == null ? 0 : getArguments().getLong(ARG_TOPIC_ID, 0);
-        DiscourseLoader.INSTANCE.topicPosts(container, topicId, page, loaded -> {
+        DiscourseLoader.INSTANCE.topicPosts(container, topicId, page, false, pagePayload -> {
             if (generation != windowGeneration) {
                 // The window moved on while this page was on its way; the rows belong to a window
                 // nobody is looking at.
                 return kotlin.Unit.INSTANCE;
             }
-            noteServedFromCache(showingCachedContent || anyPostFromCache(loaded));
+            List<Post> loaded = pagePayload.getPosts();
+            noteServedFromCache(showingCachedContent || pagePayload.getFromCache() || anyPostFromCache(loaded));
             loadingBackward = false;
             if (loaded == null || loaded.isEmpty()) {
                 // The slice holds no visible posts (deleted, or not visible to this reader): the
@@ -3719,6 +4109,7 @@ public class TopicFragment extends BaseFragment
             for (int floor = addedFloors; floor < floors.size(); floor++) {
                 Integer replyTo = floors.get(floor).getReplyToPostNumber();
                 if (replyTo != null && replyTo.equals(number)) {
+                    // Same turn as the prepend's own insert: the rows are replaced, not re-bound.
                     rebuildFloor(floor);
                 }
             }
@@ -3732,7 +4123,7 @@ public class TopicFragment extends BaseFragment
         for (Integer parent : parentsToRefresh) {
             int parentFloor = floorIndexForNumber(parent);
             if (parentFloor >= addedFloors) {
-                // An earlier floor answers one the new floors bring: its reply footer gains the face.
+                // Same turn as the prepend's own insert: the rows are replaced, not re-bound.
                 rebuildFloor(parentFloor);
             }
         }
@@ -3874,6 +4265,135 @@ public class TopicFragment extends BaseFragment
         if (listView != null && listView.getAdapter() != null) {
             listView.getAdapter().notifyItemRangeRemoved(first, count);
             listView.getAdapter().notifyItemRangeInserted(first, rebuilt.size());
+        }
+    }
+
+    // A late reply target changes only the first bubble's preview. Keep the message and rich
+    // layout so expanded details and in-flight media callbacks still belong to the visible row.
+    private void refreshReplyInPlace(int floor) {
+        TLRPC.Message reply = replySnapshotFor(floors.get(floor));
+        if (reply == null) {
+            return;
+        }
+        registerUsersInController();
+        for (int index = 0; index < bubbleFloors.size(); index++) {
+            if (bubbleFloors.get(index) == floor) {
+                MessageObject message = bubbles.get(index);
+                DiscourseRows.applyReply(message.messageOwner, reply);
+                message.replyMessageObject = DiscourseRows.messageObject(reply, users);
+                replyTargetFloors.put(message, floors.get(floor).getReplyToPostNumber());
+                rebindRowInPlace(index);
+                return;
+            }
+        }
+    }
+
+    // Avoid DefaultItemAnimator's old/new-cell crossfade for a preview-only update.
+    private void rebindRowInPlace(int at) {
+        if (listView == null || at < 0 || at >= bubbles.size()) {
+            return;
+        }
+        MessageObject message = bubbles.get(at);
+        ChatMessageCell cell = null;
+        // A page insertion may still be waiting for layout. Match the message, not its old position.
+        for (int index = 0; index < listView.getChildCount(); index++) {
+            View child = listView.getChildAt(index);
+            if (child instanceof ChatMessageCell
+                    && ((ChatMessageCell) child).getMessageObject() == message) {
+                cell = (ChatMessageCell) child;
+                break;
+            }
+        }
+        if (cell == null) {
+            return;
+        }
+        boolean pinnedTop = at > firstBubbleOfFloor(at);
+        boolean pinnedBottom = at < lastBubbleOfFloor(at);
+        // The message object is unchanged; force the cell to re-read its reply fields.
+        cell.forceResetMessageObject();
+        cell.setMessageObject(message, null, pinnedBottom, pinnedTop, false);
+        if (message != null && message.richLayout != null) {
+            message.richLayout.attach(cell);
+        }
+        cell.requestLayout();
+        cell.invalidate();
+    }
+
+    /**
+     * Upgrades inline artwork without replacing rows. The cooked body and bubble count are
+     * unchanged; only the rich layouts need updating. Preserve expanded details and the viewport.
+     * Structural changes such as edits and polls still use {@link #rebuildFloor}.
+     */
+    private void refreshFloorInPlace(int floor) {
+        if (floor < 0 || floor >= floors.size()) {
+            return;
+        }
+        int first = -1;
+        int count = 0;
+        for (int index = 0; index < bubbleFloors.size(); index++) {
+            if (bubbleFloors.get(index) == floor) {
+                if (first < 0) {
+                    first = index;
+                }
+                count++;
+            }
+        }
+        if (first < 0) {
+            return;
+        }
+        List<MessageObject> rebuilt = new ArrayList<>();
+        List<PreparedPostBody> rebuiltBodies = new ArrayList<>();
+        buildBubbles(floors.get(floor), topicId, rebuilt, rebuiltBodies);
+        LinearLayoutManager manager = listView == null ? null : (LinearLayoutManager) listView.getLayoutManager();
+        int anchorPosition = manager == null ? -1 : manager.findFirstVisibleItemPosition();
+        View anchor = manager == null ? null : manager.findViewByPosition(anchorPosition);
+        int offset = anchor == null || listView == null ? 0 : anchor.getTop() - listView.getPaddingTop();
+        int last = first + count - 1;
+        // The cooked body and its block order are unchanged. Preserve details opened while the
+        // artwork was downloading, including details in sibling segments.
+        ArrayList<Boolean> detailsOpen = new ArrayList<>();
+        for (int i = first; i <= last; i++) {
+            RichMessageLayout layout = bubbles.get(i).richLayout;
+            if (layout == null) continue;
+            for (RichMessageLayout.RichBlock block : layout.blocks) {
+                if (block instanceof RichMessageLayout.RichDetailsBlock) {
+                    detailsOpen.add(((RichMessageLayout.RichDetailsBlock) block).block.open);
+                }
+            }
+        }
+        for (int index = 0; index < count; index++) {
+            MessageObject target = bubbles.get(first + index);
+            target.messageOwner.rich_message = rebuilt.get(index).messageOwner.rich_message;
+            target.generateLayout(null);
+            bubbleBodies.set(first + index, rebuiltBodies.get(index));
+            // buildBubbles records reply targets for its temporary messages, not the kept rows.
+            replyTargetFloors.remove(rebuilt.get(index));
+        }
+        // Put the details the reader opened back, then re-measure the rows on screen.
+        int detail = 0;
+        for (int i = first; i <= last; i++) {
+            RichMessageLayout layout = bubbles.get(i).richLayout;
+            if (layout == null) continue;
+            for (RichMessageLayout.RichBlock block : layout.blocks) {
+                if (block instanceof RichMessageLayout.RichDetailsBlock && detail < detailsOpen.size()) {
+                    ((RichMessageLayout.RichDetailsBlock) block).block.open = detailsOpen.get(detail++);
+                }
+            }
+            if (!detailsOpen.isEmpty()) layout.layout(null);
+        }
+        if (manager != null) {
+            // Visible rows update in place; off-screen rows bind their updated body on return.
+            for (int index = 0; index < count; index++) {
+                View view = manager.findViewByPosition(first + index);
+                if (view instanceof ChatMessageCell) {
+                    ((ChatMessageCell) view).forceResetMessageObject();
+                    view.requestLayout();
+                    view.invalidate();
+                }
+            }
+        }
+        if (anchor != null) {
+            manager.scrollToPositionWithOffset(anchorPosition, offset);
         }
     }
 
@@ -4862,8 +5382,7 @@ public class TopicFragment extends BaseFragment
         if (failureView == null) {
             return;
         }
-        failureView.setText(failureText(lastFailure, error));
-        failureView.showTextView();
+        failureView.setCustomText(failureText(lastFailure));
         failureView.setVisibility(View.VISIBLE);
     }
 
@@ -4989,7 +5508,7 @@ public class TopicFragment extends BaseFragment
         return true;
     }
 
-    private String failureText(TopicLoadFailure reason, Throwable error) {
+    private String failureText(TopicLoadFailure reason) {
         int id;
         switch (reason) {
             case Challenge:
@@ -5011,9 +5530,7 @@ public class TopicFragment extends BaseFragment
                 id = io.github.baba983.nativedo.R.string.topic_failed;
                 break;
         }
-        String line = org.telegram.messenger.ApplicationLoader.applicationContext.getString(id);
-        String message = error == null ? null : error.getMessage();
-        return message == null || message.trim().isEmpty() ? line : line + "\n" + message.trim();
+        return org.telegram.messenger.ApplicationLoader.applicationContext.getString(id);
     }
 
     /** What the composer tells us: the text, and that the send button was pressed. */
@@ -5119,45 +5636,11 @@ public class TopicFragment extends BaseFragment
         Runnable onEmojisReady = () -> {
             // An emoji drawn as its readable label because its picture was not on disk becomes the
             // tag upstream draws once the picture lands. Emoji cannot change the segment count, so
-            // keep the visible row and its pixel offset across the floor's remove/insert notices.
+            // refresh the floor where it sits instead of replacing its rows.
             if (anyEmojiCached(emojis)) {
                 int floor = floorOf(message);
                 if (floor >= 0) {
-                    LinearLayoutManager manager = listView == null ? null
-                            : (LinearLayoutManager) listView.getLayoutManager();
-                    int anchorPosition = manager == null ? -1 : manager.findFirstVisibleItemPosition();
-                    View anchor = manager == null ? null : manager.findViewByPosition(anchorPosition);
-                    int offset = anchor == null ? 0 : anchor.getTop() - listView.getPaddingTop();
-                    int at = bubbles.indexOf(message);
-                    int first = firstBubbleOfFloor(at);
-                    int last = lastBubbleOfFloor(at);
-                    // The cooked body and its block order are unchanged. Preserve details opened
-                    // while the artwork was downloading, including details in sibling segments.
-                    ArrayList<Boolean> detailsOpen = new ArrayList<>();
-                    for (int i = first; i <= last; i++) {
-                        RichMessageLayout layout = bubbles.get(i).richLayout;
-                        if (layout == null) continue;
-                        for (RichMessageLayout.RichBlock block : layout.blocks) {
-                            if (block instanceof RichMessageLayout.RichDetailsBlock) {
-                                detailsOpen.add(((RichMessageLayout.RichDetailsBlock) block).block.open);
-                            }
-                        }
-                    }
-                    rebuildFloor(floor);
-                    int detail = 0;
-                    for (int i = first; i <= last; i++) {
-                        RichMessageLayout layout = bubbles.get(i).richLayout;
-                        if (layout == null) continue;
-                        for (RichMessageLayout.RichBlock block : layout.blocks) {
-                            if (block instanceof RichMessageLayout.RichDetailsBlock) {
-                                ((RichMessageLayout.RichDetailsBlock) block).block.open = detailsOpen.get(detail++);
-                            }
-                        }
-                        if (!detailsOpen.isEmpty()) layout.layout(null);
-                    }
-                    if (anchor != null) {
-                        manager.scrollToPositionWithOffset(anchorPosition, offset);
-                    }
+                    refreshFloorInPlace(floor);
                     return;
                 }
             }
@@ -5167,30 +5650,13 @@ public class TopicFragment extends BaseFragment
             DiscourseImageBridge.INSTANCE.applyAttachmentFiles(message.messageOwner, attachments);
             onReady.run();
         };
-        DiscourseLoader.INSTANCE.cacheImages(container, images, () -> {
-            if (bubbles.contains(message) && message.richLayout != null) {
-                for (RichMessageLayout.RichBlock block : message.richLayout.blocks) {
-                    if (!(block instanceof RichMessageLayout.RichPhotoBlock)) continue;
-                    RichMessageLayout.RichPhotoBlock photo = (RichMessageLayout.RichPhotoBlock) block;
-                    if (photo.sizeFull == null) continue;
-                    FileLoader loader = FileLoader.getInstance(0);
-                    if (!loader.getPathToAttach(photo.sizeFull, true).exists()
-                            && !loader.getPathToAttach(photo.sizeFull, false).exists()) continue;
-                    if (photo.imageReceiver.getBitmap() != null) continue;
-                    // RichPhotoBlock.applyImage(true): retained blocks may have been built before
-                    // the local file existed. Cancel the pending Telegram file request so setImage
-                    // retries the same key against our cache; keep the layout and its state.
-                    photo.imageReceiver.cancelLoadImage();
-                    photo.imageReceiver.setImage(null, null,
-                            ImageLocation.getForPhoto(photo.sizeFull, photo.photo), null,
-                            photo.strippedSize == null ? null : ImageLocation.getForPhoto(photo.strippedSize, photo.photo),
-                            "b1", null, photo.sizeFull.size, null, message, 1);
-                    photo.updateButtonState(true);
-                }
-            }
-            onReady.run();
+        DiscourseLoader.INSTANCE.cachePostPhotos(container, images, photo -> {
+            refreshPhotoRowsContaining(photo);
             return kotlin.Unit.INSTANCE;
         });
+        for (PostImage image : images) {
+            registerPhotoStarter(image);
+        }
         if (!emojis.isEmpty()) {
             DiscourseLoader.INSTANCE.cacheImages(container, emojis, () -> {
                 onEmojisReady.run();
@@ -5215,6 +5681,94 @@ public class TopicFragment extends BaseFragment
             }
         }
         return false;
+    }
+
+    /**
+     * How a press on one picture's own download button starts (or retries) its fetch. The starter is
+     * registered while the row that draws the picture is bound, and dropped when the screen leaves,
+     * so a block that outlives its topic cannot call back into a screen that is gone.
+     */
+    private final Map<String, Runnable> photoStarters = new HashMap<>();
+
+    private void registerPhotoStarter(PostImage image) {
+        String name = DiscourseImageBridge.INSTANCE.photoFileName(image);
+        if (photoStarters.containsKey(name)) return;
+        Runnable starter =
+                () -> DiscourseLoader.INSTANCE.fetchPostPhoto(container, image, this::onPhotoBytes);
+        DiscourseImageBridge.INSTANCE.registerPhotoStarter(name, starter);
+        photoStarters.put(name, starter);
+    }
+
+    /**
+     * Draws whatever the fetch has put on disk for one picture: the site's preview while the
+     * original is still on its way, the original once it lands. A row already on screen keeps its
+     * {@link MessageObject} and its place - the retained block re-reads its file and the row is
+     * re-bound, rather than replaced.
+     */
+    private void refreshPhotoRowsContaining(PostImage image) {
+        if (isFinished || listView == null || listView.getAdapter() == null) {
+            return;
+        }
+        for (int index = 0; index < bubbles.size(); index++) {
+            PreparedPostBody body = bubbleBodies.get(index);
+            if (body == null || !body.getImages().contains(image)) {
+                continue;
+            }
+            MessageObject row = bubbles.get(index);
+            refreshPhotoBlocks(row);
+            row.forceUpdate = true;
+            row.reactionsChanged = true;
+            listView.getAdapter().notifyItemChanged(index);
+        }
+    }
+
+    /** The row-side of {@link #refreshPhotoRowsContaining}, for a fetch's callback. */
+    private kotlin.Unit onPhotoBytes(PostImage image) {
+        refreshPhotoRowsContaining(image);
+        return kotlin.Unit.INSTANCE;
+    }
+
+    /**
+     * Makes the retained photo blocks of one row read their file again: a block built before the
+     * bytes existed never asked for them, and upstream's block only re-reads on a fresh
+     * {@code setImage}. The block's own cancel stops its pending Telegram file request, so the
+     * layout and everything else the row holds stay exactly as they are.
+     */
+    private void refreshPhotoBlocks(MessageObject message) {
+        if (message == null || message.richLayout == null) {
+            return;
+        }
+        FileLoader loader = FileLoader.getInstance(0);
+        for (RichMessageLayout.RichBlock block : message.richLayout.blocks) {
+            if (!(block instanceof RichMessageLayout.RichPhotoBlock)) continue;
+            RichMessageLayout.RichPhotoBlock photo = (RichMessageLayout.RichPhotoBlock) block;
+            if (photo.sizeFull == null) continue;
+            boolean fullExists = loader.getPathToAttach(photo.sizeFull, true).exists()
+                    || loader.getPathToAttach(photo.sizeFull, false).exists();
+            boolean previewExists = photo.strippedSize != null
+                    && (loader.getPathToAttach(photo.strippedSize, true).exists()
+                        || loader.getPathToAttach(photo.strippedSize, false).exists());
+            if (!fullExists && !previewExists) continue;
+            if (fullExists && photo.imageReceiver.getImageLocation() != null
+                    || !fullExists && photo.imageReceiver.getThumbLocation() != null) {
+                photo.updateButtonState(true);
+                continue;
+            }
+            // Upstream's own block only re-reads its file on a fresh setImage. A retained block may
+            // have been built before the bytes existed, so it is told again whenever anything it
+            // reads has landed - the preview first, then the original. What is handed over is only
+            // what is already on disk: a location with no file behind it would send upstream's own
+            // loader looking for a datacenter this client does not have, and its "download" would
+            // never end. This does not rebuild the row: the message, the layout and its expanded
+            // state are all kept.
+            photo.imageReceiver.cancelLoadImage();
+            photo.imageReceiver.setImage(null, null,
+                    fullExists ? io.github.baba983.nativedo.hooks.NativeDoHooks.photoImageLocation(photo.sizeFull, photo.photo) : null, null,
+                    photo.strippedSize != null && previewExists
+                            ? io.github.baba983.nativedo.hooks.NativeDoHooks.photoImageLocation(photo.strippedSize, photo.photo) : null,
+                    "b1", null, photo.sizeFull.size, null, message, 1);
+            photo.updateButtonState(true);
+        }
     }
 
     /**

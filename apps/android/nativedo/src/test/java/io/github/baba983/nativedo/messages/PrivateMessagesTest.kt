@@ -1,5 +1,6 @@
 package io.github.baba983.nativedo.messages
 
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
@@ -36,6 +37,9 @@ import org.telegram.messenger.NotificationCenter
 import org.telegram.ui.ActionBar.Theme
 import org.telegram.ui.Cells.DialogCell
 import org.telegram.ui.Components.ScrollSlidingTextTabStrip
+import org.telegram.ui.Components.ViewPagerFixed
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -173,6 +177,138 @@ internal class PrivateMessagesTest {
         val unreadCell = fragment.listView()!!.getChildAt(0) as DialogCell
         assertTrue("the unread box shows the site's unread badge", unreadCell.hasUnread)
         harness.renderApp("pm-telegram-unread")
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * The boxes are a pager of their own, not a single list the strip repaints: a finger drag slides
+     * the two pages (the incoming one is translated, not parked at the edge), the strip's indicator
+     * follows it, and on release the pager commits the box the finger landed on. The sent box's
+     * answer is held while the swipe happens, so the drag cannot be waiting on it - and the sent
+     * page keeps its own loading state. Swiping back finds the inbox's rows still there, read once.
+     */
+    @Test
+    fun theBoxesSlideUnderTheStripWithAFingerAndKeepTheirOwnRows() {
+        site.serveJsonFor("topics/private-messages/baba.json") { path ->
+            if (path.contains("page=1")) EMPTY_PAGE else harness.fixture("private-messages.json")
+        }
+        // Held until the test releases it: the swipe must commit whether or not the box has answered.
+        val sentAnswer = CountDownLatch(1)
+        site.serveResponse("topics/private-messages-sent/baba.json") {
+            sentAnswer.await(20, TimeUnit.SECONDS)
+            okhttp3.mockwebserver.MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(harness.fixture("private-messages-sent.json"))
+        }
+
+        try {
+            harness.bootApp()
+            harness.await("the topic list to load") { listRowCount() == 2 }
+            harness.present(PrivateMessagesFragment.create())
+            harness.await("the inbox rows") { listRowCount() == 2 }
+            harness.layoutApp()
+            harness.idleClock(400)
+
+            val fragment = fragment()
+            val strip = fragment.tabsView() ?: throw AssertionError("no box strip")
+            val pager = pagerOf() ?: throw AssertionError("the boxes have no pager to slide")
+            assertEquals("the inbox is the page at rest", 0, pager.getCurrentPosition())
+            assertEquals("the strip agrees", 0, strip.currentTabId)
+            val indicatorAtRest = field<Int>(strip, "indicatorX")
+            // A short inbox may prefetch page 1 during layout. Only another page 0 would restart it.
+            val inboxReadsBeforeSwipe = site.queriesFor("topics/private-messages/baba.json")
+                .count { it == "page=0" }
+
+            // A finger drag forward, held before release: the incoming page is off its edge and on
+            // its way in - the pages slide, not only the strip's indicator.
+            dragForward(pager, 0.8f)
+            val incoming = pager.getViewPages()[1] ?: throw AssertionError("the incoming page was not built")
+            val width = pager.measuredWidth
+            assertTrue(
+                "the incoming page is sliding in, not parked at the edge",
+                Math.abs(incoming.translationX) > 1f && Math.abs(incoming.translationX) < width,
+            )
+            val animatedPosition = pager.getPositionAnimated()
+            assertTrue(
+                "the pager is between the two boxes mid-drag (was $animatedPosition)",
+                animatedPosition > 0f && animatedPosition < 1f,
+            )
+            assertTrue(
+                "the strip's indicator left the inbox mid-drag",
+                field<Int>(strip, "indicatorX") != indicatorAtRest,
+            )
+            println(
+                "pm swipe mid: pagerWidth=$width page0Tx=${pager.getViewPages()[0]?.translationX} " +
+                    "page1Tx=${incoming.translationX} animated=${animatedPosition} " +
+                    "indicator=${field<Int>(strip, "indicatorX")} atRest=$indicatorAtRest",
+            )
+            harness.renderApp("pm-telegram-swipe-mid")
+
+            // Release: the pager settles on the sent page. The sent answer is still held, so this is
+            // the pager's own clock, never the box's answer.
+            releaseAt(pager, 0.2f)
+            harness.idleClock(700)
+            assertEquals("the pager landed on the sent page", 1, pager.getCurrentPosition())
+            assertEquals("the strip followed the pager", 1, strip.currentTabId)
+            assertEquals("the screen's own box", PrivateMessageBox.Sent, fragment.currentBox())
+            harness.await("the sent box's own route") {
+                site.requestPaths.contains("topics/private-messages-sent/baba.json")
+            }
+            harness.layoutApp()
+            assertEquals(
+                "sliding to the sent box does not restart the inbox",
+                inboxReadsBeforeSwipe,
+                site.queriesFor("topics/private-messages/baba.json").count { it == "page=0" },
+            )
+            // The sent page is on screen with its answer still held: its own loading state, not a
+            // blank list and not the inbox's rows.
+            harness.renderApp("pm-telegram-swipe-loading")
+
+            // The held answer lands on the sent page only.
+            sentAnswer.countDown()
+            harness.await("the sent rows") {
+                harness.layoutApp()
+                fragment.listView()?.adapter?.itemCount == 1
+            }
+            harness.renderApp("pm-telegram-swipe-sent")
+
+            // Swiping back: the inbox keeps its rows and is not read a second time.
+            dragBackward(pager, 0.8f)
+            releaseAt(pager, 0.8f)
+            harness.idleClock(700)
+            assertEquals("back on the inbox page", 0, pager.getCurrentPosition())
+            assertEquals("the strip followed back", 0, strip.currentTabId)
+            harness.await("the inbox rows are still there") { listRowCount() == 2 }
+            assertEquals(
+                "switching back does not restart the inbox",
+                inboxReadsBeforeSwipe,
+                site.queriesFor("topics/private-messages/baba.json").count { it == "page=0" },
+            )
+            harness.renderApp("pm-telegram-swipe-back")
+        } finally {
+            sentAnswer.countDown()
+        }
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * A box the site has nothing in is not a list forever waiting: it says so in its own row, and
+     * its shimmer is not left running as if an answer were still on its way.
+     */
+    @Test
+    fun anEmptyBoxSaysSoRatherThanStayingABlankShimmer() {
+        site.serveJson("topics/private-messages/baba.json", EMPTY_PAGE)
+
+        harness.bootApp()
+        harness.await("the topic list to load") { listRowCount() == 2 }
+        harness.present(PrivateMessagesFragment.create())
+        harness.await("the inbox to say it is empty") {
+            shownText().any { text -> text == "还没有私信" }
+        }
+        harness.layoutApp()
+        assertEquals("an empty box is its own row, not a blank list", 1, listRowCount())
+        harness.renderApp("pm-telegram-empty")
         harness.assertNoTelegramSideEffects()
     }
 
@@ -354,6 +490,82 @@ internal class PrivateMessagesTest {
             ?: throw AssertionError("the strip shows no \"$label\" tab")
         tab.performClick()
         harness.idle()
+        // The tap slides the page pair under the pager's own clock; let it settle before reading.
+        harness.idleClock(400)
+    }
+
+    /** The boxes' pager, wherever it sits under the activity's content view. */
+    private fun pagerOf(): ViewPagerFixed? =
+        findView(harness.activity.findViewById(android.R.id.content), ViewPagerFixed::class.java)
+
+    /**
+     * Drags the pager [travelFraction] of its width to the left (toward the next box) without
+     * releasing. The events go through the pager's own touch path, so the pages move the way a
+     * finger moves them.
+     */
+    private fun dragForward(pager: ViewPagerFixed, travelFraction: Float) {
+        val width = pager.measuredWidth
+        val y = pager.measuredHeight * 0.5f
+        val startX = width * 0.9f
+        pager.onTouchEvent(MotionEvent.obtain(0, 0, MotionEvent.ACTION_DOWN, startX, y, 0))
+        val steps = 16
+        for (step in 1..steps) {
+            val x = startX - width * travelFraction * (step.toFloat() / steps)
+            pager.onTouchEvent(MotionEvent.obtain(0, step * 16L, MotionEvent.ACTION_MOVE, x, y, 0))
+            harness.idle()
+        }
+    }
+
+    /** The same drag to the right: the previous box, for a swipe back. Held before release. */
+    private fun dragBackward(pager: ViewPagerFixed, travelFraction: Float) {
+        val width = pager.measuredWidth
+        val y = pager.measuredHeight * 0.5f
+        val startX = width * 0.1f
+        pager.onTouchEvent(MotionEvent.obtain(0, 0, MotionEvent.ACTION_DOWN, startX, y, 0))
+        val steps = 16
+        for (step in 1..steps) {
+            val x = startX + width * travelFraction * (step.toFloat() / steps)
+            pager.onTouchEvent(MotionEvent.obtain(0, step * 16L, MotionEvent.ACTION_MOVE, x, y, 0))
+            harness.idle()
+        }
+    }
+
+    /** Releases the held drag at [fraction] of the pager's width, the way a finger lifts. */
+    private fun releaseAt(pager: ViewPagerFixed, fraction: Float) {
+        val y = pager.measuredHeight * 0.5f
+        pager.onTouchEvent(MotionEvent.obtain(0, 400, MotionEvent.ACTION_UP, pager.measuredWidth * fraction, y, 0))
+        harness.idle()
+    }
+
+    private fun <T : View> findView(root: View?, type: Class<T>): T? {
+        if (root == null) {
+            return null
+        }
+        if (type.isInstance(root)) {
+            return type.cast(root)
+        }
+        if (root is ViewGroup) {
+            for (index in 0 until root.childCount) {
+                findView(root.getChildAt(index), type)?.let { return it }
+            }
+        }
+        return null
+    }
+
+    /** A private field of an upstream view, read the way the render tests read the strip's own. */
+    @Suppress("UNCHECKED_CAST")
+    private fun <T> field(target: Any, name: String): T {
+        var type: Class<*>? = target.javaClass
+        while (type != null) {
+            try {
+                val declared = type.getDeclaredField(name)
+                declared.isAccessible = true
+                return declared.get(target) as T
+            } catch (ignored: NoSuchFieldException) {
+                type = type.superclass
+            }
+        }
+        throw NoSuchFieldException(name)
     }
 
     private fun listRowCount(): Int = contentListOf(harness.activity)?.adapter?.itemCount ?: 0

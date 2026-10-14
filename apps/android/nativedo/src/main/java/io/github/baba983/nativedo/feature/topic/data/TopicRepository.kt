@@ -3,6 +3,7 @@ package io.github.baba983.nativedo.feature.topic.data
 import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.core.model.PostReactionUsersGroup
 import io.github.baba983.nativedo.core.model.TopicDetail
+import io.github.baba983.nativedo.core.model.TopicPostsPage
 import java.io.File
 import io.github.baba983.nativedo.core.model.UploadedFile
 import io.github.baba983.nativedo.core.network.DiscourseApiClient
@@ -22,7 +23,7 @@ open class TopicRepository protected constructor() {
         client.fetchTopic(topicId = topicId, postNumber = postNumber)
     }
 
-    open suspend fun loadPosts(topicId: Long, postIds: List<Long>): Result<List<Post>> = runCatching {
+    open suspend fun loadPosts(topicId: Long, postIds: List<Long>): Result<TopicPostsPage> = runCatching {
         client.fetchTopicPosts(topicId = topicId, postIds = postIds)
     }
 

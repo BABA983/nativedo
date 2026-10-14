@@ -2,6 +2,7 @@ package io.github.baba983.nativedo.messages;
 
 import android.content.Context;
 import android.os.Bundle;
+import android.os.Parcelable;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -16,6 +17,7 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.ImageLocation;
 import org.telegram.messenger.NotificationCenter;
+import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.ActionBarMenuItem;
@@ -29,6 +31,7 @@ import org.telegram.ui.Components.ItemOptions;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.Components.ScrollSlidingTextTabStrip;
+import org.telegram.ui.Components.ViewPagerFixed;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -67,10 +70,15 @@ import io.github.baba983.nativedo.topic.TopicFragment;
  * (a {@link FragmentFloatingButton}), in the composer's private-message mode.</p>
  *
  * <p>The three boxes are Telegram's own horizontal tab strip ({@link ScrollSlidingTextTabStrip},
- * the component the profile's media pages put under their bar): a tap moves the strip's indicator
- * and reads that box's route, so the box on screen is the tab under the indicator. The strip's
- * colours come from the theme keys, so the day/night switch recolours it in place. The public
- * channels live behind their own screen and are offered from the overflow menu.</p>
+ * the component the profile's media pages put under their bar) over upstream's own
+ * {@link ViewPagerFixed}, the pager the profile's media pages and DialogsActivity's search use. A
+ * tap slides the pager onto that box, a finger swipe slides the two pages under the strip and
+ * commits the box the finger landed on, and the strip's indicator follows the pager's own clock -
+ * exactly the wiring {@code ProfileSharedMediaView} gives its pages. Each box is a page of its own:
+ * its own list, its own scroll, its own loading and empty state and its own read, so nothing of one
+ * box survives onto another and switching back destroys nothing. The strip's colours come from the
+ * theme keys, so the day/night switch recolours it in place. The public channels live behind their
+ * own screen and are offered from the overflow menu.</p>
  */
 public class PrivateMessagesFragment extends BaseFragment {
 
@@ -97,41 +105,43 @@ public class PrivateMessagesFragment extends BaseFragment {
     /** How close to the end the list comes before the next page is asked for. */
     private static final int LOAD_MORE_THRESHOLD = 3;
 
-    private RecyclerListView listView;
-    /** DialogsActivity's own shimmer (4059-4064): the rows drawn while no answer has landed. */
-    private FlickerLoadingView progressView;
+    /** The boxes, in the order the strip shows them: a tab id is its index here. */
+    private static final PrivateMessageBox[] BOXES = {
+            PrivateMessageBox.Inbox, PrivateMessageBox.Sent, PrivateMessageBox.Unread,
+    };
+
+    /** The pager that slides the three boxes: upstream's own, the profile's media pages' pager. */
+    private ViewPagerFixed pager;
     /** The box strip (the profile's media tabs, SharedMediaLayout): a tap reads that box. */
     private ScrollSlidingTextTabStrip tabsView;
     /** The compose button: DialogsActivity's own floating button, bottom-right (3956, 4719). */
     private FragmentFloatingButton composeButton;
     private ActionBarMenuItem optionsItem;
 
-    private final List<TopicSummary> items = new ArrayList<>();
-    /** One author per row, so the picture is fetched once and the row re-bound when it lands. */
-    private final List<TLRPC.User> authors = new ArrayList<>();
-    /** The ids already listed, so a page that overlaps the last one adds no second row. */
-    private final Set<Long> seenIds = new HashSet<>();
+    /**
+     * The three boxes, each with its own rows, scroll and read state. They outlive the views: a
+     * screen whose views are dropped and built again (the tab host does that) keeps the rows it has
+     * already read, so nothing re-reads and no page loses its place.
+     */
+    private final BoxPage[] pages = {
+            new BoxPage(PrivateMessageBox.Inbox, TAB_INBOX),
+            new BoxPage(PrivateMessageBox.Sent, TAB_SENT),
+            new BoxPage(PrivateMessageBox.Unread, TAB_UNREAD),
+    };
+    /** The box on screen, as its index in {@link #BOXES}. */
+    private int currentTab;
+
+    /** The context the pager builds its page views in, captured for the adapter (see createView). */
+    private Context viewContext;
 
     private AppContainer container;
-    private PrivateMessageBox box = PrivateMessageBox.Inbox;
-    private boolean loading;
-    /** Whether the box holds nothing at all, which is its own row rather than a blank list. */
-    private boolean empty;
-    private int page;
-    /** Set when a page came back with nothing new: that is the end of the list. */
-    private boolean reachedTheEnd;
 
-    /**
-     * The explicit session state the list shows in place of rows, or {@code null} while it shows
-     * content. Its value survives neither an identity change nor a view recreation: both drop it.
-     */
-    private SessionUiState stateUi;
     /** The session value the screen last acted on, so a change can be told from a repeat. */
     private AppSessionState lastSessionState;
     /**
      * Bumped whenever the account changes or the views go away. A read captures it before it starts
      * and drops its own answer if it no longer matches, so a late page from the previous account
-     * (or another box) cannot repopulate the list.
+     * (or another box) cannot repopulate a list.
      */
     private int loadEpoch;
     /** The session-state observer; cancelled with the views and started again with the next ones. */
@@ -168,8 +178,9 @@ public class PrivateMessagesFragment extends BaseFragment {
 
     @Override
     protected View createView(Context context) {
+        viewContext = context;
         actionBar.setTitle("私信");
-        actionBar.setSubtitle(boxLabel(box));
+        actionBar.setSubtitle(boxLabel(BOXES[currentTab]));
         actionBar.setBackButtonImage(org.telegram.messenger.R.drawable.ic_ab_back);
         actionBar.setAllowOverlayTitle(true);
         actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
@@ -187,52 +198,82 @@ public class PrivateMessagesFragment extends BaseFragment {
         optionsItem.setContentDescription("更多");
         optionsItem.setOnClickListener(v -> showItemOptions());
 
-        listView = new RecyclerListView(context);
-        listView.setLayoutManager(new LinearLayoutManager(context));
-        listView.setAdapter(new MessageAdapter());
-        // The rows are DialogCells, so the chat list's own shimmer is the matching one
-        // (DialogsActivity:4059-4064, 4695): it is the list's empty view, and only until the first
-        // answer lands.
-        progressView = new FlickerLoadingView(context);
-        progressView.setViewType(FlickerLoadingView.DIALOG_CELL_TYPE);
-        progressView.setVisibility(View.GONE);
-        listView.setEmptyView(progressView);
-        listView.setAnimateEmptyView(true, RecyclerListView.EMPTY_VIEW_ANIMATION_TYPE_ALPHA);
-        listView.setVerticalScrollBarEnabled(false);
-        checkUi_listPadding();
-        listView.setOnItemClickListener((view, position) -> {
-            if (stateUi != null) {
-                onStateAction();
-            } else if (position >= 0 && position < items.size()) {
-                open(items.get(position));
-            }
-        });
-        listView.addOnScrollListener(new RecyclerView.OnScrollListener() {
-            @Override
-            public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
-                loadNextPageIfNeeded();
-            }
-        });
-
-        // The box strip under the bar, over the list: the same component the profile's media pages
-        // place under their bar. A tap moves the indicator and reads that box's own route.
+        // The box strip under the bar, over the pager: the same component the profile's media pages
+        // place under their bar. A tap moves the indicator and slides the pager onto that box.
         tabsView = new ScrollSlidingTextTabStrip(context, resourceProvider);
+        // The strip's own tap animation and the pager's slide use the same clock, so they settle
+        // together (ProfileSharedMediaView does the same with its 320 ms).
+        tabsView.animationDuration = 320;
         tabsView.setDelegate(new BoxTabsDelegate());
         buildTabs();
+
+        // The pages: upstream's ViewPagerFixed, the profile's media pager. A tap calls its
+        // scrollToPosition; a finger swipe is its own touch path. Its strip-following hooks are the
+        // same calls ProfileSharedMediaView makes, so the pages and the strip share one clock.
+        pager = new ViewPagerFixed(context, resourceProvider) {
+            @Override
+            protected long getManualScrollDuration() {
+                return 320;
+            }
+
+            @Override
+            public void onTabAnimationUpdate(boolean manual) {
+                followStripWithPager();
+            }
+
+            @Override
+            protected void onTabPageSelected(int position, boolean forward) {
+                onPagerLanded(position);
+            }
+
+            @Override
+            protected void onItemSelected(View currentPage, View oldPage, int position, int oldPosition) {
+                // A finger swipe committed (swapViews calls this): the box follows the page.
+                onPagerLanded(position);
+            }
+        };
+        pager.setAdapter(new ViewPagerFixed.Adapter() {
+            @Override
+            public int getItemCount() {
+                return pages.length;
+            }
+
+            @Override
+            public View createView(int viewType) {
+                return createPageView(viewType);
+            }
+
+            @Override
+            public void bindView(View view, int position, int viewType) {
+                // A page's rows are bound by its own adapter when they arrive.
+            }
+
+            @Override
+            public int getItemViewType(int position) {
+                return position;
+            }
+
+            @Override
+            public CharSequence getItemTitle(int position) {
+                return boxLabel(BOXES[position]);
+            }
+        });
+        // The pager always starts on page 0; point it at the box the reader last chose (a view
+        // built again after the tab host dropped it), without animating.
+        if (currentTab != 0) {
+            pager.setPosition(currentTab);
+        }
 
         LinearLayout column = new LinearLayout(context);
         column.setOrientation(LinearLayout.VERTICAL);
         column.addView(tabsView, LayoutHelper.createLinear(
                 LayoutHelper.MATCH_PARENT, TAB_STRIP_HEIGHT_DP));
-        column.addView(listView, LayoutHelper.createLinear(
+        column.addView(pager, LayoutHelper.createLinear(
                 LayoutHelper.MATCH_PARENT, 0, 1f));
 
         FrameLayout frame = new FrameLayout(context);
         frame.addView(column, LayoutHelper.createFrame(
                 LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
-        // The shimmer rides over the list, centred, the way DialogsActivity draws its own (4062).
-        frame.addView(progressView, LayoutHelper.createFrame(
-                LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER));
         // The compose button: DialogsActivity's own floating button, bottom-right (3963, 4719).
         // Its default layout puts it 14dp above the list's bottom; checkUi_listPadding lifts it
         // over the navigation inset and reserves the matching room under the last row.
@@ -248,11 +289,12 @@ public class PrivateMessagesFragment extends BaseFragment {
         container = NativeDo.container(getParentActivity());
         // The session is read before the list: an account with no usable session gets the explicit
         // state row (and the read is not even sent).
-        stateUi = null;
         lastSessionState = container.getSessionCoordinator().getSessionState().getValue();
         observeSession();
         if (lastSessionState instanceof AppSessionState.Authenticated) {
-            loadPage();
+            onPagerLanded(currentTab);
+        } else {
+            onSessionState(lastSessionState);
         }
         return fragmentView;
     }
@@ -273,13 +315,26 @@ public class PrivateMessagesFragment extends BaseFragment {
 
     /**
      * The tab/view host drops a screen's views without destroying the fragment: the observer belongs
-     * to the views, so it is dropped here and started again from {@link #createView}. Bumping the
-     * epoch drops any read still in flight for the old views.
+     * to the views, so it is dropped here and started again from {@link #createView} - and the page
+     * views go with them, while the rows each box has read stay. Bumping the epoch drops any read
+     * still in flight for the old views; a page that was mid-read is marked unread so it is asked
+     * again, a page that already answered keeps its rows and is not.
      */
     @Override
     public void clearViews() {
         stopSessionObservation();
         loadEpoch++;
+        for (BoxPage page : pages) {
+            if (page.loading) {
+                page.loading = false;
+                page.loaded = false;
+            }
+            page.detachViews();
+        }
+        pager = null;
+        tabsView = null;
+        composeButton = null;
+        optionsItem = null;
         super.clearViews();
     }
 
@@ -291,9 +346,6 @@ public class PrivateMessagesFragment extends BaseFragment {
                 themeObserver, NotificationCenter.didSetNewTheme);
         stopSessionObservation();
         loadEpoch++;
-        if (progressView != null) {
-            listView.setEmptyView(null);
-        }
         super.onFragmentDestroy();
     }
 
@@ -314,9 +366,9 @@ public class PrivateMessagesFragment extends BaseFragment {
 
     /**
      * A new session value. The first one for this view was already acted on in {@link #createView},
-     * so a value equal to it changes nothing; anything else drops the old account's rows and, when
-     * the session is usable again, reads them again - immediately, so an open screen never keeps
-     * showing the previous account.
+     * so a value equal to it changes nothing; anything else drops the old account's rows from every
+     * box and, when the session is usable again, reads the box on screen again - immediately, so an
+     * open screen never keeps showing the previous account.
      */
     private void onSessionState(AppSessionState state) {
         boolean identityChanged = !SessionUi.identity(lastSessionState).equals(SessionUi.identity(state));
@@ -327,39 +379,35 @@ public class PrivateMessagesFragment extends BaseFragment {
         }
         if (state instanceof AppSessionState.Authenticated) {
             if (identityChanged) {
-                stateUi = null;
                 notifyRowsChanged();
-                loadPage();
+                ensureLoaded(pages[currentTab]);
             }
         } else {
-            stateUi = SessionUi.stateFor(state);
-            loading = false;
+            for (BoxPage page : pages) {
+                page.stateUi = SessionUi.stateFor(state);
+                page.loading = false;
+            }
             notifyRowsChanged();
         }
     }
 
-    /** Drops every row and restarts the paging bookkeeping, so nothing of the old account stays. */
+    /** Drops every box's rows and restarts its paging bookkeeping, so nothing of the old account stays. */
     private void resetForReload() {
-        items.clear();
-        authors.clear();
-        seenIds.clear();
-        empty = false;
-        loading = false;
-        page = 0;
-        reachedTheEnd = false;
+        for (BoxPage page : pages) {
+            page.reset();
+        }
     }
 
-    /** The tap on a state row: recover the session, or read again. */
-    private void onStateAction() {
-        if (stateUi == null) {
+    /** The tap on a state row: recover the session, or read again - the stateless retry reads this box. */
+    private void onStateAction(BoxPage page) {
+        if (page == null || page.stateUi == null) {
             return;
         }
-        SessionUiAction action = SessionUi.action(stateUi);
+        SessionUiAction action = SessionUi.action(page.stateUi);
         if (action == SessionUiAction.Retry) {
-            stateUi = null;
-            resetForReload();
-            notifyRowsChanged();
-            loadPage();
+            page.reset();
+            notifyRowsChanged(page);
+            loadPage(page);
             return;
         }
         openRecovery(action == SessionUiAction.OpenVerification);
@@ -398,10 +446,9 @@ public class PrivateMessagesFragment extends BaseFragment {
         }
         lastSessionState = now;
         loadEpoch++;
-        stateUi = null;
         resetForReload();
         notifyRowsChanged();
-        loadPage();
+        ensureLoaded(pages[currentTab]);
     }
 
     /** The overflow menu: which box is shown (checked) and the public channels screen. */
@@ -409,6 +456,7 @@ public class PrivateMessagesFragment extends BaseFragment {
         if (optionsItem == null) {
             return;
         }
+        PrivateMessageBox box = BOXES[currentTab];
         ItemOptions io = ItemOptions.makeOptions(this, optionsItem);
         io.setColors(getThemedColor(Theme.key_actionBarDefaultTitle), getThemedColor(Theme.key_actionBarDefaultTitle));
         io.setDimAlpha(0x08);
@@ -433,38 +481,19 @@ public class PrivateMessagesFragment extends BaseFragment {
     }
 
     /**
-     * Switches the box shown, from the strip's tap or the menu. The strip has already moved for a
-     * tap ({@code syncTabs} is false there); the menu has not, so it is pointed at the new box
-     * there. Either way the old box's rows are dropped and a read still in flight for it lands on
-     * nothing (the epoch and box are both checked when it answers).
+     * Switches the box shown from the menu: the pager slides there under its own clock, and the
+     * landing ({@link #onPagerLanded}) points the strip at it, reads it if it has not answered, and
+     * drops nothing of the box it is leaving.
      */
     private void selectBox(PrivateMessageBox newBox) {
-        selectBox(newBox, false);
-    }
-
-    private void selectBox(PrivateMessageBox newBox, boolean syncTabs) {
-        if (newBox == box) {
-            if (syncTabs) {
-                syncTabsToBox();
-            }
+        int tab = tabForBox(newBox);
+        if (tab == currentTab) {
             return;
         }
-        box = newBox;
-        actionBar.setSubtitle(boxLabel(box));
-        if (syncTabs) {
-            syncTabsToBox();
-        }
-        loadEpoch++;
-        stateUi = null;
-        resetForReload();
-        notifyRowsChanged();
-        loadPage();
-    }
-
-    /** Points the strip at the box on screen without re-entering the tap path. */
-    private void syncTabsToBox() {
-        if (tabsView != null) {
-            tabsView.selectTabWithId(tabForBox(box), 1f);
+        if (pager != null) {
+            pager.scrollToPosition(tab);
+        } else {
+            onPagerLanded(tab);
         }
     }
 
@@ -493,19 +522,7 @@ public class PrivateMessagesFragment extends BaseFragment {
         }
     }
 
-    private static PrivateMessageBox boxForTab(int tabId) {
-        switch (tabId) {
-            case TAB_SENT:
-                return PrivateMessageBox.Sent;
-            case TAB_UNREAD:
-                return PrivateMessageBox.Unread;
-            case TAB_INBOX:
-            default:
-                return PrivateMessageBox.Inbox;
-        }
-    }
-
-    /** Builds the three box tabs once, with the current box selected and the rest themed. */
+    /** Builds the three box tabs once, with the box on screen selected and the rest themed. */
     private void buildTabs() {
         if (tabsView == null) {
             return;
@@ -513,8 +530,59 @@ public class PrivateMessagesFragment extends BaseFragment {
         tabsView.addTextTab(TAB_INBOX, boxLabel(PrivateMessageBox.Inbox));
         tabsView.addTextTab(TAB_SENT, boxLabel(PrivateMessageBox.Sent));
         tabsView.addTextTab(TAB_UNREAD, boxLabel(PrivateMessageBox.Unread));
-        tabsView.setInitialTabId(tabForBox(box));
+        tabsView.setInitialTabId(currentTab);
         tabsView.finishAddingTabs();
+    }
+
+    /**
+     * The pager landed on [position]: that box is now the one on screen. Called from a tap's
+     * {@code onTabPageSelected} (the strip has already animated itself there, upstream's own way)
+     * and from a finger swipe's committed {@code onItemSelected}; either way the box's own read is
+     * asked for only if it has not answered yet, so switching back never re-reads it.
+     */
+    private void onPagerLanded(int position) {
+        if (position < 0 || position >= pages.length) {
+            return;
+        }
+        currentTab = position;
+        if (actionBar != null) {
+            actionBar.setSubtitle(boxLabel(BOXES[position]));
+        }
+        if (tabsView != null && tabsView.getCurrentTabId() != position) {
+            tabsView.selectTabWithId(position, 1f);
+        }
+        ensureLoaded(pages[position]);
+    }
+
+    private void ensureLoaded(BoxPage page) {
+        if (!page.loaded) {
+            loadPage(page);
+        }
+    }
+
+    /**
+     * The strip follows the pager while a swipe is in flight - the indicator slides between the two
+     * tabs and their text colours interpolate - exactly the way {@code ProfileSharedMediaView} drives
+     * its strip from upstream's pager (the fraction is how far the pager's animated position has
+     * come from the tab it is on toward the tab it is heading to, and back to 0 when the drag is
+     * cancelled). The pager owns the clock here, so the strip is driven from it.
+     */
+    private void followStripWithPager() {
+        if (tabsView == null || tabsView.getTabsCount() < 2 || pager == null) {
+            return;
+        }
+        View[] pageViews = pager.getViewPages();
+        if (pageViews == null || pageViews.length < 2 || pageViews[1] == null) {
+            return;
+        }
+        final int current = pager.getCurrentPosition();
+        final int next = pager.getNextPosition();
+        if (next == current || next < 0 || next >= tabsView.getTabsCount()) {
+            return;
+        }
+        final float p = pager.getPositionAnimated();
+        final float frac = Utilities.clamp(Math.abs(p - current) / Math.abs(next - current), 1f, 0f);
+        tabsView.selectTabWithId(next, frac);
     }
 
     /** Starts a private message; [recipient] is prefilled when an entry point already knows it. */
@@ -530,71 +598,139 @@ public class PrivateMessagesFragment extends BaseFragment {
         presentFragment(TopicFragment.forTopic(topic.getId(), topic.getTitle()));
     }
 
-    private void loadPage() {
+    /**
+     * Draws one box: its own list (upstream's list of {@link DialogCell} rows), its own shimmer
+     * while no answer has landed, and its own scroll. The view is the pager's page, so the pager
+     * builds it once and keeps it: the rows are the box's own, never another box's.
+     */
+    private View createPageView(int index) {
+        final BoxPage page = pages[index];
+        final Context context = viewContext;
+        final RecyclerListView list = new RecyclerListView(context);
+        list.setLayoutManager(new LinearLayoutManager(context));
+        page.adapter = new MessageAdapter(page);
+        list.setAdapter(page.adapter);
+        // The rows are DialogCells, so the chat list's own shimmer is the matching one
+        // (DialogsActivity:4059-4064, 4695): it is the list's empty view, and only until the first
+        // answer lands.
+        FlickerLoadingView progress = new FlickerLoadingView(context);
+        progress.setViewType(FlickerLoadingView.DIALOG_CELL_TYPE);
+        progress.setVisibility(View.GONE);
+        list.setEmptyView(progress);
+        list.setAnimateEmptyView(true, RecyclerListView.EMPTY_VIEW_ANIMATION_TYPE_ALPHA);
+        list.setVerticalScrollBarEnabled(false);
+        list.setOnItemClickListener((view, position) -> {
+            if (page.stateUi != null) {
+                onStateAction(page);
+            } else if (position >= 0 && position < page.items.size()) {
+                open(page.items.get(position));
+            }
+        });
+        list.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            @Override
+            public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
+                loadNextPageIfNeeded(page);
+            }
+        });
+        page.listView = list;
+        page.progressView = progress;
+        // The pager detaches a page when it slides away; its rows stay in the box, and so does its
+        // place: the scroll is saved on detach and put back on the next attach.
+        FrameLayout pageView = new FrameLayout(context) {
+            @Override
+            protected void onAttachedToWindow() {
+                super.onAttachedToWindow();
+                if (page.layoutManagerState != null && page.listView != null
+                        && page.listView.getLayoutManager() != null) {
+                    page.listView.getLayoutManager().onRestoreInstanceState(page.layoutManagerState);
+                    page.layoutManagerState = null;
+                }
+            }
+
+            @Override
+            protected void onDetachedFromWindow() {
+                if (page.listView != null && page.listView.getLayoutManager() != null) {
+                    page.layoutManagerState = page.listView.getLayoutManager().onSaveInstanceState();
+                }
+                super.onDetachedFromWindow();
+            }
+        };
+        pageView.addView(list, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        // The shimmer rides over the list, centred, the way DialogsActivity draws its own (4062).
+        pageView.addView(progress, LayoutHelper.createFrame(
+                LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER));
+        applyListPadding(page);
+        return pageView;
+    }
+
+    private void loadPage(BoxPage page) {
         String username = sessionUsername();
-        if (container == null || loading || reachedTheEnd || username == null) {
+        if (container == null || page.loading || page.reachedTheEnd || username == null) {
             return;
         }
         // Without a usable session there is nothing private to read: the state row is the screen.
         if (!(lastSessionState instanceof AppSessionState.Authenticated)) {
             return;
         }
-        loading = true;
-        final int asked = page;
+        page.loaded = true;
+        page.loading = true;
+        final int asked = page.page;
         final int epoch = loadEpoch;
-        final PrivateMessageBox askedBox = box;
         final String askedUsername = username;
-        PrivateMessagesLoader.INSTANCE.page(container, username, box, asked, loaded -> {
-            if (epoch != loadEpoch || askedBox != box || !askedUsername.equals(sessionUsername())) {
+        final PrivateMessageBox askedBox = page.box;
+        PrivateMessagesLoader.INSTANCE.page(container, username, askedBox, asked, loaded -> {
+            if (epoch != loadEpoch || !askedUsername.equals(sessionUsername())) {
                 return kotlin.Unit.INSTANCE;
             }
-            loading = false;
-            stateUi = null;
-            page = asked + 1;
+            page.loading = false;
+            page.stateUi = null;
+            page.page = asked + 1;
             int added = 0;
             for (TopicSummary topic : loaded.getTopics()) {
-                if (seenIds.add(topic.getId())) {
-                    items.add(topic);
-                    authors.add(author(topic));
+                if (page.seenIds.add(topic.getId())) {
+                    page.items.add(topic);
+                    page.authors.add(author(topic));
                     added++;
                 }
             }
             // The site's own `more_topics_url` is what says another page follows; a page that
             // brought nothing new ends the list too, so a site that repeats a page cannot loop.
-            reachedTheEnd = loaded.getMoreTopicsUrl() == null || added == 0;
-            empty = items.isEmpty();
-            notifyRowsChanged();
-            fetchAvatars();
+            page.reachedTheEnd = loaded.getMoreTopicsUrl() == null || added == 0;
+            page.empty = page.items.isEmpty();
+            notifyRowsChanged(page);
+            fetchAvatars(page);
             return kotlin.Unit.INSTANCE;
         }, error -> {
-            if (epoch != loadEpoch || askedBox != box || !askedUsername.equals(sessionUsername())) {
+            if (epoch != loadEpoch || !askedUsername.equals(sessionUsername())) {
                 return kotlin.Unit.INSTANCE;
             }
-            loading = false;
+            page.loading = false;
             FileLog.e("private messages failed", error);
             // A read that did not arrive is its own explicit state, not a blank list - but only
             // while there is nothing to read: a page that failed with rows already on screen leaves
             // them standing, and the next scroll asks again.
-            if (items.isEmpty()) {
-                stateUi = SessionUi.stateForLoadFailure(error);
+            if (page.items.isEmpty()) {
+                page.stateUi = SessionUi.stateForLoadFailure(error);
             }
-            notifyRowsChanged();
+            notifyRowsChanged(page);
             return kotlin.Unit.INSTANCE;
         });
     }
 
     /** Asks for the next page once the reader is within a few rows of the end of this one. */
-    private void loadNextPageIfNeeded() {
-        if (listView == null || listView.getAdapter() == null || items.isEmpty() || reachedTheEnd) {
+    private void loadNextPageIfNeeded(BoxPage page) {
+        if (page.listView == null || page.listView.getAdapter() == null
+                || page.items.isEmpty() || page.reachedTheEnd) {
             return;
         }
-        LinearLayoutManager manager = (LinearLayoutManager) listView.getLayoutManager();
+        LinearLayoutManager manager = (LinearLayoutManager) page.listView.getLayoutManager();
         if (manager == null
                 || manager.findLastVisibleItemPosition()
-                < listView.getAdapter().getItemCount() - 1 - LOAD_MORE_THRESHOLD) {
+                < page.listView.getAdapter().getItemCount() - 1 - LOAD_MORE_THRESHOLD) {
             return;
         }
-        loadPage();
+        loadPage(page);
     }
 
     /** Whose messages these are: the site answers the box only for the reader themselves. */
@@ -611,27 +747,33 @@ public class PrivateMessagesFragment extends BaseFragment {
     }
 
     /** Each row's author picture is fetched once, then the list is bound again. */
-    private void fetchAvatars() {
-        for (int index = 0; index < authors.size(); index++) {
+    private void fetchAvatars(BoxPage page) {
+        for (int index = 0; index < page.authors.size(); index++) {
             final int row = index;
-            String template = index < items.size() ? items.get(index).getAuthorAvatarTemplate() : "";
+            String template = index < page.items.size() ? page.items.get(index).getAuthorAvatarTemplate() : "";
             String url = DiscourseAvatars.INSTANCE.url(
                     template, container.getBaseUrl(), DiscourseAvatars.DEFAULT_SIZE);
-            if (url == null || DiscourseAvatars.INSTANCE.isCached(authors.get(index))) {
+            if (url == null || DiscourseAvatars.INSTANCE.isCached(page.authors.get(index))) {
                 continue;
             }
-            DiscourseLoader.INSTANCE.cacheAvatar(container, url, authors.get(index), () -> {
-                if (listView != null && listView.getAdapter() != null) {
-                    listView.getAdapter().notifyItemChanged(row);
+            DiscourseLoader.INSTANCE.cacheAvatar(container, url, page.authors.get(index), () -> {
+                if (page.listView != null && page.listView.getAdapter() != null) {
+                    page.listView.getAdapter().notifyItemChanged(row);
                 }
                 return kotlin.Unit.INSTANCE;
             });
         }
     }
 
+    private void notifyRowsChanged(BoxPage page) {
+        if (page != null && page.listView != null && page.listView.getAdapter() != null) {
+            page.listView.getAdapter().notifyDataSetChanged();
+        }
+    }
+
     private void notifyRowsChanged() {
-        if (listView != null && listView.getAdapter() != null) {
-            listView.getAdapter().notifyDataSetChanged();
+        for (BoxPage page : pages) {
+            notifyRowsChanged(page);
         }
     }
 
@@ -645,16 +787,23 @@ public class PrivateMessagesFragment extends BaseFragment {
      * The list's own padding, and the compose button's lift. The button's default layout pins it
      * 14dp above the frame's bottom, so the navigation inset is what its translation has to clear;
      * the list reserves the button's room plus the inset under its last row, so a row can always be
-     * scrolled clear of the button and the system gesture area.
+     * scrolled clear of the button and the system gesture area. Every box's list keeps the room, so
+     * a swipe onto a box that has not been laid out yet still lands with its last row clear.
      */
     private void checkUi_listPadding() {
-        if (listView != null) {
-            listView.setPadding(0, AndroidUtilities.dp(4), 0,
-                    AndroidUtilities.dp(4) + navigationBarHeight
-                            + AndroidUtilities.dp(FAB_LIST_CLEARANCE_DP));
+        for (BoxPage page : pages) {
+            applyListPadding(page);
         }
         if (composeButton != null) {
             composeButton.setTranslationY(-navigationBarHeight);
+        }
+    }
+
+    private void applyListPadding(BoxPage page) {
+        if (page != null && page.listView != null) {
+            page.listView.setPadding(0, AndroidUtilities.dp(4), 0,
+                    AndroidUtilities.dp(4) + navigationBarHeight
+                            + AndroidUtilities.dp(FAB_LIST_CLEARANCE_DP));
         }
     }
 
@@ -670,8 +819,10 @@ public class PrivateMessagesFragment extends BaseFragment {
         if (composeButton != null) {
             composeButton.updateColors();
         }
-        if (progressView != null) {
-            progressView.invalidate();
+        for (BoxPage page : pages) {
+            if (page.progressView != null) {
+                page.progressView.invalidate();
+            }
         }
         notifyRowsChanged();
         if (actionBar != null) {
@@ -702,7 +853,7 @@ public class PrivateMessagesFragment extends BaseFragment {
 
     /** The box currently shown, so a test can say a switch happened. */
     PrivateMessageBox currentBox() {
-        return box;
+        return BOXES[currentTab];
     }
 
     /** The box strip, so a test can drive a tab the way the reader taps one. */
@@ -710,41 +861,116 @@ public class PrivateMessagesFragment extends BaseFragment {
         return tabsView;
     }
 
+    /** The pager that slides the boxes, so a test can drive a finger the way the reader does. */
+    ViewPagerFixed pager() {
+        return pager;
+    }
+
     /** The compose button, so a test can tap it and read its inset lift. */
     FragmentFloatingButton composeButton() {
         return composeButton;
     }
 
-    /** The list, so a test can read its own padding against the inset. */
+    /** The list of the box on screen, so a test can read its own padding and rows. */
     RecyclerListView listView() {
-        return listView;
+        BoxPage page = pages[currentTab];
+        return page == null ? null : page.listView;
     }
 
-    /** The strip's own delegate: a tab tap reads that box's route. */
+    /** One box: its rows, its own list and scroll, its own read state, fenced by the load epoch. */
+    private final class BoxPage {
+
+        final PrivateMessageBox box;
+        final int tab;
+        /** One author per row, so the picture is fetched once and the row re-bound when it lands. */
+        final List<TopicSummary> items = new ArrayList<>();
+        final List<TLRPC.User> authors = new ArrayList<>();
+        /** The ids already listed, so a page that overlaps the last one adds no second row. */
+        final Set<Long> seenIds = new HashSet<>();
+
+        SessionUiState stateUi;
+        RecyclerListView listView;
+        FlickerLoadingView progressView;
+        MessageAdapter adapter;
+        /** The page's scroll, saved when the pager detaches the view and put back when it returns. */
+        Parcelable layoutManagerState;
+
+        boolean loading;
+        /** Whether the box holds nothing at all, which is its own row rather than a blank list. */
+        boolean empty;
+        /** Set once a read has been sent for this box: switching back to it does not re-read it. */
+        boolean loaded;
+        int page;
+        /** Set when a page came back with nothing new: that is the end of the list. */
+        boolean reachedTheEnd;
+
+        BoxPage(PrivateMessageBox box, int tab) {
+            this.box = box;
+            this.tab = tab;
+        }
+
+        /** Drops every row and restarts the paging bookkeeping, so nothing of the old account stays. */
+        void reset() {
+            items.clear();
+            authors.clear();
+            seenIds.clear();
+            stateUi = null;
+            loading = false;
+            empty = false;
+            loaded = false;
+            page = 0;
+            reachedTheEnd = false;
+            layoutManagerState = null;
+        }
+
+        /** The views are gone with the screen: keep the scroll, drop the references. */
+        void detachViews() {
+            if (listView != null && listView.getLayoutManager() != null) {
+                layoutManagerState = listView.getLayoutManager().onSaveInstanceState();
+            }
+            listView = null;
+            adapter = null;
+            progressView = null;
+        }
+    }
+
+    /** The strip's own delegate: a tab tap slides the pager onto that box. */
     private class BoxTabsDelegate implements ScrollSlidingTextTabStrip.ScrollSlidingTabStripDelegate {
 
         @Override
         public void onPageSelected(int pageId, boolean forward) {
-            // The strip has already moved its indicator onto the tab; the box follows it.
-            selectBox(boxForTab(pageId));
+            // The strip has already moved its indicator onto the tab; the pager follows it there,
+            // and its landing reads that box (the tap's own clock is getManualScrollDuration).
+            if (pager != null) {
+                pager.scrollToPosition(pageId);
+            } else {
+                onPagerLanded(pageId);
+            }
         }
 
-        /** A second tap on the tab in front of the reader: the list goes back to its top. */
+        /** A second tap on the tab in front of the reader: the box's list goes back to its top. */
         @Override
         public void onSamePageSelected() {
-            if (listView != null) {
-                listView.smoothScrollToPosition(0);
+            BoxPage page = pages[currentTab];
+            if (page != null && page.listView != null) {
+                page.listView.smoothScrollToPosition(0);
             }
         }
 
         @Override
         public void onPageScrolled(float progress) {
-            // The list has no second page to slide: the strip's own indicator animation is the
-            // whole movement, so there is nothing to do per frame.
+            // The pager owns the clock here, so the strip follows it (followStripWithPager);
+            // upstream's pages are the ones that follow this callback.
         }
     }
 
     private class MessageAdapter extends RecyclerListView.SelectionAdapter {
+
+        private final BoxPage page;
+
+        MessageAdapter(BoxPage page) {
+            this.page = page;
+        }
 
         @NonNull
         @Override
@@ -765,18 +991,18 @@ public class PrivateMessagesFragment extends BaseFragment {
         @Override
         public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
             if (holder.itemView instanceof TextInfoPrivacyCell) {
-                String text = stateUi != null
-                        ? SessionUi.text(holder.itemView.getContext(), stateUi).toString()
+                String text = page.stateUi != null
+                        ? SessionUi.text(holder.itemView.getContext(), page.stateUi).toString()
                         : "还没有私信";
                 ((TextInfoPrivacyCell) holder.itemView).setText(text);
                 return;
             }
-            TopicSummary topic = items.get(position);
+            TopicSummary topic = page.items.get(position);
             DialogCell cell = (DialogCell) holder.itemView;
             // All boxes carry the site's own unread count, including replies to a PM we started.
             cell.setDialog(DiscourseRows.topicRow(topic, false));
             // `setDialog` clears the row's avatar receiver, so the author's photo goes in after it.
-            TLRPC.User user = authors.get(position);
+            TLRPC.User user = page.authors.get(position);
             ImageLocation avatar = DiscourseAvatars.INSTANCE.imageLocation(user);
             if (avatar != null) {
                 cell.avatarImage.setImage(
@@ -786,26 +1012,26 @@ public class PrivateMessagesFragment extends BaseFragment {
 
         @Override
         public int getItemViewType(int position) {
-            if (stateUi != null) {
+            if (page.stateUi != null) {
                 return TYPE_STATE;
             }
-            return empty ? TYPE_NOTE : TYPE_MESSAGE;
+            return page.empty ? TYPE_NOTE : TYPE_MESSAGE;
         }
 
         @Override
         public int getItemCount() {
-            if (stateUi != null) {
+            if (page.stateUi != null) {
                 return 1;
             }
-            return empty ? 1 : items.size();
+            return page.empty ? 1 : page.items.size();
         }
 
         @Override
         public boolean isEnabled(RecyclerView.ViewHolder holder) {
-            if (stateUi != null) {
-                return SessionUi.hasAction(stateUi);
+            if (page.stateUi != null) {
+                return SessionUi.hasAction(page.stateUi);
             }
-            return !empty && !(holder.itemView instanceof TextInfoPrivacyCell);
+            return !page.empty && !(holder.itemView instanceof TextInfoPrivacyCell);
         }
     }
 }

@@ -1,5 +1,6 @@
 package io.github.baba983.nativedo.topic;
 
+import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -84,6 +85,174 @@ public class PostListView extends RecyclerListView {
     private float trackAnimationProgress;
     private float endTrackingX;
     private boolean wasTrackingVibrate;
+
+    /**
+     * What the screen tells the list about the next-topic pull: whether the reader may make it now,
+     * and what to do when one is let go past the threshold.
+     */
+    public interface NextTopicPullHost {
+        /** Whether the reader may pull from the end of this list to another topic right now. */
+        boolean canPullNextTopic();
+
+        /** The reader let go past the threshold at the end of the list. */
+        void onPullNextTopic();
+    }
+
+    /**
+     * The pull the reader makes once the list is at the end of the topic's real stream: how far it
+     * has come, in pixels, from the end. The screen reads it to draw the card, and the manager below
+     * is the only thing that moves it (as the reference's own ListManager moves its chat).
+     */
+    private float pullingDownOffset;
+    private ValueAnimator pullingDownBackAnimator;
+    private NextTopicPullHost nextTopicPullHost;
+    /**
+     * The card the pull reveals. Drawn by this list's own {@code dispatchDraw}, after its children
+     * (a card drawn in {@code onDraw} would sit under the post bubbles), so it repaints as the pull
+     * grows. It cannot be drawn by the screen's frame instead: a {@code ViewGroup}'s own
+     * {@code dispatchDraw} output is recorded in that parent's display list, and invalidating a
+     * child does not rebuild it.
+     */
+    private final NextTopicPullDrawable pullDrawable = new NextTopicPullDrawable(this);
+
+    /** The card the pull reveals; the screen names the candidate and drives its finish animation. */
+    NextTopicPullDrawable pullDrawable() {
+        return pullDrawable;
+    }
+
+    /**
+     * Sets what the screen says about the pull. The list never guesses a candidate itself; the
+     * screen owns the site's suggestion and the states that forbid the pull.
+     */
+    public void setNextTopicPullHost(NextTopicPullHost host) {
+        nextTopicPullHost = host;
+    }
+
+    /** How far the pull from the end has come, in pixels; 0 when there is none. */
+    public float getPullingDownOffset() {
+        return pullingDownOffset;
+    }
+
+    /**
+     * Puts the pull back to rest; the screen calls this when a release asked for the next topic but
+     * the screen could not take it, so the card does not stay up over the list.
+     */
+    public void cancelNextTopicPull() {
+        if (pullingDownOffset == 0) {
+            return;
+        }
+        animatePullingDownBack();
+    }
+
+    /**
+     * The list's manager: upstream's chat-list manager, plus the pull from the end of the topic's
+     * stream. Mirrors {@code ChatActivity.ChatLayoutManager.scrollVerticallyBy} for the end of the
+     * list instead of the top of a channel.
+     */
+    public androidx.recyclerview.widget.GridLayoutManagerFixed createChatLayoutManager(Context context) {
+        return new EndOfListPullLayoutManager(context);
+    }
+
+    private class EndOfListPullLayoutManager
+            extends androidx.recyclerview.widget.GridLayoutManagerFixed {
+
+        EndOfListPullLayoutManager(Context context) {
+            super(context, 1000, androidx.recyclerview.widget.LinearLayoutManager.VERTICAL, false);
+        }
+
+        @Override
+        public int scrollVerticallyBy(int dy, RecyclerView.Recycler recycler, RecyclerView.State state) {
+            // A reverse drag while the pull is up gives the pull back first, before the list moves
+            // (the reference's own rule, same direction).
+            if (dy < 0 && pullingDownOffset != 0) {
+                pullingDownOffset += dy;
+                if (pullingDownOffset < 0) {
+                    dy = (int) pullingDownOffset;
+                    pullingDownOffset = 0;
+                } else {
+                    dy = 0;
+                }
+                PostListView.this.invalidate();
+            }
+
+            int scrolled = super.scrollVerticallyBy(dy, recycler, state);
+
+            // Only an upward drag the list could not take - the real end, with the whole stream
+            // loaded and nothing else claiming the gesture - grows the pull. The damping and the
+            // 110dp/160dp ramp are the reference's.
+            boolean allow = nextTopicPullHost != null && nextTopicPullHost.canPullNextTopic()
+                    && PostListView.this.getScrollState() == RecyclerView.SCROLL_STATE_DRAGGING
+                    && !hasTextSelection()
+                    && !PostListView.this.canScrollVertically(1);
+            if (allow && dy > 0 && scrolled == 0) {
+                if (pullingDownBackAnimator != null) {
+                    pullingDownBackAnimator.removeAllListeners();
+                    pullingDownBackAnimator.cancel();
+                }
+                float k;
+                if (pullingDownOffset < AndroidUtilities.dp(NextTopicPullDrawable.PULL_THRESHOLD_DP)) {
+                    float progress = pullingDownOffset / AndroidUtilities.dp(NextTopicPullDrawable.PULL_THRESHOLD_DP);
+                    k = 0.65f * (1f - progress) + 0.45f * progress;
+                } else if (pullingDownOffset < AndroidUtilities.dp(160)) {
+                    float progress = (pullingDownOffset - AndroidUtilities.dp(NextTopicPullDrawable.PULL_THRESHOLD_DP)) / AndroidUtilities.dp(50);
+                    k = 0.45f * (1f - progress) + 0.05f * progress;
+                } else {
+                    k = 0.05f;
+                }
+                pullingDownOffset += dy * k;
+                PostListView.this.invalidate();
+            }
+
+            // The reference's own overscroll change: while the pull is up the list must not draw its
+            // own glow over the card.
+            int overScroll = pullingDownOffset == 0
+                    ? View.OVER_SCROLL_ALWAYS : View.OVER_SCROLL_NEVER;
+            if (PostListView.this.getOverScrollMode() != overScroll) {
+                PostListView.this.setOverScrollMode(overScroll);
+            }
+            return scrolled;
+        }
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent e) {
+        if (e != null && pullingDownOffset != 0
+                && (e.getActionMasked() == MotionEvent.ACTION_UP
+                || e.getActionMasked() == MotionEvent.ACTION_CANCEL)) {
+            onPullingDownGestureEnd(e.getActionMasked() == MotionEvent.ACTION_UP);
+        }
+        return super.dispatchTouchEvent(e);
+    }
+
+    /**
+     * The release, ported from the reference's chat list {@code onTouchEvent}: a let-go past the
+     * threshold with a candidate to go to asks the screen for it; anything under the threshold, and
+     * every {@code ACTION_CANCEL}, only puts the pull back.
+     */
+    private void onPullingDownGestureEnd(boolean actionUp) {
+        float progress = Math.min(1f, pullingDownOffset / AndroidUtilities.dp(NextTopicPullDrawable.PULL_THRESHOLD_DP));
+        if (actionUp && progress >= 1f && nextTopicPullHost != null
+                && nextTopicPullHost.canPullNextTopic()) {
+            nextTopicPullHost.onPullNextTopic();
+            return;
+        }
+        animatePullingDownBack();
+    }
+
+    private void animatePullingDownBack() {
+        if (pullingDownBackAnimator != null) {
+            pullingDownBackAnimator.removeAllListeners();
+            pullingDownBackAnimator.cancel();
+        }
+        pullingDownBackAnimator = ValueAnimator.ofFloat(pullingDownOffset, 0f);
+        pullingDownBackAnimator.addUpdateListener(animation -> {
+            pullingDownOffset = (float) animation.getAnimatedValue();
+            invalidate();
+        });
+        pullingDownBackAnimator.setDuration(200);
+        pullingDownBackAnimator.setInterpolator(AndroidUtilities.decelerateInterpolator);
+        pullingDownBackAnimator.start();
+    }
 
     private float springMultiplier = 2000f;
 
@@ -349,6 +518,38 @@ public class PostListView extends RecyclerListView {
             }
             drawReplyButton(c);
         }
+    }
+
+    /**
+     * The card the pull reveals, over the children: a card drawn in {@code onDraw} would sit under
+     * the post bubbles it is meant to cover, so it is drawn after they are (this list is the view
+     * that repaints as the pull grows, which is also why the card is drawn here and not in the
+     * screen's frame - a {@code ViewGroup}'s recorded display list is not rebuilt when a child is
+     * invalidated).
+     */
+    @Override
+    protected void dispatchDraw(Canvas canvas) {
+        // ChatActivity lifts the messages with the pull, exposing the next-topic card below them.
+        canvas.save();
+        canvas.translate(0, -pullingDownOffset);
+        super.dispatchDraw(canvas);
+        canvas.restore();
+        drawNextTopicPull(canvas);
+    }
+
+    /**
+     * The reference's own placement above the composer: the list's own height less the band it
+     * keeps for the composer.
+     */
+    private void drawNextTopicPull(Canvas canvas) {
+        if (pullingDownOffset <= 0f) {
+            pullDrawable.reset();
+            return;
+        }
+        pullDrawable.setWidth(getWidth());
+        float anchor = getHeight() - getPaddingBottom();
+        float progress = Math.min(1f, pullingDownOffset / AndroidUtilities.dp(NextTopicPullDrawable.PULL_THRESHOLD_DP));
+        pullDrawable.draw(canvas, this, anchor, progress, 1f);
     }
 
     /** The disc the drag paints: ChatActivity's chat list `drawReplyButton`. */

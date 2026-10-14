@@ -10,7 +10,6 @@
 package io.github.baba983.nativedo.search;
 
 import android.content.Context;
-import android.graphics.Canvas;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -107,25 +106,30 @@ public class SearchPanel extends FrameLayout {
     private static final int SEARCH_DELAY_MS = 300;
 
     /**
-     * The pill capsule's top edge: the bar's own lower edge, where DialogsActivity lays its search
-     * capsule (4717; its onLayout 1286-1290 puts that child at {@code actionBar.getMeasuredHeight()}).
-     * This container's own top is that edge already - the topic list puts the search container at
-     * the bar's measured height - so the capsule starts at 0 there, right under the field's open
-     * slot.
+     * The pill capsule's own height: DialogsActivity adds its search capsule at
+     * {@code SEARCH_TABS_HEIGHT} and lays it at {@code actionBar.getMeasuredHeight()} (4717,
+     * onLayout 1286-1290); the capsule sits at this panel's {@link #topInset} and the lists keep
+     * that plus the field's 4dp blur reach as their first-row padding.
      */
-    private static final int TABS_TOP_DP = 0;
     private static final int TABS_HEIGHT_DP = DialogsActivity.SEARCH_TABS_HEIGHT;
 
     private final Theme.ResourcesProvider resourcesProvider;
     private final Delegate delegate;
     private final ViewPagerFixed pager;
     private final SearchTabsAndFiltersLayout tabsContainer;
-    /** The capsule's blur source; the recorded content is the pager the capsule floats over. */
-    private final GlassPanelHost glassHost;
+    /**
+     * The bar's occupied height and the navigation bar's, so the capsule sits under the bar and the
+     * rows keep their first slot below it whatever the window insets say; the container above this
+     * panel is full height, so this panel places its own controls against them (the topic list
+     * hands the bar's measured height in).
+     */
+    private int topInset;
+    private int bottomInset;
     private final List<Page> pages = new ArrayList<>();
     private AppContainer container;
     private String query = "";
     private Runnable pendingSearch;
+    private Runnable onScrolled;
     private int requestGeneration;
     private boolean destroyed;
     private boolean categoriesRequested;
@@ -147,7 +151,8 @@ public class SearchPanel extends FrameLayout {
     private final List<TLRPC.User> postPeers = new ArrayList<>();
     private final List<TLRPC.User> userPeers = new ArrayList<>();
 
-    public SearchPanel(Context context, Theme.ResourcesProvider resourcesProvider, Delegate delegate) {
+    public SearchPanel(Context context, Theme.ResourcesProvider resourcesProvider, Delegate delegate,
+            GlassPanelHost glassHost) {
         super(context);
         this.resourcesProvider = resourcesProvider;
         this.delegate = delegate;
@@ -174,8 +179,11 @@ public class SearchPanel extends FrameLayout {
                 LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
 
         // DialogsActivity's search tab capsule (4715-4723): the pill tabs inside the top panel's
-        // glass, radius 18 and padding 6.666, 7dp of inner padding, 4dp in from each side.
-        glassHost = new GlassPanelHost(pager, this);
+        // glass, radius 18 and padding 6.666, 7dp of inner padding, 4dp in from each side. The
+        // capsule draws from the screen's own host, not a host of its own: that host records the
+        // result-only page the top controls read through, so one recording serves the bar's band,
+        // the field's glass and this capsule - and the capsule is never part of what is recorded
+        // (a source that drew the capsule would sample itself).
         tabsContainer = new SearchTabsAndFiltersLayout(context);
         tabsContainer.setPadding(0, AndroidUtilities.dp(7), 0, AndroidUtilities.dp(7));
         BlurredBackgroundDrawable background = glassHost.createPanel(
@@ -188,7 +196,12 @@ public class SearchPanel extends FrameLayout {
         tabsContainer.addView(tabsView, LayoutHelper.createFrame(
                 LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.FILL));
         addView(tabsContainer, LayoutHelper.createFrame(
-                LayoutHelper.MATCH_PARENT, TABS_HEIGHT_DP, Gravity.TOP, 4, TABS_TOP_DP, 4, 0));
+                LayoutHelper.MATCH_PARENT, TABS_HEIGHT_DP, Gravity.TOP, 4, 0, 4, 0));
+
+        // Telegram's search list is its own white page (DialogsActivity gives the pager
+        // {@code key_windowBackgroundWhite}, 7560-7562): the results sit on that white, not on the
+        // feed's colours, so a row behind the header reads as a search row.
+        setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite, resourcesProvider));
     }
 
     /** The site this panel asks; the screen hands in the container it booted with. */
@@ -196,11 +209,44 @@ public class SearchPanel extends FrameLayout {
         this.container = container;
     }
 
-    @Override
-    protected void dispatchDraw(Canvas canvas) {
-        // The pill capsule's blur source records the page behind it, before the capsule is drawn.
-        glassHost.record();
-        super.dispatchDraw(canvas);
+    /**
+     * The screen's own invalidation, run when a page is scrolled: the header's glass records the
+     * rows a frame at a time, and a child's own scroll does not redraw the screen's view (the
+     * topic list's own list invalidates its screen the same way). Null while no screen has set it.
+     */
+    public void setOnScrolled(Runnable onScrolled) {
+        this.onScrolled = onScrolled;
+    }
+
+    /**
+     * The controls' occupied height (the bar's measured height, status bar included) and the
+     * navigation bar's. The panel's own container is full height now - the results reach behind the
+     * bar - so the capsule and every page's first-row padding are placed against these, and a late
+     * window inset moves them with the list instead of leaving a clip band behind.
+     */
+    public void setInsets(int topInset, int bottomInset) {
+        this.topInset = topInset;
+        this.bottomInset = bottomInset;
+        if (tabsContainer != null) {
+            ViewGroup.LayoutParams params = tabsContainer.getLayoutParams();
+            if (params instanceof ViewGroup.MarginLayoutParams
+                    && ((ViewGroup.MarginLayoutParams) params).topMargin != topInset) {
+                ((ViewGroup.MarginLayoutParams) params).topMargin = topInset;
+                tabsContainer.setLayoutParams(params);
+            }
+        }
+        for (Page page : pages) {
+            page.applyInsets(topInset, bottomInset);
+        }
+    }
+
+    /**
+     * The result-only content the screen's header glass records: the pages and their rows, without
+     * the capsule that floats over them. The topic list hands it to the screen's {@link
+     * GlassPanelHost} while the search is up.
+     */
+    public View resultsView() {
+        return pager;
     }
 
     /**
@@ -285,7 +331,9 @@ public class SearchPanel extends FrameLayout {
 
     /** Re-reads the theme colours, for the day/night switch. */
     public void updateColors() {
-        glassHost.updateColors();
+        // The capsule's own drawable is recoloured by the screen's host ({@code GlassPanelHost}
+        // owns every drawable made from it), so only this panel's page colour is read here.
+        setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite, resourcesProvider));
         tabsContainer.updateColors();
         for (Page page : pages) {
             page.notifyRows();
@@ -551,6 +599,7 @@ public class SearchPanel extends FrameLayout {
         final StickerEmptyView emptyView;
         final PageAdapter adapter;
         final RecyclerItemsEnterAnimator itemsEnterAnimator;
+        final FlickerLoadingView loadingView;
 
         Page(int kind, CharSequence title) {
             this.kind = kind;
@@ -564,18 +613,16 @@ public class SearchPanel extends FrameLayout {
             listView.setVerticalScrollBarEnabled(false);
             listView.setClipToPadding(false);
             itemsEnterAnimator = new RecyclerItemsEnterAnimator(listView, true);
-            // The pill capsule floats over the rows the way the home strip does: the pages keep
-            // the capsule's height as padding (plus the 4dp the field's own blur reaches below
-            // its bounds), so the first row starts under it and the rows scroll beneath
-            // (DialogsActivity's own search page padding, 14014-14026; the bar's height is the
-            // container's own top here).
-            listView.setPadding(0, AndroidUtilities.dp(TABS_HEIGHT_DP) + AndroidUtilities.dp(4),
-                    0, AndroidUtilities.dp(4));
             listView.setOnItemClickListener((view, position) -> adapter.open(position));
 
-            FlickerLoadingView loadingView = new FlickerLoadingView(context, resourcesProvider);
+            loadingView = new FlickerLoadingView(context, resourcesProvider);
             loadingView.setViewType(upstreamLoadingViewType(kind));
-            loadingView.setPaddingTop(listView.getPaddingTop());
+            // The pill capsule floats over the rows the way the home strip does: the pages keep
+            // the capsule's height as padding, so the first row starts under it and the rows
+            // scroll beneath (DialogsActivity's own search page padding, 14014-14026). The padding
+            // is re-derived from the bar's height by applyInsets, so a late window inset moves it
+            // with the list instead of leaving a clip band under the controls.
+            applyInsets(topInset, bottomInset);
             emptyView = new StickerEmptyView(
                     context, loadingView, StickerEmptyView.STICKER_TYPE_SEARCH, resourcesProvider);
             emptyView.subtitle.setVisibility(View.GONE);
@@ -588,7 +635,32 @@ public class SearchPanel extends FrameLayout {
                     LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
             listView.setAnimateEmptyView(true, RecyclerListView.EMPTY_VIEW_ANIMATION_TYPE_ALPHA);
             listView.setEmptyView(emptyView);
+            // A row that moved is a row the header's glass has to re-record (the topic list's own
+            // list invalidates its screen on every scrolled frame, 881-890).
+            listView.addOnScrollListener(new RecyclerView.OnScrollListener() {
+                @Override
+                public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
+                    if (onScrolled != null) {
+                        onScrolled.run();
+                    }
+                }
+            });
             showIdle();
+        }
+
+        /**
+         * The first row's slot: the bar's own height plus the capsule's, so the rows rest on the
+         * controls' lower edge; the bottom keeps the last row reachable above the navigation bar.
+         * The list is not clipped to its padding, so a scrolled row is drawn up behind the header
+         * instead of stopping under the controls.
+         */
+        void applyInsets(int topInset, int bottomInset) {
+            listView.setPadding(0,
+                    topInset + AndroidUtilities.dp(TABS_HEIGHT_DP) + AndroidUtilities.dp(4),
+                    0, bottomInset + AndroidUtilities.dp(4));
+            if (loadingView != null) {
+                loadingView.setPaddingTop(listView.getPaddingTop());
+            }
         }
 
         void notifyRows() {

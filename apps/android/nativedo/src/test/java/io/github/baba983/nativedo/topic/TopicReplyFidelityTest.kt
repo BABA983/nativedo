@@ -1,5 +1,10 @@
 package io.github.baba983.nativedo.topic
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.os.SystemClock
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import io.github.baba983.nativedo.app.NativeDo
@@ -19,17 +24,23 @@ import io.github.baba983.nativedo.harness.shadows.ShadowSQLiteCursor
 import io.github.baba983.nativedo.harness.shadows.ShadowSQLiteDatabase
 import io.github.baba983.nativedo.harness.shadows.ShadowSQLitePreparedStatement
 import io.github.baba983.nativedo.harness.shadows.ShadowUtilities
+import okhttp3.mockwebserver.MockResponse
 import org.json.JSONArray
 import org.json.JSONObject
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import org.telegram.messenger.ApplicationLoader
 import org.telegram.ui.Cells.ChatMessageCell
 import org.telegram.ui.Components.ChatActivityEnterView
 import org.telegram.ui.Components.RecyclerListView
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * What the reply flow actually draws on the host, as retained PNGs: a loaded and an unloaded reply
@@ -38,6 +49,7 @@ import org.telegram.ui.Components.RecyclerListView
  * interactions artifacts and are the machine-checkable half of the device pass.
  */
 @RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(
     application = ApplicationLoader::class,
     instrumentedPackages = ["org.telegram"],
@@ -142,6 +154,139 @@ internal class TopicReplyFidelityTest {
 
         assertTrue("the strip is put away after cancel", !composer().isTopViewVisible())
         harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * A reply whose target the loaded window did not carry is read from the site after the floor is
+     * already drawn. When it lands, the floor's own text has not changed: only the reply preview is
+     * added to the row. The failure this pins: the floor is rebuilt by removing its rows and
+     * inserting fresh ones, which the list animates one after the other - the drawn post fades out,
+     * its row goes briefly blank, and a new cell fades in, so the message area blinks as a preview
+     * arrives. The oracle is the drawn screen: the floor may never be drawn twice at once, and its
+     * body must still be drawn on the same row once the preview is.
+     */
+    @Test
+    fun aReplyTargetThatLandsLateIsDrawnIntoTheFloorWithoutReplacingItsRow() {
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val posts = listOf(
+            post(id = 1001, floor = 1, username = "baba", name = "Baba", cooked = "<p>floor one body</p>"),
+            post(
+                id = 1003, floor = 3, username = "baba", name = "Baba",
+                cooked = "<p>floor three body quote paragraph</p>" +
+                    "<details><summary>More</summary><p>Expanded before the target arrives</p></details>",
+                replyTo = 90,
+            ),
+        )
+        site.serveJson("t/$TOPIC_ID.json", topicJson(posts, posts.map { it.getLong("id") }))
+        site.serveResponse("posts/by_number/$TOPIC_ID/90.json") {
+            entered.countDown()
+            release.await(60, TimeUnit.SECONDS)
+            MockResponse().setHeader("Content-Type", "application/json").setBody(
+                post(id = 90, floor = 90, username = "dora", name = "Dora", cooked = "<p>the ninetieth floor</p>")
+                    .toString(),
+            )
+        }
+        harness.bootApp()
+        harness.await("the topic list") { rowCount() == 2 }
+        harness.present(TopicFragment.forTopic(TOPIC_ID, "Replies"))
+        harness.await("the two floors") { rowCount() == 2 && laidOutCells().isNotEmpty() }
+        harness.drawApp()
+        harness.await("the unloaded target to be read") { entered.count == 0L }
+
+        val before = laidOutCells().first { it.messageObject?.id == 1003 }
+        val top = before.top
+        assertTrue(
+            "the floor's body must be drawn before its target lands",
+            before.messageObject!!.richLayout.joinedText.contains("floor three body quote"),
+        )
+        val header = before.messageObject!!.richLayout.blocks
+            .filterIsInstance<org.telegram.messenger.RichMessageLayout.RichDetailsBlock>().first()
+        val x = before.textX + header.padding.left + 80f
+        val y = before.textY + header.currY + header.height / 2f
+        for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
+            val event = MotionEvent.obtain(SystemClock.uptimeMillis(), SystemClock.uptimeMillis(), action, x, y, 0)
+            assertTrue("the production cell must handle the details tap", before.onTouchEvent(event))
+            event.recycle()
+        }
+        harness.idleClock(600)
+        harness.drawApp()
+        assertTrue("details must expand before the target arrives",
+            before.messageObject!!.richLayout.joinedText.contains("Expanded before the target arrives"))
+
+        release.countDown()
+        repeat(80) { step ->
+            harness.idle(1)
+            layoutContent()
+            java.util.concurrent.locks.LockSupport.parkNanos(500_000L)
+            val copies = laidOutCells().count { it.messageObject?.id == 1003 }
+            assertTrue(
+                "the floor must not be duplicated as its reply target lands (frame $step): $copies",
+                copies <= 1,
+            )
+        }
+        harness.await("the reply preview to be drawn") {
+            harness.layoutApp()
+            harness.idle()
+            laidOutCells().firstOrNull { it.messageObject?.id == 1003 }
+                ?.messageObject?.replyMessageObject != null
+        }
+        harness.drawApp()
+
+        val after = laidOutCells().first { it.messageObject?.id == 1003 }
+        assertSame("the target's preview must be drawn into the floor's own row", before, after)
+        assertEquals("the floor must not move as its target lands", top, after.top)
+        assertTrue(
+            "the floor's body must still be drawn once the preview is",
+            after.messageObject!!.richLayout.joinedText.contains("floor three body quote"),
+        )
+        assertTrue(
+            "the target's preview must be on the row",
+            after.messageObject!!.replyMessageObject != null,
+        )
+        assertTrue("a late reply preview must not collapse the reader's expanded details",
+            after.messageObject!!.richLayout.joinedText.contains("Expanded before the target arrives"))
+        assertTrue(
+            "the floor's own body must still be legible on the drawn row",
+            darkPixelsIn(after) > 0,
+        )
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /** Lays the activity's content out without draining the looper, so a frame can be sampled. */
+    private fun layoutContent() {
+        val content = harness.activity.findViewById<ViewGroup>(android.R.id.content) ?: return
+        content.measure(
+            View.MeasureSpec.makeMeasureSpec(harness.width, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(harness.height, View.MeasureSpec.AT_MOST),
+        )
+        content.layout(0, 0, content.measuredWidth, content.measuredHeight)
+    }
+
+    /** The body text's own dark pixels inside [cell]'s drawn bounds, read from a real render. */
+    private fun darkPixelsIn(cell: ChatMessageCell): Int {
+        val content = harness.activity.findViewById<ViewGroup>(android.R.id.content) ?: return 0
+        val bitmap = Bitmap.createBitmap(
+            content.measuredWidth.coerceAtLeast(1),
+            content.measuredHeight.coerceAtLeast(1),
+            Bitmap.Config.ARGB_8888,
+        )
+        bitmap.eraseColor(Color.WHITE)
+        content.draw(Canvas(bitmap))
+        val location = IntArray(2).also { cell.getLocationInWindow(it) }
+        val left = location[0].coerceAtLeast(0)
+        val right = (location[0] + cell.width).coerceAtMost(bitmap.width)
+        val top = location[1].coerceAtLeast(0)
+        val bottom = (location[1] + cell.height).coerceAtMost(bitmap.height)
+        var dark = 0
+        for (y in top until bottom) {
+            for (x in left until right) {
+                val pixel = bitmap.getPixel(x, y)
+                if (Color.red(pixel) < 90 && Color.green(pixel) < 90 && Color.blue(pixel) < 90) dark++
+            }
+        }
+        println("reply flicker: dark body pixels in the floor's row = $dark")
+        return dark
     }
 
     private fun renderScreen(name: String) {

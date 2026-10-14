@@ -34,6 +34,7 @@ import org.telegram.ui.Components.RecyclerListView
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.LockSupport
 import okhttp3.mockwebserver.MockResponse
 
 /**
@@ -280,6 +281,177 @@ internal class TopicHeaderAvatarTest {
         harness.assertNoTelegramSideEffects()
     }
 
+    /**
+     * A topic opened through a body link names no title: the capsule is created and drawn with an
+     * empty title, and only the site's answer names the topic (a link's factory carries none:
+     * {@code DidPressUrl -> TopicFragment.forFloor(topicId, null, floor)}). An empty title still
+     * measures to its padding, so the capsule is laid out before the real title exists; an
+     * already-laid-out SimpleTextView then skips requestLayout when its text changes
+     * ({@code recreateLayoutMaybe} only re-creates the layout), the header keeps the empty title's
+     * box, and the marquee's own layer shears the site's longer line in half. The header must ask
+     * to be laid out again for the site's title; the subtitle stays whole and the title still
+     * scrolls.
+     *
+     * <p>The frame clock is held while the answer lands, so the capsule is looked at in the state a
+     * reader sees when the title arrives between two frames - the transient this pins. The end
+     * state (the box that holds the whole line, the subtitle, the marquee) is checked once the
+     * clock runs again.</p>
+     */
+    @Test
+    fun aLinkWithoutATitleLaysTheCapsuleOutForTheSiteTitle() {
+        val title = "民航航空CaDav全新CaDav更新：一个长到必须滚动才能看全的中文标题"
+        val answer = CountDownLatch(1)
+        site.serveResponse("t/$TOPIC_ID.json") {
+            answer.await(30, TimeUnit.SECONDS)
+            MockResponse().setHeader("Content-Type", "application/json")
+                .setBody(org.json.JSONObject(topicJson()).put("title", title).toString())
+        }
+        harness.bootApp()
+        harness.await("the topic list") { rowCount() == 2 }
+        // A body link: the arguments name no title; only the site's answer has it.
+        harness.present(TopicFragment.forTopic(TOPIC_ID, null))
+        harness.drawApp()
+        val titleView = capsule().titleTextView
+        assertTrue("the link's capsule drew an empty title", titleView.text.isNullOrEmpty())
+        val emptyBox = titleView.height
+
+        val pausedFrames = org.robolectric.shadows.ShadowChoreographer.isPaused()
+        org.robolectric.shadows.ShadowChoreographer.setPaused(true)
+        try {
+            answer.countDown()
+            // Step the looper one task at a time: the answer sets the title in one task, and the
+            // layout pass that would hide the stale box is a later one. Stop the instant the title
+            // lands, so the capsule is read in the state the reader sees when it arrives.
+            var landed = false
+            for (i in 0 until 2_000) {
+                harness.idle(1)
+                if (!titleView.text.isNullOrEmpty()) {
+                    landed = true
+                    break
+                }
+                LockSupport.parkNanos(1_000_000L)
+            }
+            assertTrue("the site's title reached the capsule", landed)
+            assertEquals("the site's title reached the capsule", title, titleView.text.toString())
+            assertTrue(
+                "the empty title's box ($emptyBox px) is shorter than the site's own line " +
+                    "(${titleView.textHeight} px + ${titleView.paddingBottom} px of padding), yet the " +
+                    "capsule was not asked to lay out again, so the line would be drawn clipped",
+                titleView.isLayoutRequested,
+            )
+        } finally {
+            org.robolectric.shadows.ShadowChoreographer.setPaused(pausedFrames)
+        }
+
+        // With the frame clock running, the pending layout pass gives the title the box its line needs.
+        harness.await("the capsule to lay out for the site's title", iterations = 600) {
+            harness.drawApp()
+            val tv = capsule().titleTextView
+            tv.height - tv.paddingBottom >= tv.textHeight
+        }
+        val laid = capsule().titleTextView
+        assertTrue(
+            "the title's box (${laid.height} px) must hold its whole line (${laid.textHeight} px)",
+            laid.height - laid.paddingBottom >= laid.textHeight,
+        )
+        assertTrue("the subtitle stays whole", subtitle(capsule()).isNotEmpty())
+
+        // The long title must still scroll: the fix asks for a layout, it does not disable the marquee.
+        val bitmap = Bitmap.createBitmap(laid.width, laid.height, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bitmap)
+        laid.draw(canvas)
+        val initialX = laid.layoutX
+        repeat(160) {
+            org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(17))
+            laid.draw(canvas)
+        }
+        assertTrue(
+            "the title still scrolls after the late bind (${initialX} -> ${laid.layoutX})",
+            laid.layoutX < initialX - 10,
+        )
+        harness.renderApp("header-profile-link-late-title")
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * The control for the link above: a topic opened from a row already names its title in the
+     * arguments, so the capsule is laid out with the real title from the first pass - the box holds
+     * the line without any later re-measure.
+     */
+    @Test
+    fun aRowThatNamesTheTitleDrawsTheCapsuleWholeAtOnce() {
+        val title = "民航航空CaDav全新CaDav更新：一个长到必须滚动才能看全的中文标题"
+        site.serveJson("t/$TOPIC_ID.json", org.json.JSONObject(topicJson()).put("title", title).toString())
+        harness.bootApp()
+        harness.await("the topic list") { rowCount() == 2 }
+        harness.present(TopicFragment.forTopic(TOPIC_ID, title, "baba", authorTemplate))
+        harness.await("the topic") { rowCount() == 1 }
+        harness.drawApp()
+        val titleView = capsule().titleTextView
+        assertEquals("the row's title reached the capsule", title, titleView.text.toString())
+        assertTrue(
+            "a title known before the first pass holds its whole line " +
+                "(box=${titleView.height} th=${titleView.textHeight})",
+            titleView.height - titleView.paddingBottom >= titleView.textHeight,
+        )
+        harness.renderApp("header-profile-row-title")
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * The same link, answered at once: the site's title lands while the capsule is still being
+     * created, so it is laid out with the real title from the first pass and drawn whole.
+     */
+    @Test
+    fun aLinkAnsweredAtOnceDrawsTheCapsuleWhole() {
+        val title = "民航航空CaDav全新CaDav更新：一个长到必须滚动才能看全的中文标题"
+        site.serveJson("t/$TOPIC_ID.json", org.json.JSONObject(topicJson()).put("title", title).toString())
+        harness.bootApp()
+        harness.await("the topic list") { rowCount() == 2 }
+        harness.present(TopicFragment.forTopic(TOPIC_ID, null))
+        harness.await("the topic") { rowCount() == 1 }
+        harness.drawApp()
+        val titleView = capsule().titleTextView
+        assertEquals("the site's title reached the capsule", title, titleView.text.toString())
+        assertTrue(
+            "a link answered at once draws the whole title " +
+                "(box=${titleView.height} th=${titleView.textHeight})",
+            titleView.height - titleView.paddingBottom >= titleView.textHeight,
+        )
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * The discussion page shares the capsule, so its header goes through the same [setCapsuleTitle]
+     * path: a page opened with no title in its arguments is named only by the answer that resolves
+     * its parent, and its title must be laid out whole too.
+     */
+    @Test
+    fun aThreadOpenedWithoutATitleLaysTheCapsuleOutForTheSiteTitle() {
+        val title = "民航航空CaDav全新CaDav更新：一个长到必须滚动才能看全的中文标题"
+        val base = org.json.JSONObject(topicJson()).put("title", title)
+        // The replies endpoint is never read for a root the site says has none.
+        base.getJSONObject("post_stream").getJSONArray("posts").getJSONObject(0).put("reply_count", 0)
+        site.serveJson("t/$TOPIC_ID/$THREAD_PARENT_FLOOR.json", base.toString())
+        harness.bootApp()
+        harness.await("the topic list") { rowCount() == 2 }
+        harness.present(TopicFragment.forReplies(TOPIC_ID, null, THREAD_PARENT_ID, THREAD_PARENT_FLOOR, 0))
+        harness.await("the parent resolved from the site") {
+            harness.visibleFragment() is TopicFragment &&
+                capsule().titleTextView.text?.toString() == title
+        }
+        harness.drawApp()
+        val titleView = capsule().titleTextView
+        assertEquals("the site's title reached the thread's capsule", title, titleView.text.toString())
+        assertTrue(
+            "the thread's capsule holds its whole title line " +
+                "(box=${titleView.height} th=${titleView.textHeight})",
+            titleView.height - titleView.paddingBottom >= titleView.textHeight,
+        )
+        harness.renderApp("header-profile-thread-title")
+        harness.assertNoTelegramSideEffects()
+    }
+
     // ---------------------------------------------------------------------- fixture shaping
 
     /** The list the reader came from: the first topic's original poster is [authorTemplate]'s. */
@@ -380,5 +552,7 @@ internal class TopicHeaderAvatarTest {
     private companion object {
         const val TOPIC_ID = 404L
         const val RESUME_FLOOR = 50
+        const val THREAD_PARENT_ID = 1001L
+        const val THREAD_PARENT_FLOOR = 1
     }
 }

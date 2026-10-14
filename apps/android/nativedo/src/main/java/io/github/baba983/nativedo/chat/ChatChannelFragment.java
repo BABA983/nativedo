@@ -14,9 +14,12 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ChatMessageSharedResources;
+import org.telegram.messenger.FileLoader;
 import org.telegram.messenger.FileLog;
+import org.telegram.messenger.ImageLocation;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.NotificationCenter;
+import org.telegram.messenger.RichMessageLayout;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.AlertDialog;
@@ -34,6 +37,7 @@ import org.telegram.ui.Components.inset.WindowInsetsStateHolder;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import io.github.baba983.nativedo.app.GlassPanelHost;
 import io.github.baba983.nativedo.app.NativeDo;
@@ -51,9 +55,11 @@ import io.github.baba983.nativedo.sessionui.SessionUiAction;
 import io.github.baba983.nativedo.sessionui.SessionUiState;
 import io.github.baba983.nativedo.topic.DiscourseAvatars;
 import io.github.baba983.nativedo.topic.DiscourseComposerDelegate;
+import io.github.baba983.nativedo.topic.DiscourseComposerTools;
 import io.github.baba983.nativedo.topic.DiscourseImageBridge;
 import io.github.baba983.nativedo.topic.DiscourseLoader;
 import io.github.baba983.nativedo.topic.DiscourseRows;
+import io.github.baba983.nativedo.topic.PostImage;
 import io.github.baba983.nativedo.topic.PostListView;
 import io.github.baba983.nativedo.topic.PreparedPostBody;
 
@@ -118,6 +124,17 @@ public class ChatChannelFragment extends BaseFragment {
     private int loadEpoch;
     private int navigationBarHeight;
     private int composerHeight;
+
+    /** The site's own emoji / @mention tools over the composer; null until the screen is built. */
+    private DiscourseComposerTools composerTools;
+    /**
+     * The floating round page-down button, upstream's own (the one a chat floats over its composer):
+     * it carries the count of messages that arrived below a reader who is reading history, and its
+     * tap jumps to them.
+     */
+    private org.telegram.ui.Components.chat.buttons.ChatActivityBlurredRoundPageDownButton pendingButton;
+    /** How many arrivals the reader has not seen yet; 0 hides the button. */
+    private int pendingCount;
 
     private SessionUiState stateUi;
     private AppSessionState lastSessionState;
@@ -187,6 +204,11 @@ public class ChatChannelFragment extends BaseFragment {
             @Override
             public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
                 loadOlderIfNeeded();
+                // Reaching the newest is what makes the arrivals seen; the count and its button go.
+                if (pendingCount > 0 && isAtBottom()) {
+                    clearPending();
+                    markNewestRead();
+                }
             }
         });
         contentView.addView(listView, LayoutHelper.createFrame(
@@ -214,6 +236,9 @@ public class ChatChannelFragment extends BaseFragment {
                 inputViews.checkInsets();
                 applyListPadding();
             }
+            if (composerTools != null) {
+                composerTools.updatePosition(0);
+            }
         });
         inputViews.setWindowInsetsProvider(inputInsets);
         inputViews.getInputIslandBubbleContainer().setClipChildren(false);
@@ -228,6 +253,28 @@ public class ChatChannelFragment extends BaseFragment {
                 LayoutHelper.createFrame(
                         LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT,
                         Gravity.LEFT | Gravity.BOTTOM, 7, 0, 7, 0));
+        // The site's own input tools over the composer: the linux.do emoji catalog, the @mention
+        // panel and their Back/lifecycle - the same tools a topic reply and a new topic install.
+        // A channel has no topic, so the tools are given a null topic (an @mention carries no
+        // invented topic context).
+        composerTools = new DiscourseComposerTools(
+                this, container, composer, inputViews, inputInsets, glassHost, null);
+
+        // The floating round page-down affordance, upstream's own (the one a chat floats over its
+        // composer): a message that arrives while the reader is in history lands here with its
+        // count, and the tap goes to it.
+        pendingButton =
+                org.telegram.ui.Components.chat.buttons.ChatActivityBlurredRoundPageDownButton.create(
+                        context, 56, 48, resourceProvider, glassHost.getFactory(), inputProvider,
+                        org.telegram.messenger.R.drawable.pagedown);
+        pendingButton.setClipChildren(false);
+        pendingButton.setClipToPadding(false);
+        pendingButton.setVisibility(View.GONE);
+        pendingButton.setPivotX(AndroidUtilities.dp(28));
+        pendingButton.setPivotY(AndroidUtilities.dp(28 + 8));
+        pendingButton.setOnClickListener(v -> onPendingTap());
+        contentView.addView(pendingButton, LayoutHelper.createFrame(
+                56, 64, Gravity.RIGHT | Gravity.BOTTOM));
         // The composer is offered only once the channel says the reader may write; it is hidden
         // until then rather than showing a field whose send the site would refuse.
         inputViews.setVisibility(View.GONE);
@@ -257,6 +304,9 @@ public class ChatChannelFragment extends BaseFragment {
                     composerHeight = (int) Math.max(height, AndroidUtilities.dp(44));
                     applyListPadding();
                 }
+                if (composerTools != null) {
+                    composerTools.updatePosition(0);
+                }
             }
         };
         view.shouldDrawBackground = false;
@@ -272,6 +322,9 @@ public class ChatChannelFragment extends BaseFragment {
                 composerHeight = (int) Math.max(view.getIslandTotalHeight(false), AndroidUtilities.dp(44));
                 inputViews.checkInsets();
                 applyListPadding();
+            }
+            if (composerTools != null) {
+                composerTools.updatePosition(0);
             }
         });
         composer = view;
@@ -295,6 +348,7 @@ public class ChatChannelFragment extends BaseFragment {
     public void onResume() {
         super.onResume();
         if (composer != null) composer.onResume();
+        if (composerTools != null) composerTools.onResume();
         updateColors();
         startLiveUpdates();
     }
@@ -303,18 +357,41 @@ public class ChatChannelFragment extends BaseFragment {
     public void onPause() {
         saveDraft();
         closeLiveHolder();
+        if (composerTools != null) composerTools.onPause();
         if (composer != null) composer.onPause();
         super.onPause();
+    }
+
+    /**
+     * Back means the site's input tools first (an open emoji catalog or @mention panel), the channel
+     * second - the same order a topic reply and a new topic keep.
+     */
+    @Override
+    public boolean onBackPressed(boolean invoked) {
+        if (composerTools != null && composerTools.onBackPressed(invoked)) {
+            return false;
+        }
+        return super.onBackPressed(invoked);
     }
 
     @Override
     public void onFragmentDestroy() {
         NotificationCenter.getGlobalInstance().removeObserver(themeObserver, NotificationCenter.didSetNewTheme);
         NotificationCenter.getGlobalInstance().removeObserver(themeObserver, NotificationCenter.needSetDayNightTheme);
+        // The screen is gone: a block that outlives it must not call back to start a fetch for a row
+        // nobody is looking at.
+        for (Map.Entry<String, Runnable> entry : photoStarters.entrySet()) {
+            DiscourseImageBridge.INSTANCE.clearPhotoStarter(entry.getKey(), entry.getValue());
+        }
+        photoStarters.clear();
         stopSessionObservation();
         closeLiveHolder();
         loadEpoch++;
         saveDraft();
+        if (composerTools != null) {
+            composerTools.onDestroy();
+            composerTools = null;
+        }
         if (composer != null) {
             composer.onDestroy();
             composer = null;
@@ -379,6 +456,7 @@ public class ChatChannelFragment extends BaseFragment {
         sending = false;
         joining = false;
         clearReplyTarget();
+        clearPending();
     }
 
     private void loadChannel() {
@@ -417,6 +495,15 @@ public class ChatChannelFragment extends BaseFragment {
     }
 
     private void loadMessages(Long targetMessageId, String direction, boolean replace) {
+        loadMessages(targetMessageId, direction, replace, false);
+    }
+
+    /**
+     * Reads one window. [landOnTarget] asks the list to land on the newest message when the window
+     * arrives - a send's own readback and an explicit jump want that; a plain refresh keeps the
+     * reader's place instead, and the initial entry lands on the newest because it starts there.
+     */
+    private void loadMessages(Long targetMessageId, String direction, boolean replace, boolean landOnTarget) {
         if (container == null || loading || sending) {
             return;
         }
@@ -441,7 +528,7 @@ public class ChatChannelFragment extends BaseFragment {
                     loading = false;
                     loadingOlder = false;
                     stateUi = null;
-                    applyPage(loaded, askedReplace);
+                    applyPage(loaded, askedReplace, landOnTarget);
                     return kotlin.Unit.INSTANCE;
                 }, error -> {
                     if (epoch != loadEpoch) {
@@ -460,11 +547,20 @@ public class ChatChannelFragment extends BaseFragment {
                 });
     }
 
-    private void applyPage(ChatMessagePage page, boolean replace) {
+    private void applyPage(ChatMessagePage page, boolean replace, boolean landOnTarget) {
         LinearLayoutManager manager = (LinearLayoutManager) listView.getLayoutManager();
         int anchor = manager == null ? -1 : manager.findFirstVisibleItemPosition();
         View anchorView = manager == null ? null : manager.findViewByPosition(anchor);
         int anchorTop = anchorView == null ? 0 : anchorView.getTop() - listView.getPaddingTop();
+        Long anchorMessageId = null;
+        if (anchor >= 0) {
+            int index = anchor - messageRowOffset();
+            if (index >= 0 && index < chatMessages.size()) {
+                anchorMessageId = chatMessages.get(index).getId();
+            }
+        }
+        boolean wasEmpty = chatMessages.isEmpty();
+        boolean wasAtBottom = isAtBottom();
         if (replace) {
             chatMessages.clear();
             bubbles.clear();
@@ -496,8 +592,22 @@ public class ChatChannelFragment extends BaseFragment {
         notifyRowsChanged();
         if (replace) {
             startLiveUpdates();
-            scrollToNewest();
-            listView.post(this::markNewestRead);
+            // A window that replaces the view keeps the reader's place unless they were already at
+            // the newest (an entry, a send's readback, or an explicit jump go to the newest). This
+            // is what stops a refresh from yanking a reader out of the history they are reading.
+            boolean follow = landOnTarget || wasEmpty || wasAtBottom;
+            if (follow) {
+                scrollToNewest();
+                listView.post(this::markNewestReadIfSeen);
+            } else if (anchorMessageId != null && manager != null) {
+                int restored = indexOfMessage(anchorMessageId);
+                if (restored >= 0) {
+                    manager.scrollToPositionWithOffset(messageRowOffset() + restored, anchorTop);
+                }
+                // A refresh that kept the reader's place never credits the unseen tail as read.
+            }
+            // A fresh full window supersedes whatever arrivals the button was counting.
+            clearPending();
         } else if (added > 0 && anchor >= 0 && manager != null) {
             manager.scrollToPositionWithOffset(anchor + added, anchorTop);
         }
@@ -513,24 +623,120 @@ public class ChatChannelFragment extends BaseFragment {
         bodies.clear();
         users.clear();
         for (ChatMessage message : chatMessages) {
-            bubbles.add(buildBubble(message));
+            PreparedPostBody body = prepareBody(message);
+            bodies.add(body);
+            bubbles.add(buildBubble(message, body));
         }
         for (TLRPC.User user : users.values()) {
             getMessagesController().putUser(user, true);
         }
+        // The pictures a message names are fetched after the rows exist, each reported as it lands.
+        for (int index = 0; index < bodies.size(); index++) {
+            fetchMessageMedia(index);
+        }
     }
 
-    private MessageObject buildBubble(ChatMessage message) {
+    /**
+     * Where a message's own pictures are started (and retried): the module fetches them itself, so
+     * the row's download button has to reach this screen to begin a transfer, and its state has to
+     * come back from the fetch rather than from a Telegram download that does not exist.
+     */
+    private final Map<String, Runnable> photoStarters = new HashMap<>();
+
+    /**
+     * Fetches the pictures one message draws, reporting each as its bytes land so a picture already
+     * on disk is drawn without waiting behind a slow neighbour. A picture the site serves as a
+     * preview then an original reports again when the original replaces it.
+     */
+    private void fetchMessageMedia(int index) {
+        if (container == null || index < 0 || index >= bodies.size()) {
+            return;
+        }
+        PreparedPostBody body = bodies.get(index);
+        if (body == null) {
+            return;
+        }
+        List<PostImage> images = body.getImages();
+        if (images == null || images.isEmpty()) {
+            return;
+        }
+        for (PostImage image : images) {
+            String name = DiscourseImageBridge.INSTANCE.photoFileName(image);
+            if (photoStarters.containsKey(name)) continue;
+            Runnable starter = () -> DiscourseLoader.INSTANCE.fetchPostPhoto(container, image, chat -> {
+                refreshMessageMedia(chat);
+                return kotlin.Unit.INSTANCE;
+            });
+            DiscourseImageBridge.INSTANCE.registerPhotoStarter(name, starter);
+            photoStarters.put(name, starter);
+        }
+        DiscourseLoader.INSTANCE.cachePostPhotos(container, images, chat -> {
+            refreshMessageMedia(chat);
+            return kotlin.Unit.INSTANCE;
+        });
+    }
+
+    /**
+     * Draws whatever the fetch has put on disk for one picture, in every row that names it. A row
+     * keeps its {@link MessageObject} and its place: the retained block re-reads its file and the
+     * row is bound again where it sits.
+     */
+    private void refreshMessageMedia(PostImage image) {
+        if (isFinished || listView == null || !(listView.getLayoutManager() instanceof LinearLayoutManager)) {
+            return;
+        }
+        FileLoader loader = FileLoader.getInstance(0);
+        for (int index = 0; index < bodies.size(); index++) {
+            PreparedPostBody body = bodies.get(index);
+            if (body == null || !body.getImages().contains(image)) {
+                continue;
+            }
+            MessageObject message = bubbles.get(index);
+            if (message.richLayout != null) {
+                for (RichMessageLayout.RichBlock block : message.richLayout.blocks) {
+                    if (!(block instanceof RichMessageLayout.RichPhotoBlock)) continue;
+                    RichMessageLayout.RichPhotoBlock photo = (RichMessageLayout.RichPhotoBlock) block;
+                    if (photo.sizeFull == null) continue;
+                    boolean fullExists = loader.getPathToAttach(photo.sizeFull, true).exists()
+                            || loader.getPathToAttach(photo.sizeFull, false).exists();
+                    boolean previewExists = photo.strippedSize != null
+                            && (loader.getPathToAttach(photo.strippedSize, true).exists()
+                                || loader.getPathToAttach(photo.strippedSize, false).exists());
+                    if (!fullExists && !previewExists) continue;
+                    if (fullExists && photo.imageReceiver.getImageLocation() != null
+                            || !fullExists && photo.imageReceiver.getThumbLocation() != null) {
+                        photo.updateButtonState(true);
+                        continue;
+                    }
+                    // Only what is on disk is handed over: a location with no file behind it would
+                    // send upstream's loader after a datacenter this client does not have.
+                    photo.imageReceiver.cancelLoadImage();
+                    photo.imageReceiver.setImage(null, null,
+                            fullExists ? io.github.baba983.nativedo.hooks.NativeDoHooks.photoImageLocation(photo.sizeFull, photo.photo) : null, null,
+                            photo.strippedSize != null && previewExists
+                                    ? io.github.baba983.nativedo.hooks.NativeDoHooks.photoImageLocation(photo.strippedSize, photo.photo) : null,
+                            "b1", null, photo.sizeFull.size, null, message, 1);
+                    photo.updateButtonState(true);
+                }
+            }
+            invalidateRow(messageRowOffset() + index);
+        }
+    }
+
+    /** The prepared rich body of one message's cooked HTML; what the bubble draws. */
+    private PreparedPostBody prepareBody(ChatMessage message) {
         io.github.baba983.nativedo.core.model.Post post = ChatRows.post(message);
-        PreparedPostBody body = DiscourseImageBridge.INSTANCE.prepare(
-                post.getCookedHtml(), container.getBaseUrl());
+        return DiscourseImageBridge.INSTANCE.prepare(post.getCookedHtml(), container.getBaseUrl());
+    }
+
+    private MessageObject buildBubble(ChatMessage message, PreparedPostBody body) {
+        io.github.baba983.nativedo.core.model.Post post = ChatRows.post(message);
         TLRPC.Message replyTo = null;
         if (message.getInReplyTo() != null) {
             io.github.baba983.nativedo.core.model.Post target = ChatRows.replyTarget(message.getInReplyTo());
             replyTo = DiscourseRows.replySnapshot(
                     target, channelId, users, container.getBaseUrl(), message.getInReplyTo().getExcerpt());
         }
-        bodies.add(body);
         return DiscourseRows.postMessage(post, channelId, users, body, container.getBaseUrl(), replyTo);
     }
 
@@ -542,6 +748,7 @@ public class ChatChannelFragment extends BaseFragment {
             listView.getAdapter().notifyDataSetChanged();
         }
         fetchAvatars();
+        refreshLocalCandidates();
     }
 
     private void fetchAvatars() {
@@ -565,13 +772,46 @@ public class ChatChannelFragment extends BaseFragment {
             if (url == null || DiscourseAvatars.INSTANCE.isCached(user)) {
                 continue;
             }
+            // The row draws its author's picture from the downloaded file on its next draw, so a
+            // picture arriving is a redraw of that author's rows - never a refresh of the adapter.
             DiscourseLoader.INSTANCE.cacheAvatar(container, url, user, () -> {
-                if (listView != null && listView.getAdapter() != null) {
-                    listView.getAdapter().notifyDataSetChanged();
-                }
+                invalidateAvatarRows(user.id);
                 return kotlin.Unit.INSTANCE;
             });
         }
+    }
+
+    /** Redraws the rows whose author is [senderId]; a picture arriving is a draw, not a rebind. */
+    private void invalidateAvatarRows(long senderId) {
+        if (listView == null || !(listView.getLayoutManager() instanceof LinearLayoutManager)) {
+            return;
+        }
+        LinearLayoutManager manager = (LinearLayoutManager) listView.getLayoutManager();
+        for (int index = 0; index < chatMessages.size(); index++) {
+            ChatMessage message = chatMessages.get(index);
+            if (message.getUser() == null
+                    || DiscourseRows.userId(message.getUser().getUsername()) != senderId) {
+                continue;
+            }
+            View view = manager.findViewByPosition(messageRowOffset() + index);
+            if (view != null) {
+                view.invalidate();
+            }
+        }
+    }
+
+    /** The authors the channel has shown, for the composer's own @mention candidates. */
+    private void refreshLocalCandidates() {
+        if (composerTools == null || container == null) {
+            return;
+        }
+        java.util.List<io.github.baba983.nativedo.core.model.Post> posts = new ArrayList<>();
+        for (ChatMessage message : chatMessages) {
+            posts.add(ChatRows.post(message));
+        }
+        composerTools.setLocalCandidates(
+                java.util.Collections.<io.github.baba983.nativedo.core.model.MentionCandidate>emptyList(),
+                posts);
     }
 
     /** The older window a scroll to the top asks for. */
@@ -589,8 +829,25 @@ public class ChatChannelFragment extends BaseFragment {
 
     private void scrollToNewest() {
         if (listView != null && listView.getAdapter() != null && chatMessages.size() > 0) {
-            listView.scrollToPosition(chatMessages.size() - 1);
+            listView.scrollToPosition(messageRowOffset() + chatMessages.size() - 1);
         }
+    }
+
+    /**
+     * Whether the list is showing its very last row: upstream's own at-the-bottom test. A reader at
+     * the bottom follows new messages; one anywhere else keeps their place and is told instead.
+     */
+    private boolean isAtBottom() {
+        return listView == null || !listView.canScrollVertically(1);
+    }
+
+    private int indexOfMessage(long id) {
+        for (int index = 0; index < chatMessages.size(); index++) {
+            if (chatMessages.get(index).getId() == id) {
+                return index;
+            }
+        }
+        return -1;
     }
 
     private void markNewestRead() {
@@ -600,6 +857,66 @@ public class ChatChannelFragment extends BaseFragment {
         }
         ChatMessage newest = chatMessages.get(chatMessages.size() - 1);
         ChatLoader.INSTANCE.markRead(container, channelId, newest.getId());
+    }
+
+    /**
+     * Credits the newest message as read only when it is really in front of the reader. An arrival
+     * below a reader who is in history is not seen, and marking it read would silently clear a count
+     * the site keeps on the reader's behalf.
+     */
+    private void markNewestReadIfSeen() {
+        if (!isAtBottom()) {
+            return;
+        }
+        markNewestRead();
+    }
+
+    /** Announces the arrivals a history reader has not seen yet. */
+    private void showPending() {
+        if (pendingButton == null) {
+            return;
+        }
+        pendingButton.setCount(pendingCount, false);
+        pendingButton.setContentDescription(pendingCount > 0
+                ? "下方还有 " + pendingCount + " 条新消息" : null);
+        pendingButton.setVisibility(pendingCount > 0 ? View.VISIBLE : View.GONE);
+    }
+
+    /** When the reader reaches the newest, the arrivals are no longer unseen. */
+    private void clearPending() {
+        pendingCount = 0;
+        if (pendingButton != null) {
+            pendingButton.setCount(0, false);
+            pendingButton.setVisibility(View.GONE);
+        }
+    }
+
+    /** The reader's tap on the arrivals: to the newest, which is then seen. */
+    private void onPendingTap() {
+        if (listView == null) {
+            return;
+        }
+        scrollToNewest();
+        clearPending();
+        listView.post(this::markNewestRead);
+    }
+
+    /** The arrivals button floats over the composer at the trailing edge, lifted by its band. */
+    private void placePending() {
+        if (pendingButton == null) {
+            return;
+        }
+        boolean composerShown = inputViews != null && inputViews.getVisibility() == View.VISIBLE;
+        int bottom = (composerShown ? composerHeight + AndroidUtilities.dp(8) : AndroidUtilities.dp(8))
+                + navigationBarHeight;
+        ViewGroup.LayoutParams params = pendingButton.getLayoutParams();
+        if (params instanceof android.widget.FrameLayout.LayoutParams) {
+            android.widget.FrameLayout.LayoutParams frame = (android.widget.FrameLayout.LayoutParams) params;
+            if (frame.bottomMargin != bottom) {
+                frame.bottomMargin = bottom;
+                pendingButton.setLayoutParams(frame);
+            }
+        }
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -653,7 +970,7 @@ public class ChatChannelFragment extends BaseFragment {
             // Read the cooked result around the accepted id; a past cursor excludes its anchor.
             clearReplyTarget();
             saveDraft();
-            loadMessages(acceptedId, null, true);
+            loadMessages(acceptedId, null, true, true);
             return kotlin.Unit.INSTANCE;
         }, error -> {
             if (epoch != loadEpoch) return kotlin.Unit.INSTANCE;
@@ -812,19 +1129,7 @@ public class ChatChannelFragment extends BaseFragment {
 
     private void applyLiveEvent(ChatLiveEvent event) {
         if (event.getDeletedId() != null) {
-            ChatMessage removed = null;
-            for (ChatMessage message : chatMessages) {
-                if (message.getId() == event.getDeletedId()) {
-                    removed = message;
-                    break;
-                }
-            }
-            if (removed != null) {
-                chatMessages.remove(removed);
-                seenIds.remove(removed.getId());
-                rebuildBubbles();
-                notifyRowsChanged();
-            }
+            removeLiveMessage(event.getDeletedId());
             return;
         }
         ChatMessage message = event.getMessage();
@@ -832,19 +1137,123 @@ public class ChatChannelFragment extends BaseFragment {
             return;
         }
         // Replace an edited message in place, or append a new one; never draw a message twice.
-        for (int index = 0; index < chatMessages.size(); index++) {
-            if (chatMessages.get(index).getId() == message.getId()) {
-                chatMessages.set(index, message);
-                rebuildBubbles();
-                notifyRowsChanged();
-                return;
+        int index = indexOfMessage(message.getId());
+        if (index >= 0) {
+            applyLiveEdit(index, message);
+        } else if (seenIds.add(message.getId())) {
+            appendLiveMessage(message);
+        }
+    }
+
+    /**
+     * An edit changes one row. The row keeps its {@link MessageObject}; only the rich body it draws
+     * is swapped for the freshly prepared one and the row is laid out again where it sits. Every
+     * other message keeps its own object, and nothing is notified to the adapter, so no row is
+     * removed, inserted or recycled (which a plain {@code notifyItemChanged} would do through the
+     * list's item animator).
+     */
+    private void applyLiveEdit(int index, ChatMessage message) {
+        chatMessages.set(index, message);
+        PreparedPostBody body = prepareBody(message);
+        MessageObject rebuilt = buildBubble(message, body);
+        MessageObject target = bubbles.get(index);
+        bodies.set(index, body);
+        target.messageOwner.rich_message = rebuilt.messageOwner.rich_message;
+        target.generateLayout(null);
+        for (TLRPC.User user : users.values()) {
+            getMessagesController().putUser(user, true);
+        }
+        invalidateRow(messageRowOffset() + index);
+        fetchAvatars();
+        refreshLocalCandidates();
+    }
+
+    /**
+     * A message that arrived live: appended below what is already drawn. A reader at the bottom
+     * follows it and it is seen; a reader anywhere else keeps their place and the button counts it.
+     */
+    private void appendLiveMessage(ChatMessage message) {
+        boolean wasAtBottom = isAtBottom();
+        chatMessages.add(message);
+        PreparedPostBody body = prepareBody(message);
+        bodies.add(body);
+        bubbles.add(buildBubble(message, body));
+        for (TLRPC.User user : users.values()) {
+            getMessagesController().putUser(user, true);
+        }
+        MessageAdapter adapter = messageAdapter();
+        if (adapter != null && stateUi == null) {
+            int position = messageRowOffset() + bubbles.size() - 1;
+            adapter.notifyItemInserted(position);
+            // The run boundary above the new message may have changed: its bottom pin is recomputed.
+            if (chatMessages.size() >= 2 && sameAuthor(chatMessages.size() - 2, chatMessages.size() - 1)) {
+                invalidateRow(messageRowOffset() + bubbles.size() - 2);
             }
         }
-        if (seenIds.add(message.getId())) {
-            chatMessages.add(message);
-            bubbles.add(buildBubble(message));
-            notifyRowsChanged();
+        fetchAvatars();
+        refreshLocalCandidates();
+        if (wasAtBottom) {
             scrollToNewest();
+            listView.post(this::markNewestRead);
+            clearPending();
+        } else {
+            pendingCount++;
+            showPending();
+        }
+    }
+
+    /**
+     * Removes the one message a deletion names, with a scoped removal notice: every other row keeps
+     * its object and place, and the neighbour's run boundary is recomputed.
+     */
+    private void removeLiveMessage(long deletedId) {
+        int index = indexOfMessage(deletedId);
+        if (index < 0) {
+            return;
+        }
+        ChatMessage removed = chatMessages.remove(index);
+        seenIds.remove(removed.getId());
+        bubbles.remove(index);
+        if (index < bodies.size()) {
+            bodies.remove(index);
+        }
+        MessageAdapter adapter = messageAdapter();
+        if (adapter != null && stateUi == null) {
+            adapter.notifyItemRemoved(messageRowOffset() + index);
+            if (index > 0) {
+                invalidateRow(messageRowOffset() + index - 1);
+            }
+            if (index < bubbles.size()) {
+                invalidateRow(messageRowOffset() + index);
+            }
+        }
+        refreshLocalCandidates();
+    }
+
+    /** The adapter, when the list has one; null before the screen is built. */
+    private MessageAdapter messageAdapter() {
+        if (listView == null || !(listView.getAdapter() instanceof MessageAdapter)) {
+            return null;
+        }
+        return (MessageAdapter) listView.getAdapter();
+    }
+
+    /** Re-lays-out and redraws the row at [adapterPosition] without touching the adapter. */
+    private void invalidateRow(int adapterPosition) {
+        if (listView == null || listView.getLayoutManager() == null) {
+            return;
+        }
+        RecyclerView.ViewHolder holder = listView.findViewHolderForAdapterPosition(adapterPosition);
+        View view = holder == null ? null : holder.itemView;
+        if (view instanceof ChatMessageCell) {
+            ChatMessageCell cell = (ChatMessageCell) view;
+            cell.forceResetMessageObject();
+            int index = adapterPosition - messageRowOffset();
+            cell.setMessageObject(bubbles.get(index), null,
+                    index < bubbles.size() - 1 && sameAuthor(index, index + 1),
+                    index > 0 && sameAuthor(index - 1, index), false);
+            view.requestLayout();
+            view.invalidate();
         }
     }
 
@@ -901,6 +1310,7 @@ public class ChatChannelFragment extends BaseFragment {
         boolean composerShown = inputViews != null && inputViews.getVisibility() == View.VISIBLE;
         int bottom = composerShown ? composerHeight + AndroidUtilities.dp(8) : 0;
         listView.setPadding(0, AndroidUtilities.dp(4), 0, bottom + navigationBarHeight + AndroidUtilities.dp(4));
+        placePending();
     }
 
     private void updateColors() {
@@ -914,6 +1324,7 @@ public class ChatChannelFragment extends BaseFragment {
         }
         if (glassHost != null) glassHost.updateColors();
         if (inputViews != null) inputViews.updateColors();
+        if (pendingButton != null) pendingButton.updateColors();
         if (composer != null) {
             composer.updateColors();
             composer.getEditField().setTextColor(getThemedColor(Theme.key_chat_messagePanelText));
@@ -939,6 +1350,26 @@ public class ChatChannelFragment extends BaseFragment {
         return chatMessages.size();
     }
 
+    /** The MessageObject drawn at [index], so a test can tell a rebuilt row from the same one. */
+    MessageObject bubbleForTest(int index) {
+        return index >= 0 && index < bubbles.size() ? bubbles.get(index) : null;
+    }
+
+    /** The model drawn at [index], so a test can tell an updated row from a replaced one. */
+    ChatMessage chatMessageForTest(int index) {
+        return index >= 0 && index < chatMessages.size() ? chatMessages.get(index) : null;
+    }
+
+    /** Whether the pending-arrivals button is on screen. */
+    boolean isPendingShownForTest() {
+        return pendingButton != null && pendingButton.getVisibility() == View.VISIBLE;
+    }
+
+    /** How many arrivals the reader has not seen yet. */
+    int pendingCountForTest() {
+        return pendingCount;
+    }
+
     boolean isComposerShown() {
         return inputViews != null && inputViews.getVisibility() == View.VISIBLE;
     }
@@ -953,6 +1384,11 @@ public class ChatChannelFragment extends BaseFragment {
 
     void sendForTest(CharSequence text) {
         send(text);
+    }
+
+    /** The same window read the action bar's refresh asks for. */
+    void refreshForTest() {
+        loadMessages(null, null, true);
     }
 
     void setComposerTextForTest(CharSequence text) {

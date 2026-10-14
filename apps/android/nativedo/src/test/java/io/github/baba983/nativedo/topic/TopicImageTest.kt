@@ -4,7 +4,9 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
 import io.github.baba983.nativedo.app.NativeDo
 import io.github.baba983.nativedo.harness.FakeDiscourseSite
 import io.github.baba983.nativedo.harness.UpstreamUiHarness
@@ -20,6 +22,9 @@ import io.github.baba983.nativedo.harness.shadows.ShadowSQLiteCursor
 import io.github.baba983.nativedo.harness.shadows.ShadowSQLiteDatabase
 import io.github.baba983.nativedo.harness.shadows.ShadowSQLitePreparedStatement
 import io.github.baba983.nativedo.harness.shadows.ShadowUtilities
+import io.github.baba983.nativedo.hooks.NativeDoHooks
+import okhttp3.mockwebserver.MockResponse
+import okio.Buffer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -40,6 +45,8 @@ import org.telegram.ui.Components.ClippingImageView
 import org.telegram.ui.Components.RecyclerListView
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * A post image, end to end: the image is served by the fake site, fetched by the app's own client
@@ -252,7 +259,9 @@ internal class TopicImageTest {
         assertEquals("not the 320px preview", 1600, decoded.width)
         assertEquals(900, decoded.height)
         assertEquals(Color.CYAN, decoded.getPixel(799, 449))
-        val size = (adapter.getMedia(0) as org.telegram.tgnet.TLRPC.Photo).sizes.single()
+        val photo = adapter.getMedia(0) as org.telegram.tgnet.TLRPC.Photo
+        val size = org.telegram.messenger.FileLoader.getClosestPhotoSizeWithSize(
+            photo.sizes, org.telegram.messenger.AndroidUtilities.getPhotoSize())
         assertEquals("the post's display aspect is retained", 320, size.w)
         assertEquals(180, size.h)
         harness.await("the full-screen receiver to decode the original") {
@@ -401,6 +410,396 @@ internal class TopicImageTest {
     }
 
     /**
+     * A fetch that lands after its row is already drawn must re-bind that row. Every one of the
+     * screen's late fetches (an inline picture, an attachment, a clip's cover, a reaction's emoji)
+     * ends by re-binding the row it belongs to, and the row is on screen with its text already
+     * drawn. The failure this pins: the re-bind is answered by the list's own change animation,
+     * which drops the drawn {@code ChatMessageCell} and fades a freshly built one in, so the post
+     * blinks as the fetch lands. The oracle is the drawn row: it must be the row that was already
+     * there, at the same pixel, with its body still on it.
+     */
+    @Test
+    fun aFetchLandingAfterTheRowIsDrawnRebindsThatRowInsteadOfReplacingIt() {
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val path = "uploads/late-${System.nanoTime()}.png"
+        try {
+            site.serveResponse(path) {
+                entered.countDown()
+                release.await(60, TimeUnit.SECONDS)
+                MockResponse().setHeader("Content-Type", "image/png")
+                    .setBody(Buffer().write(solidPng(400, 200, Color.MAGENTA)))
+            }
+            site.serveCooked(
+                TOPIC_ID,
+                "<p>正文引用 example quote paragraph</p>" +
+                    "<p><img src='${site.url(path)}' width='400' height='200'></p>",
+            )
+            harness.bootApp()
+            harness.await("home") { rowCount() == 2 }
+            harness.present(TopicFragment.forTopic(TOPIC_ID, "Late picture"))
+            harness.await("the post") { rowCount() == 1 && laidOutCells().isNotEmpty() }
+            harness.drawApp()
+            harness.await("the picture request to be in flight") { entered.count == 0L }
+
+            val before = laidOutCells().first()
+            val postId = before.messageObject!!.id
+            val top = before.top
+            assertTrue(
+                "the body must be drawn before the fetch lands",
+                before.messageObject!!.richLayout.joinedText.contains("example quote"),
+            )
+
+            release.countDown()
+            // Give the download (on its own thread) real time to finish, and drain the looper so
+            // the re-bind it triggers is applied.
+            repeat(400) {
+                harness.idle(32)
+                java.util.concurrent.locks.LockSupport.parkNanos(1_000_000L)
+            }
+            harness.idleUpstreamQueues()
+            harness.drawApp()
+
+            val after = laidOutCells().first { it.messageObject?.id == postId }
+            assertSame(
+                "the fetch must re-bind the row that was already there, not replace it",
+                before, after,
+            )
+            assertEquals("the row must not move as the fetch lands", top, after.top)
+            assertTrue(
+                "the body text must still be drawn after the fetch",
+                after.messageObject!!.richLayout.joinedText.contains("example quote"),
+            )
+            assertTrue(
+                "the body must still be legible on the drawn row",
+                darkPixelsIn(after) > 0,
+            )
+            harness.assertNoTelegramSideEffects()
+        } finally {
+            release.countDown()
+        }
+    }
+
+    /**
+     * A picture the site refuses: the block must stop its spinner and go back to its own download
+     * button, and that button must be a real retry - a press fetches the picture again, and once the
+     * site answers it, the picture is drawn. The spinner this pins: the block's loading state has to
+     * follow this client's own fetch, not whether the picture looks like one upstream would
+     * auto-fetch, or a failed fetch would leave the block turning with no way back.
+     */
+    @Test
+    fun aRefusedPictureReturnsToItsButtonAndTheButtonFetchesItAgain() {
+        val path = "uploads/refused-${System.nanoTime()}.png"
+        val html = "<p>看这张图：</p><p><img src='${site.url(path)}' width='400' height='200'></p>"
+        val image = DiscourseImageBridge.prepare(html, site.url("")).images.single()
+        val name = DiscourseImageBridge.photoFileName(image)
+        val fail = java.util.concurrent.atomic.AtomicBoolean(true)
+        site.serveResponse(path) {
+            if (fail.get()) {
+                MockResponse().setResponseCode(500).setBody("boom")
+            } else {
+                MockResponse().setResponseCode(200).setHeader("Content-Type", "image/png")
+                    .setBody(Buffer().write(solidPng(400, 200, Color.MAGENTA)))
+            }
+        }
+        site.serveCooked(TOPIC_ID, html)
+        harness.bootApp()
+        harness.await("home") { rowCount() == 2 }
+        harness.present(TopicFragment.forTopic(TOPIC_ID, "Refused image"))
+        harness.await("the post") { rowCount() == 1 && laidOutCells().isNotEmpty() }
+        val cell = laidOutCells().first()
+
+        // The fetched picture is refused: the block has to fall back to its own download button
+        // rather than keep turning. The button is read from a real draw, so a block left loading
+        // fails here.
+        harness.await("the block to fall back to its own download button") {
+            harness.drawApp()
+            !NativeDoHooks.isFileLoading(name) && buttonStateOf(photoBlockOf(cell)) == 0
+        }
+        retain(harness.renderApp("photo-refused-button"))
+        val refused = site.recordedRequests.count { it.contains(path) }
+        assertTrue("the site refused the picture at least once", refused >= 1)
+
+        // A real press on that button starts a new fetch - the button itself is the retry. The same
+        // press upstream hands the block's download branch, which is what has to reach our fetch.
+        pressPhotoButton(cell)
+        harness.await("the press to fetch it again") {
+            site.recordedRequests.count { it.contains(path) } > refused
+        }
+        harness.await("the press's own refusal to return the button") {
+            harness.drawApp()
+            !NativeDoHooks.isFileLoading(name) && buttonStateOf(photoBlockOf(cell)) == 0
+        }
+        assertFalse("a Discourse retry must not queue a Telegram datacenter download",
+            org.telegram.messenger.FileLoader.getInstance(0).isLoadingFile(name))
+
+        site.serveResponse(path) {
+            MockResponse().setResponseCode(200).setHeader("Content-Type", "text/html")
+                .setBody("<html>Verification required, not an image</html>")
+        }
+        val beforeInvalid = site.recordedRequests.count { it.contains(path) }
+        pressPhotoButton(cell)
+        harness.await("the successful HTTP response to be rejected as a non-image") {
+            harness.drawApp()
+            site.recordedRequests.count { it.contains(path) } > beforeInvalid &&
+                !NativeDoHooks.isFileLoading(name) && buttonStateOf(photoBlockOf(cell)) == 0
+        }
+        assertTrue("an HTML response must not become a permanently cached broken photo",
+            DiscourseImageBridge.localFiles(image).all { !it.exists() })
+
+        fail.set(false)
+        site.serveResponse(path) {
+            MockResponse().setHeader("Content-Type", "image/png")
+                .setBody(Buffer().write(solidPng(400, 200, Color.MAGENTA)))
+        }
+        assertTrue("a failed photo can still open the viewer", openTheFirstImage())
+        harness.idleClock(400)
+        val viewer = PhotoViewer.getInstance()
+        renderViewer("photo-viewer-failed")
+        val container = field(viewer, "containerView") as View
+        val now = android.os.SystemClock.uptimeMillis()
+        val tap = MotionEvent.obtain(now, now, MotionEvent.ACTION_UP,
+            container.width / 2f, container.height / 2f, 0)
+        viewer.onSingleTapConfirmed(tap)
+        tap.recycle()
+        harness.await("the press to fetch the picture", iterations = 12_000) {
+            DiscourseImageBridge.localFiles(image).all { it.length() > 0 }
+        }
+        harness.await("the viewer to draw the retried photo") {
+            val receiver = field(viewer, "centerImage") as org.telegram.messenger.ImageReceiver
+            receiver.bitmap?.let { it.getPixel(it.width / 2, it.height / 2) == Color.MAGENTA } == true
+        }
+        awaitFrame("retried photo cross-fade") {
+            (field(viewer, "centerImage") as org.telegram.messenger.ImageReceiver).currentAlpha == 1f
+        }
+        assertTrue("the viewer's download button is a real HTTP retry",
+            magentaPixels(renderViewer("photo-viewer-retried")) > 1000)
+        assertFalse("the viewer retry must not queue Telegram transport",
+            org.telegram.messenger.FileLoader.getInstance(0).isLoadingFile(name))
+        viewer.closePhoto(false, false)
+        harness.idleClock(400)
+        harness.await("the picture to be drawn") {
+            magentaPixels(retain(harness.renderApp("photo-refused-retried"))) > 1000
+        }
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * A picture still arriving, stopped by the block's own cancel button: the transfer ends, no
+     * half-written file is left where a cell would draw it, and the block goes back to its button.
+     */
+    @Test
+    fun theCancelButtonStopsTheTransferAndLeavesNoHalfWrittenFile() {
+        val path = "uploads/slow-${System.nanoTime()}.png"
+        val html = "<p>看这张图：</p><p><img src='${site.url(path)}' width='400' height='200'></p>"
+        val image = DiscourseImageBridge.prepare(html, site.url("")).images.single()
+        val name = DiscourseImageBridge.photoFileName(image)
+        site.serveThrottled(path, ByteArray(1024 * 1024) { 3 }, "image/png", bytesPerPeriod = 64 * 1024, periodMillis = 500)
+        site.serveCooked(TOPIC_ID, html)
+        harness.bootApp()
+        harness.await("home") { rowCount() == 2 }
+        harness.present(TopicFragment.forTopic(TOPIC_ID, "Slow image"))
+        harness.await("the post") { rowCount() == 1 && laidOutCells().isNotEmpty() }
+        val cell = laidOutCells().first()
+        val file = DiscourseImageBridge.localFiles(image).first()
+
+        harness.await("the transfer to be running") { NativeDoHooks.isFileLoading(name) }
+        harness.drawApp()
+        harness.idleClock(200)
+        harness.drawApp()
+        retain(harness.renderApp("photo-cancel-inflight"))
+        assertEquals("a fetch in flight draws the block's own cancel", 1, buttonStateOf(photoBlockOf(cell)))
+
+        pressPhotoButton(cell)
+        harness.await("the transfer to stop") { !NativeDoHooks.isFileLoading(name) }
+        assertFalse("the picture is not on disk", file.exists() && file.length() > 0)
+        assertTrue("and no half-written file was left behind", tempFilesBeside(file).isEmpty())
+        harness.drawApp()
+        harness.idleClock(200)
+        harness.drawApp()
+        assertEquals("the block went back to its download button", 0, buttonStateOf(photoBlockOf(cell)))
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * The site serves a small preview beside the original. While the original is still arriving the
+     * block draws the preview; when the original lands it replaces it under the same identity - the
+     * same row, the same block, the same place. A picture the site serves only slowly must not hold
+     * the reader on an empty shape.
+     */
+    @Test
+    fun aSlowOriginalShowsThePreviewFirstAndThenUpgradesToTheFull() {
+        val preview = "uploads/preview-${System.nanoTime()}.png"
+        val original = "uploads/original-${System.nanoTime()}.png"
+        site.serveImage(preview, solidPng(320, 180, Color.MAGENTA))
+        site.serveThrottled(original, solidPng(1600, 900, Color.CYAN), "image/png", bytesPerPeriod = 512, periodMillis = 500)
+        val html = """
+            <p>看这张图：</p>
+            <p><div class="lightbox-wrapper"><a class="lightbox" href="${site.url(original)}">
+            <img src="$preview" width="320" height="180"></a></div></p>
+        """.trimIndent()
+        val image = DiscourseImageBridge.prepare(html, site.url("")).images.single()
+        assertEquals("the original is what the block draws and the viewer opens",
+            site.url(original), image.url)
+        site.serveCooked(TOPIC_ID, html)
+        harness.bootApp()
+        harness.await("home") { rowCount() == 2 }
+        harness.present(TopicFragment.forTopic(TOPIC_ID, "Preview image"))
+        harness.await("the post") { rowCount() == 1 && laidOutCells().isNotEmpty() }
+        val cell = laidOutCells().first()
+
+        harness.await("the preview to be drawn while the original is still on its way", iterations = 8_000) {
+            harness.drawApp()
+            val receiver = photoBlockOf(cell).imageReceiver
+            val bitmap = receiver.bitmap
+            cell.alpha == 1f && receiver.currentAlpha == 1f &&
+                bitmap?.let { it.getPixel(it.width / 2, it.height / 2) == Color.MAGENTA } == true
+        }
+        harness.idleClock(250)
+        assertTrue(magentaPixels(retain(harness.renderApp("photo-preview-shown"))) > 1000)
+        assertTrue("the original is still arriving",
+            DiscourseImageBridge.localFiles(image).all { it.length() == 0L })
+        assertEquals("a preview is not the completed download; cancel remains available", 1,
+            buttonStateOf(photoBlockOf(cell)))
+
+        assertTrue("the reader opens the preview before the original arrives", openTheFirstImage())
+        harness.idleClock(400)
+        val viewer = PhotoViewer.getInstance()
+        assertTrue("the viewer immediately draws the preview",
+            magentaPixels(renderViewer("photo-viewer-preview")) > 1000)
+        harness.await("the open viewer to upgrade to the original", iterations = 18_000) {
+            val receiver = field(viewer, "centerImage") as org.telegram.messenger.ImageReceiver
+            receiver.bitmap?.let { it.getPixel(it.width / 2, it.height / 2) == Color.CYAN } == true
+        }
+        awaitFrame("original photo cross-fade") {
+            (field(viewer, "centerImage") as org.telegram.messenger.ImageReceiver).currentAlpha == 1f
+        }
+        assertTrue("the original replaces the preview in the same open viewer",
+            cyanPixels(renderViewer("photo-viewer-full")) > 1000)
+        viewer.closePhoto(false, false)
+        harness.idleClock(400)
+        harness.await("the original to replace the preview", iterations = 18_000) {
+            harness.drawApp()
+            val receiver = photoBlockOf(cell).imageReceiver
+            val bitmap = receiver.bitmap
+            receiver.currentAlpha == 1f &&
+                bitmap?.let { it.getPixel(it.width / 2, it.height / 2) == Color.CYAN } == true
+        }
+        assertTrue(cyanPixels(retain(harness.renderApp("photo-full-shown"))) > 1000)
+        assertSame("the picture upgraded in the row that was already there", cell, laidOutCells().first())
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * One picture named twice in a post: both blocks are one picture, so the site is asked for it
+     * once, and the row that draws it keeps its object and its place as the fetch lands.
+     */
+    @Test
+    fun aPictureNamedTwiceIsFetchedOnceAndItsRowIsNotReplaced() {
+        val path = "uploads/shared-${System.nanoTime()}.png"
+        val html = "<p>看这张图：</p>" +
+            "<p><img src='${site.url(path)}' width='400' height='200'></p>" +
+            "<p><img src='${site.url(path)}' width='400' height='200'></p>"
+        val images = DiscourseImageBridge.prepare(html, site.url("")).images
+        assertEquals("both blocks name the same picture", 1, images.map { it.id }.distinct().size)
+        site.serveImage(path, solidPng(400, 200, Color.MAGENTA))
+        site.serveCooked(TOPIC_ID, html)
+        harness.bootApp()
+        harness.await("home") { rowCount() == 2 }
+        harness.present(TopicFragment.forTopic(TOPIC_ID, "Shared image"))
+        harness.await("the post") { rowCount() == 1 && laidOutCells().isNotEmpty() }
+        val before = laidOutCells().first()
+        val top = before.top
+
+        harness.await("the shared picture to be drawn", iterations = 8_000) {
+            magentaPixels(retain(harness.renderApp("photo-shared"))) > 1000
+        }
+        harness.drawApp()
+        val after = laidOutCells().first()
+        assertSame("the fetch lands on the row that was already there", before, after)
+        assertEquals("and does not move it", top, after.top)
+        assertEquals("a picture named twice is fetched once",
+            1, site.recordedRequests.count { it.contains(path) })
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /** Closing a second topic with the same photo must not remove the first topic's retry. */
+    @Test
+    fun returningFromAnotherTopicKeepsTheVisiblePhotosRetry() {
+        val path = "uploads/return-retry-${System.nanoTime()}.png"
+        val html = "<p>仍然可以重试</p><p><img src='${site.url(path)}' width='400' height='200'></p>"
+        val image = DiscourseImageBridge.prepare(html, site.url("")).images.single()
+        val name = DiscourseImageBridge.photoFileName(image)
+        val fail = java.util.concurrent.atomic.AtomicBoolean(true)
+        site.serveResponse(path) {
+            if (fail.get()) MockResponse().setResponseCode(500) else
+                MockResponse().setHeader("Content-Type", "image/png")
+                    .setBody(Buffer().write(solidPng(400, 200, Color.MAGENTA)))
+        }
+        site.serveCooked(TOPIC_ID, html)
+        site.serveCooked(203L, html)
+        harness.bootApp()
+        harness.await("home") { rowCount() == 2 }
+        val first = TopicFragment.forTopic(TOPIC_ID, "First photo")
+        harness.present(first)
+        harness.await("first photo failure") {
+            harness.drawApp()
+            site.recordedRequests.any { it.contains(path) } && !NativeDoHooks.isFileLoading(name) &&
+                laidOutCells().firstOrNull()?.let { buttonStateOf(photoBlockOf(it)) == 0 } == true
+        }
+        val firstRequests = site.recordedRequests.count { it.contains(path) }
+        val second = TopicFragment.forTopic(203L, "Second photo")
+        harness.present(second)
+        harness.await("second photo failure") {
+            harness.drawApp()
+            site.recordedRequests.count { it.contains(path) } > firstRequests &&
+                !NativeDoHooks.isFileLoading(name) && harness.visibleFragment() === second && laidOutCells().firstOrNull()?.let {
+                buttonStateOf(photoBlockOf(it)) == 0
+            } == true
+        }
+        second.finishFragment()
+        harness.await("return to first topic") { harness.visibleFragment() === first && laidOutCells().isNotEmpty() }
+        fail.set(false)
+        pressPhotoButton(laidOutCells().first())
+        harness.await("the returned topic can still download its photo", iterations = 8_000) {
+            DiscourseImageBridge.localFiles(image).all { it.length() > 0 }
+        }
+        harness.await("the returned topic draws its retried photo") {
+            harness.drawApp()
+            val bitmap = photoBlockOf(laidOutCells().first()).imageReceiver.bitmap
+            bitmap?.let { it.getPixel(it.width / 2, it.height / 2) == Color.MAGENTA } == true
+        }
+        assertTrue(magentaPixels(retain(harness.renderApp("photo-return-retried"))) > 1000)
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /** The body text's own dark pixels inside [cell]'s drawn bounds, read from a real render. */
+    private fun darkPixelsIn(cell: org.telegram.ui.Cells.ChatMessageCell): Int {
+        val content = harness.activity.findViewById<ViewGroup>(android.R.id.content) ?: return 0
+        val bitmap = Bitmap.createBitmap(
+            content.measuredWidth.coerceAtLeast(1),
+            content.measuredHeight.coerceAtLeast(1),
+            Bitmap.Config.ARGB_8888,
+        )
+        bitmap.eraseColor(Color.WHITE)
+        content.draw(Canvas(bitmap))
+        val location = IntArray(2).also { cell.getLocationInWindow(it) }
+        val left = location[0].coerceAtLeast(0)
+        val right = (location[0] + cell.width).coerceAtMost(bitmap.width)
+        val top = location[1].coerceAtLeast(0)
+        val bottom = (location[1] + cell.height).coerceAtMost(bitmap.height)
+        var dark = 0
+        for (y in top until bottom) {
+            for (x in left until right) {
+                val pixel = bitmap.getPixel(x, y)
+                if (Color.red(pixel) < 90 && Color.green(pixel) < 90 && Color.blue(pixel) < 90) dark++
+            }
+        }
+        println("photo: dark body pixels in the late-fetch row = $dark")
+        return dark
+    }
+
+    /**
      * What upstream does with a tap on a rich media block: the block's own handler calls
      * `openArticlePhoto` on the cell's delegate with the block that was pressed. The gesture
      * itself is upstream's (`ChatMessageCell` translates the event into the layout's coordinates
@@ -420,6 +819,46 @@ internal class TopicImageTest {
         println("image: openArticlePhoto -> $opened")
         return opened
     }
+
+    /** The first photo block the row draws, so a test can read its own button state. */
+    private fun photoBlockOf(cell: org.telegram.ui.Cells.ChatMessageCell): RichMessageLayout.RichPhotoBlock =
+        cell.messageObject!!.richLayout.blocks
+            .filterIsInstance<RichMessageLayout.RichPhotoBlock>()
+            .firstOrNull()
+            ?: throw AssertionError("the post drew no rich photo block")
+
+    /** The block's own button state: -1 none, 0 download, 1 loading/cancel. */
+    private fun buttonStateOf(photo: RichMessageLayout.RichPhotoBlock): Int =
+        RichMessageLayout.RichMediaBlock::class.java.getDeclaredField("buttonState")
+            .apply { isAccessible = true }
+            .get(photo) as Int
+
+    /**
+     * A press on the block's own button, handed over the way upstream's cell hands one over: the
+     * layout dispatches the event to the block that holds the coordinates, and the block's own
+     * handler is what a reader's thumb reaches.
+     */
+    private fun pressPhotoButton(cell: org.telegram.ui.Cells.ChatMessageCell) {
+        val layout = cell.messageObject!!.richLayout
+        harness.layoutApp()
+        val media = layout.blocks.filterIsInstance<RichMessageLayout.RichMediaBlock>().first()
+        val x = layout.getMinWidth() / 2f
+        val y = media.currY + media.getHeight() / 2f
+        val now = android.os.SystemClock.uptimeMillis()
+        val down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, x, y, 0)
+        val up = MotionEvent.obtain(now, now + 20, MotionEvent.ACTION_UP, x, y, 0)
+        assertTrue("the block took the press", layout.onTouchEvent(down))
+        assertTrue("and the release", layout.onTouchEvent(up))
+        down.recycle()
+        up.recycle()
+        harness.idle()
+    }
+
+    /** The temporary files a transfer to [file] would leave beside it, if any survived. */
+    private fun tempFilesBeside(file: File): List<File> =
+        file.parentFile?.listFiles { candidate ->
+            candidate.name.startsWith(file.name + ".") && candidate.name.endsWith(".part")
+        }?.toList().orEmpty()
 
     /**
      * The source is site-relative, the way Discourse writes an upload inside a post, and the image

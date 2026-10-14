@@ -106,7 +106,9 @@ internal class HomeFeedModesTest {
         assertTrue("and no tag item", fragmentField(newList, "tagItem") == null)
         harness.renderApp("home-new-topics")
 
-        harness.topFragment()!!.finishFragment()
+        val newBack = newList.actionBar.backButton
+        assertTrue("a pushed feed offers a visible Back button", newBack != null && newBack.visibility == View.VISIBLE)
+        newBack!!.performClick()
         harness.await("back on the home feed") {
             harness.visibleFragment() is TopicListFragment &&
                 harness.fragmentStack().size == 1 &&
@@ -121,6 +123,13 @@ internal class HomeFeedModesTest {
         val unreadList = harness.visibleFragment() as TopicListFragment
         assertEquals("the pushed screen is in the unread feed mode", "unread", fragmentField(unreadList, "feedMode"))
         harness.renderApp("home-unread")
+        val unreadBack = unreadList.actionBar.backButton
+        assertTrue("the unread feed has the same Back affordance", unreadBack != null && unreadBack.visibility == View.VISIBLE)
+        unreadBack!!.performClick()
+        harness.await("Back returns from unread to the home feed") {
+            harness.fragmentStack().size == 1 &&
+                fragmentField(harness.visibleFragment()!!, "feedMode") == "latest"
+        }
         harness.assertNoTelegramSideEffects()
     }
 

@@ -23,6 +23,7 @@ import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -848,6 +849,219 @@ internal class ProfileTransitionTest {
         harness.assertNoTelegramSideEffects()
     }
 
+    /**
+     * The header's avatar is never an empty spot: before the site answers - and while its picture
+     * is not yet on disk - the reader's own initials stand in (the same stand-in the settings
+     * header and a row use). The failure: a pushed profile that names no source flies nothing in,
+     * and its picture has not landed, so the round avatar area stays blank while the name and the
+     * @handle are already there - exactly the owner's report.
+     */
+    @Test
+    fun theHeaderAvatarShowsAFallbackUntilThePictureLands() {
+        destroyShell()
+        // Discourse also hands avatar templates whose size lives inside an upload path; the answer
+        // names one, and this test serves nothing for it, so the bytes never land.
+        val response = JSONObject(harness.fixture("user-profile.json"))
+        response.getJSONObject("user").put("avatar_template", "/uploads/avatar/baba/{size}.png")
+        val gate = java.util.concurrent.CountDownLatch(1)
+        site.serveResponse("u/baba.json") {
+            gate.await(30, java.util.concurrent.TimeUnit.SECONDS)
+            okhttp3.mockwebserver.MockResponse()
+                .setHeader("Content-Type", "application/json")
+                .setBody(response.toString())
+        }
+        site.serveFixture("u/baba/summary.json", "user-summary.json")
+        harness.bootApp()
+        harness.await("the topic list to load") { listRowCount() == 2 }
+        // A test that ran before this one may have left a night surface; this capture is the day one.
+        applyTheme("Blue", toDark = false)
+
+        harness.present(ProfileFragment.forUser("baba", "Baba"))
+        harness.await("the profile to open") { harness.visibleFragment() is ProfileFragment }
+        val profile = harness.visibleFragment() as ProfileFragment
+        harness.layoutApp()
+
+        val avatar = avatarView(profile) as org.telegram.ui.Components.BackupImageView
+        try {
+            // While the site has not answered, the identity the screen was opened for is what draws.
+            assertNotNull(
+                "the header draws a stand-in before the site answers",
+                avatar.imageReceiver.getDrawable(),
+            )
+            copyProfileArtifact(harness.renderApp("profile-avatar-fallback-loading"))
+        } finally {
+            gate.countDown()
+        }
+        harness.await("the profile's rows") { harness.layoutApp(); detailOf("信任等级") == "3" }
+        repeat(4) { harness.drawApp(); harness.idleClock(20) }
+        // The picture's bytes are still not on disk, so the stand-in is what the header keeps.
+        assertNotNull(
+            "an undownloaded avatar still leaves a stand-in in the header, not a blank spot",
+            avatar.imageReceiver.getDrawable(),
+        )
+        assertNull("no picture landed for this template", avatar.imageReceiver.getBitmap())
+        copyProfileArtifact(harness.renderApp("profile-avatar-fallback-unloaded"))
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * The loading shimmer is drawn where the first real row will land - the header's own resting
+     * height - not at the list's padded scroll room, which is a full viewport reserved for the
+     * expanded photo. The failure: the shimmer floats a screen-quarter below the header, so the
+     * loading state shows a large blank band above a chat-list skeleton. The oracle is the empty
+     * view's own drawn top (its position plus the padding its rows start from) against the first
+     * real row's resting top.
+     */
+    @Test
+    fun theLoadingShimmerStartsAtTheHeadersRestHeight() {
+        openTopic()
+        val gate = java.util.concurrent.CountDownLatch(1)
+        val response = JSONObject(harness.fixture("user-profile.json"))
+        site.serveResponse("u/baba.json") {
+            gate.await(30, java.util.concurrent.TimeUnit.SECONDS)
+            okhttp3.mockwebserver.MockResponse()
+                .setHeader("Content-Type", "application/json")
+                .setBody(response.toString())
+        }
+        val profile = tapCapsule()
+        // The flight lands; the answer is still gated, so the list shows its empty view.
+        harness.idleClock(400)
+        harness.drawApp()
+        val empty = field<View>(profile, "progressView")
+        val list = field<View>(profile, "listView")
+        val headerExtra = call<Int>(profile, "getHeaderExtraHeight")
+        // The shimmer's rows start at its own (private) padding top, not the View padding.
+        val contentStart = empty.top + field<Int>(empty, "paddingTop")
+        val restingRowTop = list.top + headerExtra
+        try {
+            assertEquals(
+                "the loading shimmer starts where the first row will land, not a screen below",
+                restingRowTop.toLong(), contentStart.toLong(),
+            )
+            copyProfileArtifact(harness.renderApp("profile-loading-shimmer-anchored"))
+        } finally {
+            // Let the answer land and the screen settle, so this loading capture does not decide a
+            // later test's surface (the class's own capture hygiene).
+            gate.countDown()
+            harness.await("the profile's rows after the gate") { harness.layoutApp(); detailOf("信任等级") == "3" }
+            harness.idleClock(200)
+            harness.await("the landing") { !field<Boolean>(profile, "openAnimationInProgress") }
+            applyTheme("Blue", toDark = false)
+        }
+    }
+
+    /**
+     * A message avatar's tap opens a profile with no shared-element flight
+     * (`ChatActivity.didPressUserAvatar` -> `openProfile(user)` keeps `playProfileAnimation == 0`
+     * for anyone but the current user, ChatActivity.java:12943-12970), so the profile rides the
+     * shell's own default transition. Upstream still holds the profile's own view updates for that
+     * whole transition - the hold is `setAnimationInProgress`/`onAnimationFinish`
+     * (ProfileActivity.java:9727-9778), not the flight's. The failures: a delayed answer lands while
+     * the default transition is running and its rows and action row are built straight into the
+     * moving page (a rebuild mid-slide), or the answer is dropped instead of handed over at the end.
+     */
+    @Test
+    fun aProfileAnswerDuringTheDefaultTransitionWaitsForTheTransition() {
+        destroyShell()
+        val gate = java.util.concurrent.CountDownLatch(1)
+        val response = JSONObject(harness.fixture("user-profile.json"))
+        site.serveResponse("u/baba.json") {
+            gate.await(30, java.util.concurrent.TimeUnit.SECONDS)
+            okhttp3.mockwebserver.MockResponse()
+                .setHeader("Content-Type", "application/json")
+                .setBody(response.toString())
+        }
+        site.serveFixture("u/baba/summary.json", "user-summary.json")
+        harness.bootApp()
+        harness.await("the topic list to load") { listRowCount() == 2 }
+
+        // The message avatar's own present call, driven on the production shell, then held at its
+        // first frame: the shell's own transition reschedules itself off `System.nanoTime()` and
+        // has no AnimatorSet to pause, so clearing its pending runnable stops it where it is (the
+        // harness's upstream-queue drain also moves the clock, which would run it out).
+        val fragment = ProfileFragment.forUser("baba", "Baba")
+        (harness.activity as io.github.baba983.nativedo.app.NativeDoActivity).present(fragment)
+        val layout = actionBarLayout()
+        setFieldNull(layout, "animationRunnable")
+        harness.idle()
+        harness.layoutApp()
+        assertTrue(
+            "the profile rides the shell's own transition",
+            field<Boolean>(layout, "transitionAnimationInProgress"),
+        )
+        assertFalse(
+            "the default transition runs no shared-element flight",
+            field<Boolean>(fragment, "openAnimationInProgress"),
+        )
+
+        val list = field<RecyclerListView>(fragment, "listView")
+        val rowsBefore = list.adapter!!.itemCount
+        assertFalse("no action before the answer", fragment.hasAction(ProfileActionsView.KEY_SHARE))
+
+        // The site answers while the shell's own transition is still running.
+        gate.countDown()
+        drainMainLoop("the answer to reach the fragment") { field<Any?>(fragment, "profile") != null }
+        assertTrue(
+            "the answer landed while the shell's own transition still runs",
+            field<Boolean>(layout, "transitionAnimationInProgress"),
+        )
+        harness.layoutApp()
+
+        // The answer's own views wait for the transition (upstream's setAnimationInProgress).
+        val failures = ArrayList<String>()
+        if (list.adapter!!.itemCount != rowsBefore) {
+            failures += "the answer rebuilt the list mid-transition (${rowsBefore} -> ${list.adapter!!.itemCount})"
+        }
+        if (fragment.hasAction(ProfileActionsView.KEY_SHARE)) {
+            failures += "the answer's action row appeared mid-transition"
+        }
+        assertTrue("the answer must wait for the shell's own transition: $failures", failures.isEmpty())
+        copyProfileArtifact(harness.renderAppFrame("profile-default-transition-answer", 0))
+
+        // The frozen transition lands and hands the answer over.
+        invoke(layout, "onAnimationEndCheck", false)
+        harness.idleClock(200)
+        harness.await("the rows after the transition") {
+            harness.layoutApp()
+            list.adapter!!.itemCount > rowsBefore
+        }
+        assertFalse(
+            "the default transition ended",
+            field<Boolean>(layout, "transitionAnimationInProgress"),
+        )
+        assertTrue(
+            "the answer's own actions land with the transition",
+            fragment.hasAction(ProfileActionsView.KEY_SHARE),
+        )
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /** Files a loading capture under the review folder this pass asked for. */
+    private fun copyProfileArtifact(rendered: java.io.File): java.io.File {
+        val target = java.io.File(rendered.parentFile.parentFile, "home-profile-review/profile/${rendered.name}")
+        target.parentFile?.mkdirs()
+        rendered.copyTo(target, overwrite = true)
+        println("profile-review: wrote ${target.absolutePath} (${target.length()} bytes)")
+        return target
+    }
+
+    /**
+     * Drains the main looper without moving Robolectric's simulated clock, so a screenshot taken
+     * mid-way through a clock-driven animation (the shell's own default transition, which has no
+     * AnimatorSet to pause) stays at the frame it is observed at.
+     */
+    private fun drainMainLoop(what: String, condition: () -> Boolean) {
+        repeat(4_000) {
+            harness.idle()
+            if (condition()) {
+                harness.idle()
+                return
+            }
+            java.util.concurrent.locks.LockSupport.parkNanos(1_000_000L)
+        }
+        throw AssertionError("timed out waiting for $what")
+    }
+
     private fun openTopic() {
         destroyShell()
         site.serveFixture("u/baba.json", "user-profile.json")
@@ -1004,6 +1218,22 @@ internal class ProfileTransitionTest {
                 }
                 @Suppress("UNCHECKED_CAST")
                 return f.get(target) as T
+            } catch (ignored: NoSuchFieldException) {
+                cls = cls.superclass
+            }
+        }
+        throw NoSuchFieldException(name)
+    }
+
+    /** Nulls a field that lives on a superclass of the runtime class (the shell's layout is anonymous). */
+    private fun setFieldNull(target: Any, name: String) {
+        var cls: Class<*>? = target.javaClass
+        while (cls != null) {
+            try {
+                val f = cls.getDeclaredField(name)
+                f.isAccessible = true
+                f.set(target, null)
+                return
             } catch (ignored: NoSuchFieldException) {
                 cls = cls.superclass
             }

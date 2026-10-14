@@ -147,8 +147,12 @@ internal class DiscourseEmojiRenderTest {
 
     /**
      * A picture that is blocked mid-transfer: the emoji must read as its label at first, then, once
-     * the transfer finishes and the floor is built again, become the artwork - with the reader's
-     * place and the adapter untouched. Nothing navigates and nothing reaches tgnet while it waits.
+     * the transfer finishes, become the artwork - on the same visible row, with the reader's place,
+     * the floor and any expanded details untouched. The failure this pins is the emoji refresh
+     * replacing the floor's rows: a remove/insert (or a change notice the cell animation cannot
+     * reuse) re-creates the visible {@code ChatMessageCell}, so the floor flashes and the reader's
+     * row is recycled. The adapter, the visible row's identity, its pixel anchor and its content
+     * must all survive. Nothing navigates and nothing reaches tgnet while it waits.
      */
     @Test
     fun blockedEmojiFetchStaysALabelThenUpgradesInPlaceWithoutNavigation() {
@@ -204,6 +208,7 @@ internal class DiscourseEmojiRenderTest {
             }
 
             assertSame("the adapter must not be replaced by the upgrade", adapter, list.adapter)
+            assertSame("the visible row must be kept, not removed and re-created", before, cell())
             assertTrue("the upgrade must not navigate", harness.topFragment() is TopicFragment)
             assertEquals("emoji completion must retain the visible floor", floorId, cell().messageObject.id)
             assertEquals("the floor's pixel anchor must not move", top, cell().top)

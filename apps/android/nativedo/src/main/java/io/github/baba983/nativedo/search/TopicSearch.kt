@@ -10,11 +10,10 @@
 package io.github.baba983.nativedo.search
 
 import android.content.Context
-import android.text.Editable
-import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.widget.EditText
 import android.widget.FrameLayout
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -43,27 +42,36 @@ import org.telegram.ui.Cells.TextSettingsCell
 import org.telegram.ui.Components.AnimatedTextView
 import org.telegram.ui.Components.CubicBezierInterpolator
 import org.telegram.ui.Components.EmptyTextProgressView
-import org.telegram.ui.Components.FragmentSearchField
 import org.telegram.ui.Components.LayoutHelper
 import org.telegram.ui.Components.LinkPath
 import org.telegram.ui.Components.RecyclerListView
 import org.telegram.ui.Components.blur3.drawable.color.impl.BlurredBackgroundProviderImpl
 import org.telegram.ui.Components.chat.ChatActivitySearchContainer
+import org.telegram.ui.Components.chat.ChatInputViewsContainer
 import org.telegram.ui.Components.chat.layouts.ChatActivitySideControlsButtonsLayout
 import java.util.WeakHashMap
 
-/** One search session, hosted by the topic rather than a second navigation screen. */
+/**
+ * One search session inside the topic that owns it.
+ *
+ * <p>Telegram's own chat search is not a second screen: the bar keeps its back capsule and its
+ * center/menu become the ActionBar's real search capsule (ChatActivity:4244-4248; the field is the
+ * menu item's own EditTextBoldCursor). This session owns only the query, the paging state and the
+ * result surface; the field itself belongs to the host's ActionBar and the host wires its text
+ * callbacks here.</p>
+ */
 class TopicSearch(
     context: Context, private val container: AppContainer, private val topicId: Long,
     private val root: FrameLayout, private val posts: PostListView,
+    private val field: EditText, private val searchBar: View,
     private val glass: GlassPanelHost, private val resources: Theme.ResourcesProvider?,
     top: Int, bottom: Int, private val host: Host
 ) {
     interface Host {
         fun queryChanged()
         fun navigate(floor: Int, forward: Boolean)
-        fun close()
     }
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val hits = ArrayList<TopicSummary>()
     private var query = ""
@@ -80,13 +88,37 @@ class TopicSearch(
     private val originals = WeakHashMap<RichMessageLayout.Text, LinkPath?>()
     private val highlighted = WeakHashMap<RichMessageLayout.Text, String>()
     private val plainHighlights = WeakHashMap<ChatMessageCell, Pair<MessageObject, String>>()
+
     private val results = ChatActivitySearchContainer(context)
+    /**
+     * ChatActivity:7551-7553: the results sit on the wallpaper, not on the sharp list. The list
+     * itself stays transparent; this translucent surface is what the reader sees behind the rows.
+     */
+    private val resultsBackground = glass.wallpaperFactory.create(results)
+        .setColorProvider(BlurredBackgroundProviderImpl.topPanelChatActivitySearchListBg(resources))
     private val list = RecyclerListView(context)
     private val state = EmptyTextProgressView(context)
-    private val field = FragmentSearchField(context, resources)
-    private val panel = FrameLayout(context)
     private val count = AnimatedTextView(context, true, true, true)
     private val toggle = AnimatedTextView(context, true, false, true)
+    /**
+     * ChatActivity's own bottom search bar is a bare FrameLayout whose only child measure trick is
+     * the count's own left margin (createSearchContainer, 10503-10532). Here the count is a
+     * content-sized label on the left of a content-sized toggle on the right, so the panel reads
+     * the toggle's own width in onMeasure and reserves it: a Chinese count and a long action label
+     * can never overlap, whatever the width.
+     */
+    private val panel = object : FrameLayout(context) {
+        override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+            measureChild(toggle, widthMeasureSpec, heightMeasureSpec)
+            val reserve = toggle.measuredWidth + AndroidUtilities.dp(8f)
+            val params = count.layoutParams as ViewGroup.MarginLayoutParams
+            if (params.rightMargin != reserve) {
+                params.rightMargin = reserve
+                count.layoutParams = params
+            }
+            super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+        }
+    }
     private val controls = ChatActivitySideControlsButtonsLayout(context, resources,
         BlurredBackgroundProviderImpl.bottomPanelChatActivity(resources), glass.factory)
     private val adapter = object : RecyclerListView.SelectionAdapter() {
@@ -128,7 +160,11 @@ class TopicSearch(
     }
 
     init {
-        results.setup(glass.wallpaperFactory, BlurredBackgroundProviderImpl.bottomPanelChatActivity(resources))
+        // ChatActivity:7548-7553: the results container's own background is the wallpaper-backed
+        // surface and the list over it is transparent.
+        results.setup(glass.wallpaperFactory,
+            BlurredBackgroundProviderImpl.topPanelChatActivitySearchListBg(resources))
+        results.background = resultsBackground
         results.setFade(top, AndroidUtilities.dp(64f) + bottom)
         list.layoutManager = LinearLayoutManager(context)
         list.adapter = adapter
@@ -148,35 +184,41 @@ class TopicSearch(
         state.showTextView()
         state.setOnClickListener { if (failed && !loading) request(requestedPage) }
         results.addView(state, LayoutHelper.createFrameMatchParent())
-        root.addView(results, LayoutHelper.createFrameMatchParent())
-        field.setPadding(AndroidUtilities.dp(4f), AndroidUtilities.dp(4f), AndroidUtilities.dp(4f), AndroidUtilities.dp(4f))
-        field.setupBlurredBackground(glass.createPanel(field, BlurredBackgroundProviderImpl.topPanel(resources)))
-        field.setHintText("", false)
-        field.editText.setHint("搜索当前话题")
-        field.editText.contentDescription = "搜索当前话题"
-        field.setCloseButtonVisible(true)
-        field.setCloseButtonOnClickListener { host.close() }
-        field.editText.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { changeQuery(s.toString()) }
-            override fun afterTextChanged(s: Editable?) {}
-        })
-        root.addView(field, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 48f, Gravity.TOP,
-            7f, (top - AndroidUtilities.dp(52f)) / AndroidUtilities.density, 7f, 0f))
-        panel.background = glass.createPanel(panel, BlurredBackgroundProviderImpl.bottomPanelChatActivity(resources))
-        count.setTextSize(AndroidUtilities.dp(14f).toFloat())
+        // The bar floats over the results the way ChatActivity's own bar floats over its search
+        // container, so the container is inserted directly under the bar this screen already added.
+        val searchBarIndex = root.indexOfChild(searchBar)
+        if (searchBarIndex >= 0) {
+            root.addView(results, searchBarIndex, LayoutHelper.createFrameMatchParent())
+        } else {
+            root.addView(results, LayoutHelper.createFrameMatchParent())
+        }
+
+        // The chat's own bottom search bar is the input island's capsule: radius 22 and 7dp of
+        // reach, exactly the composer bubble it stands in for (ChatInputViewsContainer
+        // .setInputIslandBubbleDrawable).
+        panel.background = glass.createPanel(panel,
+            BlurredBackgroundProviderImpl.bottomPanelChatActivity(resources)).apply {
+            setRadius(AndroidUtilities.dpf2(ChatInputViewsContainer.INPUT_BUBBLE_RADIUS.toFloat()))
+            setPadding(AndroidUtilities.dp(7f))
+        }
+        count.setTextSize(AndroidUtilities.dp(15f).toFloat())
         count.setTypeface(AndroidUtilities.bold())
         count.setGravity(Gravity.LEFT)
-        count.setAnimationProperties(.25f, 0, 280, CubicBezierInterpolator.EASE_OUT_QUINT)
-        panel.addView(count, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 30f, Gravity.CENTER_VERTICAL, 16f, 0f, 112f, 0f))
+        count.setAnimationProperties(.25f, 0L, 280L, CubicBezierInterpolator.EASE_OUT_QUINT)
+        panel.addView(count, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 30f,
+            Gravity.CENTER_VERTICAL, 18f, 0f, 0f, 0f))
         toggle.setTextSize(AndroidUtilities.dp(15f).toFloat())
         toggle.setTypeface(AndroidUtilities.bold())
         toggle.setGravity(Gravity.RIGHT)
-        toggle.setPadding(AndroidUtilities.dp(15f), 0, AndroidUtilities.dp(15f), 0)
+        toggle.setAnimationProperties(0f, 0L, 420L, CubicBezierInterpolator.EASE_OUT_QUINT)
+        toggle.setScaleProperty(.7f)
+        toggle.setPadding(AndroidUtilities.dp(15.33f), 0, AndroidUtilities.dp(15.33f), 0)
         toggle.setOnClickListener { setListMode(!listMode) }
-        panel.addView(toggle, LayoutHelper.createFrame(112, LayoutHelper.MATCH_PARENT, Gravity.RIGHT))
+        panel.addView(toggle, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT,
+            LayoutHelper.MATCH_PARENT, Gravity.RIGHT or Gravity.CENTER_VERTICAL))
         root.addView(panel, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 48f, Gravity.BOTTOM, 7f, 0f, 7f,
             bottom / AndroidUtilities.density + 7f))
+
         controls.setGravity(Gravity.RIGHT or Gravity.BOTTOM)
         controls.showButton(ChatActivitySideControlsButtonsLayout.BUTTON_SEARCH_DOWN, true, false)
         controls.showButton(ChatActivitySideControlsButtonsLayout.BUTTON_SEARCH_UP, true, false)
@@ -189,16 +231,15 @@ class TopicSearch(
         }
         root.addView(controls, LayoutHelper.createFrame(52, 116f, Gravity.RIGHT or Gravity.BOTTOM, 0f, 0f, 7f,
             bottom / AndroidUtilities.density + 62f))
+
         posts.setSearchHighlighter { highlight(it) }
         updateColors()
         updateUi()
-        field.editText.requestFocus()
-        AndroidUtilities.showKeyboard(field.editText)
     }
 
     private fun setListMode(value: Boolean, forward: Boolean = true) {
         listMode = value
-        AndroidUtilities.hideKeyboard(field.editText)
+        AndroidUtilities.hideKeyboard(field)
         if (!value && selected >= 0) navigate(forward) else updateUi()
         val entering = if (listMode) results else posts
         entering.animate().cancel()
@@ -206,7 +247,11 @@ class TopicSearch(
         entering.animate().alpha(1f).setDuration(200).setInterpolator(CubicBezierInterpolator.DEFAULT).start()
     }
 
-    private fun changeQuery(text: String) {
+    /**
+     * The ActionBar field drives this: a keystroke (and its clear button, which empties the field)
+     * arrives here. The old answer and its window are fenced before the new request starts.
+     */
+    fun changeQuery(text: String) {
         job?.cancel(); revision++
         host.queryChanged()
         query = text.trim()
@@ -221,6 +266,14 @@ class TopicSearch(
         } else request(0, true)
     }
 
+    /** The field's IME search action: land the reader on the hit the arrows currently name. */
+    fun onImeSearch() {
+        if (loading || hits.isEmpty()) return
+        val target = if (selected < 0) 0 else selected
+        selected = target
+        navigate(true)
+    }
+
     private fun next() {
         if (loading) return
         if (selected + 1 < hits.size) { selected++; navigate(true) }
@@ -231,7 +284,7 @@ class TopicSearch(
     }
 
     private fun navigate(forward: Boolean) {
-        AndroidUtilities.hideKeyboard(field.editText)
+        AndroidUtilities.hideKeyboard(field)
         host.navigate(hits[selected].targetPostNumber!!, forward)
         updateUi()
     }
@@ -275,13 +328,7 @@ class TopicSearch(
         posts.visibility = if (listMode) View.INVISIBLE else View.VISIBLE
         glass.setRecordedContent(if (listMode) list else posts)
         controls.visibility = if (listMode) View.GONE else View.VISIBLE
-        val text = when {
-            loading -> "正在搜索…"
-            failed -> "加载失败，点击重试"
-            hits.isEmpty() -> "没有结果"
-            hasMore -> "第 ${selected + 1} 条，已加载 ${hits.size} 条"
-            else -> "第 ${selected + 1} 条，共 ${hits.size} 条"
-        }
+        val text = countText()
         count.setText(text, true)
         count.contentDescription = text
         count.setOnClickListener { if (failed && !loading) request(requestedPage) }
@@ -293,24 +340,34 @@ class TopicSearch(
         controls.setButtonLoading(ChatActivitySideControlsButtonsLayout.BUTTON_SEARCH_DOWN, loading, true)
     }
 
+    /**
+     * Upstream's own count strings: the list mode shows the number of results, the chat mode the
+     * one the reader is on (ChatActivity:27005-27020). With `hasMore` the loaded count is not the
+     * total, so it is never named as one. Before the reader has asked anything (no query) there is
+     * no result to report - ChatActivity's count stays empty until its first answer
+     * (ChatActivity:27008) - so an unasked search never claims 没有结果.
+     */
+    private fun countText(): String = when {
+        loading -> "正在搜索…"
+        failed -> "加载失败，点击重试"
+        query.isEmpty() -> ""
+        hits.isEmpty() -> "没有结果"
+        listMode -> if (hasMore) "已加载 ${hits.size} 条" else "共 ${hits.size} 条"
+        hasMore -> "第 ${selected + 1} 条，已加载 ${hits.size} 条"
+        else -> "第 ${selected + 1} 条，共 ${hits.size} 条"
+    }
+
     fun updateColors() {
-        field.updateColors()
-        list.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite, resources))
         count.setTextColor(Theme.getColor(Theme.key_chat_searchPanelText, resources))
         toggle.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText2, resources))
         controls.updateColors()
+        resultsBackground.updateColors()
         adapter.notifyDataSetChanged()
     }
 
     fun updateInsets(top: Int, bottom: Int) {
         results.setFade(top, AndroidUtilities.dp(64f) + bottom)
         list.setPadding(0, top, 0, AndroidUtilities.dp(64f) + bottom)
-        val fieldParams = field.layoutParams as FrameLayout.LayoutParams
-        val fieldTop = top - AndroidUtilities.dp(52f)
-        if (fieldParams.topMargin != fieldTop) {
-            fieldParams.topMargin = fieldTop
-            field.layoutParams = fieldParams
-        }
         for ((view, gap) in arrayOf(panel to 7f, controls to 62f)) {
             val params = view.layoutParams as FrameLayout.LayoutParams
             val margin = bottom + AndroidUtilities.dp(gap)
@@ -362,7 +419,7 @@ class TopicSearch(
         for (index in 0 until posts.childCount) (posts.getChildAt(index) as? ChatMessageCell)?.setHighlightedText(null)
         posts.animate().cancel(); posts.alpha = 1f; posts.visibility = View.VISIBLE
         glass.setRecordedContent(posts)
-        AndroidUtilities.hideKeyboard(field.editText)
-        for (view in arrayOf(results, field, panel, controls)) { view.animate().cancel(); root.removeView(view) }
+        AndroidUtilities.hideKeyboard(field)
+        for (view in arrayOf(results, panel, controls)) { view.animate().cancel(); root.removeView(view) }
     }
 }

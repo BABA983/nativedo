@@ -312,6 +312,52 @@ internal class OfflineReadingTest {
         harness.assertNoTelegramSideEffects()
     }
 
+    /** A first read without a cache must offer recovery without exposing transport diagnostics. */
+    @Test
+    fun aFirstReadFailureHasReadableRecoveryAndRetryRestoresTheTopic() {
+        val topicId = 901L
+        site.serveResponse("t/$topicId.json") { disconnect() }
+        harness.bootApp()
+        harness.await("home") { rowCount() == 2 }
+        harness.present(TopicFragment.forTopic(topicId, "首次加载失败"))
+        harness.await("the first-read failure") { failureVisible() }
+        harness.idleClock(200)
+        val failure = TopicFragment::class.java.getDeclaredField("failureView")
+            .apply { isAccessible = true }.get(harness.visibleFragment()) as View
+
+        fun readableText(view: View): String {
+            val info = view.createAccessibilityNodeInfo()
+            val own = listOfNotNull(info.text, info.contentDescription).joinToString(" ")
+            info.recycle()
+            val children = (view as? android.view.ViewGroup)?.let { group ->
+                (0 until group.childCount).joinToString(" ") { readableText(group.getChildAt(it)) }
+            }.orEmpty()
+            return "$own $children".trim()
+        }
+        val text = readableText(failure)
+        println("first-read failure copy: $text")
+        assertTrue("the reader has a localized recovery action: $text", text.contains("重试"))
+        assertTrue("the recovery surface is a compact chat notice, not a full-screen tap target",
+            failure.height < harness.height / 3)
+        assertFalse("raw transport diagnostics must not be rendered: $text",
+            text.contains("unexpected end", ignoreCase = true) || text.contains("http://") ||
+                text.contains("connection closed", ignoreCase = true))
+        harness.renderComposite(".amp/in/artifacts/image-lifecycle/topic-first-read-failed.png")
+        switchTheme(toDark = true)
+        harness.renderComposite(".amp/in/artifacts/image-lifecycle/topic-first-read-failed-night.png")
+        switchTheme(toDark = false)
+
+        site.serveResponse("t/$topicId.json") { json(harness.fixture("topic-detail.json")) }
+        failure.performClick()
+        harness.await("retry restores the actual topic") { rowCount() == 1 && !failureVisible() }
+        val cells = contentListOf(harness.activity)!!
+        assertTrue("retry restores readable post content", (0 until cells.childCount)
+            .map { cells.getChildAt(it) }.filterIsInstance<org.telegram.ui.Cells.ChatMessageCell>()
+            .any { it.messageObject?.richLayout?.joinedText?.isNotBlank() == true })
+        harness.renderComposite(".amp/in/artifacts/image-lifecycle/topic-first-read-recovered.png")
+        harness.assertNoTelegramSideEffects()
+    }
+
     // ------------------------------------------------------------------ helpers
 
     /**

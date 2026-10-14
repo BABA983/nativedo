@@ -47,9 +47,11 @@ import java.util.ArrayList;
 import io.github.baba983.nativedo.core.di.AppContainer;
 import io.github.baba983.nativedo.core.messagebus.MessageBusHandle;
 import io.github.baba983.nativedo.core.messagebus.MessageBusSession;
+import io.github.baba983.nativedo.core.session.AppSessionState;
 import io.github.baba983.nativedo.core.session.SessionSnapshot;
 import io.github.baba983.nativedo.notifications.NotificationsFragment;
 import io.github.baba983.nativedo.settings.SettingsFragment;
+import io.github.baba983.nativedo.sessionui.SessionUi;
 import io.github.baba983.nativedo.topic.DiscourseAvatars;
 import io.github.baba983.nativedo.topic.DiscourseLoader;
 import io.github.baba983.nativedo.topic.TopicListFragment;
@@ -87,6 +89,14 @@ public class NativeDoMainTabsActivity extends ViewPagerActivity {
     private View fadeView;
     /** The notifications badge's feed from the message bus, detached when the host is destroyed. */
     private MessageBusHandle badgeObserver;
+    /** The fourth tab's picture, re-bound from the session so it follows the confirmed reader. */
+    private BackupImageView profileAvatarView;
+    /** The account the picture is currently bound to; a late download for another must not land. */
+    private String profileAvatarIdentity;
+    /** A neutral circle for the tab while no confirmed reader names a picture. */
+    private AvatarDrawable placeholderAvatar;
+    /** The session observer that keeps the profile tab's picture current; dropped with the views. */
+    private kotlinx.coroutines.Job profileObserver;
     /** The home screen's search is up: the strip steps away for its pager. */
     private boolean searchOpen;
     /** Upstream's browser owns the bottom bar while it has minimized pages. */
@@ -215,6 +225,7 @@ public class NativeDoMainTabsActivity extends ViewPagerActivity {
             badgeObserver = null;
         }
         watchNotificationBadge();
+        observeProfile();
 
         iBlur3SourceColor.setColor(getThemedColor(Theme.key_windowBackgroundWhite));
 
@@ -345,42 +356,106 @@ public class NativeDoMainTabsActivity extends ViewPagerActivity {
      * 22dp round picture at the 5dp the icon tabs put their lottie at, instead of an icon. Telegram
      * builds it from the account's own user; this client has no Telegram account, so the picture is
      * the session's site avatar - the same {@code DiscourseAvatars} user the profile screen draws.
+     *
+     * <p>The picture is bound by {@link #updateProfileAvatar} from the session, not from the stored
+     * reader read here: a stored reader is not a verified one, and fetching its avatar before the
+     * session has answered would be a request for the previous account. The tab shows a neutral
+     * placeholder until the session lands, and the observer re-binds it then.</p>
      */
     private GlassTabView createProfileTab(Context context) {
         GlassTabView tab = new GlassTabView(context);
         tab.setText("我的");
-        BackupImageView avatarView = new BackupImageView(context);
-        avatarView.setRoundRadius(dp(11));
+        profileAvatarView = new BackupImageView(context);
+        profileAvatarView.setRoundRadius(dp(11));
         FrameLayout.LayoutParams avatarParams = new FrameLayout.LayoutParams(
                 dp(22), dp(22), Gravity.CENTER_HORIZONTAL | Gravity.TOP);
         avatarParams.topMargin = dp(5);
-        tab.addView(avatarView, avatarParams);
+        tab.addView(profileAvatarView, avatarParams);
         tab.updateColorsLottie();
+        return tab;
+    }
 
-        AppContainer container = NativeDo.container(context);
-        SessionSnapshot snapshot = container.getSessionStore().snapshot();
-        String username = snapshot != null && snapshot.getUsername() != null ? snapshot.getUsername() : "";
-        String displayName = snapshot != null && snapshot.getDisplayName() != null ? snapshot.getDisplayName() : "";
-        String avatarTemplate = snapshot != null && snapshot.getAvatarTemplate() != null ? snapshot.getAvatarTemplate() : "";
-        TLRPC.User user = DiscourseAvatars.INSTANCE.user(username, displayName, avatarTemplate, container.getBaseUrl());
-        AvatarDrawable avatarDrawable = new AvatarDrawable();
+    /**
+     * Keeps the fourth tab's picture on the session. The observer belongs to the views: it is
+     * dropped in {@link #onFragmentDestroy} and started again from {@link #createView}, so a theme
+     * switch's rebuilt strip never leaves a collector behind holding a dead view.
+     */
+    private void observeProfile() {
+        stopProfileObservation();
+        profileObserver = SessionUi.observe(NativeDo.container(getParentActivity()), state -> {
+            updateProfileAvatar(state);
+            return kotlin.Unit.INSTANCE;
+        });
+    }
+
+    private void stopProfileObservation() {
+        if (profileObserver != null) {
+            SessionUi.cancel(profileObserver);
+            profileObserver = null;
+        }
+    }
+
+    /**
+     * Binds the fourth tab's picture from the session state. A confirmed reader shows their initials
+     * at once (the placeholder), with the picture replacing them once it is in hand; an unresolved
+     * session shows a neutral circle, never an empty hole. A change of account re-binds the new
+     * reader's; a download that outlives its reader is dropped by the identity fence.
+     */
+    private void updateProfileAvatar(AppSessionState state) {
+        if (profileAvatarView == null) {
+            return;
+        }
+        if (!(state instanceof AppSessionState.Authenticated)) {
+            profileAvatarIdentity = null;
+            profileAvatarView.setImageDrawable(placeholderAvatar());
+            return;
+        }
+        final SessionSnapshot snapshot = ((AppSessionState.Authenticated) state).getSnapshot();
+        final AppContainer container = NativeDo.container(getParentActivity());
+        final String username = snapshot.getUsername() != null ? snapshot.getUsername() : "";
+        final String displayName = snapshot.getDisplayName() != null ? snapshot.getDisplayName() : "";
+        final String avatarTemplate = snapshot.getAvatarTemplate() != null ? snapshot.getAvatarTemplate() : "";
+        profileAvatarIdentity = username;
+        final TLRPC.User user = DiscourseAvatars.INSTANCE.user(username, displayName, avatarTemplate, container.getBaseUrl());
+        final AvatarDrawable avatarDrawable = new AvatarDrawable();
         avatarDrawable.setInfo(user);
-        Runnable bind = () -> {
-            ImageLocation location = DiscourseAvatars.INSTANCE.imageLocation(user);
-            if (location != null) {
-                avatarView.setImage(location, "50_50", avatarDrawable, user);
-            }
-        };
+        // The reader's initials are up at once; the picture replaces them when it is in hand.
+        profileAvatarView.setImageDrawable(avatarDrawable);
+        ImageLocation location = DiscourseAvatars.INSTANCE.imageLocation(user);
+        if (location != null) {
+            profileAvatarView.setImage(location, "50_50", avatarDrawable, user);
+            return;
+        }
         String url = DiscourseAvatars.INSTANCE.url(avatarTemplate, container.getBaseUrl(), DiscourseAvatars.DEFAULT_SIZE);
         if (DiscourseAvatars.INSTANCE.isCached(user)) {
-            bind.run();
+            bindProfileAvatar(avatarDrawable, user);
         } else if (url != null) {
             DiscourseLoader.INSTANCE.cacheAvatar(container, url, user, () -> {
-                bind.run();
+                bindProfileAvatar(avatarDrawable, user);
                 return kotlin.Unit.INSTANCE;
             });
         }
-        return tab;
+    }
+
+    /** Binds a ready picture, but only while the reader it was prepared for is still confirmed. */
+    private void bindProfileAvatar(AvatarDrawable avatarDrawable, TLRPC.User user) {
+        String username = user.username != null ? user.username : "";
+        if (!username.equals(profileAvatarIdentity) || profileAvatarView == null) {
+            return;
+        }
+        ImageLocation location = DiscourseAvatars.INSTANCE.imageLocation(user);
+        if (location != null) {
+            profileAvatarView.setImage(location, "50_50", avatarDrawable, user);
+        }
+    }
+
+    /** A neutral circle for the tab while no confirmed reader names a picture. */
+    private AvatarDrawable placeholderAvatar() {
+        if (placeholderAvatar == null) {
+            placeholderAvatar = new AvatarDrawable();
+            placeholderAvatar.setInfo(0L);
+        }
+        return placeholderAvatar;
     }
 
     @Override
@@ -483,6 +558,7 @@ public class NativeDoMainTabsActivity extends ViewPagerActivity {
             badgeObserver.close();
             badgeObserver = null;
         }
+        stopProfileObservation();
         super.onFragmentDestroy();
     }
 

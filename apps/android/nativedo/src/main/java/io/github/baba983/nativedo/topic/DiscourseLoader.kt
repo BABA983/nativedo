@@ -8,6 +8,7 @@ import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.core.model.PostPoll
 import io.github.baba983.nativedo.core.model.PostReaction
 import io.github.baba983.nativedo.core.model.TopicDetail
+import io.github.baba983.nativedo.core.model.TopicPostsPage
 import io.github.baba983.nativedo.feature.topic.data.TopicReadPositionKey
 import io.github.baba983.nativedo.feature.topic.data.TopicReadReporter
 import io.github.baba983.nativedo.feature.topic.data.TopicRepository
@@ -322,6 +323,49 @@ object DiscourseLoader {
         }
     }
 
+    /**
+     * Fetches the pictures the topic's rows draw, reporting each the moment its bytes land so a
+     * picture already on disk is drawn without waiting behind a slow neighbour. A picture the site
+     * serves as a preview then an original reports again when the original replaces it.
+     */
+    fun cachePostPhotos(
+        container: AppContainer,
+        images: List<PostImage>,
+        onImageReady: (PostImage) -> Unit,
+    ) {
+        if (images.isEmpty()) {
+            return
+        }
+        scope.launch {
+            // One fetch per picture, even when two rows name the same one: they share the file.
+            for (image in images.distinctBy { it.id }) {
+                launch {
+                    fetchPhoto(container, image, onImageReady)
+                }
+            }
+        }
+    }
+
+    /** One picture again, for a press on the block's own download button (a retry after a failure). */
+    fun fetchPostPhoto(
+        container: AppContainer,
+        image: PostImage,
+        onImageReady: (PostImage) -> Unit,
+    ) {
+        scope.launch {
+            fetchPhoto(container, image, onImageReady)
+        }
+    }
+
+    private suspend fun fetchPhoto(
+        container: AppContainer,
+        image: PostImage,
+        onImageReady: (PostImage) -> Unit,
+    ) {
+        DiscourseImageBridge.downloadPhoto(container.imageOkHttpClient, image) { onImageReady(image) }
+        onImageReady(image)
+    }
+
     /** Posts a reply and reports the site's answer, or the failure the reader has to see. */
     fun reply(
         container: AppContainer,
@@ -624,20 +668,26 @@ object DiscourseLoader {
         }
     }
 
-    /** One more slice of a topic's posts, for the pages above the first. */
+    /**
+     * One more slice of a topic's posts, for the pages above the first. [includeSuggested] asks the
+     * site for its own ranked suggestions on the slice that reaches the real end of the stream; the
+     * answer is the whole page, so the caller takes its floors (and, on the last slice, its
+     * candidate) from one model.
+     */
     fun topicPosts(
         container: AppContainer,
         topicId: Long,
         postIds: List<Long>,
-        onLoaded: (List<Post>) -> Unit,
+        includeSuggested: Boolean,
+        onLoaded: (TopicPostsPage) -> Unit,
         onFailed: (Throwable) -> Unit,
     ) {
         if (postIds.isEmpty()) {
-            onLoaded(emptyList())
+            onLoaded(TopicPostsPage(posts = emptyList()))
             return
         }
         scope.launch {
-            runCatching { container.discourseApiClient.fetchTopicPosts(topicId, postIds) }
+            runCatching { container.discourseApiClient.fetchTopicPosts(topicId, postIds, includeSuggested) }
                 .onSuccess(onLoaded)
                 .onFailure(onFailed)
         }

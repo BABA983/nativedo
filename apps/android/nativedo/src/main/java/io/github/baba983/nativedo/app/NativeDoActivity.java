@@ -41,7 +41,6 @@ import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.ArticleViewer;
 import org.telegram.ui.Components.Easings;
 import org.telegram.ui.Components.LayoutHelper;
-import org.telegram.ui.Components.LineProgressView;
 import org.telegram.ui.ContentPreviewViewer;
 import org.telegram.ui.DialogsActivity;
 import org.telegram.ui.PhotoViewer;
@@ -53,7 +52,9 @@ import io.github.baba983.nativedo.auth.LoginWebViewFragment;
 import io.github.baba983.nativedo.auth.SessionStarter;
 import io.github.baba983.nativedo.core.di.AppContainer;
 import io.github.baba983.nativedo.core.session.AppSessionState;
+import io.github.baba983.nativedo.core.session.SessionExpiredReason;
 import io.github.baba983.nativedo.hooks.NativeDoHooks;
+import io.github.baba983.nativedo.sessionui.SessionUi;
 
 /**
  * NativeDo's shell: it hosts upstream's {@link DrawerLayoutContainer} and {@link ActionBarLayout},
@@ -71,7 +72,6 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
     private ActionBarLayout actionBarLayout;
     /** Upstream's browser hands its minimized pages to its host's overlay; this is that view. */
     private BottomSheetTabsOverlay browserTabsOverlay;
-    private LineProgressView sessionProgress;
     private DrawerLayoutContainer drawerLayoutContainer;
     private FrameLayout contentView;
     /**
@@ -101,6 +101,16 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
      * flips this true (see {@link #onSessionResolved} and {@link #signedOut}).
      */
     private boolean sessionAuthenticated;
+    /**
+     * Ignores stale gate answers after sign-out until the login page confirms a new session.
+     */
+    private boolean signedOutByReader;
+    /**
+     * Watches the session for this shell's whole life: a recovery the launch's own gate did not ask
+     * for (a retry from the home, a verification) makes the reader signed in here too, and a session
+     * that is lost makes a VIEW link pending again. Cancelled in {@link #onDestroy}.
+     */
+    private kotlinx.coroutines.Job sessionObserver;
     /** The topic a VIEW link asked for, and the floor it named; 0 while there is none. */
     private long pendingTopicId;
     private int pendingFloor;
@@ -207,7 +217,12 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         // LaunchActivity:565-568: the bars follow the fragment the layout now shows. Opening a
         // screen, closing one or replacing the stack recomputes the status-bar icon tint and the
         // navigation-bar band from the new top fragment.
-        actionBarLayout.setFragmentStackChangedListener(this::updateSystemBarColors);
+        actionBarLayout.setFragmentStackChangedListener(() -> {
+            updateSystemBarColors();
+            // A held link opens when the screen in front is the root again: a recovery WebView's
+            // close animation reports its own end here, so no delay is guessed.
+            tryOpenPendingTopic();
+        });
         // LaunchActivity:553 loads the chat wallpaper here, so a chat screen can draw it at once.
         Theme.loadWallpaper(true);
 
@@ -355,13 +370,9 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
             );
         }
 
-        // The session lives in cookies, so what to open with cannot be decided synchronously:
-        // show progress, revalidate the session, then present the answer. Gating here rather than
-        // in a fragment of its own keeps the first screen the app shows the real one. A recreation
-        // is gated the same way: the navigation it names is only *read* below and is presented
-        // after the session is answered, so private content never reaches the screen before the
-        // gate lets it through.
-        showSessionProgress();
+        // The session lives in cookies, so what to open with cannot be decided synchronously. When
+        // the shared jar may hold a session the real tab shell is presented at once and loads
+        // itself when the session lands; a link is only *read* here, never opened before the gate.
         AppContainer container = NativeDo.container(this);
         if (savedInstanceState == null) {
             // A linux.do link is the reader saying what to open; it is read before the session is
@@ -370,8 +381,14 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         } else {
             restoreNavigation(savedInstanceState);
         }
+        if (container.getCookieJar().hasAuthenticatedCookies()) {
+            presentRootForRestore();
+        }
+        // The launch's own gate answers once; this observer is what carries a later recovery (a
+        // retry from the home, a verification) back to this shell, so a held link still opens.
+        observeSession(container);
         SessionStarter.INSTANCE.start(container, state -> {
-            onSessionResolved(state instanceof AppSessionState.Authenticated);
+            onSessionResolved(state);
             return kotlin.Unit.INSTANCE;
         });
     }
@@ -711,6 +728,7 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
     protected void onDestroy() {
         // The gate's answer may still be on its way; from here on it lands on a dead shell.
         destroyed = true;
+        stopSessionObservation();
         // LaunchActivity:6856-6861. The shell count is decremented first, so the shared viewers -
         // and this shell's registration as the browser host - are released only when this was the
         // last one: a configuration change's replacement activity owns both now, and clearing them
@@ -905,43 +923,124 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         restoredTabPosition = 0;
     }
 
-    private void showSessionProgress() {
-        LineProgressView progress = new LineProgressView(this);
-        progress.setProgressColor(org.telegram.ui.ActionBar.Theme.getColor(
-                org.telegram.ui.ActionBar.Theme.key_featuredStickers_addButton));
-        progress.setProgress(0f, false);
-        sessionProgress = progress;
-        contentView.addView(progress, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, AndroidUtilities.dp(2)));
-    }
-
-    private void onSessionResolved(boolean authenticated) {
-        // The answer may outlive the shell: the revalidation is a network round-trip, and a
-        // configuration change can destroy the asker before it lands. Building on a destroyed
-        // activity's layout would put a screen on a window that is gone; the replacement has its
-        // own gate (see onCreate), so this shell drops the answer.
-        if (destroyed) {
+    /**
+     * Presents the root before the session has answered, at the tab a recreation named. Added
+     * without an animation: there is no previous screen to travel from, and the layout must not be
+     * left mid-transition when the answer arrives in the same turn.
+     */
+    private void presentRootForRestore() {
+        if (actionBarLayout == null) {
             return;
         }
-        if (sessionProgress != null) {
-            contentView.removeView(sessionProgress);
-            sessionProgress = null;
+        actionBarLayout.addFragmentToStack(NativeDoMainTabsActivity.forTab(restoredTabPosition));
+        // Consumed: a later root starts on the first tab.
+        restoredTabPosition = 0;
+    }
+
+    /**
+     * The session gate's answer. The root may already be up ({@link #presentRootForRestore}): a
+     * confirmed reader opens the held link over it; a recoverable expiry keeps the root and lets its
+     * home show the recovery state; a session the site never had falls through to the login page.
+     */
+    private void onSessionResolved(AppSessionState state) {
+        // The answer may outlive the shell (a network round-trip across a configuration change), or
+        // arrive after the reader signed out and withdrew the gate: dropped either way.
+        if (destroyed || signedOutByReader) {
+            return;
         }
-        sessionAuthenticated = authenticated;
-        if (authenticated) {
-            showRootOrPendingTopic();
+        if (state instanceof AppSessionState.Authenticated) {
+            sessionAuthenticated = true;
+            // The home loads itself from the session it observes; only the link this launch held
+            // is opened here, once, over the root that is already up.
+            openPendingTopic();
+        } else if (state instanceof AppSessionState.Expired
+                && isRecoverable((AppSessionState.Expired) state)) {
+            // Recovery/verification, not a logout: the root stays and its home offers the explicit
+            // SessionUi action (challenge page, or a retry). A link stays pending - private content
+            // is never opened on a session that has not been confirmed.
+            sessionAuthenticated = false;
         } else {
-            // The login WebView's completion lands in this shell too; a login that finished after
-            // the shell was destroyed belongs to the replacement, not here. Only that completion
-            // makes the reader signed in: the gate answering anonymous is exactly why a link stays
-            // pending rather than opening (see {@link #onNewIntent}).
-            actionBarLayout.presentFragment(new LoginWebViewFragment(() -> {
-                if (!destroyed) {
-                    sessionAuthenticated = true;
-                    showRootOrPendingTopic();
-                }
-            }), false);
+            // A session the site never had, or one it has proven gone (or whose cookies are
+            // missing): the login page is where the reader establishes one.
+            sessionAuthenticated = false;
+            presentLogin();
         }
+    }
+
+    /** Whether an expired session can be recovered in place - a challenge or a transient failure. */
+    private static boolean isRecoverable(AppSessionState.Expired expired) {
+        SessionExpiredReason reason = expired.getReason();
+        return reason == SessionExpiredReason.RecoveryFailed
+                || reason == SessionExpiredReason.ChallengeRequired;
+    }
+
+    /**
+     * Watches the session for this shell's whole life. A recovery the launch's own gate did not ask
+     * for (a retry from the home, a verification) lands here, so a VIEW link stays pending only
+     * until the reader is confirmed rather than forever.
+     */
+    private void observeSession(AppContainer container) {
+        stopSessionObservation();
+        sessionObserver = SessionUi.observe(container, state -> {
+            onSessionObserved(state);
+            return kotlin.Unit.INSTANCE;
+        });
+    }
+
+    private void stopSessionObservation() {
+        if (sessionObserver != null) {
+            SessionUi.cancel(sessionObserver);
+            sessionObserver = null;
+        }
+    }
+
+    /**
+     * A session value. It keeps the gate's mark current - a recovery makes the reader signed in
+     * even though the launch's own gate already answered, and a lost session makes a VIEW link
+     * pending again - then opens the link this launch is holding, once the root is in front.
+     */
+    private void onSessionObserved(AppSessionState state) {
+        if (destroyed || signedOutByReader) {
+            return;
+        }
+        sessionAuthenticated = state instanceof AppSessionState.Authenticated;
+        tryOpenPendingTopic();
+    }
+
+    /**
+     * Opens the topic this launch has held, once the reader is confirmed and the root is the screen
+     * in front. A recovery WebView may still be running its close animation, and {@code
+     * presentFragment} refuses while a transition runs; the fragment-stack callback reports when it
+     * is done, so the wait is on the navigation lifecycle rather than a guessed delay.
+     */
+    private void tryOpenPendingTopic() {
+        if (destroyed || !sessionAuthenticated || pendingTopicId == 0 || actionBarLayout == null) {
+            return;
+        }
+        if (actionBarLayout.checkTransitionAnimation()) {
+            return;
+        }
+        if (!(actionBarLayout.getLastFragment() instanceof NativeDoMainTabsActivity)) {
+            return;
+        }
+        openPendingTopic();
+    }
+
+    /**
+     * The login page, for a session the site never had. Its own completion makes the reader signed
+     * in: the root is presented (a first launch has none) and the held link opens over it.
+     */
+    private void presentLogin() {
+        if (actionBarLayout == null) {
+            return;
+        }
+        actionBarLayout.presentFragment(new LoginWebViewFragment(() -> {
+            if (!destroyed) {
+                signedOutByReader = false;
+                sessionAuthenticated = true;
+                showRootOrPendingTopic();
+            }
+        }), false);
     }
 
     /**
@@ -1101,11 +1200,15 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         // The reader is gone, so the gate's mark goes with the session: a VIEW link that arrives
         // while the login page is up must stay pending, not open private content (onNewIntent).
         sessionAuthenticated = false;
+        // A gate answer still in flight belongs to the session the reader just closed; it is stale
+        // and must not re-open the gate (see onSessionResolved).
+        signedOutByReader = true;
         // Nothing behind the login page is usable without a session, so the tab shell goes with it
         // and comes back when the reader is back.
         actionBarLayout.removeAllFragments();
         actionBarLayout.presentFragment(new LoginWebViewFragment(() -> {
             if (!destroyed) {
+                signedOutByReader = false;
                 sessionAuthenticated = true;
                 showRootOrPendingTopic();
             }

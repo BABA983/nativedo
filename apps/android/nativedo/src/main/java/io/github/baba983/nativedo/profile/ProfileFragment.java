@@ -49,6 +49,7 @@ import org.telegram.ui.Cells.ShadowSectionCell;
 import org.telegram.ui.Cells.TextDetailCell;
 import org.telegram.ui.Cells.TextInfoPrivacyCell;
 import org.telegram.ui.Components.CubicBezierInterpolator;
+import org.telegram.ui.Components.AvatarDrawable;
 import org.telegram.ui.Components.EmptyTextProgressView;
 import org.telegram.ui.Components.FlickerLoadingView;
 import org.telegram.ui.Components.LayoutHelper;
@@ -186,6 +187,8 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
     /** The site's bio with its cooked tags taken off, which both the head and the bio row draw. */
     private String bioText = "";
     private TLRPC.User avatarUser;
+    /** The initials the header draws until the site's picture is on disk. */
+    private AvatarDrawable avatarPlaceholder;
     private AppContainer container;
     /** Summary stats from `/u/{u}/summary.json`; null until (and if) they arrive. */
     private io.github.baba983.nativedo.core.model.UserSummary summary;
@@ -218,6 +221,12 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
      *  and the 180 ms/DecelerateInterpolator clock stay those of upstream's type 1. */
     private boolean avatarFlight;
     private boolean openAnimationInProgress;
+    /**
+     * Whether this fragment's own enter or exit transition is running, animated or not: upstream
+     * holds the profile's own view updates for its whole length (`setAnimationInProgress`,
+     * released by `onAnimationFinish`, ProfileActivity.java:9727-9778).
+     */
+    private boolean transitionAnimationInProgress;
     private float avatarAnimationProgress;
     private float prevAvatarTranslation;
     private float prevAvatarY;
@@ -601,14 +610,15 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                 LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.LEFT));
         // DialogsActivity's own first-load view (4059-4062): the row this list is about to draw,
         // standing in for it while the profile has not answered. It rides behind the header, so
-        // the screen still shows what it already knows.
+        // the screen still shows what it already knows; settleHeaderInList anchors it at the
+        // header's rest height, where the first real row lands.
         progressView = new FlickerLoadingView(context);
         progressView.setViewType(FlickerLoadingView.DIALOG_CELL_TYPE);
         progressView.setVisibility(View.GONE);
         listView.setEmptyView(progressView);
         listView.setAnimateEmptyView(true, RecyclerListView.EMPTY_VIEW_ANIMATION_TYPE_ALPHA);
         frameLayout.addView(progressView, LayoutHelper.createFrame(
-                LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER));
+                LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP));
 
         // The header's backdrop: the rows that scroll under the avatar and the name stay behind it.
         topView = new TopView(context);
@@ -645,9 +655,14 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         avatarImage.setPivotY(0);
         avatarContainer.addView(avatarImage, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
         if (transitionAvatar != null) {
-            avatarImage.setImageDrawable(transitionAvatar.getDrawable());
+            // The capsule's picture whole, or the initials if it has not drawn yet.
+            avatarImage.setImageDrawable(transitionAvatar.getDrawable() != null
+                    ? transitionAvatar.getDrawable() : headerAvatarDrawable());
             avatarImage.setAnimateFromImageReceiver(transitionAvatar);
             allowPullingDown = canPullDown();
+        } else {
+            // A pushed profile has no source to fly: the initials stand in until the bytes land.
+            avatarImage.setImageDrawable(headerAvatarDrawable());
         }
 
         // The two text views upstream's needLayout() moves into the action bar as the header
@@ -760,6 +775,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         stopSessionObservation();
         loadEpoch++;
         deferredUntilFlightEnd.clear();
+        transitionAnimationInProgress = false;
         // A flight torn down mid-way (the host destroyed) must not leave the topic's header
         // hidden: the animator's own end listener restores it otherwise.
         if (previousTransitionActionBar != null) {
@@ -1035,6 +1051,10 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         if (onlineTextView != null) {
             onlineTextView.setText("@" + username());
         }
+        // A changed reading is a changed stand-in: re-seed the initials if no picture is drawn.
+        if (avatarImage != null && avatarImage.getImageReceiver().getBitmap() == null) {
+            avatarImage.setImageDrawable(headerAvatarDrawable());
+        }
     }
 
     private void loadProfile(boolean forceRefresh) {
@@ -1141,10 +1161,27 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         }
         ImageLocation avatar = DiscourseAvatars.INSTANCE.imageLocation(avatarUser);
         if (avatar != null) {
-            avatarImage.setImage(avatar, "50_50", avatarImage.getImageReceiver().getDrawable(), avatarUser);
+            avatarImage.setImage(avatar, "50_50", headerAvatarDrawable(), avatarUser);
             // The pull-down is only offered once the head has a real picture to grow.
             allowPullingDown = canPullDown();
+        } else if (avatarImage.getImageReceiver().getBitmap() == null) {
+            // The bytes are not on disk yet: the initials stand in, not an empty spot.
+            avatarImage.setImageDrawable(headerAvatarDrawable());
         }
+    }
+
+    /** The header's stand-in initials, from the answered profile or the identity it opened for. */
+    private AvatarDrawable headerAvatarDrawable() {
+        if (avatarPlaceholder == null) {
+            avatarPlaceholder = new AvatarDrawable();
+        }
+        TLRPC.User user = avatarUser;
+        if (user == null) {
+            user = DiscourseAvatars.INSTANCE.user(username(), displayName(), "",
+                    container == null ? "" : container.getBaseUrl());
+        }
+        avatarPlaceholder.setInfo(0, user);
+        return avatarPlaceholder;
     }
 
     /**
@@ -1965,7 +2002,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
 
     /** Upstream also holds profile updates between setAnimationInProgress/onAnimationFinish. */
     private void runAfterFlight(Runnable action) {
-        if (openAnimationInProgress) {
+        if (openAnimationInProgress || transitionAnimationInProgress) {
             deferredUntilFlightEnd.add(action);
         } else {
             action.run();
@@ -2022,10 +2059,18 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                 mediaView.setLayoutParams(params);
             }
         }
-        // The shimmer draws its rows from below the header too, the way DialogsActivity keeps its
-        // progress view under its own top panel (2093-2095).
+        // The shimmer starts at the header's rest height, where the first real row lands, the way
+        // DialogsActivity keeps its progress view under its own top panel (2093-2095).
         if (progressView != null) {
-            progressView.setPaddingTop(paddingTop);
+            ViewGroup.LayoutParams params = progressView.getLayoutParams();
+            if (params instanceof FrameLayout.LayoutParams) {
+                int top = (actionBar.getOccupyStatusBar() ? AndroidUtilities.statusBarHeight : 0)
+                        + ActionBar.getCurrentActionBarHeight() + getHeaderExtraHeight();
+                if (((FrameLayout.LayoutParams) params).topMargin != top) {
+                    ((FrameLayout.LayoutParams) params).topMargin = top;
+                    progressView.setLayoutParams(params);
+                }
+            }
         }
         if ((!headerSeeded || seededWidth != listView.getMeasuredWidth())
                 && listView.getAdapter() != null && listView.getAdapter().getItemCount() > 0) {
@@ -2923,8 +2968,13 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         if (isOpen && actionsView != null) {
             actionsView.startAnimatedActions();
         }
-        if ((!isOpen && backward || isOpen && !backward) && playProfileAnimation != 0
-                && allowProfileAnimation && (!isPulledDown || avatarFlight)) {
+        if (isOpen || backward) {
+            // This fragment's own enter/exit transition: upstream holds the profile's own view
+            // updates for its whole length, animated or not (ProfileActivity.java:9727-9778).
+            transitionAnimationInProgress = true;
+        }
+        if ((!isOpen && backward || isOpen && !backward)
+                && playProfileAnimation != 0 && allowProfileAnimation && (!isPulledDown || avatarFlight)) {
             openAnimationInProgress = true;
             if (!isOpen) {
                 captureBackwardInitialValues();
@@ -2944,9 +2994,8 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             previousTransitionActionBar.setSkipDrawChild(false);
             previousTransitionActionBar = null;
         }
-        if (openAnimationInProgress) {
-            openAnimationInProgress = false;
-        }
+        openAnimationInProgress = false;
+        transitionAnimationInProgress = false;
         drainDeferredUntilFlightEnd();
         if (isOpen && !backward && playProfileAnimation != 0) {
             // The flight lands in the collapsed header's own layout - the round 96 dp avatar under
@@ -2970,6 +3019,10 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.needCheckSystemBarColors, true);
         } else if (!isOpen && listView != null) {
             listView.setAlpha(1f);
+            if (progressView != null) {
+                progressView.setAlpha(1f);
+                progressView.setTranslationX(0f);
+            }
         }
     }
 
@@ -2980,6 +3033,11 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         if (listView != null) {
             listView.setAlpha(progress);
             listView.setTranslationX(dp(48) - dp(48) * progress);
+        }
+        // The shimmer is the list's sibling, not a row of it: it follows the same fade and slide.
+        if (progressView != null) {
+            progressView.setAlpha(progress);
+            progressView.setTranslationX(dp(48) - dp(48) * progress);
         }
         // Upstream's ordinary transition (its `playProfileAnimation == 2` blocks are the expanded
         // photo's) blends the backdrop from the screen it is leaving - transparent, so the screen
@@ -3011,6 +3069,10 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         if (listView != null) {
             listView.setAlpha(1f);
             listView.setTranslationX(0f);
+        }
+        if (progressView != null) {
+            progressView.setAlpha(1f);
+            progressView.setTranslationX(0f);
         }
     }
 

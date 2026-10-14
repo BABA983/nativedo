@@ -1,7 +1,11 @@
 package io.github.baba983.nativedo.topic
 
+import android.graphics.BitmapFactory
 import io.github.baba983.nativedo.hooks.NativeDoHooks
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okhttp3.Call
 import okhttp3.OkHttpClient
@@ -70,6 +74,14 @@ object DiscourseImageBridge {
 
     /** How far a clip's transfer runs before it tells upstream's block about it: a UI hop per step. */
     private const val PROGRESS_STEP = 256L * 1024
+
+    /**
+     * The largest side a photo's own size may declare. Upstream asks a photo for a size no larger
+     * than this (`AndroidUtilities.getPhotoSize()`), and picks the largest size that fits; a photo
+     * whose only size is larger still wins, but a photo with a smaller sibling would switch to it.
+     * Capping the full picture's own size keeps it the one the block and the viewer pick.
+     */
+    private const val MAX_PHOTO_SIDE = 1280
 
     /** The account every message this module builds belongs to; upstream's singletons are per account. */
     private const val ACCOUNT = 0
@@ -148,6 +160,16 @@ object DiscourseImageBridge {
             image.attr("src", postImage.id.toString())
             image.removeAttr("srcset")
             image.removeAttr("data-download-href")
+        }
+        // The files this client fetches itself, told to the seam as the body is built - before any
+        // cell can ask about one. A block then reads its loading state from this client's own
+        // transfer, and never hands its file to upstream's downloader, which has no datacenter for
+        // it. See NativeDoHooks.mediaBlockLoading and mediaAutoDownload.
+        for (image in images) {
+            NativeDoHooks.setClientMediaFile(photoFileName(image), true)
+            if (image.previewUrl != null) {
+                NativeDoHooks.setClientMediaFile(FileLoader.getAttachFileName(previewSizeOf(image)), true)
+            }
         }
         // Inline emoji: the site's cook leaves each one as an `img.emoji` (standard twemoji, or a
         // custom emoji it uploaded) carrying the picture's own src and a readable shortcode as
@@ -582,12 +604,18 @@ object DiscourseImageBridge {
             return null
         }
         val url = originalSource(image, baseUrl) ?: return null
+        // Discourse writes a lightbox as a small, optimized picture (`src`) beside the original
+        // (`data-download-href`). The original is what the cell draws and the viewer opens; the
+        // smaller one is a preview the reader can look at while the original is still arriving.
+        val preview = resolve(image.attr("src"), baseUrl)
+            ?.takeIf { candidate -> candidate != url && (candidate.startsWith("http://") || candidate.startsWith("https://")) }
         return PostImage(
             id = idOf(url),
             url = url,
             width = width,
             height = height.coerceAtLeast(1),
             extension = extensionOf(url),
+            previewUrl = preview,
         )
     }
 
@@ -795,10 +823,10 @@ object DiscourseImageBridge {
      * Where upstream will look for the image. `volume_id = 0` keeps `FileLoader` off its
      * file-path database: a real volume id would send every lookup through Telegram's sqlite.
      */
-    private fun locationOf(image: PostImage): TLRPC.TL_fileLocationToBeDeprecated =
+    private fun locationOf(id: Long): TLRPC.TL_fileLocationToBeDeprecated =
         TLRPC.TL_fileLocationToBeDeprecated().apply {
             volume_id = 0
-            local_id = (image.id and 0x7fffffffL).toInt()
+            local_id = (id and 0x7fffffffL).toInt()
             dc_id = 0
         }
 
@@ -807,7 +835,40 @@ object DiscourseImageBridge {
         w = image.width
         h = image.height
         size = 0
-        location = locationOf(image)
+        location = locationOf(image.id)
+    }
+
+    /**
+     * The full picture as the block sees it.
+     *
+     * <p>Its own size keeps the photo's display shape, but its declared side is never larger than
+     * [MAX_PHOTO_SIDE], the side upstream asks a photo for: a size larger than that is skipped by
+     * upstream's own "closest size" pick as soon as a smaller one exists, and the block would end
+     * up drawing - and opening - the preview. Capping keeps the shape (only the layout scale uses
+     * it) and keeps the full picture the one the block and the viewer choose.</p>
+     */
+    private fun fullSizeOf(image: PostImage): TLRPC.TL_photoSize = TLRPC.TL_photoSize().apply {
+        type = "x"
+        val side = maxOf(image.width, image.height).coerceAtLeast(1)
+        val scale = if (side > MAX_PHOTO_SIDE) MAX_PHOTO_SIDE.toDouble() / side else 1.0
+        w = (image.width * scale).toInt().coerceAtLeast(1)
+        h = (image.height * scale).toInt().coerceAtLeast(1)
+        size = 0
+        location = locationOf(image.id)
+    }
+
+    /**
+     * The site's own smaller picture as a second, half-shape size: what the block draws while the
+     * full one is still on its way. It has its own file, so a preview landing does not stand in for
+     * the full picture in upstream's image cache.
+     */
+    private fun previewSizeOf(image: PostImage): TLRPC.TL_photoSize = TLRPC.TL_photoSize().apply {
+        type = "m"
+        val full = fullSizeOf(image)
+        w = (full.w / 2).coerceAtLeast(1)
+        h = (full.h / 2).coerceAtLeast(1)
+        size = 0
+        location = locationOf(idOf(image.previewUrl ?: image.url))
     }
 
     /**
@@ -917,8 +978,19 @@ object DiscourseImageBridge {
         dc_id = 0
         access_hash = 0
         file_reference = ByteArray(0)
-        sizes = arrayListOf(sizeOf(image))
+        val list = ArrayList<TLRPC.PhotoSize>()
+        list.add(fullSizeOf(image))
+        if (image.previewUrl != null) {
+            list.add(previewSizeOf(image))
+        }
+        sizes = list
     }
+
+    /**
+     * The name upstream's photo block keys the file by: the same name it hands the module on a
+     * press, and the name the module files its progress, failure and success reports under.
+     */
+    fun photoFileName(image: PostImage): String = FileLoader.getAttachFileName(sizeOf(image))
 
     /**
      * Where upstream looks for the image. An `ImageReceiver` asks for cache type 0, which is the
@@ -929,6 +1001,16 @@ object DiscourseImageBridge {
      */
     fun localFiles(image: PostImage): List<File> {
         val size = sizeOf(image)
+        val loader = FileLoader.getInstance(0)
+        return listOf(loader.getPathToAttach(size, false), loader.getPathToAttach(size, true)).distinct()
+    }
+
+    /** Where upstream looks for the preview the block draws while the full picture is on its way. */
+    fun previewLocalFiles(image: PostImage): List<File> {
+        if (image.previewUrl == null) {
+            return emptyList()
+        }
+        val size = previewSizeOf(image)
         val loader = FileLoader.getInstance(0)
         return listOf(loader.getPathToAttach(size, false), loader.getPathToAttach(size, true)).distinct()
     }
@@ -960,6 +1042,276 @@ object DiscourseImageBridge {
             null
         }
     }
+
+    /** What one post image's fetch ended as. */
+    enum class PhotoDownload {
+        /** The picture the block draws is on disk. */
+        Stored,
+
+        /** The site refused the request, or the transfer broke, with nothing left to draw. */
+        Failed,
+
+        /** The reader stopped it: no half-written file is left, and the block goes back to its button. */
+        Cancelled,
+    }
+
+    /** All rows sharing a file observe one transfer, including its preview and failed outcome. */
+    private class PhotoTransfer {
+        val result = CompletableDeferred<PhotoDownload>()
+        val listeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
+    }
+
+    private val photoTransfers = java.util.concurrent.ConcurrentHashMap<String, PhotoTransfer>()
+    private val photoPermits = Semaphore(4)
+
+    /**
+     * How to start (or retry) the fetch for one file, when the block's own download button is
+     * pressed. Registered by the screen that draws the row, and removed when that screen leaves.
+     */
+    private val photoStarters = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.CopyOnWriteArrayList<Runnable>>()
+
+    private val downloadHandler = object : NativeDoHooks.MediaBlockDownloadHandler {
+        override fun start(fileName: String): Boolean {
+            val starter = photoStarters[fileName]?.lastOrNull() ?: return false
+            starter.run()
+            return true
+        }
+    }
+
+    init {
+        NativeDoHooks.setMediaBlockDownloadHandler(downloadHandler)
+    }
+
+    /** Registers how a press on the block's own download button starts (or retries) one fetch. */
+    fun registerPhotoStarter(name: String, starter: Runnable) {
+        if (name.isEmpty()) {
+            return
+        }
+        photoStarters.compute(name) { _, listeners ->
+            (listeners ?: java.util.concurrent.CopyOnWriteArrayList()).apply { addIfAbsent(starter) }
+        }
+    }
+
+    /** Removing the top screen's starter restores the same photo's retry on the screen beneath it. */
+    fun clearPhotoStarter(name: String, starter: Runnable) {
+        photoStarters.computeIfPresent(name) { _, listeners ->
+            listeners.remove(starter)
+            listeners.takeUnless { it.isEmpty() }
+        }
+    }
+
+    /**
+     * Downloads the picture the block draws for [image] when it is not on disk yet, telling the
+     * block about the transfer on upstream's own channels.
+     *
+     * <p>A fetch this client runs is not a `FileLoader` download, so upstream's block never learns
+     * of it by itself: it is put into its own loading state before the first byte, given the
+     * transfer as it arrives, and told how it ended - success, failure, or the reader's cancel.
+     * The writes go through a private temporary file, so a transfer cut short leaves nothing a cell
+     * would draw and a retry starts from an empty name.</p>
+     *
+     * <p>When the site serves a smaller preview beside the original, that preview is fetched first,
+     * into its own file, and [onBytes] is called the moment it lands - the block then draws it while
+     * the original is still on its way; the original replaces it as the row's main picture once it
+     * arrives, under the same identity, and the viewer opens that file.</p>
+     */
+    suspend fun downloadPhoto(
+        client: OkHttpClient,
+        image: PostImage,
+        onBytes: () -> Unit,
+    ): PhotoDownload = withContext(Dispatchers.IO) {
+        val name = photoFileName(image)
+        val created = PhotoTransfer()
+        val existing = photoTransfers.putIfAbsent(name, created)
+        val transfer = existing ?: created
+        transfer.listeners.add(onBytes)
+        try {
+            if (existing != null) {
+                // A preview may have landed before this row joined the transfer.
+                withContext(Dispatchers.Main.immediate) { onBytes() }
+                transfer.result.await()
+            } else {
+                val outcome = photoPermits.withPermit {
+                    fetchPhoto(client, image, name) { transfer.listeners.forEach { it() } }
+                }
+                transfer.result.complete(outcome)
+                outcome
+            }
+        } catch (error: Throwable) {
+            if (existing == null) transfer.result.completeExceptionally(error)
+            throw error
+        } finally {
+            transfer.listeners.remove(onBytes)
+            if (existing == null) photoTransfers.remove(name, transfer)
+        }
+    }
+
+    private suspend fun fetchPhoto(
+        client: OkHttpClient,
+        image: PostImage,
+        name: String,
+        onBytes: () -> Unit,
+    ): PhotoDownload {
+        val targets = localFiles(image)
+        if (targets.all(::decodablePhoto)) {
+            return PhotoDownload.Stored
+        }
+        targets.filterNot(::decodablePhoto).forEach { it.delete() }
+        val cancelled = java.util.concurrent.atomic.AtomicBoolean(false)
+        val call = java.util.concurrent.atomic.AtomicReference<Call?>()
+        NativeDoHooks.setFileLoading(name, true)
+        NativeDoHooks.setFetchCanceller(name) {
+            cancelled.set(true)
+            call.get()?.cancel()
+        }
+        // The block is told the fetch exists before the first byte, so it draws a download rather
+        // than a button that seems to do nothing.
+        reportPhotoProgress(name, 0L, 0L)
+        val outcome = try {
+            val preview = image.previewUrl
+            if (preview != null) {
+                val previewOutcome = transferPhoto(client, preview, previewLocalFiles(image), null, call, cancelled)
+                if (previewOutcome == PhotoDownload.Stored) {
+                    withContext(Dispatchers.Main.immediate) { onBytes() }
+                }
+                if (previewOutcome == PhotoDownload.Cancelled) {
+                    PhotoDownload.Cancelled
+                } else {
+                    transferPhoto(client, image.url, targets, name, call, cancelled)
+                }
+            } else {
+                transferPhoto(client, image.url, targets, name, call, cancelled)
+            }
+        } finally {
+            NativeDoHooks.setFetchCanceller(name, null)
+            NativeDoHooks.setFileLoading(name, false)
+        }
+        when (outcome) {
+            PhotoDownload.Stored -> {
+                val length = targets.first().length()
+                reportPhotoProgress(name, length, length)
+                postPhotoNotification(NotificationCenter.fileLoaded, name, targets.first().absolutePath)
+            }
+
+            PhotoDownload.Cancelled -> postPhotoNotification(NotificationCenter.fileLoadFailed, name, 1)
+
+            PhotoDownload.Failed -> postPhotoNotification(NotificationCenter.fileLoadFailed, name, 0)
+        }
+        return outcome
+    }
+
+    /**
+     * One transfer, into a private temporary file beside the first target and then into every place
+     * upstream looks. A transfer that carried the whole picture stops with those bytes still under
+     * the temporary name; a cut one leaves no file behind. [progressName] is the name the block
+     * looks its file up by, or null when the transfer is a preview the block does not key on.
+     */
+    private fun transferPhoto(
+        client: OkHttpClient,
+        url: String,
+        targets: List<File>,
+        progressName: String?,
+        call: java.util.concurrent.atomic.AtomicReference<Call?>,
+        cancelled: java.util.concurrent.atomic.AtomicBoolean,
+    ): PhotoDownload {
+        if (cancelled.get()) return PhotoDownload.Cancelled
+        if (targets.all(::decodablePhoto)) return PhotoDownload.Stored
+        var partial: File? = null
+        return try {
+            val staged = AtomicFileWrite.tempFor(targets.first()).also { partial = it }
+            val request = client.newCall(Request.Builder().url(url).build())
+            call.set(request)
+            if (cancelled.get()) {
+                request.cancel()
+                return PhotoDownload.Cancelled
+            }
+            request.execute().use { response ->
+                if (!response.isSuccessful) {
+                    return@use PhotoDownload.Failed
+                }
+                val body = response.body ?: return@use PhotoDownload.Failed
+                val total = body.contentLength()
+                body.byteStream().use { input ->
+                    staged.outputStream().use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        var loaded = 0L
+                        var reported = 0L
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read <= 0) {
+                                break
+                            }
+                            loaded += read
+                            output.write(buffer, 0, read)
+                            // A report is a UI-thread hop per reader, so a transfer reports in steps.
+                            if (progressName != null && (loaded - reported >= PROGRESS_STEP || loaded == total)) {
+                                reported = loaded
+                                reportPhotoProgress(progressName, loaded, total)
+                            }
+                        }
+                    }
+                }
+                when {
+                    cancelled.get() -> PhotoDownload.Cancelled
+                    !decodablePhoto(staged) -> PhotoDownload.Failed
+                    installPhoto(staged, targets) -> PhotoDownload.Stored
+                    else -> PhotoDownload.Failed
+                }
+            }
+        } catch (error: Throwable) {
+            if (cancelled.get()) {
+                PhotoDownload.Cancelled
+            } else {
+                FileLog.e("nativedo: photo transfer failed (${error.javaClass.simpleName})")
+                PhotoDownload.Failed
+            }
+        } finally {
+            // A successful install moved this name; every other path removes the private partial.
+            partial?.delete()
+        }
+    }
+
+    /** A 200 HTML challenge or an empty body is not a cached picture. Read only the image header. */
+    private fun decodablePhoto(file: File): Boolean {
+        if (file.length() == 0L) return false
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        return bounds.outWidth > 0 && bounds.outHeight > 0
+    }
+
+    /**
+     * The finished transfer becomes the file the block reads, in every place upstream looks. The
+     * first target is the moved temporary file; the rest are written from it, because on a device
+     * the images and cache directories are two.
+     */
+    private fun installPhoto(partial: File, targets: List<File>): Boolean {
+        if (!AtomicFileWrite.commit(partial, targets.first())) {
+            return false
+        }
+        val source = targets.first()
+        for (target in targets.drop(1)) {
+            val written = AtomicFileWrite.write(target) { output -> source.inputStream().use { it.copyTo(output) } }
+            if (!written) {
+                return false
+            }
+        }
+        return true
+    }
+
+    private fun reportPhotoProgress(name: String, loaded: Long, total: Long) {
+        // An unknown Content-Length cannot be a divisor for PhotoViewer's progress calculation.
+        postPhotoNotification(NotificationCenter.fileLoadProgressChanged, name,
+            if (total > 0) loaded else 0L, if (total > 0) total else 1L)
+    }
+
+    /**
+     * Upstream's own channel is how the block that asked for a file learns how the fetch it did not
+     * start ended: a report here is what draws its radial progress, stops its spinner, or returns it
+     * to its download button.
+     */
+    private fun postPhotoNotification(id: Int, name: String, vararg args: Any?) {
+        NotificationCenter.getInstance(ACCOUNT).postNotificationNameOnUIThread(id, name, *args)
+    }
 }
 
 /** One post image: the URL to fetch and the identity upstream refers to it by. */
@@ -969,6 +1321,8 @@ data class PostImage(
     val width: Int,
     val height: Int,
     val extension: String,
+    /** The smaller picture the site serves beside the original, or null when there is none. */
+    val previewUrl: String? = null,
 )
 
 /** One file a post links to: the URL to fetch and the identity upstream refers to it by. */

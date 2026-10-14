@@ -35,6 +35,12 @@ data class TopicDetail(
     /** The post id at the user's Discourse read position, when the server provides it. */
     val lastReadPostId: Long? = null,
     /**
+     * The site's own suggestions for what to read after this topic, in its own order
+     * (`suggested_topics`), mapped through the same topic-summary mapping the feed uses. Empty when
+     * the site carried none; never reordered or guessed.
+     */
+    val suggestedTopics: List<TopicSummary> = emptyList(),
+    /**
      * Whether this topic was answered from the persisted offline cache rather than the site. A live
      * answer leaves it false; the UI suppresses writes and says so while it is true.
      */

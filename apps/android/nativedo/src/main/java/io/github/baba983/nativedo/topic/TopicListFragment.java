@@ -50,6 +50,8 @@ import java.util.List;
 import io.github.baba983.nativedo.R;
 import io.github.baba983.nativedo.app.NativeDo;
 import io.github.baba983.nativedo.app.NativeDoMainTabsActivity;
+import io.github.baba983.nativedo.auth.LoginWebViewFragment;
+import io.github.baba983.nativedo.auth.SessionStarter;
 import io.github.baba983.nativedo.core.di.AppContainer;
 import io.github.baba983.nativedo.core.messagebus.IncomingTopics;
 import io.github.baba983.nativedo.core.messagebus.MessageBusHandle;
@@ -57,7 +59,11 @@ import io.github.baba983.nativedo.core.messagebus.MessageBusSession;
 import io.github.baba983.nativedo.core.model.CategorySummary;
 import io.github.baba983.nativedo.core.model.Tag;
 import io.github.baba983.nativedo.core.model.TopicSummary;
+import io.github.baba983.nativedo.core.session.AppSessionState;
 import io.github.baba983.nativedo.feature.topic.data.TopicReadMarks;
+import io.github.baba983.nativedo.sessionui.SessionUi;
+import io.github.baba983.nativedo.sessionui.SessionUiAction;
+import io.github.baba983.nativedo.sessionui.SessionUiState;
 import me.vkryl.android.animator.BoolAnimator;
 import me.vkryl.android.animator.FactorAnimator;
 import org.telegram.messenger.ImageLocation;
@@ -213,6 +219,11 @@ public class TopicListFragment extends BaseFragment
         }
         actionBarDefaultPaint.setColor(getThemedColor(Theme.key_windowBackgroundWhite));
         if (this.actionBar != null) {
+            // While the search results are up the bar's own band is the header (the frame's band
+            // stands aside); its colour has to be read again, or a theme switch leaves the old
+            // theme's band over the new one.
+            this.actionBar.setBackgroundColor(isSearchContainerVisible()
+                    ? getThemedColor(Theme.key_windowBackgroundWhite) : Color.TRANSPARENT);
             this.actionBar.updateColors();
             this.actionBar.invalidate();
         }
@@ -304,6 +315,19 @@ public class TopicListFragment extends BaseFragment
     /** The tab whose feed the page in front shows, so a re-selection is not a reload. */
     private int selectedTabId = ALL_TAB_ID;
 
+    /**
+     * The session value the screen last acted on, so a change can be told from a repeat. The feed,
+     * the categories and the tags are session reads, held until the identity behind them is a
+     * confirmed reader (the previous account's cookies must not be sent first).
+     */
+    private AppSessionState lastSessionState;
+    /** Whether the session has answered a usable reader; the gate on every session read here. */
+    private boolean sessionReady;
+    /** The explicit session state the page shows in place of content, or null while it shows content. */
+    private SessionUiState sessionStateUi;
+    /** The session-state observer; cancelled with the views and started again with the next ones. */
+    private kotlinx.coroutines.Job sessionObserver;
+
     /** Whether the screen is a page of the tab host, which adds the strip's height to the insets. */
     private boolean hasMainTabs;
     private int additionNavigationBarHeight;
@@ -338,12 +362,17 @@ public class TopicListFragment extends BaseFragment
         // (3172): the search fades and shrinks that container while it takes the bar over.
         actionBar.setUseContainerForTitles();
         actionBar.setTitle("linux.do");
+        if (!hasMainTabs) {
+            actionBar.setBackButtonImage(org.telegram.messenger.R.drawable.ic_ab_back);
+        }
         // The page carries its own bar: inside the tab host the bar belongs to the page's screen,
         // and the strip (a sibling of the pager) draws over the pages, never under them.
         actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
             @Override
             public void onItemClick(int id) {
-                if (id == TAG_ITEM) {
+                if (id == -1) {
+                    finishFragment();
+                } else if (id == TAG_ITEM) {
                     pickTag();
                 } else if (id == CLEAR_TAG_ITEM) {
                     selectTag(null);
@@ -378,7 +407,7 @@ public class TopicListFragment extends BaseFragment
         // The bar's own measured height, status bar included: this screen's frame starts at the
         // top of the screen now that the bar is a child of it, so every offset below counts from
         // there (DialogsActivity lays its children against actionBar.getMeasuredHeight(), 1148).
-        final int barHeight = ActionBar.getCurrentActionBarHeight() + AndroidUtilities.statusBarHeight;
+        final int barHeight = headerBarHeight();
         final int searchFieldHeight = AndroidUtilities.dp(org.telegram.ui.DialogsActivity.SEARCH_FIELD_HEIGHT);
         // DialogsActivity reads its fling ceiling off the ViewConfiguration (3208); the settle of
         // a category swipe does the same.
@@ -407,13 +436,14 @@ public class TopicListFragment extends BaseFragment
         // The search pager's home, under the strip and the bar the way DialogsActivity adds it
         // under its own (4713: its own child index is below the filter strip's and the bar's).
         // It is built on the first search; until then it is the empty frame that holds its place
-        // in the draw order. Its own top is the bar's height: the pager's layout counts from the
-        // bar's lower edge, as the whole screen's did before the bar was this screen's own.
+        // in the draw order. Its own top is the screen's top, full height: the results reach
+        // behind the bar and are read through the header's glass (DialogsActivity lays its search
+        // pager at the screen's top, 1306/1189), and the panel inside places its capsule and its
+        // first-row padding against the bar's measured height (SearchPanel.setInsets).
         searchContainer = new FrameLayout(context);
         searchContainer.setVisibility(View.GONE);
-        frame.addView(searchContainer, LayoutHelper.createFrameMarginPx(
-                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP,
-                0, barHeight, 0, 0));
+        frame.addView(searchContainer, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
 
         tabsView = new FilterTabsView(context, resourceProvider);
         tabsView.setDelegate(new CategoryTabsDelegate());
@@ -507,7 +537,8 @@ public class TopicListFragment extends BaseFragment
                 if (s.length() > 0) {
                     openSearch();
                 }
-                if (searching && searchPanel != null) {
+                // The query is a session read; it waits with the rest until the identity is confirmed.
+                if (sessionReady && searching && searchPanel != null) {
                     searchPanel.search(s.toString());
                 }
             }
@@ -597,7 +628,11 @@ public class TopicListFragment extends BaseFragment
             }
         });
         ViewCompat.setOnApplyWindowInsetsListener(fragmentView, this::onInsetsInternal);
-        actionBar.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> checkUi_contentTop());
+        // Keep the header's slots aligned when the bar re-measures for a new status-bar inset.
+        actionBar.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+            updateHeaderTopMargins();
+            checkUi_contentTop();
+        });
         container = NativeDo.container(getParentActivity());
         // A theme switch that happens while a screen is pushed over this one clears the views
         // below (upstream's own animation), so a second createView has to let go of the previous
@@ -630,13 +665,21 @@ public class TopicListFragment extends BaseFragment
         checkUi_contentTop();
         checkUi_floatingButton();
         updateTagActions();
-        // The page in front reads its category; the pair starts on the all-topics tab. A new/unread
-        // feed is the same screen with the site's own unfiltered route, so it builds no strip and
-        // no tag list.
-        preparePage(viewPages[0], viewPages[0].selectedType, false);
+        // The strip's cached categories are a local read: they draw the real strip in the first
+        // frame, before the session has answered and before the site has been asked.
         if (filteredFeed) {
-            loadCategories();
-            loadTags();
+            publishCategories(container.getCategoryStore().cachedCategories());
+        }
+        // Bind the page in front to its feed without reading it: the page shows its shimmer and
+        // holds it until the session answers (the observer below loads it then).
+        bindPage(viewPages[0], viewPages[0].selectedType, false);
+        // A confirmed reader loads at once; a session still being restored (or expired) shows its
+        // own state instead of the previous account's feed.
+        lastSessionState = container.getSessionCoordinator().getSessionState().getValue();
+        observeSession();
+        updateHomeEntrances();
+        if (lastSessionState instanceof AppSessionState.Authenticated) {
+            loadCurrentFeedAndExtras();
         }
         return fragmentView;
     }
@@ -867,7 +910,7 @@ public class TopicListFragment extends BaseFragment
                         goingDown = firstVisiblePosition > prevPosition;
                     }
                     if (changed && scrollUpdated && (goingDown || scrollingManually)) {
-                        startTopicButton.setButtonVisible(!goingDown, true);
+                        startTopicButton.setButtonVisible(sessionReady && !goingDown, true);
                     }
                     prevPosition = firstVisiblePosition;
                     prevTop = firstViewTop;
@@ -887,6 +930,12 @@ public class TopicListFragment extends BaseFragment
         // The view consumes touches in its own constructor; the tap that retries has to get through.
         page.emptyView.setOnTouchListener(null);
         page.emptyView.setOnClickListener(view -> {
+            // The state view carries either the session's own recovery action or a failed read's
+            // retry; which one is in hand decides what the tap does.
+            if (sessionStateUi != null) {
+                onSessionStateAction();
+                return;
+            }
             if (page.feed != null) {
                 page.feed.failed = false;
                 requestFeed(page, page.feed);
@@ -951,6 +1000,17 @@ public class TopicListFragment extends BaseFragment
      * to where the reader was in that category, which is what coming back means.
      */
     private void preparePage(ViewPage page, int tabId, boolean restoreScroll) {
+        bindPage(page, tabId, restoreScroll);
+        if (!page.feed.loaded && !page.feed.loading && !page.feed.failed) {
+            requestFeed(page, page.feed);
+        }
+    }
+
+    /**
+     * Binds {@code page} to the tab's feed - its items and its state - without reading it (the read
+     * is {@link #requestFeed}, which the session gate holds until the identity is confirmed).
+     */
+    private void bindPage(ViewPage page, int tabId, boolean restoreScroll) {
         final CategoryFeed feed = feedFor(tabId);
         page.selectedType = tabId;
         page.feed = feed;
@@ -959,9 +1019,6 @@ public class TopicListFragment extends BaseFragment
             page.layoutManager.scrollToPositionWithOffset(feed.scrollPosition, feed.scrollOffset);
         }
         updatePageState(page);
-        if (!feed.loaded && !feed.loading && !feed.failed) {
-            requestFeed(page, feed);
-        }
     }
 
     /**
@@ -971,6 +1028,11 @@ public class TopicListFragment extends BaseFragment
      * {@code topic_list.more_topics_url} is what says another page exists.
      */
     private void requestFeed(ViewPage page, CategoryFeed feed) {
+        if (!sessionReady) {
+            // A session read: it waits rather than sending the previous account's cookies, and the
+            // session observer loads it the moment the identity lands.
+            return;
+        }
         final int generation = ++feed.generation;
         feed.loading = true;
         feed.failed = false;
@@ -1041,6 +1103,10 @@ public class TopicListFragment extends BaseFragment
      * row, and an answer without a {@code more_topics_url} ends the list.
      */
     private void requestMore(ViewPage page, CategoryFeed feed) {
+        if (!sessionReady) {
+            // The next page is a session read like the first; it waits with it.
+            return;
+        }
         final int generation = feed.generation;
         final int pageNumber = feed.nextPage;
         feed.loadingMore = true;
@@ -1226,6 +1292,14 @@ public class TopicListFragment extends BaseFragment
         // The bar's own offline marker follows whatever feed is in front, so a kept (cached) feed
         // still says so after a tab switch or a return to the screen.
         updateOfflineMarker();
+        if (sessionStateUi != null) {
+            page.listView.setEmptyView(null);
+            page.progressView.setVisibility(View.GONE);
+            page.emptyView.setVisibility(View.VISIBLE);
+            page.emptyView.setText(SessionUi.text(getParentActivity(), sessionStateUi).toString());
+            page.emptyView.showTextView();
+            return;
+        }
         final CategoryFeed feed = page.feed;
         if (feed.loaded) {
             page.emptyView.setVisibility(View.GONE);
@@ -1338,10 +1412,13 @@ public class TopicListFragment extends BaseFragment
             if (url == null || DiscourseAvatars.INSTANCE.isCached(author)) {
                 continue;
             }
+            final int generation = feed.generation;
             DiscourseLoader.INSTANCE.cacheAvatar(container, url, author, () -> {
-                if (viewPages != null) {
+                // The download can outlive the list it was for: a feed invalidated by a change of
+                // identity must not re-bind a row of the reader it no longer belongs to.
+                if (feed.generation == generation && viewPages != null) {
                     for (ViewPage bound : viewPages) {
-                        if (bound.feed == feed && bound.adapter != null) {
+                        if (bound.feed == feed && bound.adapter != null && row < bound.feed.topics.size()) {
                             bound.adapter.notifyItemChanged(row);
                         }
                     }
@@ -1717,8 +1794,15 @@ public class TopicListFragment extends BaseFragment
             if (newTopicsPill != null) {
                 newTopicsPill.setTranslationY(panelOffset);
             }
-            // 1012-1045: the frame paints the header's glass behind the bar and the field.
-            drawBlurRect(canvas, 0, blurBounds, actionBarDefaultPaint, true);
+            // 1012-1045: the frame paints the header's glass behind the bar and the field. While
+            // the search results' container is up its rows reach behind the bar, so this band -
+            // drawn before the children - would sit under them; the bar draws its own band over
+            // the rows instead (DialogsActivity's whiteActionBar path, 1012-1045), and the pill
+            // capsule covers the slot under the bar. The recording above still covers the band's
+            // rectangle either way.
+            if (!isSearchContainerVisible()) {
+                drawBlurRect(canvas, 0, blurBounds, actionBarDefaultPaint, true);
+            }
             super.dispatchDraw(canvas);
             // 1091 + drawHeaderShadow (14284-14314): the soft line under the header's edge.
             drawHeaderShadow(canvas, getActionBarTop() + getActionBarFullHeight());
@@ -2054,9 +2138,9 @@ public class TopicListFragment extends BaseFragment
 
     @Override
     public void onFragmentDestroy() {
-        // The pill's feed, the strip's own theme listener and the reader's read-mark listener do
-        // not outlive the screen: a destroyed page leaves no listener behind that would draw into
-        // a dead view.
+        // The pill's feed, the session observer, the strip's own theme listener and the reader's
+        // read-mark listener do not outlive the screen: a destroyed page leaves no listener behind
+        // that would draw into a dead view.
         if (searchPanel != null) {
             searchPanel.destroy();
         }
@@ -2068,9 +2152,21 @@ public class TopicListFragment extends BaseFragment
             TopicReadMarks.INSTANCE.removeListener(readMarkListener);
             readMarkListener = null;
         }
+        stopSessionObservation();
         org.telegram.messenger.NotificationCenter.getGlobalInstance().removeObserver(
                 themeObserver, org.telegram.messenger.NotificationCenter.needSetDayNightTheme);
         super.onFragmentDestroy();
+    }
+
+    /**
+     * The tab host rebuilds a page's views (a theme switch) without destroying the fragment: the
+     * session observer belongs to the views, so it is dropped here and started again from
+     * {@link #createView}.
+     */
+    @Override
+    public void clearViews() {
+        stopSessionObservation();
+        super.clearViews();
     }
 
     /**
@@ -2081,6 +2177,11 @@ public class TopicListFragment extends BaseFragment
     @Override
     public void onInsets(int left, int top, int right, int bottom) {
         navigationBarHeight = bottom;
+        // DrawerLayoutContainer updates statusBarHeight; move the header with the list padding.
+        updateHeaderTopMargins();
+        if (actionBar != null) {
+            actionBar.requestLayout();
+        }
         checkUi_listPadding();
         checkUi_floatingButton();
     }
@@ -2093,6 +2194,40 @@ public class TopicListFragment extends BaseFragment
         }
     }
 
+    /** Header placement and list padding use the same occupied bar height (ActionBar.onMeasure). */
+    private int headerBarHeight() {
+        return ActionBar.getCurrentActionBarHeight() + AndroidUtilities.statusBarHeight;
+    }
+
+    /** Insets can arrive after createView; fixed margins must follow the newly occupied bar. */
+    private void updateHeaderTopMargins() {
+        if (fragmentView == null) {
+            return;
+        }
+        final int barHeight = headerBarHeight();
+        setTopMargin(searchField, barHeight + AndroidUtilities.dp(2));
+        setTopMargin(tabsView, barHeight
+                + AndroidUtilities.dp(org.telegram.ui.DialogsActivity.SEARCH_FIELD_HEIGHT));
+        // The search results' container is full height from the screen's top; the panel inside
+        // keeps the bar's height as its capsule slot and its first-row padding, so a late inset
+        // moves the capsule and the padding with the list instead of leaving a clip band behind.
+        if (searchPanel != null) {
+            searchPanel.setInsets(barHeight, navigationBarHeight);
+        }
+    }
+
+    private void setTopMargin(View view, int topMargin) {
+        if (view == null) {
+            return;
+        }
+        ViewGroup.LayoutParams params = view.getLayoutParams();
+        if (params instanceof ViewGroup.MarginLayoutParams
+                && ((ViewGroup.MarginLayoutParams) params).topMargin != topMargin) {
+            ((ViewGroup.MarginLayoutParams) params).topMargin = topMargin;
+            view.setLayoutParams(params);
+        }
+    }
+
     private void checkUi_listPadding(ViewPage page) {
         if (page != null && page.listView != null) {
             // The list's bottom padding keeps the last row reachable above the navigation bar and
@@ -2100,7 +2235,7 @@ public class TopicListFragment extends BaseFragment
             // resting height (the same numbers DialogsActivity's list pads with). The pill is not
             // in this number: it floats over the first row the way the chat's date does over its
             // messages, and the list keeps the place it had.
-            final int barHeight = ActionBar.getCurrentActionBarHeight() + AndroidUtilities.statusBarHeight;
+            final int barHeight = headerBarHeight();
             final int topPadding = barHeight + AndroidUtilities.dp(
                     org.telegram.ui.DialogsActivity.SEARCH_FIELD_HEIGHT
                             + TAB_STRIP_HEIGHT_DP - 5);
@@ -2330,7 +2465,7 @@ public class TopicListFragment extends BaseFragment
 
     /** The list's one action: the floating button and the menu's own 发新帖 row do the same thing. */
     private void presentNewTopic() {
-        if (denyWriteWhileOffline()) {
+        if (!sessionReady || denyWriteWhileOffline()) {
             return;
         }
         if (getParentActivity() instanceof io.github.baba983.nativedo.app.NativeDoActivity) {
@@ -2341,6 +2476,9 @@ public class TopicListFragment extends BaseFragment
 
     /** The reader's own bookmarks, the list the settings and profile screens already open. */
     private void presentBookmarks() {
+        if (!sessionReady) {
+            return;
+        }
         if (getParentActivity() instanceof io.github.baba983.nativedo.app.NativeDoActivity) {
             ((io.github.baba983.nativedo.app.NativeDoActivity) getParentActivity())
                     .present(new io.github.baba983.nativedo.bookmarks.BookmarksFragment());
@@ -2364,6 +2502,9 @@ public class TopicListFragment extends BaseFragment
      * and with no category strip or tag filter.
      */
     private void presentFeedMode(String mode) {
+        if (!sessionReady) {
+            return;
+        }
         if (getParentActivity() instanceof io.github.baba983.nativedo.app.NativeDoActivity) {
             Bundle args = new Bundle();
             args.putString("feed", mode);
@@ -2382,6 +2523,166 @@ public class TopicListFragment extends BaseFragment
         }
         params.topMargin = top;
         view.setLayoutParams(params);
+    }
+
+    /**
+     * Watches the coordinator's session for this screen. The observer belongs to the views: dropped
+     * in {@link #onFragmentDestroy} and {@link #clearViews}, started again from {@link #createView}.
+     */
+    private void observeSession() {
+        stopSessionObservation();
+        sessionObserver = SessionUi.observe(container, state -> {
+            onSessionState(state);
+            return kotlin.Unit.INSTANCE;
+        });
+    }
+
+    private void stopSessionObservation() {
+        if (sessionObserver != null) {
+            SessionUi.cancel(sessionObserver);
+            sessionObserver = null;
+        }
+    }
+
+    /**
+     * A new session value. A change of identity first drops whatever rows of the previous identity
+     * the adapter still holds - a lost session must not leave them up - then an authenticated reader
+     * reads (a repeat of the same account does not, so a same-account verification is not a
+     * needless refresh). A session still being restored keeps the shimmer; an expired one is said
+     * explicitly, and is never a logout.
+     */
+    private void onSessionState(AppSessionState state) {
+        final boolean identityChanged = !SessionUi.identity(lastSessionState).equals(SessionUi.identity(state));
+        final boolean wasAuthenticated = lastSessionState instanceof AppSessionState.Authenticated;
+        lastSessionState = state;
+        sessionReady = state instanceof AppSessionState.Authenticated;
+        updateHomeEntrances();
+        if (identityChanged) {
+            invalidateFeeds();
+            notifyFeedsChanged();
+        }
+        if (state instanceof AppSessionState.Authenticated) {
+            hideSessionState();
+            if (!wasAuthenticated || identityChanged) {
+                loadCurrentFeedAndExtras();
+            }
+            return;
+        }
+        final SessionUiState ui = SessionUi.stateFor(state);
+        if (ui == SessionUiState.Restoring) {
+            // The answer is on its way: the shimmer stands for the read that has not gone out.
+            hideSessionState();
+            updatePageState(currentPage());
+        } else {
+            showSessionState(ui);
+        }
+    }
+
+    /** Re-binds the pages' adapters after the feeds were invalidated, so the rows leave at once. */
+    private void notifyFeedsChanged() {
+        if (viewPages == null) {
+            return;
+        }
+        for (ViewPage page : viewPages) {
+            if (page != null && page.adapter != null) {
+                page.adapter.notifyDataSetChanged();
+            }
+        }
+        updatePageState(currentPage());
+    }
+
+    /** While the identity is unconfirmed the compose button is withheld; the reads are not sent. */
+    private void updateHomeEntrances() {
+        if (startTopicButton != null) {
+            startTopicButton.setButtonVisible(sessionReady, false);
+        }
+    }
+
+    /** Reads the page in front's feed and, on a filtered feed, the categories and the tags. */
+    private void loadCurrentFeedAndExtras() {
+        final ViewPage page = currentPage();
+        if (page == null) {
+            return;
+        }
+        preparePage(page, page.selectedType, false);
+        if (isFilteredFeed()) {
+            loadCategories();
+            loadTags();
+        }
+    }
+
+    /**
+     * The session's explicit state on the page: a sentence that says what happened and a tap that
+     * acts on it (recover through the site, sign in, or try again). It takes the place of the
+     * shimmer. A confirmed reader never shows it, so a loaded feed is never replaced by it.
+     */
+    private void showSessionState(SessionUiState ui) {
+        sessionStateUi = ui;
+        for (ViewPage page : viewPages) {
+            updatePageState(page);
+        }
+    }
+
+    private void hideSessionState() {
+        sessionStateUi = null;
+        final ViewPage page = currentPage();
+        if (page != null && page.emptyView != null) {
+            page.emptyView.setVisibility(View.GONE);
+        }
+    }
+
+    /** The tap on the session state: recover through the site, or try the session again. */
+    private void onSessionStateAction() {
+        if (sessionStateUi == null) {
+            return;
+        }
+        final SessionUiAction action = SessionUi.action(sessionStateUi);
+        if (action == SessionUiAction.Retry) {
+            sessionStateUi = null;
+            // The failure may have been a transient outage; re-running the gate re-validates the
+            // session, and a successful answer makes the observer read the feed.
+            SessionStarter.INSTANCE.start(container, state -> {
+                onSessionState(state);
+                return kotlin.Unit.INSTANCE;
+            });
+            return;
+        }
+        openRecovery(action == SessionUiAction.OpenVerification);
+    }
+
+    /**
+     * The session is dealt with where the site can be - the recovery flow in the login WebView. Its
+     * explicit completion publishes the usable session; this screen's observer reads the feed when
+     * that changes the account, and the same-account case is read here so a challenge solved by the
+     * account already signed in does not leave the state showing.
+     */
+    private void openRecovery(boolean verification) {
+        if (getParentActivity() == null) {
+            return;
+        }
+        final String identityAtStart = SessionUi.identity(lastSessionState);
+        LoginWebViewFragment[] holder = new LoginWebViewFragment[1];
+        holder[0] = new LoginWebViewFragment(() -> {
+            holder[0].finishFragment();
+            onRecoveryCompleted(identityAtStart);
+        }, verification);
+        presentFragment(holder[0]);
+    }
+
+    private void onRecoveryCompleted(String identityAtStart) {
+        if (container == null) {
+            return;
+        }
+        final AppSessionState now = container.getSessionCoordinator().getSessionState().getValue();
+        if (!SessionUi.identity(now).equals(identityAtStart)) {
+            // A different account (or a lost session): the observer's identity change is the
+            // refresh, and reading again here would only duplicate it.
+            return;
+        }
+        lastSessionState = now;
+        sessionStateUi = null;
+        invalidateFeeds();
+        loadCurrentFeedAndExtras();
     }
 
     /**
@@ -2481,11 +2782,36 @@ public class TopicListFragment extends BaseFragment
         if (searchPanel != null || getParentActivity() == null) {
             return;
         }
+        // The panel shares this screen's glass host: the header's band, the field's glass and the
+        // panel's own pill capsule then read one recording of the results, instead of the panel
+        // recording that page a second time on its own.
         searchPanel = new io.github.baba983.nativedo.search.SearchPanel(
-                getParentActivity(), resourceProvider, new SearchDelegate());
+                getParentActivity(), resourceProvider, new SearchDelegate(), glassHost);
         searchPanel.setContainer(NativeDo.container(getParentActivity()));
         searchContainer.addView(searchPanel, LayoutHelper.createFrame(
                 LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        searchPanel.setInsets(headerBarHeight(), navigationBarHeight);
+        // The header's glass records the result rows, so a scroll has to redraw this screen's frame
+        // (the home list does the same from its own scroll listener, 881-890); the bar draws the
+        // header's band while the search is up, so it is redrawn with the frame.
+        searchPanel.setOnScrolled(() -> {
+            if (fragmentView != null) {
+                fragmentView.invalidate();
+            }
+            if (actionBar != null) {
+                actionBar.invalidate();
+            }
+        });
+    }
+
+    /**
+     * Whether the search results' container is on screen. While it is, the rows reach behind the
+     * bar and the bar's own band - drawn after them - is the header, so the frame's band (drawn
+     * under them) stands aside; the container is visible for the whole open and close animation,
+     * which keeps the header covered as the results leave.
+     */
+    private boolean isSearchContainerVisible() {
+        return searchContainer != null && searchContainer.getVisibility() == View.VISIBLE;
     }
 
     /**
@@ -2513,9 +2839,19 @@ public class TopicListFragment extends BaseFragment
             invalidateScrollY = false;
             setScrollY(0);
             searchField.setCloseButtonVisible(true);
-            // The strip is off while searching: the pager's pill capsule is the panel that floats,
-            // and the panel records its own page for the blur.
-            glassHost.setRecordingEnabled(false);
+            // The results are what the header's glass now records: the bar's band and the field's
+            // glass sample the pager's own rows, so a row behind the header is read through the
+            // glass. The recorded view is the result-only pager, never the panel that draws the
+            // capsule - a source that contained the capsule would draw that capsule again.
+            if (searchPanel != null) {
+                glassHost.setRecordedContent(searchPanel.resultsView());
+            }
+            // Upstream gives the search its white page and the bar a windowBackgroundWhite band
+            // (DialogsActivity.setSearchAnimationProgress, 7731-7735): the bar's own band is what
+            // covers the rows behind it while the search is up, because the frame's own band is
+            // drawn under the children and so would sit under those rows.
+            actionBar.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundWhite));
+            actionBar.invalidate();
             searchPanel.clear();
             if (getParentActivity() instanceof io.github.baba983.nativedo.app.NativeDoActivity) {
                 ((io.github.baba983.nativedo.app.NativeDoActivity) getParentActivity()).setSearchOpen(true);
@@ -2527,7 +2863,10 @@ public class TopicListFragment extends BaseFragment
             }, 100);
         } else {
             searchField.setCloseButtonVisible(false);
-            glassHost.setRecordingEnabled(true);
+            // Back to the feed: the header records the list again. The bar keeps its band until the
+            // results have actually left (the close animation clears it), so the header stays
+            // covered while the pager is still fading out.
+            glassHost.setRecordedContent(contentStack);
             searchPanel.clear();
             // The title was only faded out while the search was up; the feed it names may have
             // moved on behind the search.
@@ -2593,6 +2932,10 @@ public class TopicListFragment extends BaseFragment
                 } else {
                     searchContainer.setVisibility(View.GONE);
                     searchContainer.setAlpha(0f);
+                    // The results have left: the frame's own band is the header again, so the bar
+                    // hands its band back (isSearchContainerVisible is false from this frame on).
+                    actionBar.setBackgroundColor(Color.TRANSPARENT);
+                    actionBar.invalidate();
                 }
                 setSearchAnimationProgress(show ? 1f : 0f);
                 searchAnimator = null;
@@ -2686,13 +3029,19 @@ public class TopicListFragment extends BaseFragment
      * blocking it - the reader can still read the forum, which is what this screen is for.
      */
     private void loadCategories() {
-        // What the last launch read is up first, so the strip is there in the first frame the way
-        // upstream's own folder strip is (its folders come from local storage); the site's answer
-        // then replaces it.
+        // The cached list is local, so it is published whatever the session says; the site's answer
+        // is a session read and waits for the identity (the observer calls this again when it lands).
         publishCategories(container.getCategoryStore().cachedCategories());
+        if (!sessionReady) {
+            return;
+        }
+        final String identityAtRequest = SessionUi.identity(lastSessionState);
         DiscourseLoader.INSTANCE.categories(container,
                 loaded -> {
-                    publishCategories(loaded);
+                    // An answer that arrives after the reader changed must not build this strip.
+                    if (SessionUi.identity(lastSessionState).equals(identityAtRequest)) {
+                        publishCategories(loaded);
+                    }
                     return kotlin.Unit.INSTANCE;
                 },
                 error -> {
@@ -2781,10 +3130,18 @@ public class TopicListFragment extends BaseFragment
      * site that could not be read can offer - the list itself is unaffected.
      */
     private void loadTags() {
+        if (!sessionReady) {
+            // The tag list is a session read; it waits with the feed until the identity is confirmed.
+            return;
+        }
+        final String identityAtRequest = SessionUi.identity(lastSessionState);
         DiscourseLoader.INSTANCE.tags(container,
                 loaded -> {
-                    tags.clear();
-                    tags.addAll(loaded);
+                    // An answer that arrives after the reader changed must not fill this dialog.
+                    if (SessionUi.identity(lastSessionState).equals(identityAtRequest)) {
+                        tags.clear();
+                        tags.addAll(loaded);
+                    }
                     return kotlin.Unit.INSTANCE;
                 },
                 error -> {

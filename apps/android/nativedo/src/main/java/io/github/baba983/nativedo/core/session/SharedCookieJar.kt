@@ -73,6 +73,7 @@ class SharedCookieJar(
     fun authToken(url: HttpUrl = siteUrl): String? =
         cookieValue(requestCookieHeader(url), TOKEN_COOKIE)?.takeIf(String::isNotBlank)
 
+    @JvmOverloads
     fun hasAuthenticatedCookies(url: HttpUrl = siteUrl): Boolean = authToken(url) != null
 
     /** Whether the shared jar presents anything at all for the site's base URL. */

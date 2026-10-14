@@ -17,6 +17,7 @@ import io.github.baba983.nativedo.core.model.NotificationItem
 import io.github.baba983.nativedo.core.model.NotificationPage
 import io.github.baba983.nativedo.core.model.TopicDetail
 import io.github.baba983.nativedo.core.model.TopicListPage
+import io.github.baba983.nativedo.core.model.TopicPostsPage
 import io.github.baba983.nativedo.core.model.TopicSummary
 import io.github.baba983.nativedo.core.model.UserProfile
 import io.github.baba983.nativedo.core.model.UserPreferences
@@ -448,14 +449,34 @@ class DiscourseApiClient(
             )
         }
 
-    suspend fun fetchTopicPosts(topicId: Long, postIds: List<Long>): List<Post> =
+    /**
+     * [includeSuggested] requests ranked suggestions alongside the posts. Distinguish the cache
+     * key so a post-only response cannot stand in for a response requested with suggestions.
+     */
+    suspend fun fetchTopicPosts(
+        topicId: Long,
+        postIds: List<Long>,
+        includeSuggested: Boolean = false,
+    ): TopicPostsPage =
         runWithSessionBoundary {
             cachedRead(
-                keySuffix = "topicposts|$topicId|${postIds.joinToString(",")}",
+                keySuffix = "topicposts|$topicId|${postIds.joinToString(",")}" +
+                    (if (includeSuggested) "|suggested" else ""),
                 serializer = TopicPostsResponseDto.serializer(),
-                fetch = { service.topicPosts(id = topicId, postIds = postIds) },
+                fetch = {
+                    service.topicPosts(
+                        id = topicId,
+                        postIds = postIds,
+                        includeSuggested = if (includeSuggested) true else null,
+                    )
+                },
                 map = { response -> response.toModel(emojiCatalog = emojiGroupsForDecoration().toEmojiCatalog()) },
-                markFromCache = { cached -> cached.map { post -> post.copy(fromCache = true) } },
+                markFromCache = { cached ->
+                    cached.copy(
+                        posts = cached.posts.map { post -> post.copy(fromCache = true) },
+                        fromCache = true,
+                    )
+                },
             )
         }
 

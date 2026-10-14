@@ -39,9 +39,12 @@ static initializers can leave a capable device in the low-performance fallback.
 
 [NativeDoActivity](../apps/android/nativedo/src/main/java/io/github/baba983/nativedo/app/NativeDoActivity.java)
 owns navigation, the browser host, system bars, session gate and foreground
-MessageBus lifetime. It restores a narrow navigation state only after session
-bootstrap, ignores callbacks to a destroyed shell, and releases shared viewers
-at the appropriate final-instance boundary.
+MessageBus lifetime. When cookies may hold a session, it presents the restored
+main-tab shell before network verification, with upstream loading rows rather
+than a blank window. Feed/category/avatar loading and composition still wait for
+a confirmed session; held topic links open once that gate succeeds. Recoverable
+failures keep an explicit retry or verification entrance. The shell ignores
+callbacks after destruction and releases shared viewers at the final-instance boundary.
 
 Do not treat an upstream view as a drop-in object without its host lifecycle.
 Composer pause/resume/destroy, theme delegates, system/IME insets, viewer state
@@ -69,16 +72,33 @@ instead of cross-fading two cells attached to the same rich layout. When local
 assets arrive, the host marks the retained message and reactions for upstream
 refresh; a notification alone does not rebuild an unchanged message's images.
 For a retained `RichPhotoBlock`, the host cancels its unfulfilled image request
-and reapplies upstream's full-photo receiver parameters after the file is cached.
-Reusing the same image key without cancellation can leave the old request waiting
-for Telegram transport; rebuilding the whole layout would discard expanded details
-and other reading state. Already decoded photos are left alone.
+and reapplies upstream's receiver parameters as preview and original files arrive.
+Synthetic photos enter ImageLoader as local filesystem paths, whose cache-only
+decode cannot fall back to a datacenter download if a file disappears. Missing
+files are withheld; HTTP completion also refreshes the open PhotoViewer's existing
+receivers. Rebuilding the whole layout would discard expanded details and other
+reading state. Already requested local previews and originals are left alone when
+another asset arrives.
+
+A topic's first-read failure uses upstream `ChatActionCell` service styling and
+localized recovery text, not a full-screen progress label or raw exception message.
+Its tap retries the read or opens visible session recovery as appropriate. Paging
+failures retain readable posts and use the existing upstream Bulletin instead.
+
+Inline emoji fallback-to-artwork upgrades need new rich runs, so they regenerate
+the body inside the retained message while restoring expanded details and the viewport.
+A late reply target updates only the first bubble's preview, keeping its body and
+pending media callbacks. A capsule title arriving after initial layout requests
+measurement again so its marquee layer does not retain the empty title's short bounds.
 
 Profile header transforms are recomputed after child layout, not only when a
 scroll changes the header offset. Pinned activity pages follow upstream's nested
 scroll ownership: forward only the outer list's remainder into the current page,
 and unwind that page on negative deltas before moving the outer profile. An inner
-list's own nested request must not be fed back into itself.
+list's own nested request must not be fed back into itself. Async profile updates
+wait for both default and custom entry transitions; the loading rows follow the
+same fade/slide and begin below the resting header. Missing avatar bytes use
+upstream initials rather than leaving an empty header.
 
 ### Homepage search
 
@@ -88,6 +108,13 @@ list's own nested request must not be fed back into itself.
 wires each Discourse result page's `RecyclerListView` to its `StickerEmptyView`;
 the list owns loading/empty/result visibility. The skeleton uses the same tabs
 inset through `FlickerLoadingView.setPaddingTop`, not ordinary View padding.
+The result pager fills the screen; scrollable padding places the first row below
+the ActionBar and tabs without clipping scrolled rows out of the header. While
+searching, the screen's glass host records that result-only pager, so the field,
+tabs and header band sample the same live rows without recording their own controls.
+Closing restores the feed as the glass source. Header and navigation insets update
+the tabs, rows and loading state together; lower-performance devices retain the
+upstream solid-color fallback.
 New results use `RecyclerItemsEnterAnimator` and upstream text highlighting;
 topic/post rows use message-result `DialogCell` binding rather than altering
 `CustomDialog`. A changed query clears old generic hits immediately; cached
@@ -101,6 +128,38 @@ strip. The [search flow](../apps/android/nativedo/src/test/java/io/github/baba98
 checks query replacement, clear/retry, stale answers, category navigation and Back
 through the production-wired host harness. Real IME/GPU/gesture timing still needs
 a device pass.
+
+### In-topic search
+
+[TopicSearch](../apps/android/nativedo/src/main/java/io/github/baba983/nativedo/search/TopicSearch.kt)
+owns the query and result paging inside the existing topic screen. Its input is
+the ActionBar's own `ActionBarMenuItem` search field, not a second homepage field
+placed over a hidden bar. The reader reaches it from the topic overflow's
+`话题内搜索` row; the search item itself is held hidden so the bar's right side
+stays the single overflow capsule. The item is hidden again after the field
+collapses, because its own `toggleSearch` re-shows it on close. Opening also
+drives the bar's search width factor (`ActionBar.setSearchFactor`) with the
+capsule's own fade, the way `ChatActivity` drives it from its search animation
+(ChatActivity:46603-46608). Without that factor `ActionBar` keeps the center glass
+capsule at the avatar container's own width and re-centres it, so the hint is
+drawn left of the capsule (the reported `搜索当前话题` overflow); at factor 1 the
+capsule spans the bar where the field is laid across the menu
+(ActionBar:2244). The overflow is a focusable window of its own, so the field's
+own `showKeyboard` is dropped on the first open while that window still has focus;
+the field asks the IME again once its window has focus, not on a fixed delay. The
+back capsule closes search and restores the reading window and draft; the clear
+button drops the query and hits but keeps search open. IME search lands on the
+selected hit without pushing another topic screen. An unasked search reports
+nothing in the count, never `没有结果`.
+
+List mode uses upstream `DialogCell` rows in `ChatActivitySearchContainer` over
+the wallpaper-backed translucent search-list surface. Its top and bottom fades
+let rows pass behind the floating controls. The rounded bottom result capsule
+uses upstream animated labels, with the toggle's measured width reserved before
+laying out the count. List mode names the result count; message mode names the
+selected result and uses upstream search-arrow controls. A paged answer reports
+the loaded count, never an invented total. Calendar and author buttons are absent
+until their filters have product behavior; they are not decorative shortcuts.
 
 ## Upstream updates
 

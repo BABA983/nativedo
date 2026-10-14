@@ -6678,7 +6678,7 @@ public class RichMessageLayout {
         }
 
         protected boolean computeAutoDownload() {
-            return (DownloadController.getInstance(root.currentAccount).getCurrentDownloadMask() & DownloadController.AUTODOWNLOAD_TYPE_PHOTO) != 0;
+            return io.github.baba983.nativedo.hooks.NativeDoHooks.mediaAutoDownload(getFileName(), (DownloadController.getInstance(root.currentAccount).getCurrentDownloadMask() & DownloadController.AUTODOWNLOAD_TYPE_PHOTO) != 0); // NativeDo: a file this client fetches itself is never auto-downloaded by upstream
         }
 
         private int availWidth() {
@@ -6912,6 +6912,7 @@ public class RichMessageLayout {
         private void didPressButton(boolean animated) {
             if (buttonState == 0) {
                 mediaForced = true;
+                io.github.baba983.nativedo.hooks.NativeDoHooks.onMediaBlockDownload(getFileName()); // NativeDo: the press starts (or retries) the fetch this client runs itself
                 if (radialProgress != null) radialProgress.setProgress(0, animated);
                 applyImage(true);
                 buttonState = 1;
@@ -6976,7 +6977,7 @@ public class RichMessageLayout {
             } else {
                 DownloadController.getInstance(root.currentAccount).addLoadingFileObserver(fileName, null, this);
                 float setProgress = 0;
-                if (io.github.baba983.nativedo.hooks.NativeDoHooks.mediaBlockLoading(fileName, autoDownload, mediaForced) || FileLoader.getInstance(root.currentAccount).isLoadingFile(fileName)) { // NativeDo: a file this client fetches itself counts as loading
+                if (io.github.baba983.nativedo.hooks.NativeDoHooks.mediaBlockLoading(fileName, autoDownload, mediaForced, FileLoader.getInstance(root.currentAccount).isLoadingFile(fileName))) { // NativeDo: a file this client fetches itself counts as loading only while its own transfer runs
                     buttonState = 1;
                     Float progress = ImageLoader.getInstance().getFileProgress(fileName);
                     setProgress = progress != null ? progress : 0;
@@ -7066,7 +7067,7 @@ public class RichMessageLayout {
 
             if (photo != null) {
                 sizeFull = FileLoader.getClosestPhotoSizeWithSize(photo.sizes, AndroidUtilities.getPhotoSize());
-                strippedSize = FileLoader.getStrippedPhotoSize(photo.sizes);
+                strippedSize = io.github.baba983.nativedo.hooks.NativeDoHooks.photoThumbSize(photo.sizes); // NativeDo: a preview the client fetched is drawn while the full picture is on its way
             } else {
                 sizeFull = null;
                 strippedSize = null;
@@ -7091,6 +7092,7 @@ public class RichMessageLayout {
         @Override
         protected void applyImage(boolean allowMedia) {
             if (photo == null || sizeFull == null) return;
+            if (io.github.baba983.nativedo.hooks.NativeDoHooks.applyPhotoImage(imageReceiver, sizeFull, strippedSize, photo, root.messageObject, allowMedia)) return; // NativeDo: only local HTTP photo bytes enter Telegram's loader
             final ImageLocation thumbLoc = strippedSize != null ? ImageLocation.getForPhoto(strippedSize, photo) : null;
             if (allowMedia) {
                 imageReceiver.setImage(

@@ -6,6 +6,8 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import io.github.baba983.nativedo.app.NativeDo
 import io.github.baba983.nativedo.harness.FakeDiscourseSite
 import io.github.baba983.nativedo.harness.UpstreamUiHarness
+import io.github.baba983.nativedo.harness.latestItemOptionsMenu
+import io.github.baba983.nativedo.harness.menuItemLabels
 import io.github.baba983.nativedo.harness.shadows.ShadowAnimatedFileNative
 import io.github.baba983.nativedo.harness.shadows.ShadowConnectionsManager
 import io.github.baba983.nativedo.harness.shadows.ShadowIntro
@@ -303,6 +305,90 @@ internal class SearchTest {
         harness.assertNoTelegramSideEffects()
     }
 
+    /**
+     * The home search results are the screen, not a band under it.
+     *
+     * <p>The pager's own viewport starts at the top of the screen, so a row scrolled up is read
+     * through the header's glass instead of being clipped below the bar, while the rows still come
+     * to rest on the controls' lower edge (the pill capsule) because the list keeps that height as
+     * scrollable padding. The failure this pins: the results' container hung at the bar's own
+     * height - its top at the bar's lower edge - which clips every row below the header and leaves
+     * the field's glass with no live result source behind it.</p>
+     */
+    @Test
+    fun theHomeSearchResultsFillTheScreenAndRestBelowTheControls() {
+        // Enough hits that the page really has somewhere to scroll under the header.
+        val many = JSONObject(harness.fixture("search.json"))
+        val topics = many.getJSONArray("topics")
+        val template = topics.getJSONObject(0)
+        for (index in 2..16) {
+            topics.put(JSONObject(template.toString()).put("id", 200 + index).put("title", "Topic $index"))
+        }
+        site.serveJson("search.json", many.toString())
+
+        harness.bootApp()
+        harness.await("the home feed") { rowCount() == 2 }
+        openSearch()
+        harness.await("the search panel to be built") { searchPanel() != null }
+        type(QUERY)
+        val panel = searchPanel()!!
+        harness.await("the topic hits") {
+            panel.pageList(SearchPanel.PAGE_TOPICS).adapter?.itemCount == 16
+        }
+        harness.idleClock(400)
+        harness.layoutApp()
+        harness.renderApp("home-search-results-full-height")
+
+        val bar = actionBar() ?: throw AssertionError("no action bar")
+        val barBottom = IntArray(2).also { bar.getLocationInWindow(it) }[1] + bar.height
+        val capsule = firstView(android.R.id.content) {
+            it is org.telegram.ui.SearchTabsAndFiltersLayout && it.isShown
+        } ?: throw AssertionError("no search capsule")
+        val capsuleBottom = IntArray(2).also { capsule.getLocationInWindow(it) }[1] + capsule.height
+
+        val list = panel.pageList(SearchPanel.PAGE_TOPICS)
+        val listTop = IntArray(2).also { list.getLocationInWindow(it) }[1]
+
+        // Full height: the results' viewport begins at the screen's own top, so it reaches behind
+        // the bar - it is not parked at the bar's lower edge.
+        assertTrue(
+            "the results' viewport starts at the top of the screen " +
+                "(results top $listTop, bar bottom $barBottom)",
+            listTop <= AndroidUtilities.dp(1f),
+        )
+        assertTrue("the results reach behind the bar, not below it", listTop < barBottom)
+
+        // Safe padding, scrollable not fixed: the first row rests just on the capsule's lower
+        // edge, so no blank band opens between the controls and the rows.
+        val firstRow = list.getChildAt(0) ?: throw AssertionError("no result row was laid out")
+        val firstRowTop = IntArray(2).also { firstRow.getLocationInWindow(it) }[1]
+        assertTrue(
+            "the first row rests below the capsule (row top $firstRowTop, capsule bottom $capsuleBottom)",
+            firstRowTop >= capsuleBottom - AndroidUtilities.dp(1f),
+        )
+        assertTrue(
+            "and not on a blank band under it (row top $firstRowTop, capsule bottom $capsuleBottom)",
+            firstRowTop <= capsuleBottom + AndroidUtilities.dp(12f),
+        )
+
+        // A scroll carries a row behind the bar: its own top is still inside the list's viewport
+        // (so it is drawn, not clipped above the list) and it is up in the header's band.
+        list.scrollBy(0, AndroidUtilities.dp(80f))
+        harness.layoutApp()
+        harness.renderApp("home-search-results-scrolled")
+        val scrolledRow = list.getChildAt(0) ?: throw AssertionError("no scrolled row")
+        val scrolledTop = IntArray(2).also { scrolledRow.getLocationInWindow(it) }[1]
+        assertTrue(
+            "a scrolled row stays inside the results' viewport (row top $scrolledTop, list top $listTop)",
+            scrolledTop >= listTop - AndroidUtilities.dp(1f),
+        )
+        assertTrue(
+            "and goes behind the header, not clipped below it (row top $scrolledTop, bar bottom $barBottom)",
+            scrolledTop < barBottom,
+        )
+        harness.assertNoTelegramSideEffects()
+    }
+
     /** A new query must never put a skeleton behind clickable hits from the previous query. */
     @Test
     fun changingTheQueryClearsOldHitsAndBlankInputFencesThePendingAnswer() {
@@ -439,7 +525,7 @@ internal class SearchTest {
         harness.await("topic") { drawnPostIds().isNotEmpty() }
         openTopicSearch()
         val topic = harness.topFragment()
-        val field = searchField()!!.editText
+        val field = topicField()!!
         searchControl("显示为列表").performClick()
         assertEquals("blank input does not ask the whole site", 0, site.queriesFor("search.json").size)
         field.setText("topic:999")
@@ -467,7 +553,7 @@ internal class SearchTest {
         harness.present(TopicFragment.forTopic(101, "Topic search"))
         harness.await("topic") { drawnPostIds().isNotEmpty() }
         openTopicSearch()
-        val field = searchField()!!.editText
+        val field = topicField()!!
         searchControl("显示为列表").performClick()
         field.setText("NativeDo")
         harness.await("error") { firstView(android.R.id.content) {
@@ -514,7 +600,7 @@ internal class SearchTest {
             as org.telegram.ui.Components.ChatActivityEnterView
         composer.editField!!.setText("保留这个草稿")
         openTopicSearch()
-        searchField()!!.editText.setText("太")
+        topicField()!!.setText("太")
         harness.await("first search result") {
             harness.drawApp()
             firstView(android.R.id.content) { it.contentDescription?.toString() == "第 1 条，共 2 条" } != null
@@ -533,12 +619,80 @@ internal class SearchTest {
         searchControl("显示为消息").performClick()
         harness.renderApp("topic-search-chat-dark")
         assertTrue("predictive Back only probes", !topic.onBackPressed(false))
-        assertTrue(searchField()!!.isShown)
+        assertTrue(topicField()!!.isShown)
         assertTrue("Back exits search, not the topic", !topic.onBackPressed(true))
         harness.await("reading window restored") { harness.layoutApp(); drawnPostIds().contains(1001) }
         assertTrue(harness.topFragment() === topic)
         assertEquals("保留这个草稿", composer.editField!!.text.toString())
-        assertTrue("the search field is gone", searchField()?.isShown != true)
+        assertTrue("the search field is gone", topicField()?.isShown != true)
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * The ActionBar field's clear X is the query's own reset, and it must not also close the
+     * session - only Back does that. The failure this pins: a clear that leaves the previous hits
+     * clickable under a blank input, or one that tears the whole search down.
+     */
+    @Test
+    fun topicSearchClearButtonEmptiesTheQueryAndKeepsTheSessionForBack() {
+        site.serveFixture("t/101.json", "topic-detail.json")
+        val response = JSONObject(harness.fixture("search.json"))
+        response.getJSONObject("grouped_search_result").put("more_posts", false)
+        site.serveJson("search.json", response.toString())
+        harness.bootApp()
+        harness.await("feed") { rowCount() == 2 }
+        harness.present(TopicFragment.forTopic(101, "Topic search"))
+        harness.await("topic") { drawnPostIds().isNotEmpty() }
+        openTopicSearch()
+        val field = topicField()!!
+        searchControl("显示为列表").performClick()
+        field.setText("NativeDo")
+        harness.await("scoped result") { rowCount() == 1 }
+
+        topicClearButton().performClick()
+        harness.await("the query is dropped with its hits") { rowCount() == 0 }
+        assertEquals("the field itself is emptied", "", field.text.toString())
+        assertTrue("clearing keeps the search open", field.isShown)
+        assertEquals("and clearing is not another search", 1, site.queriesFor("search.json").size)
+
+        val topic = harness.topFragment()!!
+        assertTrue("Back exits search, not the topic", !topic.onBackPressed(true))
+        harness.await("the session is gone") { topicField()?.isShown != true }
+        assertTrue(harness.topFragment() === topic)
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * The field's IME search action is wired to the session: it lands the reader on the selected
+     * hit without pushing a screen, even from list mode where a keystroke alone does not move the
+     * window. The failure this pins: an IME action that does nothing, or one that leaves the topic.
+     */
+    @Test
+    fun topicSearchImeActionLandsTheSelectedHitWithoutLeavingTheTopic() {
+        site.serveFixture("t/101.json", "topic-detail.json")
+        site.serveJson("t/101/4.json", topicAround(4))
+        val response = JSONObject(harness.fixture("search.json"))
+        response.getJSONArray("posts").put(JSONObject(response.getJSONArray("posts").getJSONObject(0).toString())
+            .put("id", 1008).put("post_number", 8).put("blurb", "八楼的结果"))
+        response.getJSONObject("grouped_search_result").put("more_posts", false)
+        site.serveJson("search.json", response.toString())
+        harness.bootApp()
+        harness.await("feed") { rowCount() == 2 }
+        harness.present(TopicFragment.forTopic(101, "Topic search"))
+        harness.await("topic") { drawnPostIds().isNotEmpty() }
+        openTopicSearch()
+        searchControl("显示为列表").performClick()
+        topicField()!!.setText("NativeDo")
+        harness.await("scoped results") { rowCount() == 2 }
+        assertTrue("a list-mode search alone does not move the window",
+            !site.requestPaths.contains("t/101/4.json"))
+
+        val topic = harness.topFragment()!!
+        topicSearchItem()!!.onSearchPressed()
+        harness.await("the IME action lands on the selected hit") {
+            site.requestPaths.contains("t/101/4.json")
+        }
+        assertTrue("and stays in the same topic screen", harness.topFragment() === topic)
         harness.assertNoTelegramSideEffects()
     }
 
@@ -546,14 +700,177 @@ internal class SearchTest {
         firstView(android.R.id.content) { it.isShown && it.contentDescription?.toString() == description }
             ?: throw AssertionError("missing search control: $description")
 
+    /**
+     * The in-topic search entry is a row of the topic overflow, not an icon on the bar.
+     *
+     * <p>The failures this pins: a standalone magnifier beside the overflow (the bar then reserves a
+     * second icon's width and the reader has two search-looking controls); an overflow row that
+     * does not open the bar's own field; and an icon that comes back after the field collapses,
+     * because ActionBarMenuItem.toggleSearch re-shows the item it hid on open
+     * (ActionBarMenuItem:987).</p>
+     */
+    @Test
+    fun topicSearchIsReachedFromTheOverflowAndNeverStandsOnTheBar() {
+        site.serveFixture("t/101.json", "topic-detail.json")
+        val response = JSONObject(harness.fixture("search.json"))
+        response.getJSONObject("grouped_search_result").put("more_posts", false)
+        site.serveJson("search.json", response.toString())
+        harness.bootApp()
+        harness.await("feed") { rowCount() == 2 }
+        harness.present(TopicFragment.forTopic(101, "Topic search"))
+        harness.await("topic") { drawnPostIds().isNotEmpty() }
+        harness.layoutApp()
+
+        // At rest the bar shows the overflow alone: the search item is in the menu but not on the
+        // bar, so no magnifier reserves width beside the overflow.
+        val item = topicSearchItem() ?: throw AssertionError("no in-topic search item")
+        assertTrue("the bar shows no standalone search icon", !item.isShown)
+        assertTrue("the overflow is the bar's only shown menu item", overflowItem().isShown)
+        harness.renderComposite(".amp/in/artifacts/topic-search-menu/01-default.png")
+
+        // The reader's way in is the overflow's own 话题内搜索 row.
+        openTopicOverflow()
+        val rows = menuItemLabels(latestItemOptionsMenu(harness.activity))
+        println("topic-search-menu: overflow rows = $rows")
+        assertTrue("the overflow offers 话题内搜索", rows.any { it.contains("话题内搜索") })
+        harness.renderComposite(".amp/in/artifacts/topic-search-menu/02-menu-open.png")
+        overflowRow("话题内搜索").performClick()
+        harness.await("the bar's own field to open") { topicField()?.isShown == true }
+        harness.idleClock(400)
+        harness.layoutApp()
+        harness.renderComposite(".amp/in/artifacts/topic-search-menu/03-expanded.png")
+        assertTrue("the row opened the bar's field, not a second icon", !item.isShown)
+
+        // Closing puts the bar back exactly as it was: the overflow, and no standalone icon.
+        assertTrue("Back exits search, not the topic", !harness.topFragment()!!.onBackPressed(true))
+        harness.await("the field to close") { topicField()?.isShown != true }
+        harness.idleClock(400)
+        harness.layoutApp()
+        assertTrue("the search icon does not come back after close", !item.isShown)
+        assertTrue("the overflow is still the bar's only shown menu item", overflowItem().isShown)
+        harness.renderComposite(".amp/in/artifacts/topic-search-menu/04-after-close.png")
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * What an open of the in-topic search must show: the bar's center glass capsule is the search
+     * capsule (so the hint sits inside it), the bar reserves no second menu capsule, and an
+     * unasked search reports no result.
+     *
+     * <p>The failure this pins: {@code ActionBar} lays the field across the menu but keeps the
+     * center capsule at the avatar container's own width and re-centres it unless the bar's search
+     * factor is driven (ActionBar:2244) - the reported screenshot shows 搜索当前话题 drawn to the
+     * LEFT of the pill. And {@code countText()} reported 没有结果 before the reader asked
+     * anything, which the same screenshot shows in the bottom bar.</p>
+     */
+    @Test
+    fun topicSearchOpenKeepsTheHintInTheBarsCenterCapsuleAndClaimsNoResult() {
+        site.serveFixture("t/101.json", "topic-detail.json")
+        val response = JSONObject(harness.fixture("search.json"))
+        response.getJSONObject("grouped_search_result").put("more_posts", false)
+        site.serveJson("search.json", response.toString())
+        harness.bootApp()
+        harness.await("feed") { rowCount() == 2 }
+        harness.present(TopicFragment.forTopic(101, "Topic search"))
+        harness.await("topic") { drawnPostIds().isNotEmpty() }
+        openTopicSearch()
+        harness.idleClock(500)
+        harness.drawApp()
+
+        // An unasked search has no result to report: the count must not claim 没有结果.
+        assertTrue("a blank query must not claim 没有结果",
+            shownDescription("没有结果") == null)
+
+        val bar = actionBar() ?: throw AssertionError("the topic screen has no action bar")
+        val field = topicField() ?: throw AssertionError("the in-topic search field is missing")
+        val barLocation = IntArray(2).also { bar.getLocationInWindow(it) }
+        val fieldLocation = IntArray(2).also { field.getLocationInWindow(it) }
+        val hintLeft = fieldLocation[0] - barLocation[0]
+        val capsule = glassBounds(bar, "glassDrawable")
+        println("topic-search-open geometry: capsule=$capsule hintLeft=$hintLeft")
+        assertTrue("the bar draws a center glass capsule while searching", capsule != null)
+        assertTrue(
+            "the hint must not start left of the bar's center capsule (capsule=$capsule hintLeft=$hintLeft)",
+            capsule!!.left <= hintLeft,
+        )
+        assertTrue("the bar must not reserve a menu capsule while the search owns it",
+            bar.createMenu().itemsWidth == 0)
+        harness.renderApp("topic-search-open")
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /** A shown view whose own content description is exactly [description]. */
+    private fun shownDescription(description: String): View? =
+        firstView(android.R.id.content) {
+            it.isShown && it.contentDescription?.toString() == description
+        }
+
+    private fun glassBounds(
+        bar: org.telegram.ui.ActionBar.ActionBar,
+        field: String,
+    ): android.graphics.Rect? {
+        val declared = org.telegram.ui.ActionBar.ActionBar::class.java.getDeclaredField(field)
+        declared.isAccessible = true
+        val drawable = declared.get(bar) as android.graphics.drawable.Drawable?
+        return drawable?.bounds
+    }
+
+    /** The topic bar's own overflow item, the way the reader opens it. */
+    private fun overflowItem(): org.telegram.ui.ActionBar.ActionBarMenuItem =
+        harness.topFragment()!!.actionBar.createMenu().getItem(1)
+
+    /** Opens the topic overflow: a tap on the bar's own overflow item. */
+    private fun openTopicOverflow() {
+        overflowItem().performClick()
+        harness.idle()
+    }
+
+    /** The overflow's row labelled [label], the way the reader taps it. */
+    private fun overflowRow(label: String): org.telegram.ui.ActionBar.ActionBarMenuSubItem =
+        latestItemOptionsMenu(harness.activity)
+            .firstOrNull { menuItemLabels(listOf(it)).first().contains(label) }
+            ?: throw AssertionError(
+                "the topic overflow has no \"$label\" row among " +
+                    menuItemLabels(latestItemOptionsMenu(harness.activity)),
+            )
+
+    /**
+     * The topic screen's search is the bar's own ActionBar search item, not a drawn field: it is
+     * the menu child whose `isSearchField()` is true, and its own EditTextBoldCursor is the field.
+     */
+    private fun topicSearchItem(): org.telegram.ui.ActionBar.ActionBarMenuItem? {
+        val bar = harness.topFragment()?.actionBar ?: return null
+        val menu = bar.createMenu()
+        for (index in 0 until menu.childCount) {
+            val child = menu.getChildAt(index)
+            if (child is org.telegram.ui.ActionBar.ActionBarMenuItem && child.isSearchField) {
+                return child
+            }
+        }
+        return null
+    }
+
+    private fun topicField(): android.widget.EditText? = topicSearchItem()?.searchField
+
+    /** The ActionBar field's own clear X, the way the bar built it (ActionBarMenuItem.clearButton). */
+    private fun topicClearButton(): View {
+        val item = topicSearchItem() ?: throw AssertionError("no in-topic search item")
+        return org.telegram.ui.ActionBar.ActionBarMenuItem::class.java
+            .getDeclaredField("clearButton").apply { isAccessible = true }
+            .get(item) as View
+    }
+
+    /**
+     * The reader's own way in: the topic bar's overflow, then its 话题内搜索 row. The entry is a
+     * menu row, never an icon of its own on the bar, so this drives the production path.
+     */
     private fun openTopicSearch() {
         val topic = harness.topFragment()
-        harness.topFragment()!!.actionBar.createMenu().getItem(1).performClick()
+        openTopicOverflow()
+        overflowRow("话题内搜索").performClick()
         harness.idle()
-        io.github.baba983.nativedo.harness.clickMenuItem(
-            io.github.baba983.nativedo.harness.latestItemOptionsMenu(harness.activity), "话题内搜索")
         assertTrue("topic search must not push another screen", harness.topFragment() === topic)
-        harness.await("in-topic search field") { searchField()?.isShown == true }
+        harness.await("in-topic search field") { topicField()?.isShown == true }
     }
 
     private fun type(query: String) {

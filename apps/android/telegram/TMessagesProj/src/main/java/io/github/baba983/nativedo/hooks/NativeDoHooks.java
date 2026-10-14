@@ -74,9 +74,179 @@ public final class NativeDoHooks {
      * <p>Upstream's own condition is {@code autoDownload || mediaForced || FileLoader.isLoadingFile},
      * and a file this client fetches itself is none of those. The two upstream values are handed in
      * so that the whole decision is made here and the call site stays one call.</p>
+     *
+     * <p>A file the module fetches itself owns its own state: it is loading exactly while the
+     * module's own transfer runs, and nothing else. Upstream's auto-download and forced flags are
+     * about a {@code FileLoader} transfer this file does not have; left in the condition they would
+     * hold the block's spinner up after the module's fetch already failed, and the reader could
+     * never press the download button again. Files the module does not fetch keep upstream's own
+     * condition unchanged.</p>
      */
-    public static boolean mediaBlockLoading(String fileName, boolean autoDownload, boolean mediaForced) {
-        return autoDownload || mediaForced || isFileLoading(fileName);
+    public static boolean mediaBlockLoading(String fileName, boolean autoDownload, boolean mediaForced, boolean fileLoaderLoading) {
+        if (isClientMediaFile(fileName)) {
+            return isFileLoading(fileName);
+        }
+        return autoDownload || mediaForced || isFileLoading(fileName) || fileLoaderLoading;
+    }
+
+    /**
+     * The media files the module fetches itself. Registered as the post body is prepared, before any
+     * cell can ask about one, so a block never reads a file as "upstream's to fetch" merely because
+     * of when it happened to be built.
+     */
+    private static final java.util.Set<String> clientMediaFiles =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    public static void setClientMediaFile(String fileName, boolean managed) {
+        if (fileName == null || fileName.isEmpty()) {
+            return;
+        }
+        if (managed) {
+            clientMediaFiles.add(fileName);
+        } else {
+            clientMediaFiles.remove(fileName);
+        }
+    }
+
+    public static boolean isClientMediaFile(String fileName) {
+        return fileName != null && clientMediaFiles.contains(fileName);
+    }
+
+    /**
+     * The media files the module fetches itself, told through this seam: how to start (or retry)
+     * the fetch when the reader presses the block's own download button. Upstream's download branch
+     * only flips the block's own flags; the bytes are fetched by the module, so a press has to reach
+     * it for the fetch to start at all.
+     */
+    public interface MediaBlockDownloadHandler {
+        boolean start(String fileName);
+    }
+
+    private static volatile MediaBlockDownloadHandler mediaBlockDownloadHandler;
+
+    public static void setMediaBlockDownloadHandler(MediaBlockDownloadHandler handler) {
+        mediaBlockDownloadHandler = handler;
+    }
+
+    /**
+     * A press on a media block's own download button: the module is given the file's name the block
+     * keys it by, and answers whether it started a fetch for it. A file the module does not fetch
+     * answers false and keeps upstream's own behavior.
+     */
+    public static boolean onMediaBlockDownload(String fileName) {
+        MediaBlockDownloadHandler handler = mediaBlockDownloadHandler;
+        return handler != null && handler.start(fileName);
+    }
+
+    /**
+     * Whether a media block may hand its file to upstream's own downloader on its own.
+     *
+     * <p>Upstream reads this off the reader's auto-download setting, and with it on the block asks
+     * {@code FileLoader} for the file before any bytes exist. A file this client fetches itself has
+     * no Telegram datacenter behind it, so that request can never finish - it stays "loading" in
+     * {@code FileLoader} forever, and the block never leaves its spinner even after this client's
+     * fetch has already failed. So the module's own files are never auto-downloaded by upstream;
+     * the module starts (and reports) their transfer, and hands the bytes back itself.</p>
+     */
+    public static boolean mediaAutoDownload(String fileName, boolean autoDownload) {
+        if (isClientMediaFile(fileName)) {
+            return false;
+        }
+        return autoDownload;
+    }
+
+    /**
+     * The picture a photo block draws as a placeholder while the full one is still on its way.
+     *
+     * <p>Upstream uses the photo's own stripped size (tiny inline bytes). A page this client builds
+     * itself carries the site's preview as a second, smaller regular size next to the full picture;
+     * its bytes are a file the module fetched, so upstream's loader draws it the way it draws any
+     * other thumb. When there is no such preview - one size, or upstream's own stripped size - this
+     * answers exactly what upstream would have, so the block is unchanged.</p>
+     */
+    public static org.telegram.tgnet.TLRPC.PhotoSize photoThumbSize(java.util.ArrayList<org.telegram.tgnet.TLRPC.PhotoSize> sizes) {
+        if (sizes == null || sizes.isEmpty()) {
+            return null;
+        }
+        org.telegram.tgnet.TLRPC.TL_photoStrippedSize stripped =
+                org.telegram.messenger.FileLoader.getStrippedPhotoSize(sizes);
+        if (stripped != null) {
+            return stripped;
+        }
+        if (sizes.size() < 2) {
+            return null;
+        }
+        org.telegram.tgnet.TLRPC.PhotoSize smallest = null;
+        for (org.telegram.tgnet.TLRPC.PhotoSize size : sizes) {
+            if (size == null) {
+                continue;
+            }
+            if (smallest == null || Math.max(size.w, size.h) < Math.max(smallest.w, smallest.h)) {
+                smallest = size;
+            }
+        }
+        return smallest != null && isClientMediaFile(org.telegram.messenger.FileLoader.getAttachFileName(smallest))
+                ? smallest : null;
+    }
+
+    /** Synthetic photos have no Telegram transport; only existing local bytes enter its loader. */
+    public static org.telegram.messenger.ImageLocation photoImageLocation(
+            org.telegram.tgnet.TLRPC.PhotoSize size, org.telegram.tgnet.TLRPC.Photo photo) {
+        if (size != null && isClientMediaFile(org.telegram.messenger.FileLoader.getAttachFileName(size))) {
+            org.telegram.messenger.FileLoader loader = org.telegram.messenger.FileLoader.getInstance(0);
+            java.io.File cache = loader.getPathToAttach(size, true);
+            java.io.File images = loader.getPathToAttach(size, false);
+            if (cache.length() == 0 && images.length() == 0) {
+                return null;
+            }
+            // A filesystem path is cache-only in ImageLoader, even if it vanishes before decode.
+            return org.telegram.messenger.ImageLocation.getForPath(
+                    (cache.length() > 0 ? cache : images).getAbsolutePath());
+        }
+        return org.telegram.messenger.ImageLocation.getForPhoto(size, photo);
+    }
+
+    /** Keeps RichPhotoBlock's receiver parameters while withholding missing synthetic files. */
+    public static boolean applyPhotoImage(org.telegram.messenger.ImageReceiver receiver,
+            org.telegram.tgnet.TLRPC.PhotoSize full, org.telegram.tgnet.TLRPC.PhotoSize thumb,
+            org.telegram.tgnet.TLRPC.Photo photo, Object parent, boolean allowMedia) {
+        if (!isClientMediaFile(org.telegram.messenger.FileLoader.getAttachFileName(full))) return false;
+        receiver.setImage(null, null, allowMedia ? photoImageLocation(full, photo) : null, null,
+                photoImageLocation(thumb, photo), "b1", null, full.size, null, parent, 1);
+        return true;
+    }
+
+    /** The viewer uses the same local preview as the bubble, without starting Telegram transport. */
+    public static org.telegram.messenger.ImageLocation photoViewerThumbLocation(
+            org.telegram.tgnet.TLRPC.Photo photo, boolean needed) {
+        if (!needed) return null;
+        org.telegram.tgnet.TLRPC.PhotoSize full = org.telegram.messenger.FileLoader.getClosestPhotoSizeWithSize(
+                photo.sizes, org.telegram.messenger.AndroidUtilities.getPhotoSize());
+        org.telegram.tgnet.TLRPC.PhotoSize thumb = isClientMediaFile(org.telegram.messenger.FileLoader.getAttachFileName(full))
+                ? photoThumbSize(photo.sizes) : org.telegram.messenger.FileLoader.getClosestPhotoSizeWithSize(photo.sizes, 80);
+        return photoImageLocation(thumb, photo);
+    }
+
+    public interface PhotoProgressSetter {
+        void set(int state, boolean animated, boolean animateIcon);
+    }
+
+    /** The viewer's own icons follow the HTTP transfer, including failure and cancellation. */
+    public static void photoViewerProgress(PhotoProgressSetter setter, String fileName,
+            int upstream, int cancel, int download, boolean animated, boolean animateIcon) {
+        int state = isClientMediaFile(fileName) ? (isFileLoading(fileName) ? cancel : download) : upstream;
+        setter.set(state, animated, animateIcon);
+    }
+
+    /** The viewer's central download/cancel press reaches the same transfer as the bubble. */
+    public static boolean onPhotoViewerDownload(String fileName, boolean download) {
+        if (!download || !isClientMediaFile(fileName)) return false;
+        if (isFileLoading(fileName)) {
+            onMediaBlockCancel(fileName);
+        } else {
+            onMediaBlockDownload(fileName);
+        }
+        return true;
     }
 
     /**

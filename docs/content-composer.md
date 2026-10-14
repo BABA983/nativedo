@@ -28,8 +28,13 @@ then adapts posts into the presentation objects upstream `ChatMessageCell` draws
 
 Media bridges supply the local paths and stable identities upstream loaders expect,
 with Discourse-aware downloads. Photos, document blocks and PhotoViewer use those
-paths, not fake Telegram downloads. Fetching video bytes remains a separate action
-from rendering its cover. Never retain recycled view/block instances as a data cache.
+paths, not fake Telegram downloads. A site's smaller photo preview can appear while
+its original downloads; the original replaces it in the retained bubble and open
+PhotoViewer. The HTTP transfer drives upstream progress, cancel and tap-to-retry
+controls. Failed, cancelled or non-image responses never become a completed photo
+cache entry; duplicate consumers share the transfer and its outcome. Fetching video
+bytes remains a separate action from rendering its cover. Never retain recycled
+view/block instances as a data cache.
 
 Polls and reactions are site resources despite their Telegram-shaped controls.
 Respect server permissions, topic `valid_reactions`, hidden results and incomplete

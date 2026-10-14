@@ -30,6 +30,7 @@ import io.github.baba983.nativedo.core.model.NotificationItem
 import io.github.baba983.nativedo.core.model.NotificationPage
 import io.github.baba983.nativedo.core.model.TopicDetail
 import io.github.baba983.nativedo.core.model.TopicListPage
+import io.github.baba983.nativedo.core.model.TopicPostsPage
 import io.github.baba983.nativedo.core.model.TopicSummary
 import io.github.baba983.nativedo.core.model.UserActionPage
 import io.github.baba983.nativedo.core.model.UserBadge
@@ -213,6 +214,12 @@ interface DiscourseApiService {
     suspend fun topicPosts(
         @Path("id") id: Long,
         @Query("post_ids[]") postIds: List<Long>,
+        /**
+         * `include_suggested=true` on the page that reaches the real end of the stream, so the site
+         * carries its own ranked `suggested_topics` with it; null omits the field, which the site
+         * reads as false (the same as any page that is not the end).
+         */
+        @Query("include_suggested") includeSuggested: Boolean?,
     ): TopicPostsResponseDto
 
     @GET("posts/by_number/{topicId}/{postNumber}.json")
@@ -895,6 +902,14 @@ data class TopicResponseDto(
     @SerialName("post_stream")
     val postStream: PostStreamDto,
     val details: TopicDetailsDto? = null,
+    /**
+     * The site's own suggestions for what to read after this topic, in the order it ranked them
+     * (`suggested_topics`, a `SuggestedTopicSerializer` array; the key is simply absent when the
+     * site has none). Each entry is the topic-list shape the feed already reads, so the same
+     * mapping applies. The client never invents the order or the ids.
+     */
+    @SerialName("suggested_topics")
+    val suggestedTopics: List<TopicDto> = emptyList(),
 )
 
 @Serializable
@@ -943,6 +958,14 @@ data class PostStreamDto(
 data class TopicPostsResponseDto(
     @SerialName("post_stream")
     val postStream: TopicPostsStreamDto,
+    /**
+     * The site's own ranked suggestions for what to read after the topic, carried only when the
+     * read asked for them (`include_suggested=true`) and the site has any. The key is absent in
+     * every other answer, so an empty list here is "the site named none". Each entry is the same
+     * topic-list shape a feed's `topic_list.topics[]` uses.
+     */
+    @SerialName("suggested_topics")
+    val suggestedTopics: List<TopicDto> = emptyList(),
 )
 
 @Serializable
@@ -1596,12 +1619,17 @@ internal fun TopicResponseDto.toModel(
         emojiCategories = emojiCategories,
         totalPosts = postsCount.takeIf { it > 0 } ?: streamPostIds.size,
         streamPostIds = streamPostIds,
+        suggestedTopics = suggestedTopics.map { topic -> topic.toTopicSummary(usersById = emptyMap()) },
     )
 }
 
 internal fun TopicPostsResponseDto.toModel(
     emojiCatalog: Map<String, String> = emptyMap(),
-): List<Post> = postStream.posts.map { post -> post.toModel(emojiCatalog = emojiCatalog) }
+): TopicPostsPage =
+    TopicPostsPage(
+        posts = postStream.posts.map { post -> post.toModel(emojiCatalog = emojiCatalog) },
+        suggestedTopics = suggestedTopics.map { topic -> topic.toTopicSummary(usersById = emptyMap()) },
+    )
 
 private fun TopicCreatedByDto.toModel(): MentionCandidate? {
     val name = username.takeIf(String::isNotBlank) ?: return null

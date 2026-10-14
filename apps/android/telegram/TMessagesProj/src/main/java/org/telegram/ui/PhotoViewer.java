@@ -4163,6 +4163,9 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             closePhoto(false, false);
         } else if (id == NotificationCenter.fileLoaded) {
             String location = (String) args[0];
+            if (io.github.baba983.nativedo.hooks.NativeDoHooks.isClientMediaFile(location)) { // NativeDo: HTTP photos become available to the existing viewer
+                setImages();
+            }
             for (int a = 0; a < 3; a++) {
                 if (currentFileNames[a] != null && currentFileNames[a].equals(location)) {
                     boolean animated = a == 0 || a == 1 && sideImage == rightImage || a == 2 && sideImage == leftImage;
@@ -16531,7 +16534,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                                 photoProgressViews[a].setBackgroundState(PROGRESS_CANCEL, false, true);
                             }
                         } else {
-                            photoProgressViews[a].setBackgroundState(PROGRESS_EMPTY, animated, true);
+                            io.github.baba983.nativedo.hooks.NativeDoHooks.photoViewerProgress(photoProgressViews[a]::setBackgroundState, currentFileNames[a], PROGRESS_EMPTY, PROGRESS_CANCEL, PROGRESS_LOAD, animated, true); // NativeDo: the HTTP photo's transfer owns these stock icons
                         }
                         Float progress = ImageLoader.getInstance().getFileProgress(currentFileNames[a]);
                         if (progress == null) {
@@ -16768,8 +16771,9 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                     ImageLocation imageThumbLocation = placeHolder == null
                         ? ImageLocation.getForPhoto(FileLoader.getClosestPhotoSizeWithSize(photo.sizes, 80), photo)
                         : null;
+                    imageThumbLocation = io.github.baba983.nativedo.hooks.NativeDoHooks.photoViewerThumbLocation(photo, placeHolder == null); // NativeDo: only locally fetched preview bytes enter the viewer
                     BitmapDrawable thumbPlaceHolder = placeHolder != null ? new BitmapDrawable(placeHolder.bitmap) : null;
-                    ImageLocation imageLocation = needFullImage ? ImageLocation.getForPhoto(fileLocation, photo) : null;
+                    ImageLocation imageLocation = io.github.baba983.nativedo.hooks.NativeDoHooks.photoImageLocation(needFullImage ? fileLocation : null, photo); // NativeDo: a missing photo waits for HTTP, not a datacenter
                     imageReceiver.setImage(imageLocation, null, imageThumbLocation, "b", thumbPlaceHolder, size[0], null, pageBlocksAdapter.getParentObject(), 1);
                     imageReceiver.setMark(needFullImage ? null : MARK_DEFERRED_IMAGE_LOADING);
                 } else if (pageBlocksAdapter.isVideo(index) || pageBlocksAdapter.isHardwarePlayer(index)) {
@@ -20526,6 +20530,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         if (currentMessageObject == null && currentBotInlineResult == null && (pageBlocksAdapter == null || currentFileNames[0] == null) && sendPhotoType != SELECT_TYPE_NO_SELECT) {
             return;
         }
+        if (io.github.baba983.nativedo.hooks.NativeDoHooks.onPhotoViewerDownload(currentFileNames[0], download)) return; // NativeDo: retry and cancel use the photo's existing HTTP transfer
         ArrayList<VideoPlayer.Quality> videoUrises = null;
         Uri uri = null;
         File file = null;
