@@ -85,6 +85,29 @@ data class ChatMessage(
     val channelId: Long = 0L,
     val user: ChatUser? = null,
     val inReplyTo: ChatReplyTarget? = null,
+    /**
+     * The files attached to this message, from the message serializer's `has_many :uploads`. A
+     * recorded voice message arrives here as one upload whose [ChatMessageUpload.extension] is an
+     * audio extension; the screen renders an actionable audio link and downloads it with the
+     * session-aware client for local playback.
+     */
+    val uploads: List<ChatMessageUpload> = emptyList(),
+)
+
+/**
+ * One attachment on a chat message (`UploadSerializer`): where it points, its original name and
+ * extension, and the site's human size. [extension] is how the site's own kind test classifies it -
+ * an audio extension means a voice/audio message.
+ */
+data class ChatMessageUpload(
+    val id: Long = 0L,
+    val url: String = "",
+    val filename: String = "",
+    val extension: String = "",
+    val width: Int = 0,
+    val height: Int = 0,
+    val shortUrl: String? = null,
+    val humanSize: String? = null,
 )
 
 /** The message [ChatMessage.inReplyTo] answers, as its own preview serializer carries it. */

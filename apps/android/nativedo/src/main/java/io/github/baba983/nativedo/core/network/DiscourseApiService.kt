@@ -15,6 +15,7 @@ import io.github.baba983.nativedo.core.model.ChatLastMessage
 import io.github.baba983.nativedo.core.model.ChatMembership
 import io.github.baba983.nativedo.core.model.ChatMessage
 import io.github.baba983.nativedo.core.model.ChatMessagePage
+import io.github.baba983.nativedo.core.model.ChatMessageUpload
 import io.github.baba983.nativedo.core.model.ChatReplyTarget
 import io.github.baba983.nativedo.core.model.ChatUser
 import io.github.baba983.nativedo.core.model.CreatedTopic
@@ -542,9 +543,11 @@ interface DiscourseApiService {
 
     /**
      * `POST /chat/{id}.json` (the chat controller route, **not** `chat/api/...`): sends one message,
-     * as the web client sends it - form fields `message`, optional `in_reply_to_id` and `staged_id`.
-     * The answer is an acknowledgement only (`{success:"OK", message_id}`) - not the cooked message -
-     * so a client reads the accepted id back rather than drawing the write. Requires `X-CSRF-Token`.
+     * as the web client sends it - form fields `message`, optional `in_reply_to_id`, `staged_id` and
+     * `upload_ids[]`. The message may be blank when uploads are attached (the service validates
+     * `message` only when there are no `upload_ids` and no `blocks`). The answer is an
+     * acknowledgement only (`{success:"OK", message_id}`) - not the cooked message - so a client
+     * reads the accepted id back rather than drawing the write. Requires `X-CSRF-Token`.
      */
     @FormUrlEncoded
     @POST("chat/{id}.json")
@@ -553,6 +556,7 @@ interface DiscourseApiService {
         @Field("message") message: String,
         @Field("in_reply_to_id") inReplyToId: Long?,
         @Field("staged_id") stagedId: String?,
+        @Field("upload_ids[]") uploadIds: List<Long>?,
         @Header("X-CSRF-Token") csrfToken: String,
     ): ChatWriteAckDto
 
@@ -707,6 +711,8 @@ data class MentionUserDto(
     val name: String = "",
     @SerialName("avatar_template")
     val avatarTemplate: String = "",
+    @SerialName("animated_avatar")
+    val animatedAvatar: String? = null,
     @SerialName("priority_group")
     val priorityGroup: Int? = null,
 )
@@ -1511,6 +1517,7 @@ internal fun SearchResponseDto.toModel(): SearchResult {
                     username = username,
                     name = user.name,
                     avatarTemplate = user.avatarTemplate,
+                    animatedAvatarUrl = user.animatedAvatar.orEmpty(),
                 )
             }
         },
@@ -1527,6 +1534,7 @@ internal fun MentionSearchResponseDto.toModel(): MentionSearchResult = MentionSe
                 username = username,
                 displayName = user.name,
                 avatarTemplate = user.avatarTemplate,
+                animatedAvatarUrl = user.animatedAvatar.orEmpty(),
                 priorityGroup = user.priorityGroup,
             )
         }
@@ -2269,6 +2277,10 @@ data class ChatMessageDto(
     val user: ChatUserDto? = null,
     @SerialName("in_reply_to")
     val inReplyTo: ChatInReplyToDto? = null,
+    // The message's attachments, from `UploadSerializer` (`has_many :uploads` on the message
+    // serializer). A recorded voice message is one of these, identified by its extension, which is
+    // why the model carries them rather than dropping them.
+    val uploads: List<UploadResponseDto> = emptyList(),
 )
 
 @Serializable
@@ -2358,6 +2370,7 @@ internal fun ChatMessageDto.toModel(): ChatMessage = ChatMessage(
     channelId = chatChannelId ?: 0L,
     user = user?.toModel(),
     inReplyTo = inReplyTo?.toModel(),
+    uploads = uploads.map(UploadResponseDto::toModel),
 )
 
 private fun ChatInReplyToDto.toModel(): ChatReplyTarget = ChatReplyTarget(
@@ -2365,6 +2378,22 @@ private fun ChatInReplyToDto.toModel(): ChatReplyTarget = ChatReplyTarget(
     cooked = cooked,
     excerpt = excerpt,
     user = user?.toModel(),
+)
+
+/**
+ * One attachment on a chat message. `UploadSerializer` answers `original_filename`, `extension`,
+ * `url` and `short_url`; `width`/`height` are null for anything that is not an image or a video, so
+ * they are read as optional exactly as the upload response is.
+ */
+internal fun UploadResponseDto.toModel(): ChatMessageUpload = ChatMessageUpload(
+    id = id,
+    url = url,
+    filename = originalFilename.orEmpty(),
+    extension = extension.orEmpty(),
+    width = width ?: 0,
+    height = height ?: 0,
+    shortUrl = shortUrl,
+    humanSize = humanFilesize,
 )
 
 internal fun ChatMessagesResponseDto.toModel(): ChatMessagePage = ChatMessagePage(

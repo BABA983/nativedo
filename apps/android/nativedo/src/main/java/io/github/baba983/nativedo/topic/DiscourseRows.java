@@ -69,7 +69,8 @@ public final class DiscourseRows {
                 topic.getAuthorUsername(),
                 "",
                 topic.getAuthorAvatarTemplate() == null ? "" : topic.getAuthorAvatarTemplate(),
-                baseUrl
+                baseUrl,
+                topic.getAuthorAnimatedAvatarUrl()
         );
     }
 
@@ -92,7 +93,8 @@ public final class DiscourseRows {
                 post.getAuthorUsername(),
                 post.getAuthorDisplayName() == null ? "" : post.getAuthorDisplayName(),
                 post.getAuthorAvatarTemplate() == null ? "" : post.getAuthorAvatarTemplate(),
-                baseUrl
+                baseUrl,
+                post.getAuthorAnimatedAvatarUrl()
         );
     }
 

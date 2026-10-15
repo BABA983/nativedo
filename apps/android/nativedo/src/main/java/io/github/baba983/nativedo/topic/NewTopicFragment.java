@@ -51,6 +51,9 @@ public class NewTopicFragment extends BaseFragment {
     private static final int FIELD_HEIGHT_DP = 36;
     private static final int CATEGORY_ROW_HEIGHT_DP = 50;
 
+    /** The request the attachment sheet's content picker answers on. */
+    private static final int PICK_ATTACHMENT_REQUEST = 0x4e45;
+
     /** The bundle flag that puts the same form into private-message mode, and the recipient to prefill. */
     private static final String ARG_PRIVATE_MESSAGE = "private_message";
     private static final String ARG_RECIPIENT = "recipient";
@@ -63,6 +66,11 @@ public class NewTopicFragment extends BaseFragment {
     /** The recipient a profile passed in, prefilled the first time the form is shown. */
     private String initialRecipient;
     private ChatActivityEnterView composer;
+    /**
+     * The composer's own delegate, kept so the voice recording host can be bound to it (the delegate
+     * carries upstream's microphone gesture in, see {@link DiscourseComposerDelegate}).
+     */
+    private DiscourseComposerDelegate composerDelegate;
     /** Upstream's floating-composer host: the island bubble the enter view rides in. */
     private org.telegram.ui.Components.chat.ChatInputViewsContainer inputViews;
     private org.telegram.ui.Components.inset.WindowInsetsStateHolder inputInsets;
@@ -86,6 +94,10 @@ public class NewTopicFragment extends BaseFragment {
     private PrivateMessageDraftKey pmDraftKey;
     /** Set once the fragment is destroyed, so a write that lands afterwards is dropped. */
     private boolean destroyed;
+    /** The attachment sheet, kept so the screen takes its dialog down when it leaves. */
+    private DiscourseAttachSheet attachSheet;
+    /** True while a picked file is uploading; the sheet's entry takes no second tap. */
+    private boolean uploadingAttachment;
 
     public NewTopicFragment(android.os.Bundle args) {
         super(args);
@@ -124,12 +136,8 @@ public class NewTopicFragment extends BaseFragment {
             public void onItemClick(int id) {
                 if (id == -1 && onBackPressed(true)) {
                     finishFragment();
-                } else if (id == 1 && composer != null) {
-                    CharSequence raw = composer.getFieldText();
-                    presentFragment(new DiscourseRichEditor(raw == null ? "" : raw.toString(), applied -> {
-                        composer.setFieldText(applied);
-                        saveDraft();
-                    }));
+                } else if (id == 1) {
+                    openRichEditor();
                 }
             }
         });
@@ -190,7 +198,7 @@ public class NewTopicFragment extends BaseFragment {
                         Gravity.LEFT | Gravity.BOTTOM, 7, 0, 7, 0));
 
         composerTools = new DiscourseComposerTools(
-                this, container, composer, inputViews, inputInsets, glassHost, null);
+                this, container, composer, inputViews, inputInsets, glassHost, null, composerDelegate);
         fragmentView = contentView;
         androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(contentView, this::onInsetsInternal);
         if (privateMessageMode) {
@@ -357,7 +365,8 @@ public class NewTopicFragment extends BaseFragment {
         view.setInAppInsetsController(inputInsets);
         view.setViewParentForEmoji(inputViews.getInAppKeyboardBubbleContainer());
         view.setAllowStickersAndGifs(false, false, false);
-        view.setDelegate(new SendDelegate());
+        composerDelegate = new SendDelegate();
+        view.setDelegate(composerDelegate);
         // The composer decides the button again whenever it is laid out (a keyboard, an emoji panel,
         // a first layout), so the decision is repeated there too; the island's own height is what
         // the capsule and the insets follow.
@@ -373,6 +382,121 @@ public class NewTopicFragment extends BaseFragment {
         });
         composer = view;
         return view;
+    }
+
+    /**
+     * The composer's own paperclip: the same Telegram-shaped sheet a reply opens, over the actions
+     * the site can carry. A new topic and a private message attach the way a reply does; only the
+     * draft identity differs, which is the store's own key, not the sheet's.
+     */
+    private void openAttachmentSheet() {
+        if (getParentActivity() == null || uploadingAttachment || container == null) {
+            return;
+        }
+        attachSheet = new DiscourseAttachSheet(getParentActivity(), resourceProvider,
+                this::onAttachAction, this::insertPollRaw);
+        showDialog(attachSheet);
+    }
+
+    /** The sheet's answer: a picker for a file or the rich editor. The poll stays in the sheet. */
+    private void onAttachAction(DiscourseAttachSheet.Action action) {
+        switch (action) {
+            case GALLERY:
+                openAttachmentPicker("image/*");
+                break;
+            case FILES:
+                openAttachmentPicker("*/*");
+                break;
+            case RICH_EDITOR:
+                openRichEditor();
+                break;
+        }
+    }
+
+    /** The system's content picker; what it answers is uploaded by [onActivityResultFragment]. */
+    private void openAttachmentPicker(String mimeType) {
+        if (getParentActivity() == null || uploadingAttachment) {
+            return;
+        }
+        android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(android.content.Intent.CATEGORY_OPENABLE);
+        intent.setType(mimeType);
+        startActivityForResult(intent, PICK_ATTACHMENT_REQUEST);
+    }
+
+    /**
+     * Opens upstream's own rich editor on what is already in the field; its blocks come back here
+     * as the markdown the site stores. The same entry the reply screen has, shared with the sheet.
+     */
+    private void openRichEditor() {
+        if (getParentActivity() == null || composer == null) {
+            return;
+        }
+        CharSequence raw = composer.getFieldText();
+        presentFragment(new DiscourseRichEditor(raw == null ? "" : raw.toString(), applied -> {
+            if (composer != null) {
+                composer.setFieldText(applied);
+            }
+            saveDraft();
+        }));
+    }
+
+    /**
+     * The inline poll's raw, written into the body field at the caret like any other markup. The
+     * sheet hands it here when its own Poll form is submitted, so the poll is written where it is
+     * read instead of in a second popup.
+     */
+    private void insertPollRaw(String raw) {
+        if (composer == null) {
+            return;
+        }
+        io.github.baba983.nativedo.core.media.ReplyMarkupKt.insertReplyMarkup(composer.getEditField(), raw);
+        updateComposerActions();
+        saveDraft();
+    }
+
+    /** The picker's answer: the file is uploaded and the field gets the site's own markdown. */
+    @Override
+    public void onActivityResultFragment(int requestCode, int resultCode, android.content.Intent data) {
+        if (requestCode != PICK_ATTACHMENT_REQUEST
+                || resultCode != android.app.Activity.RESULT_OK
+                || data == null) {
+            return;
+        }
+        attachMediaUri(data.getData());
+    }
+
+    /**
+     * Uploads one readable URI into the body field - the seam a recorder or another screen can
+     * drive with a locally written FileProvider URI, without faking an Activity result. A failure
+     * leaves the form exactly as the reader typed it and reports the site's or the reader's error.
+     */
+    public void attachMediaUri(android.net.Uri uri) {
+        if (getParentActivity() == null || container == null || uri == null || uploadingAttachment) {
+            return;
+        }
+        DiscourseAttachmentUpload.upload(getParentActivity(), container, uri,
+                new DiscourseAttachmentUpload.Sink() {
+                    @Override
+                    public void onUploadStarted() {
+                        uploadingAttachment = true;
+                    }
+
+                    @Override
+                    public void onUploaded(String markup) {
+                        uploadingAttachment = false;
+                        io.github.baba983.nativedo.core.media.ReplyMarkupKt.insertReplyMarkup(
+                                composer == null ? null : composer.getEditField(), markup);
+                        updateComposerActions();
+                        saveDraft();
+                    }
+
+                    @Override
+                    public void onUploadFailed(Throwable error) {
+                        uploadingAttachment = false;
+                        showError("上传失败", error);
+                    }
+                });
     }
 
     /**
@@ -568,6 +692,15 @@ public class NewTopicFragment extends BaseFragment {
         }
     }
 
+    /** The microphone permission answer; the recording host waits for it before a second request. */
+    @Override
+    public void onRequestPermissionsResultFragment(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResultFragment(requestCode, permissions, grantResults);
+        if (composerTools != null) {
+            composerTools.onPermissionResult(requestCode);
+        }
+    }
+
     @Override
     public void onResume() {
         super.onResume();
@@ -592,6 +725,10 @@ public class NewTopicFragment extends BaseFragment {
         // A write that has not landed yet must not be written into a screen that is gone.
         destroyed = true;
         saveDraft();
+        if (attachSheet != null) {
+            attachSheet.dismiss();
+            attachSheet = null;
+        }
         if (composerTools != null) {
             composerTools.onDestroy();
             composerTools = null;
@@ -640,10 +777,10 @@ public class NewTopicFragment extends BaseFragment {
     }
 
     /**
-     * The composer's own state, decided the way the reply box decides it: the send button is there
-     * while the body has something in it, and upstream draws the send arrow into it - a topic needs
-     * more than a body, so what is missing is said when the press happens rather than by a button
-     * that never appears.
+     * The composer's own state, decided the way the reply box decides it: the button is the send
+     * arrow while the body has something in it and this client's own microphone while it is empty.
+     * A topic needs more than a body, so what is missing is said when the press happens rather than
+     * by a button that never appears.
      */
     private void updateComposerActions() {
         if (composer == null) {
@@ -651,18 +788,19 @@ public class NewTopicFragment extends BaseFragment {
         }
         boolean hasText = composer.getEditField() != null
                 && composer.getEditField().length() > 0;
+        boolean hasMicrophone = composerTools != null && composerTools.isVoiceReady();
         View button = composer.getSendButton();
         if (button == null) {
             return;
         }
-        int wanted = hasText ? View.VISIBLE : View.GONE;
+        int wanted = hasText || hasMicrophone ? View.VISIBLE : View.GONE;
         if (button.getVisibility() != wanted) {
             button.setVisibility(wanted);
         }
         // The field's own decision runs last, and it is upstream's: it is the same call it makes on
-        // every change, and it is what puts the send arrow (not the empty circle of the record state)
-        // in the button. Written the other way round, a change that arrives in one piece - a pasted
-        // body, a restored draft - leaves the button drawn from the state before it.
+        // every change, and it is what puts the send arrow (or this client's microphone, when the
+        // field is empty) in the button. Written the other way round, a change that arrives in one
+        // piece - a pasted body, a restored draft - leaves the button drawn from the state before it.
         composer.checkSendButton(false);
     }
 
@@ -848,6 +986,11 @@ public class NewTopicFragment extends BaseFragment {
         return privateMessageMode;
     }
 
+    /** The screen's own voice host, so a test drives the real record/review/upload contract. */
+    ComposerVoiceController voiceControllerForTest() {
+        return composerTools == null ? null : composerTools.getVoice();
+    }
+
     /** What the composer tells us; the two messages this screen has an answer for. */
     private class SendDelegate extends DiscourseComposerDelegate {
 
@@ -865,6 +1008,12 @@ public class NewTopicFragment extends BaseFragment {
         @Override
         public void onWindowSizeChanged(int size) {
             updateComposerActions();
+        }
+
+        /** The paperclip opens the shared attachment sheet, the same one a reply opens. */
+        @Override
+        public void didPressAttachButton() {
+            openAttachmentSheet();
         }
     }
 }

@@ -113,6 +113,35 @@ public final class NativeDoHooks {
     }
 
     /**
+     * The media files this client fetched that are animations rather than stills, by the name
+     * upstream's own block keys them by.
+     *
+     * <p>A GIF the module fetched sits in the ordinary image cache under an ordinary name, so
+     * upstream's loader decodes it as a single still frame. The block is handed a path location
+     * either way; marking the file here is what makes that location an <em>animation</em> location,
+     * which is upstream's own signal to build its animated drawable and play the frames. A file the
+     * module did not fetch, and every file that is not an animation, keeps the still it always had.
+     * </p>
+     */
+    private static final java.util.Set<String> clientMediaAnimations =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    public static void setClientMediaAnimated(String fileName, boolean animated) {
+        if (fileName == null || fileName.isEmpty()) {
+            return;
+        }
+        if (animated) {
+            clientMediaAnimations.add(fileName);
+        } else {
+            clientMediaAnimations.remove(fileName);
+        }
+    }
+
+    public static boolean isClientMediaAnimated(String fileName) {
+        return fileName != null && clientMediaAnimations.contains(fileName);
+    }
+
+    /**
      * The media files the module fetches itself, told through this seam: how to start (or retry)
      * the fetch when the reader presses the block's own download button. Upstream's download branch
      * only flips the block's own flags; the bytes are fetched by the module, so a press has to reach
@@ -200,8 +229,13 @@ public final class NativeDoHooks {
                 return null;
             }
             // A filesystem path is cache-only in ImageLoader, even if it vanishes before decode.
-            return org.telegram.messenger.ImageLocation.getForPath(
-                    (cache.length() > 0 ? cache : images).getAbsolutePath());
+            String path = (cache.length() > 0 ? cache : images).getAbsolutePath();
+            // An animation this client fetched is a GIF in the ordinary cache: the same path, but a
+            // location upstream's loader plays frame by frame instead of decoding a single still.
+            if (isClientMediaAnimated(org.telegram.messenger.FileLoader.getAttachFileName(size))) {
+                return org.telegram.messenger.ImageLocation.getForVideoPath(path);
+            }
+            return org.telegram.messenger.ImageLocation.getForPath(path);
         }
         return org.telegram.messenger.ImageLocation.getForPhoto(size, photo);
     }
@@ -725,6 +759,43 @@ public final class NativeDoHooks {
             }
         }
         return upstream;
+    }
+
+    /**
+     * The seam for upstream's composer recording gesture
+     * ({@code org.telegram.ui.Components.ChatActivityEnterView}'s microphone affordance).
+     *
+     * <p>Upstream's gesture starts and stops Telegram's own recorder directly
+     * ({@code MediaController.startRecording}/{@code stopRecording}, and {@code CameraController}
+     * for a video note). Neither belongs here: this client records with its own Android recorder and
+     * uploads to linux.do, and Telegram's recorder reaches for a Telegram account and datacenter this
+     * app does not have.</p>
+     *
+     * <p>The host is bound to the composer's own {@code ChatActivityEnterViewDelegate} - the one
+     * instance the composer already owns - not to a process-wide table. This client's composer
+     * delegate implements this interface and forwards to the one recording host bound to its screen,
+     * so upstream's single touch call site hands the live delegate in and nothing else has to be
+     * kept in sync. A real Telegram delegate is not an instance of this interface (and a screen that
+     * never bound a host forwards to null), so upstream's own gesture runs unchanged.</p>
+     */
+    public interface ComposerRecordHost {
+        /**
+         * A touch on the composer's recording affordance. Return true when this host owns the
+         * gesture (upstream's own handling is then skipped); false lets upstream run unchanged.
+         */
+        boolean onRecordTouch(android.view.MotionEvent event);
+    }
+
+    /**
+     * Answered from upstream's composer touch path with the composer's own delegate and the event.
+     * True means this client's host owns the gesture and upstream's Telegram recording must not run.
+     * Only a delegate that implements {@link ComposerRecordHost} is asked; every other delegate
+     * (a real Telegram composer, or a screen with no host bound) keeps upstream's gesture exactly.
+     */
+    public static boolean handleRecordGesture(
+            org.telegram.ui.Components.ChatActivityEnterView.ChatActivityEnterViewDelegate delegate,
+            android.view.MotionEvent event) {
+        return delegate instanceof ComposerRecordHost && ((ComposerRecordHost) delegate).onRecordTouch(event);
     }
 
     private NativeDoHooks() {

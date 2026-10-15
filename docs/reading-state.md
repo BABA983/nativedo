@@ -30,6 +30,18 @@ greater of server progress and the local read floor. Read state is scoped by sit
 account and topic. The viewport store exists but is not wired into this screen:
 returning to a previous pixel offset is **not** current active behavior.
 
+The topic's floating page-down arrow appears while real stream posts remain below
+the viewport, even when they are already read. Its badge counts only real posts
+after the reporter's monotonic read mark, not all posts below the screen; scrolling
+back cannot make that number grow. Deleted floors are not counted. If the read
+floor is outside the loaded window and the server supplied no matching
+`last_read_post_id`, the arrow omits the number rather than inventing a stream
+position. Its tap still goes to the first unread floor, or the newest post when
+everything is read. The [page-down flow](../apps/android/nativedo/src/test/java/io/github/baba983/nativedo/topic/TopicPageDownTest.kt)
+checks forward/backward reading, the fully-read arrow, deleted floors and jump
+loading/retry. Discussion-page counts remain the root's remaining replies, not
+the ordinary topic's unread badge.
+
 The legacy `:app` page restores the exit viewport before falling back to read
 progress; explicit floor links and a user drag take precedence. See the
 [scoped viewport contract](../contracts/discourse/models.md#local-topic-viewport).
@@ -82,6 +94,49 @@ repaint as the pull grows.
 [pull]: ../apps/android/nativedo/src/main/java/io/github/baba983/nativedo/topic/NextTopicPullDrawable.java
 [t-endpoint]: ../contracts/discourse/endpoints.md
 [test]: ../apps/android/nativedo/src/test/java/io/github/baba983/nativedo/topic/NextTopicPullTest.kt
+
+
+### The chat channel's floating date
+
+The active chat channel
+([ChatChannelFragment](../apps/android/nativedo/src/main/java/io/github/baba983/nativedo/chat/ChatChannelFragment.java))
+floats the date of the message at the top of the viewport, the way a chat does
+([ChatActivity][chat-date]): the reader always knows which day they are reading
+without a date separator taking a list row. The capsule is upstream's own
+`ChatActionCell` floating date - the same cell and opaque night theme delegate the
+topic list's new-topics pill already uses - added as a child of the screen's frame
+below the header and above the rows, so it consumes no row, cannot overlap the
+composer, and rides nothing but the header's own edge. The date is the chat date
+the top visible message itself carries (`messageOwner.date`), not a scroll
+position: status, note and header rows are skipped and the first visible adapter
+position is read fresh on every scroll, so a history prepend or a live append
+cannot leave a stale index behind. `setCustomDate` formats the same chat date a
+chat's date separator shows, so crossing midnight changes the label and crossing a
+year boundary adds the year. The capsule fades in (one 150 ms alpha set) while the
+reader scrolls and fades out once the scroll settles; a screen that is loading,
+empty, failed or no longer a session clears it at once instead of leaving the last
+date standing.
+
+Non-goals: no in-list date separators and no change to `messageRowOffset`/index
+arithmetic - the capsule is an overlay, not a row. No tap-to-jump, because the
+channel has no date-jump endpoint, so the capsule is a label rather than a control.
+It does not touch read progress, the history viewport, pending arrivals or reply
+targeting.
+
+Alternative considered: hand-draw a lookalike capsule, or add date separator rows.
+Both were rejected - the first is a second drawing of something upstream already
+draws, and the second changes the list's row model for a label the reader only sees
+while moving.
+
+Verification: the [chat channel flow][chat-test] drives the shipped screen with
+messages on different days and real scrolling, and checks that the capsule names
+the top message's own date, changes across a day boundary in both directions, keeps
+the year before a year boundary, fades once the scroll settles and is cleared when
+the session is lost. The host harness renders the visible, changed and faded states;
+device/GPU timing of the fade is not claimed.
+
+[chat-date]: ../apps/android/telegram/TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java
+[chat-test]: ../apps/android/nativedo/src/test/java/io/github/baba983/nativedo/chat/ChatChannelTest.kt
 
 
 ### Same-screen topic search

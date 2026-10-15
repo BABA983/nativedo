@@ -762,6 +762,8 @@ public class PostListView extends RecyclerListView {
      * nothing fetches from (there is no Telegram account behind it). What the image loader can read
      * is the file our client downloaded, named by its path — the same way a post's own images are
      * drawn — and it is handed over here, after the cell's own decisions, so nothing takes it back.
+     * When the site says the author's avatar animates, the location handed over is an animation one,
+     * so the loader plays it instead of drawing a single frame.
      */
     private void ensureAvatar(ChatMessageCell cell) {
         ImageReceiver avatar = cell.getAvatarImage();
@@ -769,25 +771,28 @@ public class PostListView extends RecyclerListView {
                 || cell.getMessageObject().messageOwner == null) {
             return;
         }
-        // A picture is here (this draw finds it) or ours is already being read: nothing to hand over.
-        if (avatar.getBitmap() != null || avatar.getImageDrawable() != null) {
-            return;
-        }
-        // The cell's own ask is a file location with no path — the picture is named by where it was
-        // downloaded to, and only a location that carries that path can be read.
-        org.telegram.messenger.ImageLocation current = avatar.getImageLocation();
-        if (current != null && current.path != null) {
-            return;
-        }
         TLRPC.User author = avatarSource.user(
                 org.telegram.messenger.MessageObject.getFromChatId(cell.getMessageObject().messageOwner));
-        java.io.File file = author == null ? null : DiscourseAvatars.INSTANCE.localFile(author);
-        if (file == null) {
+        if (author == null) {
             return;
         }
-        avatar.setImage(
-                org.telegram.messenger.ImageLocation.getForPath(file.getAbsolutePath()),
-                "50_50", placeholder(avatar, author), null, null, 0);
+        org.telegram.messenger.ImageLocation current = avatar.getImageLocation();
+        boolean needsAnimation = DiscourseAvatars.INSTANCE.isAnimated(author)
+                && (current == null || current.imageType != org.telegram.messenger.FileLoader.IMAGE_TYPE_ANIMATION);
+        // A cached GIF can arrive through the cell's ordinary photo ask first; replace that still
+        // once with its animation path. Otherwise keep a picture already present or being read.
+        if (!needsAnimation && (avatar.getBitmap() != null || avatar.getImageDrawable() != null
+                || (current != null && current.path != null))) {
+            return;
+        }
+        // The module's own location: a plain path location for a still avatar, and an animation
+        // location for a peer the site says animates, so upstream's loader plays the GIF the site
+        // advertised rather than decoding one frame of it.
+        org.telegram.messenger.ImageLocation location = DiscourseAvatars.INSTANCE.imageLocation(author);
+        if (location == null) {
+            return;
+        }
+        avatar.setImage(location, "50_50", placeholder(avatar, author), null, null, 0);
     }
 
     /**

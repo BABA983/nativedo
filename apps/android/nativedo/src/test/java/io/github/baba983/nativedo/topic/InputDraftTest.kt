@@ -42,7 +42,10 @@ import org.telegram.ui.Components.ChatActivityEnterView
  * <p>The failure this pins: a reader's draft is handed to someone else's account or another topic,
  * is thrown away by a write the site refused, or is never written at all because the screen was
  * paused without a successful send. Each is a way the reader loses what they wrote with no way to
- * know it happened.</p>
+ * know it happened. One more: a write the site refused keeps the text <em>and</em> the reply target
+ * in the field, but the composer's own strip is torn down at the start of every send - so a refusal
+ * that did not put it back leaves the reader answering a floor with nothing saying so, while the
+ * next send still targets it.</p>
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(
@@ -193,6 +196,19 @@ internal class InputDraftTest {
         println("draft: after a refusal = $stored")
         assertEquals("the write did not land, so the text stays", "this will be refused", stored.raw)
         assertEquals("and so does the post it answered", 1, stored.replyToPostNumber)
+        // A send takes the reply strip down; with the target still recorded the strip has to come
+        // back with the text, or the reader is answering floor 1 with nothing saying so - and the
+        // next send still targets it.
+        harness.await("the reply strip to come back with the refused text") {
+            composer().isTopViewVisible()
+        }
+        val strip = findReplyStrip(composer())
+            ?: throw AssertionError("the composer hosted no reply strip after the refusal")
+        println("draft: strip after a refusal, name=" + strip.current().name.text)
+        assertTrue(
+            "the strip names the floor the next send will still target",
+            strip.current().name.text.toString().contains("Baba"),
+        )
         harness.assertNoTelegramSideEffects()
     }
 
@@ -368,7 +384,7 @@ internal class InputDraftTest {
     }
 
     private fun findCloseButton(view: View): View? {
-        if (view.contentDescription == "取消回复") return view
+        if (view.contentDescription == "取消回复" || view.contentDescription == "取消编辑") return view
         if (view is ViewGroup) {
             for (index in 0 until view.childCount) {
                 findCloseButton(view.getChildAt(index))?.let { return it }

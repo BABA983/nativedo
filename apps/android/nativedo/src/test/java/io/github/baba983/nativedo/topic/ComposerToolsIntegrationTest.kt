@@ -132,13 +132,16 @@ internal class ComposerToolsIntegrationTest {
             site.requestPaths.contains("emojis.json"))
         composer.emojiButton.performClick()
         val picker = descendants(fragment.fragmentView).filterIsInstance<DiscourseEmojiPicker>().single()
-        harness.await("the production emoji grid") { grid(picker).adapter!!.itemCount == 1 }
+        harness.await("the production emoji grid") { grid(picker).adapter!!.itemCount == 3 }
         harness.layoutApp()
         assertTrue("the smile button opens the site picker", picker.isOpen())
         assertTrue("the in-app panel lifts the capsule", input.inputBubbleBottom < input.height - AndroidUtilities.dp(200f))
         val grid = grid(picker)
-        harness.await("the selectable emoji tile") { harness.layoutApp(); grid.getChildAt(0) != null }
-        grid.onItemClickListener.onItemClick(grid.getChildAt(0), 0)
+        harness.await("the selectable emoji tile") {
+            harness.layoutApp(); descendants(grid).any { it.contentDescription == ":site_wave:" }
+        }
+        val tile = descendants(grid).first { it.contentDescription == ":site_wave:" }
+        grid.onItemClickListener.onItemClick(tile, grid.getChildAdapterPosition(tile))
         assertEquals("before :site_wave: after", field.text.toString())
         retain("${label(newTopic)}-emoji")
         assertFalse("predictive Back is claimed without closing the panel", fragment.onBackPressed(false))

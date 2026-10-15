@@ -4,7 +4,10 @@ import io.github.baba983.nativedo.core.model.ChatChannel
 import io.github.baba983.nativedo.core.model.ChatChannelPage
 import io.github.baba983.nativedo.core.model.ChatMembership
 import io.github.baba983.nativedo.core.model.ChatMessagePage
+import io.github.baba983.nativedo.core.model.UploadedFile
 import io.github.baba983.nativedo.core.network.DiscourseApiClient
+import io.github.baba983.nativedo.core.network.DiscourseUploadType
+import java.io.File
 
 /**
  * The reader's public chat channels and their messages, over the chat API routes (see
@@ -52,19 +55,42 @@ class ChatRepository(
 
     /**
      * Sends one message and answers the id the site accepted. The write is never replayed by this
-     * repository: the caller reads the accepted id back through [messages].
+     * repository: the caller reads the accepted id back through [messages]. [uploadIds] are uploads
+     * this reader already sent to the site through [upload]; the site enforces that they belong to
+     * this reader and that the channel allows uploads, and [message] may be blank when there are
+     * uploads.
      */
     suspend fun send(
         channelId: Long,
         message: String,
         inReplyToId: Long? = null,
         stagedId: String? = null,
+        uploadIds: List<Long> = emptyList(),
     ): Result<Long> = runCatching {
         client.createChatMessage(
             channelId = channelId,
             message = message,
             inReplyToId = inReplyToId,
             stagedId = stagedId,
+            uploadIds = uploadIds,
+        )
+    }
+
+    /**
+     * Uploads one file for a chat message (`upload_type=chat-composer`) and answers the upload the
+     * site accepted. The id it carries is what [send] references through `upload_ids`; the site
+     * checks ownership again on the message write, so an upload alone sends nothing.
+     */
+    suspend fun upload(
+        file: File,
+        mimeType: String?,
+        onProgress: (Float) -> Unit = {},
+    ): Result<UploadedFile> = runCatching {
+        client.uploadFile(
+            file = file,
+            mimeType = mimeType,
+            onProgress = onProgress,
+            uploadType = DiscourseUploadType.ChatComposer,
         )
     }
 

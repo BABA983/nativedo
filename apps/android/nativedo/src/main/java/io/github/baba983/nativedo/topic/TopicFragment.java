@@ -166,6 +166,11 @@ public class TopicFragment extends BaseFragment
     private long topicId;
     private ChatActivityEnterView composer;
     /**
+     * The composer's own delegate, kept so the voice recording host can be bound to it (the delegate
+     * carries upstream's microphone gesture in, see {@link DiscourseComposerDelegate}).
+     */
+    private DiscourseComposerDelegate composerDelegate;
+    /**
      * The post menu as upstream's scrim popup. It is its own window, so the fragment keeps it to
      * take it down when the screen leaves: a popup nobody dismisses outlives the fragment.
      */
@@ -440,6 +445,8 @@ public class TopicFragment extends BaseFragment
     /** Our own attach entry point, for the files upstream's button cannot offer (see its builder). */
     private View attachStrip;
     private android.widget.TextView attachStripLabel;
+    /** The attachment sheet, kept so a screen that leaves takes its dialog down with it. */
+    private DiscourseAttachSheet attachSheet;
     /** Our own rich-editor entry, on our own strip; upstream's composer is untouched. */
     private android.widget.TextView richTextButton;
     private boolean uploadingAttachment;
@@ -607,39 +614,51 @@ public class TopicFragment extends BaseFragment
 
     /**
      * The picker's answer: the file is uploaded to the site, and what the field receives is the
-     * markdown the site's own composer would have written for it.
+     * markdown the site's own composer would have written for it. The pick is one way in; the same
+     * path is [attachMediaUri], so a locally written URI (a recording) needs no Activity result.
      */
     @Override
     public void onActivityResultFragment(int requestCode, int resultCode, android.content.Intent data) {
         if (requestCode != PICK_ATTACHMENT_REQUEST
                 || resultCode != android.app.Activity.RESULT_OK
-                || data == null
-                || getParentActivity() == null
-                || container == null) {
+                || data == null) {
             return;
         }
-        android.net.Uri uri = data.getData();
-        if (uri == null) {
+        attachMediaUri(data.getData());
+    }
+
+    /**
+     * Uploads one readable URI into the reply field. This is the seam a recorder or another screen
+     * can drive: it resolves the URI, uploads it on the session-aware client, and inserts the
+     * site's markdown - no Activity result, no picker. A URI the app cannot read, or one the site
+     * refuses, leaves the field exactly as it was and reports the failure.
+     */
+    public void attachMediaUri(android.net.Uri uri) {
+        if (getParentActivity() == null || container == null || uri == null || uploadingAttachment) {
             return;
         }
-        io.github.baba983.nativedo.core.media.PickedMedia picked =
-                io.github.baba983.nativedo.core.media.PickedMediaResolver.INSTANCE.resolve(getParentActivity(), uri);
-        if (picked == null) {
-            showReplyError(new java.io.IOException("无法读取所选文件"));
-            return;
-        }
-        setUploadingAttachment(true);
-        DiscourseLoader.INSTANCE.uploadReplyMedia(container, picked, markup -> {
-            io.github.baba983.nativedo.core.media.ReplyMarkupKt.insertReplyMarkup(
-                    composer == null ? null : composer.getEditField(), markup);
-            setUploadingAttachment(false);
-            updateComposerActions();
-            return kotlin.Unit.INSTANCE;
-        }, error -> {
-            setUploadingAttachment(false);
-            showReplyError(error);
-            return kotlin.Unit.INSTANCE;
-        });
+        DiscourseAttachmentUpload.upload(getParentActivity(), container, uri,
+                new DiscourseAttachmentUpload.Sink() {
+                    @Override
+                    public void onUploadStarted() {
+                        setUploadingAttachment(true);
+                    }
+
+                    @Override
+                    public void onUploaded(String markup) {
+                        setUploadingAttachment(false);
+                        io.github.baba983.nativedo.core.media.ReplyMarkupKt.insertReplyMarkup(
+                                composer == null ? null : composer.getEditField(), markup);
+                        updateComposerActions();
+                        saveDraft();
+                    }
+
+                    @Override
+                    public void onUploadFailed(Throwable error) {
+                        setUploadingAttachment(false);
+                        showReplyError(error);
+                    }
+                });
     }
 
     @Override
@@ -1167,7 +1186,8 @@ public class TopicFragment extends BaseFragment
         view.setInAppInsetsController(inputInsets);
         view.setViewParentForEmoji(inputViews.getInAppKeyboardBubbleContainer());
         view.setAllowStickersAndGifs(false, false, false);
-        view.setDelegate(new ReplyDelegate());
+        composerDelegate = new ReplyDelegate();
+        view.setDelegate(composerDelegate);
         // The composer decides the button again whenever it is laid out (a keyboard, an emoji panel,
         // a first layout), so the decision is repeated there too.
         view.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
@@ -1236,19 +1256,67 @@ public class TopicFragment extends BaseFragment
                 org.telegram.ui.Components.LayoutHelper.MATCH_PARENT));
 
         strip.setContentDescription("添加图片或附件");
-        strip.setOnClickListener(v -> openAttachmentPicker());
+        strip.setOnClickListener(v -> openAttachmentSheet());
         return strip;
     }
 
-    /** The system's file picker; what it answers is uploaded by [onActivityResultFragment]. */
-    private void openAttachmentPicker() {
+    /**
+     * The reader's paperclip: the Telegram-shaped attachment sheet, not a bare system picker.
+     *
+     * <p>Upstream's own attach menu is account-backed, so this is this client's sheet - the same
+     * shape over the actions the site can carry (see {@link DiscourseAttachSheet}). The sheet is
+     * the only entry point; it hands back the chosen action and the screen does the rest.</p>
+     */
+    private void openAttachmentSheet() {
+        if (getParentActivity() == null || uploadingAttachment || container == null) {
+            return;
+        }
+        attachSheet = new DiscourseAttachSheet(getParentActivity(), resourceProvider,
+                this::onAttachAction, this::insertPollRaw);
+        showDialog(attachSheet);
+    }
+
+    /** The sheet's answer: a picker for a file or the rich editor. The poll stays in the sheet. */
+    private void onAttachAction(DiscourseAttachSheet.Action action) {
+        switch (action) {
+            case GALLERY:
+                openAttachmentPicker("image/*");
+                break;
+            case FILES:
+                openAttachmentPicker("*/*");
+                break;
+            case RICH_EDITOR:
+                openRichEditor();
+                break;
+        }
+    }
+
+    /**
+     * The system's content picker; what it answers is uploaded by [onActivityResultFragment]. The
+     * gallery asks for images and the file action for anything the provider can open.
+     */
+    private void openAttachmentPicker(String mimeType) {
         if (getParentActivity() == null || uploadingAttachment) {
             return;
         }
         android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(android.content.Intent.CATEGORY_OPENABLE);
-        intent.setType("*/*");
+        intent.setType(mimeType);
         startActivityForResult(intent, PICK_ATTACHMENT_REQUEST);
+    }
+
+    /**
+     * The inline poll's raw, written into the field at the caret like any other markup - the site's
+     * own poll syntax, never a Telegram poll. The sheet hands it here when its own Poll form is
+     * submitted, so the poll is written where it is read instead of in a second popup.
+     */
+    private void insertPollRaw(String raw) {
+        if (composer == null) {
+            return;
+        }
+        io.github.baba983.nativedo.core.media.ReplyMarkupKt.insertReplyMarkup(composer.getEditField(), raw);
+        updateComposerActions();
+        saveDraft();
     }
 
     /**
@@ -1562,7 +1630,8 @@ public class TopicFragment extends BaseFragment
         container = NativeDo.container(getParentActivity());
         if (composerTools == null) {
             composerTools = new DiscourseComposerTools(
-                    this, container, composer, inputViews, inputInsets, glassHost, topicId);
+                    this, container, composer, inputViews, inputInsets, glassHost, topicId,
+                    composerDelegate);
         }
         // The row that opened this screen already knew who wrote the topic: the capsule shows that
         // author, and the picture the row drew, before anything is read.
@@ -1671,7 +1740,8 @@ public class TopicFragment extends BaseFragment
         container = NativeDo.container(getParentActivity());
         if (composerTools == null) {
             composerTools = new DiscourseComposerTools(
-                    this, container, composer, inputViews, inputInsets, glassHost, topicId);
+                    this, container, composer, inputViews, inputInsets, glassHost, topicId,
+                    composerDelegate);
         }
         retryAction = this::loadThread;
         if (threadSeedRoot != null) {
@@ -1775,7 +1845,8 @@ public class TopicFragment extends BaseFragment
                             root.getAuthorUsername(),
                             root.getAuthorDisplayName() == null ? "" : root.getAuthorDisplayName(),
                             root.getAuthorAvatarTemplate() == null ? "" : root.getAuthorAvatarTemplate(),
-                            container.getBaseUrl()),
+                            container.getBaseUrl(),
+                            root.getAuthorAnimatedAvatarUrl()),
                     root.getAuthorAvatarTemplate());
         }
         int floor = root != null && root.getPostNumber() != null ? root.getPostNumber() : threadParentFloor;
@@ -1989,14 +2060,13 @@ public class TopicFragment extends BaseFragment
     }
 
     /**
-     * An ordinary read's page-down state: how many real stream posts are below the viewport, and
-     * whether the button shows at all.
+     * An ordinary read's page-down state: unread stream posts after the monotonic read mark, and
+     * an arrow whenever real posts remain below the viewport, even if they are already read.
      *
      * <p>The number is made of the stream the site sent - {@code stream_post_ids} - so a topic with
-     * deleted floors counts only the posts that really exist, and it is
-     * {@code stream.size() - lastVisibleStreamIndex - 1}, not the highest floor minus the visible
-     * one. No number is drawn when the viewport holds no floor the stream knows: an invented count
-     * would send the reader after a post that is not there.</p>
+     * deleted floors counts only the posts that really exist. A floor outside the loaded window
+     * may have no known stream id; without that boundary, keep the arrow but omit the number rather
+     * than count already-read posts or invent a floor-to-id mapping.</p>
      */
     private void updateTopicPageDown() {
         if (topicSearch != null || threadMode || threadPageDown == null) {
@@ -2012,16 +2082,27 @@ public class TopicFragment extends BaseFragment
             if (floorIndex >= 0 && floorIndex < floors.size()) {
                 int streamIndex = streamPostIds.indexOf(floors.get(floorIndex).getId());
                 if (streamIndex >= 0) {
-                    count = streamPostIds.size() - streamIndex - 1;
-                    show = count > 0;
+                    show = streamIndex < streamPostIds.size() - 1;
                 }
+            }
+        }
+        if (reporter != null) {
+            int reached = reporter.getReachedFloorMark();
+            Post readPost = postByNumber.get(reached);
+            Long readId = readPost == null ? null : readPost.getId();
+            if (readId == null && topicDetail != null && reached == topicDetail.getLastReadPostNumber()) {
+                readId = topicDetail.getLastReadPostId();
+            }
+            int readIndex = readId == null ? -1 : streamPostIds.indexOf(readId);
+            if (reached == 0 || readIndex >= 0) {
+                count = streamPostIds.size() - readIndex - 1;
             }
         }
         // The spinner is the jump in flight and a jump in flight also refuses another tap, so a
         // double tap cannot ask the site for the same window twice.
         threadPageDown.showLoading(pageDownJumping, true);
         threadPageDown.setEnabled(!pageDownJumping, true);
-        // ChatActivity animates viewport count changes through the stock CounterView.
+        // ChatActivity animates unread count changes through the stock CounterView.
         threadPageDown.setCount(show ? count : 0, true);
         threadPageDown.setContentDescription(topicPageDownDescription(count));
         applyPageDownVisible(show, true);
@@ -2029,10 +2110,11 @@ public class TopicFragment extends BaseFragment
 
     /** The ordinary button's description: what a tap does, as the accessibility contract. */
     private CharSequence topicPageDownDescription(int remaining) {
-        if (remaining <= 0) {
-            return null;
+        if (remaining > 0) {
+            return "还有 " + remaining + " 条未读帖子，点按查看";
         }
-        return "下方还有 " + remaining + " 条，点按查看新内容";
+        return reporter != null && reporter.getReachedFloorMark() < reporter.getHighestFloorMark()
+                ? "查看未读帖子" : "回到最新帖子";
     }
 
     /**
@@ -2519,7 +2601,8 @@ public class TopicFragment extends BaseFragment
                         author.getUsername(),
                         author.getDisplayName(),
                         author.getAvatarTemplate(),
-                        container.getBaseUrl()),
+                        container.getBaseUrl(),
+                        author.getAnimatedAvatarUrl()),
                 author.getAvatarTemplate());
     }
 
@@ -2545,17 +2628,18 @@ public class TopicFragment extends BaseFragment
 
     /**
      * One author on the capsule. The synthetic user's id comes from the username alone, so a row
-     * and this screen that name the same person build the same user and the same file: a second
-     * bind for the same person keeps the picture that is already drawn instead of resetting the
-     * spot to the initials. Only a different author is re-asked from the site.
+     * and this screen can share the downloaded asset. Keep it across repeated binds, but replace
+     * it when a later response supplies a different asset, including an animated avatar.
      */
     private void bindTopicAuthorUser(TLRPC.User user, String avatarTemplate) {
         if (avatarContainer == null || user == null) {
             return;
         }
-        boolean sameAuthor = topicAuthor != null && topicAuthor.id == user.id;
+        boolean sameAvatar = topicAuthor != null && topicAuthor.id == user.id
+                && (topicAuthor.photo == null ? 0 : topicAuthor.photo.photo_id)
+                == (user.photo == null ? 0 : user.photo.photo_id);
         topicAuthor = user;
-        if (!sameAuthor) {
+        if (!sameAvatar) {
             // The container's avatar ask goes through MessagesController's own user table, so the
             // synthetic user is registered there first (the rows do the same when they bind).
             MessagesController.getInstance(currentAccount).putUser(user, true);
@@ -2896,22 +2980,20 @@ public class TopicFragment extends BaseFragment
         if (searchReadingPosts != null) {
             return;
         }
-        // An ordinary read's page-down button follows the viewport: the badge and the target are
-        // recomputed from where the list is now, on every scroll and every layout.
-        if (!threadMode) {
-            updateTopicPageDown();
-        }
         if (reporter == null || listView == null) {
+            updateTopicPageDown();
             return;
         }
         androidx.recyclerview.widget.LinearLayoutManager manager =
                 (androidx.recyclerview.widget.LinearLayoutManager) listView.getLayoutManager();
         if (manager == null) {
+            updateTopicPageDown();
             return;
         }
         int first = manager.findFirstVisibleItemPosition();
         int last = manager.findLastVisibleItemPosition();
         if (last < 0) {
+            updateTopicPageDown();
             return;
         }
         java.util.List<Integer> visible = new ArrayList<>();
@@ -2927,6 +3009,9 @@ public class TopicFragment extends BaseFragment
         if (!visible.isEmpty()) {
             reporter.advanceTo(visible.get(visible.size() - 1));
         }
+        // Apply the new read mark before drawing its counter, including on a viewport that reaches
+        // the end. Scrolling backward changes the arrow's visibility, never the read mark.
+        updateTopicPageDown();
     }
 
     /**
@@ -3017,8 +3102,22 @@ public class TopicFragment extends BaseFragment
         leaveTopic();
     }
 
+    /** The microphone permission answer; the recording host waits for it before a second request. */
+    @Override
+    public void onRequestPermissionsResultFragment(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResultFragment(requestCode, permissions, grantResults);
+        if (composerTools != null) {
+            composerTools.onPermissionResult(requestCode);
+        }
+    }
+
     @Override
     public void onFragmentDestroy() {
+        // A dialog nobody dismisses outlives the screen that opened it; the sheet goes with this one.
+        if (attachSheet != null) {
+            attachSheet.dismiss();
+            attachSheet = null;
+        }
         if (topicSearch != null) {
             topicSearch.destroy();
             topicSearch = null;
@@ -3671,7 +3770,7 @@ public class TopicFragment extends BaseFragment
             Post post, long topicId, List<MessageObject> outBubbles, List<PreparedPostBody> outBodies) {
         for (DiscoursePostBody.Segment segment : DiscoursePostBody.segments(post.getCookedHtml(), pollTitles(post))) {
             // Only the floor's first bubble carries the reply, whatever kind of bubble it is: a floor
-            // whose body opens with a poll or a onebox is as answerable as one that opens with a
+            // whose body opens with a poll is as answerable as one that opens with a
             // paragraph. Upstream draws the quote once, at the top of the run, the way a chat shows it
             // on the message that answers.
             boolean firstBubble = outBubbles.isEmpty();
@@ -3684,14 +3783,6 @@ public class TopicFragment extends BaseFragment
                 }
                 message = DiscoursePolls.message(post, poll, topicId, users, container.getBaseUrl(), replyTo);
                 outBodies.add(null);
-            } else if (segment.isOnebox()) {
-                DiscourseOnebox.Card card = DiscourseOnebox.card(segment.html, container.getBaseUrl());
-                if (card == null) {
-                    continue;
-                }
-                message = DiscourseOnebox.message(post, card, topicId, users, container.getBaseUrl(), replyTo);
-                // The card's thumbnail is a post image: the list downloads it and rebinds the row.
-                outBodies.add(card.body);
             } else {
                 PreparedPostBody body = DiscourseImageBridge.INSTANCE.prepare(
                         segment.html, container.getBaseUrl(),
@@ -4551,9 +4642,10 @@ public class TopicFragment extends BaseFragment
 
     /**
      * What the composer's own state decides for the reader: the send button and our attach strip.
-     * Upstream offers its voice button while the field is empty and this client has nothing behind
-     * it, so the button is hidden until there is something to send. It is told after every change
-     * upstream makes, because those are the moments it decides the button's state again.
+     * The button is the send arrow while the field has text and this client's own microphone while
+     * it is empty, so it is offered whenever either exists - upstream draws the right one from the
+     * field's own state in {@code checkSendButton}. It is told after every change upstream makes,
+     * because those are the moments it decides the button's state again.
      */
     private void updateComposerActions() {
         updateSendButtonVisibility();
@@ -4566,19 +4658,26 @@ public class TopicFragment extends BaseFragment
         }
         boolean hasText = composer.getEditField() != null
                 && composer.getEditField().length() > 0;
+        // Editing an existing post has no microphone: that field is a post, not a new reply.
+        boolean hasMicrophone = composerTools != null && composerTools.isVoiceReady() && editFloor < 0;
         android.view.View button = composer.getSendButton();
         if (button == null) {
             return;
         }
-        int wanted = hasText ? android.view.View.VISIBLE : android.view.View.GONE;
+        int wanted = hasText || hasMicrophone ? android.view.View.VISIBLE : android.view.View.GONE;
         if (button.getVisibility() != wanted) {
             button.setVisibility(wanted);
         }
-        // The composer's own decision runs last: it is what draws the send arrow into the button, and
-        // our visibility write above is only for the shape of the button's absence. See the same
-        // comment on the new-topic screen: a change that arrives in one piece (a paste, a draft)
-        // would otherwise be drawn from the state before it.
+        // The composer's own decision runs last: it is what draws the send arrow (or the microphone)
+        // into the button, and our visibility write above is only for the shape of the button's
+        // absence. See the same comment on the new-topic screen: a change that arrives in one piece
+        // (a paste, a draft) would otherwise be drawn from the state before it.
         composer.checkSendButton(false);
+    }
+
+    /** The screen's own voice host, so a test drives the real record/review/upload contract. */
+    ComposerVoiceController voiceControllerForTest() {
+        return composerTools == null ? null : composerTools.getVoice();
     }
 
     /**
@@ -4704,6 +4803,42 @@ public class TopicFragment extends BaseFragment
         replyPanel.show(replyName(target), cookedPlainText(target), () -> jumpToFloor(number));
     }
 
+    /**
+     * Puts the composer's strip back to match the state the field is still in - upstream's own name
+     * for exactly this (ChatActivity.fallbackFieldPanel, 10940).
+     *
+     * <p>Upstream's enter view takes the reply/edit strip down at the start of <em>every</em> send
+     * (the send runnable calls {@code hideTopView(true)} before the delegate is asked,
+     * ChatActivityEnterView 7396-7412) and a Telegram send that fails leaves the field empty with
+     * the failure drawn as a retry row in the list, so ChatActivity never has to put it back. Here
+     * the reader's text and target deliberately stay in the field instead, so a send that did not
+     * land has to put the strip back with them: otherwise a reader still answering a floor sees
+     * nothing saying the next send will target it, and one still editing a post loses the strip's
+     * close button - the only way out of edit mode.</p>
+     */
+    private void fallbackFieldPanel() {
+        if (composer == null) {
+            return;
+        }
+        if (editFloor >= 0) {
+            ensureReplyPanel();
+            if (replyPanel != null) {
+                Integer number = editPostNumber;
+                // The strip is the edit's own label and its close button is the cancel, labelled
+                // for the edit rather than for a reply.
+                replyPanel.showEdit("编辑 #" + (number == null ? "?" : number.toString()));
+            }
+            return;
+        }
+        if (replyToPostNumber != null) {
+            applyReplyTarget();
+            return;
+        }
+        if (replyPanel != null) {
+            replyPanel.hide();
+        }
+    }
+
     /** The name the reply strip shows for a post: its author's display name, else their username. */
     private static String replyName(Post post) {
         String display = post.getAuthorDisplayName();
@@ -4774,6 +4909,9 @@ public class TopicFragment extends BaseFragment
                     composer.setFieldText(raw);
                 }
             }
+            // The enter view took the reply strip down on its way out; the target is still the one
+            // this press was for, so the strip comes back with the text.
+            fallbackFieldPanel();
             return;
         }
         DiscourseLoader.INSTANCE.reply(container, topicId, raw, replyToPostNumber, () -> {
@@ -4804,6 +4942,10 @@ public class TopicFragment extends BaseFragment
             // The write did not land, so the draft - text and target - is written down again for
             // the next open.
             saveDraft();
+            // The enter view took the strip down on its way out and the target is still set: put it
+            // back with the text, or the reader is answering a floor with nothing saying so while
+            // the next send still targets it.
+            fallbackFieldPanel();
             showReplyError(error);
             return kotlin.Unit.INSTANCE;
         });
@@ -4956,12 +5098,9 @@ public class TopicFragment extends BaseFragment
         editPostNumber = post.getPostNumber();
         setFieldTextSilently(post.getRaw() == null ? "" : post.getRaw());
         updateComposerActions();
-        ensureReplyPanel();
-        if (replyPanel != null) {
-            Integer number = post.getPostNumber();
-            // The strip is the edit's own label and its close button is the cancel.
-            replyPanel.show("编辑 #" + (number == null ? "?" : number.toString()), "", null);
-        }
+        // The strip is the edit's own label and its close button is the cancel; the same call a send
+        // that did not land uses to put it back.
+        fallbackFieldPanel();
         composer.setFieldFocused();
         AndroidUtilities.showKeyboard(composer.getEditField());
     }
@@ -5006,6 +5145,14 @@ public class TopicFragment extends BaseFragment
             return;
         }
         if (denyWriteWhileOffline()) {
+            // The enter view cleared the field before it handed the text over, so a refused send has
+            // to put the edit back: the reader keeps editing the same post, with the same text and
+            // the same strip - whose close button is the only way out of edit mode.
+            if (composer != null && fieldText().isEmpty()) {
+                setFieldTextSilently(raw);
+            }
+            updateComposerActions();
+            fallbackFieldPanel();
             return;
         }
         final long postId = editPostId;
@@ -5045,11 +5192,14 @@ public class TopicFragment extends BaseFragment
                 // The refusal belongs to the reader who sent it, not to whoever is here now.
                 return kotlin.Unit.INSTANCE;
             }
-            // The write did not land: the edit text stays in the field so the reader can send again.
+            // The write did not land: the edit text stays in the field so the reader can send again,
+            // and the strip comes back with it - the enter view took it down on the way out, and its
+            // close button is the only way out of edit mode.
             if (composer != null && fieldText().isEmpty()) {
                 setFieldTextSilently(raw);
             }
             updateComposerActions();
+            fallbackFieldPanel();
             showError("编辑失败", error);
             return kotlin.Unit.INSTANCE;
         });
@@ -5572,7 +5722,7 @@ public class TopicFragment extends BaseFragment
         /** Attachments in a reply go to the site first: what the field gets is the markdown its own composer would write. */
         @Override
         public void didPressAttachButton() {
-            openAttachmentPicker();
+            openAttachmentSheet();
         }
     }
 

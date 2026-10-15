@@ -260,9 +260,9 @@ internal class IncomingReplyTest {
     }
 
     /**
-     * A floor whose body *begins* with a onebox: its first bubble is the link card, not text. The
-     * reply header belongs to that first bubble just the same, so the preview and the jump are not
-     * lost on the floors whose body does not open with a paragraph.
+     * A floor whose body *begins* with a onebox: its first bubble is the link's preview, not plain
+     * text. The reply header belongs to that first bubble just the same, so the preview and the jump
+     * are not lost on the floors whose body does not open with a paragraph.
      */
     @Test
     fun aFloorThatStartsWithAOneboxStillDrawsItsReplyPreviewAndJumps() {

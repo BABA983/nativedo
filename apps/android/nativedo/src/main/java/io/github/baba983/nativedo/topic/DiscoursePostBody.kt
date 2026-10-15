@@ -18,14 +18,12 @@ import java.net.URI
  */
 object DiscoursePostBody {
 
-    /** One run of a body: markup, a named poll's place, or one onebox of the site's own. */
+    /** One run of a body: its markup, or a named poll's place. */
     class Segment internal constructor(
         @JvmField val html: String,
         @JvmField val pollName: String?,
-        @JvmField val onebox: Boolean = false,
     ) {
         val isPoll: Boolean get() = pollName != null
-        val isOnebox: Boolean get() = onebox
     }
 
     /**
@@ -94,14 +92,29 @@ object DiscoursePostBody {
                 flush()
                 segments += Segment("", pollName)
             } else if (element != null && DiscourseOnebox.isOnebox(element)) {
-                // The card stands for the link, so the bare link line goes the way the site's own
-                // renderer takes it: out of the text, not repeated next to the card.
-                pending.select("a.onebox").remove()
-                pending.select("p").removeIf { paragraph ->
-                    paragraph.children().isEmpty() && paragraph.text().isBlank()
+                // The link's preview stays in the post's own run of text, where the reader put the
+                // link: the bare link line the card stands for goes the way the site's own renderer
+                // takes it, and the preview's parts - the site's name, the thumbnail, the linked
+                // page's title and description - take its place, in order. A box with nothing to
+                // draw is left as it is, so its bare link is not dropped.
+                val preview = DiscourseOnebox.preview(element)
+                if (preview.isEmpty()) {
+                    pending.appendChild(child)
+                } else {
+                    // Only this card's preceding bare-link placeholder is redundant. Other links
+                    // (including an earlier failed onebox) still belong to the author's text.
+                    val placeholder = pending.children().lastOrNull()
+                    val link = placeholder?.selectFirst("a.onebox[href]")
+                    val previewUrl = preview.firstNotNullOfOrNull { it.selectFirst("a[href]")?.attr("href") }
+                    if (placeholder?.normalName() == "p" && link != null
+                        && placeholder.childrenSize() == 1 && placeholder.text() == link.text()
+                        && link.attr("href") == previewUrl) {
+                        placeholder.remove()
+                    }
+                    for (part in preview) {
+                        pending.appendChild(part)
+                    }
                 }
-                flush()
-                segments += Segment(element.outerHtml(), null, onebox = true)
             } else {
                 pending.appendChild(child)
             }

@@ -1,5 +1,8 @@
 package io.github.baba983.nativedo.topic
 
+import android.app.Activity
+import android.content.Intent
+import android.net.Uri
 import android.view.View
 import android.view.ViewGroup
 import io.github.baba983.nativedo.app.NativeDo
@@ -21,10 +24,12 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
 import org.telegram.messenger.ApplicationLoader
@@ -32,6 +37,7 @@ import org.telegram.ui.ActionBar.AlertDialog
 import org.telegram.ui.Components.ChatActivityEnterView
 import org.telegram.ui.Components.EditTextBoldCursor
 import org.telegram.ui.Components.FragmentFloatingButton
+import org.telegram.ui.Components.RecyclerListView
 import java.net.URLDecoder
 
 /**
@@ -96,8 +102,8 @@ internal class NewTopicTest {
         harness.layoutApp()
         harness.renderApp("new-topic-empty")
         assertEquals(
-            "an empty form has nothing to send",
-            View.GONE,
+            "an empty form offers this client's own microphone, not a hidden button",
+            View.VISIBLE,
             composer.getSendButton()?.visibility,
         )
 
@@ -263,6 +269,96 @@ internal class NewTopicTest {
         harness.assertNoTelegramSideEffects()
     }
 
+    /**
+     * The new-topic paperclip opens the same attachment sheet a reply does, and a file it uploads
+     * lands in the body field as the site's own markdown. This is the sharing the sheet exists for:
+     * the reply, new-topic and private-message forms all attach through one path.
+     */
+    @Test
+    fun thePaperclipOpensTheSharedSheetAndUploadsIntoTheBody() {
+        site.serveJson("uploads.json", harness.fixture("upload-response.json"))
+        harness.bootApp()
+        harness.await("the topic list to load") { rowCount() == 2 }
+        harness.present(NewTopicFragment.create())
+        harness.await("the composer of a new topic") { composer() != null }
+        val composer = composer() ?: throw AssertionError("the screen has no composer")
+        composer.getAttachButton().performClick()
+        harness.idle()
+
+        val sheet = ShadowDialog.getLatestDialog() ?: throw AssertionError("the paperclip opened no sheet")
+        val list = viewsUnder(sheet.window!!.decorView).filterIsInstance<RecyclerListView>().firstOrNull()
+            ?: throw AssertionError("the sheet has no tab list")
+        list.clickItem(null, 1)
+        harness.idle()
+
+        val activity = harness.activity
+        val requested = shadowOf(activity).nextStartedActivityForResult
+            ?: throw AssertionError("the file tab opened no picker")
+        val uri = Uri.parse("content://io.github.baba983.nativedo.test/screenshot.png")
+        shadowOf(activity.contentResolver).registerInputStream(uri, transparentPng().inputStream())
+        shadowOf(activity).receiveResult(requested.intent, Activity.RESULT_OK, Intent().setData(uri))
+        harness.idle()
+
+        harness.await("the body to hold the upload") { !composer.getFieldText().isNullOrEmpty() }
+        println("new topic: body after upload = " + composer.fieldText)
+        assertTrue(
+            "the body carries the site's own upload handle",
+            composer.fieldText.toString().contains("upload://"),
+        )
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * The new-topic paperclip, the same shared sheet, and the poll tab: the inline form is filled
+     * and its Create pressed, and the site's own poll raw lands in the body field. This pins the
+     * new-topic form's own poll wiring, the second host the shared sheet feeds.
+     */
+    @Test
+    fun thePollTabKeepsItsFormInlineAndWritesIntoTheBody() {
+        harness.bootApp()
+        harness.await("the topic list to load") { rowCount() == 2 }
+        harness.present(NewTopicFragment.create())
+        harness.await("the composer of a new topic") { composer() != null }
+        val composer = composer() ?: throw AssertionError("the screen has no composer")
+        composer.getAttachButton().performClick()
+        harness.idle()
+        // The sheet opens with upstream's own animation; run the simulated clock to its end.
+        harness.idleClock(400)
+
+        val sheet = ShadowDialog.getLatestDialog() as? DiscourseAttachSheet
+            ?: throw AssertionError("the paperclip opened no sheet")
+        val list = viewsUnder(sheet.window!!.decorView).filterIsInstance<RecyclerListView>().firstOrNull()
+            ?: throw AssertionError("the sheet has no tab list")
+        list.clickItem(null, POLL_POSITION)
+        harness.idle()
+
+        val fields = viewsUnder(sheet.window!!.decorView).filterIsInstance<EditTextBoldCursor>()
+        assertEquals("a question field and at least two option fields", 3, fields.size)
+        fields[0].setText("新帖投票")
+        fields[1].setText("甲")
+        fields[2].setText("乙")
+        viewsUnder(sheet.window!!.decorView)
+            .filterIsInstance<android.widget.TextView>()
+            .first { it.text?.toString() == "创建" }
+            .performClick()
+        harness.idle()
+
+        val body = composer.fieldText.toString()
+        println("new topic: body after poll = $body")
+        assertEquals(
+            "the poll raw lands in the body field, the site's own syntax",
+            "[poll type=regular results=always chartType=bar]\n# 新帖投票\n* 甲\n* 乙\n[/poll]\n",
+            body,
+        )
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /** A 1x1 PNG: the uploader sends the file's bytes, and any real image would do. */
+    private fun transparentPng(): ByteArray = android.util.Base64.decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==",
+        android.util.Base64.DEFAULT,
+    )
+
     /** The list's own floating button, which is upstream's. */
     private fun startTopic() {
         val content = harness.activity.findViewById<ViewGroup>(android.R.id.content)
@@ -323,5 +419,8 @@ internal class NewTopicTest {
         const val TITLE = "构建脚本大家都是怎么组织的"
         const val BODY = "第一次在这里发帖，先问一下大家怎么组织自己的构建脚本。"
         const val CATEGORY = "开发调优"
+
+        /** The poll tab of the attachment sheet, by the order its list shows them. */
+        const val POLL_POSITION = 3
     }
 }

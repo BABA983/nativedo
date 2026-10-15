@@ -29,9 +29,15 @@ import org.telegram.ui.Components.LayoutHelper;
  */
 final class DiscourseReplyPanel {
 
+    /** The close button of a strip that is answering: upstream's own wording for it. */
+    private static final CharSequence CANCEL_REPLY = "取消回复";
+    /** The close button of a strip that is editing: a different action, so a different label. */
+    private static final CharSequence CANCEL_EDIT = "取消编辑";
+
     private final ChatActivityEnterView composer;
     private final ChatActivityEnterTopView topView;
     private final ChatReplyContainer reply;
+    private final ImageView close;
     private Runnable jumpAction;
     private Runnable cancelAction;
 
@@ -55,14 +61,14 @@ final class DiscourseReplyPanel {
             }
         });
 
-        ImageView close = new ImageView(context);
+        close = new ImageView(context);
         close.setColorFilter(new PorterDuffColorFilter(
                 Theme.getColor(Theme.key_glass_defaultIcon, resourcesProvider), PorterDuff.Mode.MULTIPLY));
         close.setImageResource(org.telegram.messenger.R.drawable.input_clear);
         close.setScaleType(ImageView.ScaleType.CENTER);
         close.setBackgroundDrawable(Theme.createSelectorDrawable(
                 Theme.getColor(Theme.key_listSelector, resourcesProvider), 1, AndroidUtilities.dp(19)));
-        close.setContentDescription("取消回复");
+        close.setContentDescription(CANCEL_REPLY);
         close.setOnClickListener(v -> cancel());
         topView.addView(close, LayoutHelper.createFrame(
                 52, 46, Gravity.RIGHT | Gravity.TOP, 0, 0.5f, 0, 0));
@@ -72,7 +78,22 @@ final class DiscourseReplyPanel {
 
     /** Shows the strip for a post the reader is answering; a tap on it runs [onJump]. */
     void show(CharSequence name, CharSequence text, Runnable onJump) {
+        show(name, text, onJump, CANCEL_REPLY);
+    }
+
+    /**
+     * Shows the strip for the post the reader is editing. Cancelling an edit is a different action
+     * from cancelling a reply, so the close button is labelled as one - the way upstream's reply
+     * close reads its own wording per mode ({@code AccDescrCancelEdit} while editing,
+     * {@code AccDescrCancelReply} while replying; ChatActivity 14799/15051).
+     */
+    void showEdit(CharSequence label) {
+        show(label, "", null, CANCEL_EDIT);
+    }
+
+    private void show(CharSequence name, CharSequence text, Runnable onJump, CharSequence cancelLabel) {
         jumpAction = onJump;
+        close.setContentDescription(cancelLabel);
         reply.current().icon.setImageResource(org.telegram.messenger.R.drawable.ic_ab_reply);
         reply.current().name.setText(name);
         reply.current().obj.setText(text);

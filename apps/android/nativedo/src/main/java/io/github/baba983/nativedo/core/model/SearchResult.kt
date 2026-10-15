@@ -11,4 +11,5 @@ data class SearchUserSummary(
     val username: String,
     val name: String = "",
     val avatarTemplate: String = "",
+    val animatedAvatarUrl: String = "",
 )

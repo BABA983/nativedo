@@ -372,7 +372,11 @@ internal class UpstreamUiHarness {
             contentView.measuredHeight.coerceAtLeast(1),
             Bitmap.Config.ARGB_8888,
         )
-        contentView.draw(Canvas(bitmap))
+        try {
+            contentView.draw(Canvas(bitmap))
+        } finally {
+            bitmap.recycle()
+        }
         idle()
     }
 
@@ -389,37 +393,41 @@ internal class UpstreamUiHarness {
         val w = width
         val h = height
         val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
-        measureAndLayout(decor, w, h, maxTasks)
-        decor.draw(canvas)
-        val windowManager = org.robolectric.shadow.api.Shadow.extract(activity.windowManager)
-            as org.robolectric.shadows.ShadowWindowManagerImpl
-        for (view in windowManager.views) {
-            if (view === decor) continue
-            if (view.visibility != View.VISIBLE) continue
-            val params = view.layoutParams as? android.view.WindowManager.LayoutParams
-            // A popup is WRAP_CONTENT: measure it to its own natural size, never stretched to the
-            // display, or the rail inside it drifts away from the list it belongs to.
-            repeat(2) {
-                view.measure(
-                    View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.AT_MOST),
-                    View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.AT_MOST),
-                )
-                view.layout(0, 0, view.measuredWidth, view.measuredHeight)
-                idle(maxTasks)
+        try {
+            val canvas = Canvas(bitmap)
+            measureAndLayout(decor, w, h, maxTasks)
+            decor.draw(canvas)
+            val windowManager = org.robolectric.shadow.api.Shadow.extract(activity.windowManager)
+                as org.robolectric.shadows.ShadowWindowManagerImpl
+            for (view in windowManager.views) {
+                if (view === decor) continue
+                if (view.visibility != View.VISIBLE) continue
+                val params = view.layoutParams as? android.view.WindowManager.LayoutParams
+                // A popup is WRAP_CONTENT: measure it to its own natural size, never stretched to the
+                // display, or the rail inside it drifts away from the list it belongs to.
+                repeat(2) {
+                    view.measure(
+                        View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.AT_MOST),
+                        View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.AT_MOST),
+                    )
+                    view.layout(0, 0, view.measuredWidth, view.measuredHeight)
+                    idle(maxTasks)
+                }
+                val dx = params?.x ?: 0
+                val dy = params?.y ?: 0
+                canvas.save()
+                canvas.translate(dx.toFloat(), dy.toFloat())
+                view.draw(canvas)
+                canvas.restore()
             }
-            val dx = params?.x ?: 0
-            val dy = params?.y ?: 0
-            canvas.save()
-            canvas.translate(dx.toFloat(), dy.toFloat())
-            view.draw(canvas)
-            canvas.restore()
+            val out = repoFile(relativePath)
+            out.parentFile?.mkdirs()
+            FileOutputStream(out).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            println("harness: wrote $out (${out.length()} bytes)")
+            return out
+        } finally {
+            bitmap.recycle()
         }
-        val out = repoFile(relativePath)
-        out.parentFile?.mkdirs()
-        FileOutputStream(out).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-        println("harness: wrote $out (${out.length()} bytes)")
-        return out
     }
 
     private fun measureAndLayout(view: View, w: Int, h: Int, maxTasks: Int) {
@@ -449,15 +457,23 @@ internal class UpstreamUiHarness {
             view.measuredHeight.coerceAtLeast(1),
             Bitmap.Config.ARGB_8888,
         )
-        view.draw(Canvas(bitmap))
+        try {
+            view.draw(Canvas(bitmap))
 
-        val out = File(artifactsDir(), "$name.png")
-        out.parentFile?.mkdirs()
-        cropToContent(bitmap).let { cropped ->
-            FileOutputStream(out).use { cropped.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            val out = File(artifactsDir(), "$name.png")
+            out.parentFile?.mkdirs()
+            cropToContent(bitmap).let { cropped ->
+                try {
+                    FileOutputStream(out).use { cropped.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                } finally {
+                    if (cropped !== bitmap) cropped.recycle()
+                }
+            }
+            println("harness: wrote $out (${out.length()} bytes)")
+            return out
+        } finally {
+            bitmap.recycle()
         }
-        println("harness: wrote $out (${out.length()} bytes)")
-        return out
     }
 
     /**

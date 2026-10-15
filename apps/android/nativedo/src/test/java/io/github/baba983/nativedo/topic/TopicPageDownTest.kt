@@ -42,7 +42,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * The topic page-down button: a chat's floating round page-down control, over an ordinary topic
  * read rather than a discussion page.
  *
- * <p>The badge is the number of <em>real stream posts</em> below the current viewport - counted
+ * <p>The badge is the number of <em>unread real stream posts</em> after the monotonic read mark - counted
  * from the stream the site sent (ids, which are neither floor numbers nor stream positions), not
  * from {@code highest_post_number - visible_floor}. A topic with deleted floors has fewer posts
  * than its highest floor implies, and a client that subtracts floors shows a number that counts
@@ -133,13 +133,12 @@ internal class TopicPageDownTest {
     }
 
     /**
-     * The count follows the scroll and is made of stream positions, not floor arithmetic: with two
-     * floors deleted, {@code streamPostIds.size() - lastVisibleStreamIndex - 1} is not
-     * {@code highest_post_number - lastVisibleFloor}.
+     * Reading reduces the count, but scrolling back must not un-read posts. Deleted floors are
+     * not posts, so the unread count follows real stream entries rather than floor arithmetic.
      */
     @Test
-    fun theBadgeFollowsTheScrollAndCountsStreamPositionsNotFloorArithmetic() {
-        serveLongTopic(ALL, lastRead = HIGHEST)
+    fun theUnreadBadgeCountsRealPostsAndDoesNotGrowWhenScrollingBack() {
+        serveLongTopic(ALL, lastRead = 0)
 
         val fragment = openTopic()
         harness.await("the whole topic") { floorsOf(fragment).size == ALL.size }
@@ -167,6 +166,13 @@ internal class TopicPageDownTest {
         println("pagedown: lower lastVisible=$lower remaining=$lowerRemaining badge=${badgeCount(fragment)}")
         assertEquals("the badge below", lowerRemaining, badgeCount(fragment))
         assertTrue("the badge shrinks as the reader scrolls down", lowerRemaining < topRemaining)
+        writeVisual("topic-pagedown-unread-forward")
+
+        scrollToTopAndSettle(fragment)
+        assertEquals("the reader scrolled back to the earlier viewport", atTop, lastVisibleFloor(fragment))
+        assertEquals("scrolling back does not add read posts to the badge", lowerRemaining, badgeCount(fragment))
+        assertTrue("the unread arrow remains available", pageDownVisible(fragment))
+        writeVisual("topic-pagedown-unread-back")
         harness.assertNoTelegramSideEffects()
     }
 
@@ -183,7 +189,7 @@ internal class TopicPageDownTest {
      */
     @Test
     fun aScrollThatChangesTheBadgeAnimatesTheStockCounter() {
-        serveLongTopic(ALL, lastRead = HIGHEST)
+        serveLongTopic(ALL, lastRead = 0)
 
         val fragment = openTopic()
         harness.await("the whole topic") { floorsOf(fragment).size == ALL.size }
@@ -257,7 +263,7 @@ internal class TopicPageDownTest {
      */
     @Test
     fun tappingBelowTheHighWaterJumpsToTheFirstUnread() {
-        val fragment = openFloorWindow(center = 3, lastRead = 50)
+        val fragment = openFloorWindow(center = 3, lastRead = 50, readId = idFor(50))
         harness.await("the head window") { floorsOf(fragment).size >= WINDOW_PAGE }
         harness.layoutApp()
         harness.idleClock(400)
@@ -268,6 +274,8 @@ internal class TopicPageDownTest {
         val unreadStart = reached + 1
         println("pagedown: unread reached=$reached last=$last unreadStart=$unreadStart")
         assertEquals("the high-water mark is the site's read floor", 50, reached)
+        assertEquals("the server's read id counts only floors 51–60, even outside this window",
+            10, badgeCount(fragment))
         assertTrue("the unread start is below the viewport", unreadStart > last)
         assertTrue(
             "the unread start is not loaded yet: ${floorsOf(fragment).mapNotNull { it.postNumber }}",
@@ -349,10 +357,12 @@ internal class TopicPageDownTest {
         assertTrue("the reader is above the last floor", last < HIGHEST)
         assertTrue("the arrow is still shown while posts remain below", pageDownVisible(fragment))
         assertEquals(
-            "its badge is the posts below the viewport",
-            streamRemainingBelow(last),
+            "read history is not counted as unread",
+            0,
             badgeCount(fragment),
         )
+        assertEquals("the arrow says it returns to the newest post", "回到最新帖子",
+            pageDownButton(fragment)!!.contentDescription)
         writeVisual("topic-pagedown-review")
 
         pageDownButton(fragment)!!.performClick()
@@ -411,6 +421,9 @@ internal class TopicPageDownTest {
         harness.idleClock(400)
         scrollToTopAndSettle(fragment)
         assertEquals("the tap targets the first unread below", 51, reachedFloorMark(fragment) + 1)
+        assertEquals("without a known read id, do not count history as unread", 0, badgeCount(fragment))
+        assertEquals("the unnumbered arrow still offers the unread jump", "查看未读帖子",
+            pageDownButton(fragment)!!.contentDescription)
 
         pageDownButton(fragment)!!.performClick()
         harness.await("the unread window to be asked for") {
@@ -661,10 +674,12 @@ internal class TopicPageDownTest {
     }
 
     /** Opens the topic at [center], with the site's own read position set to [lastRead]. */
-    private fun openFloorWindow(center: Int, lastRead: Int): TopicFragment {
+    private fun openFloorWindow(center: Int, lastRead: Int, readId: Long? = null): TopicFragment {
         // A wide window so neither prefetch edge is reached on the open: the reader's own viewport
         // stays away from both ends, and the loaded set does not grow under the jump.
-        site.serveJson("t/$TOPIC_ID/$center.json", detailJson(windowAround(center, FLOOR_WINDOW), lastRead))
+        val detail = JSONObject(detailJson(windowAround(center, FLOOR_WINDOW), lastRead))
+        detail.put("last_read_post_id", readId)
+        site.serveJson("t/$TOPIC_ID/$center.json", detail.toString())
         site.serveJsonFor("t/$TOPIC_ID/posts.json") { query -> postsResponse(requestedFloors(query)) }
         harness.bootApp()
         harness.await("the topic list to load") { rowCount() == 2 }

@@ -1,10 +1,17 @@
 package io.github.baba983.nativedo.chat;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.AnimatorSet;
+import android.animation.ObjectAnimator;
 import android.content.Context;
+import android.graphics.Paint;
 import android.os.Bundle;
+import android.text.style.URLSpan;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.accessibility.AccessibilityNodeInfo;
 
 import androidx.annotation.NonNull;
 import androidx.core.view.ViewCompat;
@@ -25,6 +32,7 @@ import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Cells.ChatActionCell;
 import org.telegram.ui.Cells.ChatMessageCell;
 import org.telegram.ui.Cells.TextInfoPrivacyCell;
 import org.telegram.ui.Components.ChatActivityEnterView;
@@ -49,6 +57,8 @@ import io.github.baba983.nativedo.core.messagebus.MessageBusClient;
 import io.github.baba983.nativedo.core.model.ChatChannel;
 import io.github.baba983.nativedo.core.model.ChatMessage;
 import io.github.baba983.nativedo.core.model.ChatMessagePage;
+import io.github.baba983.nativedo.core.media.VoiceRecording;
+import io.github.baba983.nativedo.core.media.VoiceRecordingFeedback;
 import io.github.baba983.nativedo.core.session.AppSessionState;
 import io.github.baba983.nativedo.sessionui.SessionUi;
 import io.github.baba983.nativedo.sessionui.SessionUiAction;
@@ -56,6 +66,8 @@ import io.github.baba983.nativedo.sessionui.SessionUiState;
 import io.github.baba983.nativedo.topic.DiscourseAvatars;
 import io.github.baba983.nativedo.topic.DiscourseComposerDelegate;
 import io.github.baba983.nativedo.topic.DiscourseComposerTools;
+import io.github.baba983.nativedo.topic.ComposerVoiceInput;
+import io.github.baba983.nativedo.topic.ComposerVoicePanel;
 import io.github.baba983.nativedo.topic.DiscourseImageBridge;
 import io.github.baba983.nativedo.topic.DiscourseLoader;
 import io.github.baba983.nativedo.topic.DiscourseRows;
@@ -127,6 +139,27 @@ public class ChatChannelFragment extends BaseFragment {
 
     /** The site's own emoji / @mention tools over the composer; null until the screen is built. */
     private DiscourseComposerTools composerTools;
+
+    /**
+     * The composer's own delegate, kept so the recording host can be bound to it (the delegate
+     * carries upstream's microphone gesture in, see {@link DiscourseComposerDelegate}). Null until
+     * the composer exists.
+     */
+    private DiscourseComposerDelegate composerDelegate;
+    /** This client's hold-to-record microphone over the composer's mic affordance. */
+    private ComposerVoiceInput voiceInput;
+    /** The local take preview and received-audio player; one at a time. */
+    private io.github.baba983.nativedo.core.media.MediaPlayerVoiceRecordingPreview voicePreview;
+    /** The voice band over the composer: live recording, the finished take, and its retry. */
+    private ComposerVoicePanel voicePanel;
+    /** The finished take awaiting send, or null. Kept across a failed upload/send for a retry. */
+    private VoiceRecording pendingRecording;
+    /** The upload id the site already accepted for [pendingRecording]; a retry reuses it. */
+    private Long pendingUploadId;
+    /** True while the take is on its way to the site (upload or send), so no second capture starts. */
+    private boolean uploadingVoice;
+    /** The received audio clip currently playing through [voicePreview], or null. */
+    private String playingAudioUrl;
     /**
      * The floating round page-down button, upstream's own (the one a chat floats over its composer):
      * it carries the count of messages that arrived below a reader who is reading history, and its
@@ -135,6 +168,32 @@ public class ChatChannelFragment extends BaseFragment {
     private org.telegram.ui.Components.chat.buttons.ChatActivityBlurredRoundPageDownButton pendingButton;
     /** How many arrivals the reader has not seen yet; 0 hides the button. */
     private int pendingCount;
+
+    /**
+     * The chat's own floating date capsule: upstream's floating date view
+     * (ChatActivity:7043-7100), a {@link ChatActionCell} whose text is the chat date the message at
+     * the top of the viewport itself carries. It floats over the rows while the reader scrolls and
+     * leaves once the scroll settles (ChatActivity:13604-13658). It is never a list row.
+     */
+    private ChatActionCell floatingDateView;
+    /** ChatActivity's own floatingDateAnimation (13612-13624): one 150 ms alpha set, tag-guarded. */
+    private AnimatorSet floatingDateAnimation;
+    /**
+     * Upstream hides the floating date from the list's own idle callback (6778-6782). That callback
+     * is not guaranteed on every host, so the same fade is also armed by the scroll itself and goes
+     * this many milliseconds after the last scroll event - the pause upstream puts in
+     * {@code hideDateDelay} (13628/13656).
+     */
+    private static final int FLOATING_DATE_HIDE_DELAY_MS = 500;
+
+    /** How long a short-tap hold hint stays up before the voice band puts itself away. */
+    private static final int HOLD_HINT_MILLIS = 1_200;
+    /** The deferred fade armed by a scroll; cancelled on idle and on destroy. */
+    private final Runnable floatingDateHide = () -> {
+        if (!isFinished) {
+            hideFloatingDate();
+        }
+    };
 
     private SessionUiState stateUi;
     private AppSessionState lastSessionState;
@@ -202,12 +261,28 @@ public class ChatChannelFragment extends BaseFragment {
         listView.setSwipeReplyListener(this::onSwipeReply);
         listView.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
+            public void onScrollStateChanged(@NonNull RecyclerView recyclerView, int newState) {
+                // ChatActivity:6778-6782: the scroll has settled, so the floating date goes (and any
+                // settle-timer it armed is dropped).
+                if (newState == RecyclerView.SCROLL_STATE_IDLE) {
+                    AndroidUtilities.cancelRunOnUIThread(floatingDateHide);
+                    hideFloatingDate();
+                }
+            }
+
+            @Override
             public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
                 loadOlderIfNeeded();
                 // Reaching the newest is what makes the arrivals seen; the count and its button go.
                 if (pendingCount > 0 && isAtBottom()) {
                     clearPending();
                     markNewestRead();
+                }
+                if (dy != 0) {
+                    // ChatActivity:6876-6881: while the reader scrolls, the floating capsule carries
+                    // the chat date of the message now at the top of the viewport.
+                    updateFloatingDate();
+                    showFloatingDate();
                 }
             }
         });
@@ -226,6 +301,27 @@ public class ChatChannelFragment extends BaseFragment {
         replyStrip.setOnClickListener(v -> clearReplyTarget());
         contentView.addView(replyStrip, LayoutHelper.createFrame(
                 LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP));
+
+        // The chat's own floating date capsule (ChatActivity:7043-7100): a ChatActionCell whose
+        // text is the chat date of the message at the top of the viewport. It is a child of the
+        // screen's frame, not a list row - it floats under the header at the top centre, so it
+        // consumes no row and can never reach the composer. The theme delegate keeps the night
+        // capsule opaque, the same fix the topic list's own pill uses (TopicListFragment:3498).
+        floatingDateView = new ChatActionCell(context, false, new DatePillThemeProvider()) {
+            // ChatActivity:7090-7094: an alpha of zero is what takes the view out; the fade is the
+            // only visibility state there is.
+            @Override
+            public void setAlpha(float alpha) {
+                super.setAlpha(alpha);
+                setVisibility(alpha > 0 ? View.VISIBLE : View.INVISIBLE);
+            }
+        };
+        floatingDateView.setAlpha(0.0f);
+        floatingDateView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        floatingDateView.setInvalidateColors(true);
+        contentView.addView(floatingDateView, LayoutHelper.createFrame(
+                LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT,
+                Gravity.TOP | Gravity.CENTER_HORIZONTAL, 0, 4, 0, 0));
 
         // The composer rides in upstream's floating island the way the reply box does.
         glassHost = new GlassPanelHost(listView, contentView);
@@ -259,6 +355,15 @@ public class ChatChannelFragment extends BaseFragment {
         // invented topic context).
         composerTools = new DiscourseComposerTools(
                 this, container, composer, inputViews, inputInsets, glassHost, null);
+
+        // The voice band floats over the composer's own band, above the mic it answers to. It is
+        // hidden until a capture starts and never a list row, so it cannot reach the adapter.
+        voicePanel = new ComposerVoicePanel(context, resourceProvider);
+        voicePanel.setVisibility(View.GONE);
+        contentView.addView(voicePanel, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT,
+                Gravity.BOTTOM, 0, 0, 0, 0));
+        bindVoiceInput();
 
         // The floating round page-down affordance, upstream's own (the one a chat floats over its
         // composer): a message that arrives while the reader is in history lands here with its
@@ -314,7 +419,9 @@ public class ChatChannelFragment extends BaseFragment {
         view.setInAppInsetsController(inputInsets);
         view.setViewParentForEmoji(inputViews.getInAppKeyboardBubbleContainer());
         view.setAllowStickersAndGifs(false, false, false);
-        view.setDelegate(new SendDelegate());
+        composerDelegate = new SendDelegate();
+        view.setDelegate(composerDelegate);
+        installRecordAccessibility(view);
         view.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
             updateComposerActions();
             if (inputViews != null) {
@@ -332,6 +439,362 @@ public class ChatChannelFragment extends BaseFragment {
     }
 
     // ---------------------------------------------------------------------------------------------
+    // Voice recording
+    // ---------------------------------------------------------------------------------------------
+
+    /**
+     * Binds this client's hold-to-record microphone to the composer's own delegate. The delegate
+     * carries upstream's touch gesture in and forwards it here; no process-wide table is involved.
+     * The recording feedback is the voice band, and [captureAllowed] keeps a hold from starting
+     * while a send, an upload or a recovery is in flight.
+     */
+    private void bindVoiceInput() {
+        if (composer == null || composerDelegate == null || getParentActivity() == null) {
+            return;
+        }
+        voicePreview = new io.github.baba983.nativedo.core.media.MediaPlayerVoiceRecordingPreview();
+        voiceInput = ComposerVoiceInput.bind(
+                getParentActivity(),
+                composer,
+                composerDelegate,
+                voiceFeedback(),
+                recording -> {
+                    onRecordingFinished(recording);
+                    return kotlin.Unit.INSTANCE;
+                },
+                () -> !uploadingVoice && !sending && !joining
+                        && lastSessionState instanceof AppSessionState.Authenticated);
+        installVoicePanelActions();
+    }
+
+    /** The band's own recording feedback; the panel draws, the input drives it. */
+    private VoiceRecordingFeedback voiceFeedback() {
+        return new VoiceRecordingFeedback() {
+            @Override
+            public void onHoldHint() {
+                showVoicePanel();
+                if (voicePanel == null) {
+                    return;
+                }
+                voicePanel.showHoldHint();
+                voicePanel.postDelayed(() -> {
+                    if (voicePanel != null && voicePanel.getState() == ComposerVoicePanel.State.Recording
+                            && voiceInput != null && !voiceInput.isRecording()) {
+                        voicePanel.hide();
+                    }
+                }, HOLD_HINT_MILLIS);
+            }
+
+            @Override
+            public void onRecordingStarted() {
+                showVoicePanel();
+                if (voicePanel != null) voicePanel.showRecording();
+            }
+
+            @Override
+            public void onRecordingTick(long durationMillis) {
+                if (voicePanel != null) voicePanel.updateRecording(durationMillis);
+            }
+
+            @Override
+            public void onRecordingFinished() {
+                if (voicePanel != null) voicePanel.hide();
+            }
+
+            @Override
+            public void onRecordingDiscarded() {
+                if (voicePanel != null) voicePanel.hide();
+            }
+
+            @Override
+            public void onRecordingFailed(String message) {
+                if (voicePanel != null) voicePanel.showFailure(message == null ? "无法开始录音" : message);
+                showVoicePanel();
+            }
+
+            @Override
+            public void onPermissionRequired() {
+                // The permission prompt is the feedback; the band says nothing extra.
+            }
+        };
+    }
+
+    /**
+     * A finished local take: it becomes the review band, never a message. The reader checks it,
+     * plays it back, and either sends it (uploaded as `chat-composer`, then referenced by
+     * `upload_ids`) or throws it away. Nothing reaches the site until Send.
+     */
+    private void onRecordingFinished(VoiceRecording recording) {
+        pendingRecording = recording;
+        pendingUploadId = null;
+        if (voicePanel != null) {
+            voicePanel.showReview(recording.getDurationMillis());
+        }
+        showVoicePanel();
+    }
+
+    private void showVoicePanel() {
+        if (voicePanel == null) {
+            return;
+        }
+        voicePanel.setVisibility(View.VISIBLE);
+        positionVoicePanel();
+    }
+
+    /** The band sits on top of the composer's own band, above the mic it answers to. */
+    private void positionVoicePanel() {
+        if (voicePanel == null || !(voicePanel.getLayoutParams() instanceof android.widget.FrameLayout.LayoutParams)) {
+            return;
+        }
+        android.widget.FrameLayout.LayoutParams params =
+                (android.widget.FrameLayout.LayoutParams) voicePanel.getLayoutParams();
+        boolean composerShown = inputViews != null && inputViews.getVisibility() == View.VISIBLE;
+        int bottom = (composerShown ? composerHeight : 0) + navigationBarHeight;
+        if (params.bottomMargin != bottom) {
+            params.bottomMargin = bottom;
+            voicePanel.setLayoutParams(params);
+        }
+    }
+
+    /** Wires the band's presses: play/pause the take, send it, discard it, retry a failed write. */
+    private void installVoicePanelActions() {
+        if (voicePanel == null) {
+            return;
+        }
+        voicePanel.setOnPlayPause(this::toggleTakePreview);
+        voicePanel.setOnSend(this::sendPendingRecording);
+        voicePanel.setOnCancel(this::cancelPendingRecording);
+        voicePanel.setOnRetry(this::sendPendingRecording);
+    }
+
+    private void toggleTakePreview() {
+        if (pendingRecording == null || voicePreview == null) {
+            return;
+        }
+        if (voicePreview.getPlaying() != null) {
+            voicePreview.stop();
+            if (voicePanel != null) voicePanel.setPlaying(false);
+            return;
+        }
+        voicePreview.play(pendingRecording.getFile());
+        if (voicePanel != null) voicePanel.setPlaying(voicePreview.getPlaying() != null);
+    }
+
+    /**
+     * Sends the finished take. An upload the site already accepted is reused on a retry (a failed
+     * message write must not upload the clip twice); a fresh take is uploaded first, as the site's
+     * `chat-composer` kind, and the accepted id goes on the message write. The write is never
+     * replayed by the client: an accepted id is read back through [loadMessages], and a readback
+     * that fails keeps the message rather than resending it.
+     */
+    private void sendPendingRecording() {
+        if (container == null || pendingRecording == null || uploadingVoice || sending
+                || channel == null || !channel.getCanPost()) {
+            return;
+        }
+        final VoiceRecording recording = pendingRecording;
+        final int epoch = loadEpoch;
+        uploadingVoice = true;
+        stopTakePreview();
+        if (voicePanel != null) voicePanel.showBusy("正在发送语音…");
+        showVoicePanel();
+        if (pendingUploadId != null) {
+            sendRecordingUpload(recording, pendingUploadId, epoch);
+            return;
+        }
+        ChatLoader.INSTANCE.uploadVoice(
+                container,
+                recording.getFile(),
+                recording.getMimeType(),
+                progress -> kotlin.Unit.INSTANCE,
+                uploaded -> {
+                    if (epoch != loadEpoch) {
+                        return kotlin.Unit.INSTANCE;
+                    }
+                    pendingUploadId = uploaded.getId();
+                    sendRecordingUpload(recording, uploaded.getId(), epoch);
+                    return kotlin.Unit.INSTANCE;
+                },
+                error -> {
+                    if (epoch != loadEpoch) {
+                        return kotlin.Unit.INSTANCE;
+                    }
+                    onVoiceWriteFailed(error);
+                    return kotlin.Unit.INSTANCE;
+                });
+    }
+
+    private void sendRecordingUpload(VoiceRecording recording, long uploadId, int epoch) {
+        final Long inReplyTo = replyTargetId;
+        ChatLoader.INSTANCE.send(
+                container,
+                channelId,
+                "",
+                inReplyTo,
+                acceptedId -> {
+                    if (epoch != loadEpoch) {
+                        return kotlin.Unit.INSTANCE;
+                    }
+                    onVoiceAccepted(recording, acceptedId);
+                    return kotlin.Unit.INSTANCE;
+                },
+                error -> {
+                    if (epoch != loadEpoch) {
+                        return kotlin.Unit.INSTANCE;
+                    }
+                    onVoiceWriteFailed(error);
+                    return kotlin.Unit.INSTANCE;
+                },
+                java.util.Collections.singletonList(uploadId));
+    }
+
+    /** The site accepted the write: the take is spent, the composer clears, the message is read back. */
+    private void onVoiceAccepted(VoiceRecording recording, long acceptedId) {
+        uploadingVoice = false;
+        recording.getFile().delete();
+        pendingRecording = null;
+        pendingUploadId = null;
+        if (voicePanel != null) voicePanel.hide();
+        if (composer != null) composer.setFieldText("");
+        clearReplyTarget();
+        saveDraft();
+        updateComposerVisibility();
+        // Read the cooked result around the accepted id; a past cursor excludes its anchor.
+        loadMessages(acceptedId, null, true, true);
+    }
+
+    /** A failed upload or write: the take is kept and the retry is offered; nothing is resent. */
+    private void onVoiceWriteFailed(Throwable error) {
+        uploadingVoice = false;
+        FileLog.e("chat voice send failed", error);
+        if (voicePanel != null) {
+            voicePanel.showError("语音发送失败");
+        }
+        showVoicePanel();
+    }
+
+    /** The reader threw the take away: the private file goes with it. */
+    private void cancelPendingRecording() {
+        stopTakePreview();
+        if (pendingRecording != null) {
+            pendingRecording.getFile().delete();
+        }
+        pendingRecording = null;
+        pendingUploadId = null;
+        uploadingVoice = false;
+        if (voicePanel != null) voicePanel.hide();
+    }
+
+    private void stopTakePreview() {
+        if (voicePreview != null) {
+            voicePreview.stop();
+        }
+        playingAudioUrl = null;
+        if (voicePanel != null) voicePanel.setPlaying(false);
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Received audio
+    // ---------------------------------------------------------------------------------------------
+
+    /**
+     * Plays a received voice message: the upload is fetched with the session-aware client (some
+     * uploads are served to a signed-in reader only) and the local file is played by the device's
+     * own player. A second press on the same clip stops it. Never Telegram's account-backed media
+     * controller. Returns true when [url] was a message's own audio clip, so the caller can leave
+     * every other link to its own handling.
+     */
+    private boolean playReceivedAudio(String url) {
+        if (container == null || url == null) {
+            return false;
+        }
+        ChatMessage message = messageWithAudioUrl(url);
+        if (message == null) {
+            return false;
+        }
+        String resolved = ChatVoiceAudio.audioUrl(message, container.getBaseUrl());
+        if (resolved == null) {
+            return false;
+        }
+        if (voicePreview != null && resolved.equals(playingAudioUrl)) {
+            stopTakePreview();
+            return true;
+        }
+        ChatLoader.INSTANCE.receivedAudio(
+                container,
+                resolved,
+                file -> {
+                    if (isFinished || voicePreview == null) {
+                        return kotlin.Unit.INSTANCE;
+                    }
+                    stopTakePreview();
+                    voicePreview.play(file);
+                    playingAudioUrl = resolved;
+                    return kotlin.Unit.INSTANCE;
+                },
+                error -> {
+                    FileLog.e("chat audio playback failed", error);
+                    return kotlin.Unit.INSTANCE;
+                });
+        return true;
+    }
+
+    private ChatMessage messageWithAudioUrl(String url) {
+        for (ChatMessage message : chatMessages) {
+            if (ChatVoiceAudio.matches(message, container.getBaseUrl(), url)) {
+                return message;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Drops every voice activity a screen change must not carry across: a live capture, a pending
+     * take, its preview, and any in-flight upload's result (the epoch fence covers that). A screen
+     * calls this on pause, on destroy and on any session change, so a stale screen's recording never
+     * lands in a new draft.
+     */
+    private void cancelVoice() {
+        if (voiceInput != null) {
+            voiceInput.cancelCapture();
+        }
+        stopTakePreview();
+        if (pendingRecording != null) {
+            pendingRecording.getFile().delete();
+        }
+        pendingRecording = null;
+        pendingUploadId = null;
+        uploadingVoice = false;
+        if (voicePanel != null) voicePanel.hide();
+    }
+
+    /**
+     * The microphone is a touch-only affordance; a screen reader needs an alternative. The mic's
+     * own click action toggles a capture (one activation starts, the next finishes and delivers),
+     * which is the same flow without the hold.
+     */
+    private void installRecordAccessibility(ChatActivityEnterView view) {
+        View mic = view.getAudioVideoButtonContainer();
+        if (mic == null) {
+            return;
+        }
+        mic.setContentDescription("按住录音");
+        View.AccessibilityDelegate delegate = new View.AccessibilityDelegate() {
+            @Override
+            public boolean performAccessibilityAction(View host, int action, android.os.Bundle args) {
+                if (action == AccessibilityNodeInfo.ACTION_CLICK) {
+                    if (voiceInput != null) {
+                        voiceInput.toggleFromAccessibility();
+                    }
+                    return true;
+                }
+                return super.performAccessibilityAction(host, action, args);
+            }
+        };
+        mic.setAccessibilityDelegate(delegate);
+    }
+
+    // ---------------------------------------------------------------------------------------------
     // Session / loading
     // ---------------------------------------------------------------------------------------------
 
@@ -340,6 +803,7 @@ public class ChatChannelFragment extends BaseFragment {
         saveDraft();
         stopSessionObservation();
         closeLiveHolder();
+        clearFloatingDate();
         loadEpoch++;
         super.clearViews();
     }
@@ -358,6 +822,14 @@ public class ChatChannelFragment extends BaseFragment {
         saveDraft();
         closeLiveHolder();
         if (composerTools != null) composerTools.onPause();
+        // A live capture or a playing take does not survive the screen going to the background: the
+        // recorder is released and the playback stops. A finished take that has not been sent is
+        // kept, so a transient pause does not throw away a message the reader just recorded.
+        if (voiceInput != null) voiceInput.onPause();
+        stopTakePreview();
+        if (voicePanel != null && voicePanel.getState() == ComposerVoicePanel.State.Recording) {
+            voicePanel.hide();
+        }
         if (composer != null) composer.onPause();
         super.onPause();
     }
@@ -374,6 +846,15 @@ public class ChatChannelFragment extends BaseFragment {
         return super.onBackPressed(invoked);
     }
 
+    /** The microphone permission answer; the recording host waits for it before a second request. */
+    @Override
+    public void onRequestPermissionsResultFragment(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResultFragment(requestCode, permissions, grantResults);
+        if (requestCode == ComposerVoiceInput.RECORD_PERMISSION_REQUEST_CODE && voiceInput != null) {
+            voiceInput.onPermissionResult();
+        }
+    }
+
     @Override
     public void onFragmentDestroy() {
         NotificationCenter.getGlobalInstance().removeObserver(themeObserver, NotificationCenter.didSetNewTheme);
@@ -388,6 +869,15 @@ public class ChatChannelFragment extends BaseFragment {
         closeLiveHolder();
         loadEpoch++;
         saveDraft();
+        // The screen is gone: a live capture, a pending take and any playback go with it, and the
+        // recording host releases only its own delegate binding.
+        cancelVoice();
+        if (voiceInput != null) {
+            voiceInput.onDestroy();
+            voiceInput = null;
+        }
+        voicePreview = null;
+        voicePanel = null;
         if (composerTools != null) {
             composerTools.onDestroy();
             composerTools = null;
@@ -396,6 +886,9 @@ public class ChatChannelFragment extends BaseFragment {
             composer.onDestroy();
             composer = null;
         }
+        // A fade armed by a scroll must not outlive the screen and call back into a dead view.
+        clearFloatingDate();
+        floatingDateView = null;
         inputViews = null;
         super.onFragmentDestroy();
     }
@@ -419,6 +912,10 @@ public class ChatChannelFragment extends BaseFragment {
         boolean identityChanged = !SessionUi.identity(lastSessionState).equals(SessionUi.identity(state));
         if (identityChanged) {
             saveDraft();
+            // A capture, a pending take or a playback belongs to the account it started under: an
+            // account switch cancels all of it rather than letting a stale take land in the new
+            // reader's draft.
+            cancelVoice();
             draftOwner = null;
             if (composer != null) composer.setFieldText("");
             loadEpoch++;
@@ -437,6 +934,7 @@ public class ChatChannelFragment extends BaseFragment {
         } else {
             stateUi = SessionUi.stateFor(state);
             loading = false;
+            clearFloatingDate();
             notifyRowsChanged();
         }
         updateComposerVisibility();
@@ -457,6 +955,7 @@ public class ChatChannelFragment extends BaseFragment {
         joining = false;
         clearReplyTarget();
         clearPending();
+        clearFloatingDate();
     }
 
     private void loadChannel() {
@@ -478,6 +977,7 @@ public class ChatChannelFragment extends BaseFragment {
             }
             FileLog.e("chat channel failed", error);
             stateUi = SessionUi.stateForLoadFailure(error);
+            clearFloatingDate();
             notifyRowsChanged();
             return kotlin.Unit.INSTANCE;
         });
@@ -541,6 +1041,7 @@ public class ChatChannelFragment extends BaseFragment {
                     // failed with messages already drawn leaves them standing.
                     if (chatMessages.isEmpty()) {
                         stateUi = SessionUi.stateForLoadFailure(error);
+                        clearFloatingDate();
                     }
                     notifyRowsChanged();
                     return kotlin.Unit.INSTANCE;
@@ -611,6 +1112,9 @@ public class ChatChannelFragment extends BaseFragment {
         } else if (added > 0 && anchor >= 0 && manager != null) {
             manager.scrollToPositionWithOffset(anchor + added, anchorTop);
         }
+        // A prepended or replaced window moves the rows; re-read the capsule so it never names the
+        // message that used to be on top.
+        updateFloatingDateIfShown();
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -726,7 +1230,11 @@ public class ChatChannelFragment extends BaseFragment {
     /** The prepared rich body of one message's cooked HTML; what the bubble draws. */
     private PreparedPostBody prepareBody(ChatMessage message) {
         io.github.baba983.nativedo.core.model.Post post = ChatRows.post(message);
-        return DiscourseImageBridge.INSTANCE.prepare(post.getCookedHtml(), container.getBaseUrl());
+        // A recorded clip's own <audio> embed becomes the labeled link the bubble can act on, so a
+        // received voice message is visible and playable rather than an unsupported block.
+        String cooked = ChatVoiceAudio.audioLinkHtml(
+                post.getCookedHtml(), message, container.getBaseUrl());
+        return DiscourseImageBridge.INSTANCE.prepare(cooked, container.getBaseUrl());
     }
 
     private MessageObject buildBubble(ChatMessage message, PreparedPostBody body) {
@@ -920,6 +1428,134 @@ public class ChatChannelFragment extends BaseFragment {
     }
 
     // ---------------------------------------------------------------------------------------------
+    // Floating date capsule
+    // ---------------------------------------------------------------------------------------------
+
+    /**
+     * Sets the capsule to the chat date the top visible message itself carries
+     * (ChatActivity:16316-16325 reads {@code messageObject.messageOwner.date} of the topmost
+     * message child). Status, note and header rows are not messages, so the first message row at or
+     * below the top of the viewport is the one named. With no message row in front of the reader (a
+     * loading, failed, empty or session state) there is nothing to say and the capsule is left
+     * alone; it is cleared by {@link #clearFloatingDate()} where such a state begins.
+     */
+    private void updateFloatingDate() {
+        int date = topVisibleMessageDate();
+        if (floatingDateView == null || date == 0) {
+            return;
+        }
+        // setCustomDate formats the same chat date a chat's own date separator shows, so a day and
+        // a year boundary change it by themselves.
+        floatingDateView.setCustomDate(date, false, false);
+    }
+
+    /** Re-reads the top message while the capsule is up, so a history prepend or edit stays true. */
+    private void updateFloatingDateIfShown() {
+        if (floatingDateView != null && floatingDateView.getTag() != null) {
+            updateFloatingDate();
+        }
+    }
+
+    /**
+     * The epoch of the message at the top of the viewport, or 0 when no message row is in front of
+     * the reader. The first visible adapter position is read fresh every time, so a prepended or
+     * appended window does not leave a stale index behind.
+     */
+    private int topVisibleMessageDate() {
+        if (stateUi != null || chatMessages.isEmpty()
+                || listView == null || !(listView.getLayoutManager() instanceof LinearLayoutManager)) {
+            return 0;
+        }
+        LinearLayoutManager manager = (LinearLayoutManager) listView.getLayoutManager();
+        int first = manager.findFirstVisibleItemPosition();
+        if (first == RecyclerView.NO_POSITION) {
+            return 0;
+        }
+        // A note row sits above the first message; the first message below it is the top one.
+        int index = Math.max(0, first - messageRowOffset());
+        if (index >= bubbles.size()) {
+            return 0;
+        }
+        MessageObject message = bubbles.get(index);
+        if (message == null || message.messageOwner == null) {
+            return 0;
+        }
+        return message.messageOwner.date;
+    }
+
+    /**
+     * ChatActivity:13604-13630: the floating date arrives by one 150 ms alpha set, guarded by the
+     * tag so a second show while it is up does nothing. Upstream arms the fade from the list's idle
+     * callback; the same fade is also armed here, from the scroll itself, so a host that reports a
+     * scroll without a following idle still settles.
+     */
+    private void showFloatingDate() {
+        if (floatingDateView == null || stateUi != null || chatMessages.isEmpty()) {
+            return;
+        }
+        if (floatingDateView.getTag() == null) {
+            if (floatingDateAnimation != null) {
+                floatingDateAnimation.cancel();
+            }
+            floatingDateView.setTag(1);
+            floatingDateAnimation = new AnimatorSet();
+            floatingDateAnimation.setDuration(150);
+            floatingDateAnimation.playTogether(ObjectAnimator.ofFloat(floatingDateView, View.ALPHA, 1.0f));
+            floatingDateAnimation.addListener(new AnimatorListenerAdapter() {
+                @Override
+                public void onAnimationEnd(Animator animation) {
+                    if (animation.equals(floatingDateAnimation)) {
+                        floatingDateAnimation = null;
+                    }
+                }
+            });
+            floatingDateAnimation.start();
+        }
+        AndroidUtilities.cancelRunOnUIThread(floatingDateHide);
+        AndroidUtilities.runOnUIThread(floatingDateHide, FLOATING_DATE_HIDE_DELAY_MS);
+    }
+
+    /** ChatActivity:13632-13658: the floating date leaves by the same 150 ms alpha set. */
+    private void hideFloatingDate() {
+        if (floatingDateView == null || floatingDateView.getTag() == null) {
+            return;
+        }
+        floatingDateView.setTag(null);
+        if (floatingDateAnimation != null) {
+            floatingDateAnimation.cancel();
+        }
+        floatingDateAnimation = new AnimatorSet();
+        floatingDateAnimation.setDuration(150);
+        floatingDateAnimation.playTogether(ObjectAnimator.ofFloat(floatingDateView, View.ALPHA, 0.0f));
+        floatingDateAnimation.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                if (animation.equals(floatingDateAnimation)) {
+                    floatingDateAnimation = null;
+                }
+            }
+        });
+        floatingDateAnimation.start();
+    }
+
+    /**
+     * Takes the capsule out at once, for the states that are not a conversation: a load that failed,
+     * an empty window or a lost session must never leave the last date standing.
+     */
+    private void clearFloatingDate() {
+        if (floatingDateView == null) {
+            return;
+        }
+        AndroidUtilities.cancelRunOnUIThread(floatingDateHide);
+        if (floatingDateAnimation != null) {
+            floatingDateAnimation.cancel();
+            floatingDateAnimation = null;
+        }
+        floatingDateView.setTag(null);
+        floatingDateView.setAlpha(0.0f);
+    }
+
+    // ---------------------------------------------------------------------------------------------
     // Joining
     // ---------------------------------------------------------------------------------------------
 
@@ -1000,12 +1636,23 @@ public class ChatChannelFragment extends BaseFragment {
         if (composer == null) {
             return;
         }
-        boolean hasText = composer.getEditField() != null && composer.getEditField().length() > 0;
-        View button = composer.getSendButton();
-        if (button != null) {
-            button.setVisibility(hasText ? View.VISIBLE : View.GONE);
-        }
+        // Upstream decides the mic/send toggle from the field itself: the microphone while the field
+        // is empty, the send button once there is text. The screen only says whether the channel may
+        // be written to at all; forcing the toggle here is what used to keep the microphone hidden
+        // on an empty, writable composer. A hold can therefore only start with the mic showing,
+        // which is exactly "authenticated, can post, and the field is empty".
         composer.checkSendButton(false);
+        boolean canPost = lastSessionState instanceof AppSessionState.Authenticated
+                && channel != null && channel.getCanPost();
+        if (!canPost) {
+            View button = composer.getSendButton();
+            if (button != null) {
+                button.setVisibility(View.GONE);
+            }
+        }
+        if (voicePanel != null) {
+            positionVoicePanel();
+        }
     }
 
     private void onSwipeReply(ChatMessageCell cell) {
@@ -1335,6 +1982,11 @@ public class ChatChannelFragment extends BaseFragment {
             replyStrip.setTextColor(getThemedColor(Theme.key_windowBackgroundWhiteBlackText));
             replyStrip.setBackgroundColor(getThemedColor(Theme.key_chat_messagePanelBackground));
         }
+        if (floatingDateView != null) {
+            // The capsule reads the shared service paints at draw time (ChatActionCell.drawBackground),
+            // so a redraw is the whole recolor.
+            floatingDateView.invalidate();
+        }
         notifyRowsChanged();
     }
 
@@ -1344,6 +1996,75 @@ public class ChatChannelFragment extends BaseFragment {
 
     PostListView listViewForTest() {
         return listView;
+    }
+
+    /** The voice band, so a test can read the state it is showing. */
+    ComposerVoicePanel voicePanelForTest() {
+        return voicePanel;
+    }
+
+    /** The hold-to-record host, so a test can drive its gesture without a device microphone. */
+    ComposerVoiceInput voiceInputForTest() {
+        return voiceInput;
+    }
+
+    /**
+     * Puts a finished local take into the review band, the way a completed capture would. A host
+     * test uses this because a JVM has no microphone to record with; the send/retry wire is the
+     * same either way.
+     */
+    void attachPendingRecordingForTest(VoiceRecording recording) {
+        onRecordingFinished(recording);
+    }
+
+    /** The take awaiting send, so a test can tell a kept take from a discarded one. */
+    VoiceRecording pendingRecordingForTest() {
+        return pendingRecording;
+    }
+
+    /** The send the band's own button performs, for a host test that has no touch to dispatch. */
+    void sendPendingRecordingForTest() {
+        sendPendingRecording();
+    }
+
+    /** The discard the band's own cancel performs. */
+    void cancelPendingRecordingForTest() {
+        cancelPendingRecording();
+    }
+
+    /** True while a take is on its way to the site. */
+    boolean isUploadingVoiceForTest() {
+        return uploadingVoice;
+    }
+
+    /**
+     * The action a press on a received voice message performs: resolve the message's own audio
+     * upload and play it through the session-aware cache. Returns false when the message carries no
+     * audio clip.
+     */
+    boolean playReceivedAudioForTest(long messageId) {
+        int index = indexOfMessage(messageId);
+        if (index < 0 || container == null) {
+            return false;
+        }
+        String resolved = ChatVoiceAudio.audioUrl(chatMessages.get(index), container.getBaseUrl());
+        return resolved != null && playReceivedAudio(resolved);
+    }
+
+    /** Whether a message carries an audio upload (a received voice message). */
+    boolean hasReceivedAudioForTest(long messageId) {
+        int index = indexOfMessage(messageId);
+        return index >= 0 && ChatVoiceAudio.audioUpload(chatMessages.get(index)) != null;
+    }
+
+    /** The received clip currently playing, or null. */
+    String playingAudioUrlForTest() {
+        return playingAudioUrl;
+    }
+
+    /** The floating date capsule, so a test can read the day it names and its fade. */
+    ChatActionCell floatingDateForTest() {
+        return floatingDateView;
     }
 
     int messageCount() {
@@ -1618,6 +2339,22 @@ public class ChatChannelFragment extends BaseFragment {
         public void forceUpdate(ChatMessageCell cell, boolean anchorScroll, boolean scrollByTop) {
             forceUpdate(cell, anchorScroll);
         }
+
+        /**
+         * A press on a link in a message. A voice message's own audio link is this screen's to act
+         * on: the clip is fetched with the session and played locally, rather than left inert or
+         * handed to a browser. Every other link keeps the default handling.
+         */
+        @Override
+        public void didPressUrl(ChatMessageCell cell, android.text.style.CharacterStyle url, boolean longPress) {
+            if (longPress) {
+                return;
+            }
+            String href = url instanceof URLSpan ? ((URLSpan) url).getURL() : null;
+            if (href != null) {
+                playReceivedAudio(href);
+            }
+        }
     }
 
     private class SendDelegate extends DiscourseComposerDelegate {
@@ -1636,6 +2373,59 @@ public class ChatChannelFragment extends BaseFragment {
         @Override
         public void onWindowSizeChanged(int size) {
             updateComposerActions();
+        }
+    }
+
+    /**
+     * The service paint the floating date draws with, for a screen that has no chat wallpaper - the
+     * same delegate the topic list's own pill uses (TopicListFragment:3498).
+     *
+     * <p>Upstream's floating date is readable because its capsule is a sample of the chat wallpaper:
+     * {@link Theme#applyChatServiceMessageColor} puts the wallpaper bitmap in
+     * {@code chat_actionBackgroundPaint} and forces its alpha to {@code 0xff}, so the date never
+     * shows what passes under it. There is no wallpaper here: the branch that runs leaves the paint
+     * the theme's own translucent {@code key_chat_serviceBackground} tint, which is picked to sit on
+     * a wallpaper, and on the dark themes the first row's title shines through the capsule.</p>
+     *
+     * <p>This delegate gives the night capsule the same service colour at the full alpha the
+     * wallpaper branch uses whenever there is no wallpaper to sample. The capsule does not report
+     * {@code isFloating()} (ChatActionCell:3496-3505 quarters that alpha for a floating view), so
+     * the night capsule covers the row behind it. A wallpaper gradient present keeps the shared
+     * paint untouched, and the day theme keeps its own tint. The colour is re-read on every draw, so
+     * the capsule follows the day/night switch in place.</p>
+     */
+    private static final class DatePillThemeProvider implements ChatActionCell.ThemeDelegate {
+
+        private final Paint backgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        @Override
+        public int getColor(int key) {
+            return Theme.getColor(key);
+        }
+
+        @Override
+        public int getCurrentColor() {
+            return Theme.currentColor;
+        }
+
+        @Override
+        public Paint getPaint(String paintKey) {
+            if (Theme.hasGradientService() || !Theme.isCurrentThemeDark()) {
+                // A wallpaper sample, or the day theme's own tint: what a chat would draw with.
+                return null;
+            }
+            if (!Theme.key_paint_chatActionBackground.equals(paintKey)) {
+                return null;
+            }
+            // The colour the shared service paint would draw, at the alpha the wallpaper branch
+            // forces, so the night capsule covers the row behind it instead of tinting it.
+            backgroundPaint.setColor(Theme.chat_actionBackgroundPaint.getColor() | 0xFF000000);
+            return backgroundPaint;
+        }
+
+        @Override
+        public boolean hasGradientService() {
+            return Theme.hasGradientService();
         }
     }
 }

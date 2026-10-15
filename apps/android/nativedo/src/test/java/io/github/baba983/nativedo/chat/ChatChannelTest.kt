@@ -31,9 +31,12 @@ import org.robolectric.annotation.Config
 import org.telegram.messenger.ApplicationLoader
 import org.telegram.messenger.NotificationCenter
 import org.telegram.ui.ActionBar.Theme
+import org.telegram.ui.Cells.ChatActionCell
 import org.telegram.ui.Components.ChatActivityEnterView
 import io.github.baba983.nativedo.topic.DiscourseEmojiPicker
 import io.github.baba983.nativedo.topic.DiscourseMentionsPanel
+import android.view.MotionEvent
+import android.view.View
 
 /**
  * One public chat channel's conversation: the messages, the composer, joining and sending.
@@ -587,6 +590,197 @@ internal class ChatChannelTest {
         harness.assertNoTelegramSideEffects()
     }
 
+    // ------------------------------------------------------------------ floating date
+
+    /**
+     * The floating date capsule names the chat date of the message at the top of the viewport. The
+     * failure this pins: a capsule that names a fixed date, a message that is not on top, or one that
+     * keeps its label after the reader has scrolled somewhere else. Scrolling with the list's own
+     * scroll path takes the top message across a day boundary and back.
+     */
+    @Test
+    fun theFloatingDateNamesTheTopMessagesDayAndFadesWhenTheScrollSettles() {
+        serveJoinedChannel()
+        val olderDay = isoDaysAgo(9)
+        val newerDay = isoDaysAgo(2)
+        site.serveJson(
+            "chat/api/channels/71/messages.json",
+            datedMessagesFixture(count = 25, olderCount = 6, olderIso = olderDay, newerIso = newerDay),
+        )
+
+        val fragment = openChannel(71L, "站点反馈")
+        harness.await("the window") { fragment.messageCount() == 25 }
+        harness.layoutApp()
+        harness.idleClock(300)
+
+        val pill = pill(fragment)
+        assertEquals("the capsule is away at rest", 0f, pill.alpha, 0.01f)
+        assertEquals("and invisible", View.INVISIBLE, pill.visibility)
+
+        // Up the history: the top message is on the older day.
+        scrollList(fragment, -100_000)
+        assertEquals("the reader is at the top of the window", 0, firstVisiblePosition(fragment))
+        assertEquals(
+            "the capsule names the chat date the top message itself carries",
+            ChatRows.epochSeconds(fragment.chatMessageForTest(0)!!.createdAt),
+            pill.customDate,
+        )
+        assertTrue("the capsule is up while the scroll is fresh", pill.alpha > 0.5f)
+        assertEquals(View.VISIBLE, pill.visibility)
+        harness.renderApp("chat-date-visible")
+
+        // The scroll settles: the capsule fades out.
+        harness.idleClock(700)
+        assertEquals("the capsule leaves once the scroll settles", 0f, pill.alpha, 0.01f)
+        assertTrue("and it is not shown", pill.visibility != View.VISIBLE)
+        harness.renderApp("chat-date-faded")
+
+        // Down to the newest: the top message is on the newer day, a different label.
+        scrollList(fragment, 100_000)
+        val newerTop = firstVisiblePosition(fragment)
+        assertTrue("the reader moved down the window", newerTop > 0)
+        assertEquals(
+            "the capsule follows the newer day",
+            ChatRows.epochSeconds(fragment.chatMessageForTest(newerTop)!!.createdAt),
+            pill.customDate,
+        )
+        assertTrue(
+            "the day really changed between the two tops",
+            pill.customDate != ChatRows.epochSeconds(olderDay),
+        )
+        harness.renderApp("chat-date-changed")
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * A top message older than a year keeps its year in the capsule, the way a chat's own date
+     * separator does; one inside the year drops it. The failure this pins: a label that is a fixed
+     * format and so cannot tell a year boundary from a day one.
+     */
+    @Test
+    fun theFloatingDateKeepsTheYearWhenTheTopMessageIsBeforeTheYearBoundary() {
+        serveJoinedChannel()
+        val olderIso = isoDaysAgo(400)
+        val newerIso = isoDaysAgo(10)
+        site.serveJson(
+            "chat/api/channels/71/messages.json",
+            datedMessagesFixture(count = 25, olderCount = 6, olderIso = olderIso, newerIso = newerIso),
+        )
+
+        val fragment = openChannel(71L, "站点反馈")
+        harness.await("the window") { fragment.messageCount() == 25 }
+        harness.layoutApp()
+        harness.idleClock(300)
+        val pill = pill(fragment)
+
+        scrollList(fragment, -100_000)
+        val olderLabel = pillText(pill)
+        val olderYear = olderIso.substring(0, 4)
+        assertTrue(
+            "an older year is named in the capsule ($olderLabel)",
+            olderLabel != null && olderLabel.contains(olderYear),
+        )
+
+        scrollList(fragment, 100_000)
+        val newerLabel = pillText(pill)
+        assertTrue(
+            "a message inside the year drops the year ($newerLabel)",
+            newerLabel != null && !newerLabel.contains(olderYear),
+        )
+        assertTrue("the two labels differ", olderLabel != newerLabel)
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * The capsule belongs to the conversation: when the screen stops being one (the session is lost),
+     * the last date must not stand. The failure this pins: a stale timestamp left floating over a
+     * state that has no messages.
+     */
+    @Test
+    fun theFloatingDateDoesNotOutliveTheContent() {
+        serveJoinedChannel()
+        site.serveJson("chat/api/channels/71/messages.json", messagesFixture(25))
+
+        val fragment = openChannel(71L, "站点反馈")
+        harness.await("the window") { fragment.messageCount() == 25 }
+        harness.layoutApp()
+        harness.idleClock(200)
+        scrollList(fragment, -100_000)
+        val pill = pill(fragment)
+        assertTrue("the capsule is up after a scroll", pill.alpha > 0.5f)
+
+        val container = NativeDo.container(harness.context)
+        kotlinx.coroutines.runBlocking {
+            container.sessionCoordinator.markExpired(
+                io.github.baba983.nativedo.core.session.SessionExpiredReason.CookieMissing,
+            )
+        }
+        harness.await("the expired-session state") { fragment.stateForTest() != null }
+        harness.idleClock(200)
+        assertEquals("a lost session takes the capsule with it", 0f, pill.alpha, 0.01f)
+        assertTrue("and it is not shown", pill.visibility != View.VISIBLE)
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * A real finger on the shipped list: the capsule arrives with the drag and leaves once the drag
+     * settles - the show/hide a chat's floating date has. The failure this pins: a capsule driven by
+     * something other than the list's own scrolling.
+     */
+    @Test
+    fun theFloatingDateArrivesOnARealDragAndLeavesWhenItSettles() {
+        serveJoinedChannel()
+        site.serveJson("chat/api/channels/71/messages.json", messagesFixture(25))
+
+        val fragment = openChannel(71L, "站点反馈")
+        harness.await("the window") { fragment.messageCount() == 25 }
+        harness.layoutApp()
+        harness.idleClock(200)
+        val list = fragment.listViewForTest()
+        val before = firstVisiblePosition(fragment)
+
+        val x = list.width / 2f
+        val startY = list.height * 0.30f
+        val endY = list.height * 0.85f
+        val downTime = android.os.SystemClock.uptimeMillis()
+        list.dispatchTouchEvent(MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, x, startY, 0))
+        val steps = 20
+        for (i in 1..steps) {
+            val y = startY + (endY - startY) * i / steps
+            list.dispatchTouchEvent(
+                MotionEvent.obtain(downTime, downTime + i * 16L, MotionEvent.ACTION_MOVE, x, y, 0),
+            )
+        }
+        harness.idle()
+        assertTrue("the finger moved the list", firstVisiblePosition(fragment) < before)
+        // Let the 150 ms fade-in finish; the finger is still down, so nothing has settled yet.
+        harness.idleClock(150)
+        val pill = pill(fragment)
+        assertNotNull("the drag raised the capsule", pill.tag)
+        assertTrue("and it is drawn while the finger is down", pill.alpha > 0.5f)
+        // ChatActionCell caches its date within an hour; the visible contract is the day,
+        // not a fresh epoch second for every message the finger passes.
+        val day = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.ROOT)
+        assertEquals(
+            "and it names the top message's day",
+            day.format(java.util.Date(ChatRows.epochSeconds(
+                fragment.chatMessageForTest(firstVisiblePosition(fragment))!!.createdAt,
+            ) * 1000L)),
+            day.format(java.util.Date(pill.customDate * 1000L)),
+        )
+        harness.renderApp("chat-date-drag-visible")
+
+        // Let the finger go and the drag settle: the capsule fades.
+        list.dispatchTouchEvent(
+            MotionEvent.obtain(downTime, downTime + (steps + 1) * 16L, MotionEvent.ACTION_UP, x, endY, 0),
+        )
+        list.stopScroll()
+        harness.idleClock(900)
+        assertNull("the settled drag lowers the capsule", pill.tag)
+        assertEquals(0f, pill.alpha, 0.01f)
+        harness.assertNoTelegramSideEffects()
+    }
+
     // ------------------------------------------------------------------ helpers
 
     private fun descendants(view: android.view.View?): List<android.view.View> = buildList {
@@ -601,6 +795,49 @@ internal class ChatChannelTest {
     private fun firstVisiblePosition(fragment: ChatChannelFragment): Int =
         (fragment.listViewForTest().layoutManager as androidx.recyclerview.widget.LinearLayoutManager)
             .findFirstVisibleItemPosition()
+
+    /** The floating date capsule the channel floats over its rows. */
+    private fun pill(fragment: ChatChannelFragment): ChatActionCell =
+        fragment.floatingDateForTest() ?: throw AssertionError("the channel has no floating date capsule")
+
+    /** The cell's own label, where the chat date is drawn from (ChatActionCell.customText). */
+    private fun pillText(pill: ChatActionCell): CharSequence? {
+        val field = ChatActionCell::class.java.getDeclaredField("customText").apply { isAccessible = true }
+        return field.get(pill) as CharSequence?
+    }
+
+    /**
+     * Scrolls the shipped list with its own scroll path (the same one a finger drives) and then lets
+     * the 150 ms fade-in finish, so the capsule is fully up when a caller asserts on it.
+     */
+    private fun scrollList(fragment: ChatChannelFragment, dy: Int) {
+        fragment.listViewForTest().scrollBy(0, dy)
+        harness.layoutApp()
+        harness.idleClock(200)
+    }
+
+    /** An ISO-8601 instant [days] before now, at [time]; the chat mapper reads the seconds. */
+    private fun isoDaysAgo(days: Long, time: String = "09:00:00"): String {
+        val format = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+        format.timeZone = java.util.TimeZone.getTimeZone("UTC")
+        val day = format.format(java.util.Date(System.currentTimeMillis() - days * 86_400_000L))
+        return "${day}T${time}.000Z"
+    }
+
+    /**
+     * [count] messages, the first [olderCount] on [olderIso] and the rest on [newerIso]: enough to
+     * overflow the viewport, so the top message crosses a day boundary as the reader scrolls.
+     */
+    private fun datedMessagesFixture(count: Int, olderCount: Int, olderIso: String, newerIso: String): String {
+        val messages = (0 until count).joinToString(",") { index ->
+            val id = 9001L + index
+            val username = if (index % 2 == 0) "baba" else "alice"
+            val userId = if (index % 2 == 0) 7 else 8
+            val iso = if (index < olderCount) olderIso else newerIso
+            """{"id":$id,"message":"消息 $id","cooked":"<p>消息 $id</p>","created_at":"$iso","chat_channel_id":71,"user":{"id":$userId,"username":"$username","name":"$username","avatar_template":"/user_avatar/linux.do/$username/{size}/1.png"}}"""
+        }
+        return """{"messages":[$messages],"meta":{"can_load_more_past":false,"can_load_more_future":false}}"""
+    }
 
     private fun siteEmojiCatalog(): String =
         """{"custom":[{"name":"site_wave","url":"${site.url("emoji/site-wave.png")}"}]}"""

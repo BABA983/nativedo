@@ -394,6 +394,7 @@ class DiscourseMentions internal constructor(
                 candidate.displayName,
                 candidate.avatarTemplate,
                 baseUrl,
+                candidate.animatedAvatarUrl,
             )
             if (DiscourseAvatars.isCached(user)) continue
             avatarJobs += scope.launch {

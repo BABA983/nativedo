@@ -3,6 +3,7 @@ package io.github.baba983.nativedo.topic
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
 import android.os.SystemClock
 import android.view.MotionEvent
@@ -152,7 +153,7 @@ internal class DiscourseEmojiPickerTest {
 
         openPicker(screen)
         harness.layoutApp()
-        harness.await("the catalog grid") { grid(screen)?.adapter?.itemCount == 1 }
+        harness.await("the catalog grid") { grid(screen)?.adapter?.itemCount == 3 }
         harness.await("the tile to settle") { harness.layoutApp(); cellFor(screen, ":smile:") != null }
 
         // A caret in the middle of the text.
@@ -205,17 +206,18 @@ internal class DiscourseEmojiPickerTest {
 
         openPicker(screen)
         harness.layoutApp()
-        harness.await("the first category") { harness.layoutApp(); boundEmojiNames(screen).size == 2 }
+        harness.await("the continuous catalog") { harness.layoutApp(); boundEmojiNames(screen).size == 4 }
         assertEquals(
-            "the first site group is drawn first",
-            listOf(":smile:", ":joy:"),
+            "both site groups share one continuous grid, in site order",
+            listOf(":smile:", ":joy:", ":book:", ":smiley_cat:"),
             boundEmojiNames(screen),
         )
 
-        // Category navigation: the second group's own tiles.
-        tabs(screen)!!.scrollTo(1)
-        harness.layoutApp()
-        harness.await("the second group") { harness.layoutApp(); boundEmojiNames(screen).size == 2 }
+        // Category navigation scrolls to the second group rather than replacing the catalog.
+        tabView(screen, 1)!!.performClick()
+        harness.await("the second group") {
+            harness.idleClock(100); harness.layoutApp(); boundEmojiNames(screen) == listOf(":book:", ":smiley_cat:")
+        }
         assertEquals(
             "the tab switches to the site's own second group",
             listOf(":book:", ":smiley_cat:"),
@@ -240,6 +242,9 @@ internal class DiscourseEmojiPickerTest {
         // Clearing the query restores the group the reader was on.
         search(screen)!!.searchEditText.setText("")
         harness.layoutApp()
+        harness.await("the restored group") {
+            harness.layoutApp(); boundEmojiNames(screen) == listOf(":book:", ":smiley_cat:")
+        }
         assertEquals(
             "clearing the query restores the selected group",
             listOf(":book:", ":smiley_cat:"),
@@ -247,6 +252,190 @@ internal class DiscourseEmojiPickerTest {
         )
 
         retain(harness.renderApp("emoji-picker-search"), "emoji-picker-search.png")
+        harness.assertNoTelegramSideEffects()
+    }
+
+    @Test
+    fun scrollingTheCatalogUpdatesTheCompactCategoryStrip() {
+        val screen = openScreen()
+        site.serveJson("emojis.json", catalog(
+            "smileys" to (1..63).map { "face_$it" to imageUrl("face_$it") },
+            "objects" to (1..54).map { "object_$it" to imageUrl("object_$it") },
+        ))
+        openPicker(screen)
+        harness.await("the catalog") { harness.layoutApp(); cellFor(screen, ":face_1:") != null }
+        assertTrue("a category is compact, not half the panel width",
+            tabView(screen, 0)!!.width <= AndroidUtilities.dp(56f))
+        tabView(screen, 1)!!.performClick()
+        harness.await("the category jump") {
+            harness.idleClock(100); harness.layoutApp()
+            boundEmojiNames(screen).firstOrNull()?.startsWith(":object_") == true
+        }
+        grid(screen)!!.scrollBy(0, -AndroidUtilities.dp(800f))
+        harness.await("manual scrolling after the jump selects smileys") {
+            harness.layoutApp(); tabs(screen)!!.currentTabId == 0
+        }
+        grid(screen)!!.scrollBy(0, AndroidUtilities.dp(410f))
+        harness.await("objects scrolled into view") {
+            harness.layoutApp(); tabs(screen)!!.currentTabId == 1
+        }
+        assertTrue("the second group is visible", boundEmojiNames(screen).any { it.startsWith(":object_") })
+        grid(screen)!!.scrollBy(0, -AndroidUtilities.dp(800f))
+        harness.await("scrolling back selects smileys") {
+            harness.layoutApp(); tabs(screen)!!.currentTabId == 0
+        }
+        harness.assertNoTelegramSideEffects()
+    }
+
+    @Test
+    fun thePanelBackspaceDeletesAShortcodeSelectionAndRepeatsOnlyWhileHeld() {
+        val screen = openScreen()
+        site.serveJson("emojis.json", catalog("smileys" to listOf("smile" to imageUrl("smile"))))
+        openPicker(screen)
+        harness.await("the emoji") { harness.layoutApp(); cellFor(screen, ":smile:") != null }
+        val button = descendants(screen.picker).first { it.contentDescription == "退格" }
+        screen.field.setText("前:smile:后")
+        screen.field.setSelection(8)
+        button.performClick()
+        assertEquals("one delete removes the site's entire emoji token", "前后", screen.field.text.toString())
+        screen.field.setText("beforeXYZafter")
+        screen.field.setSelection(6, 9)
+        button.performClick()
+        assertEquals("a selected range is removed without touching its neighbours", "beforeafter", screen.field.text.toString())
+        screen.field.setText("abcdefghij")
+        screen.field.setSelection(10)
+        val down = MotionEvent.obtain(0, 0, MotionEvent.ACTION_DOWN, 5f, 5f, 0)
+        button.dispatchTouchEvent(down)
+        down.recycle()
+        harness.idleClock(850)
+        assertTrue("holding backspace repeats deletion", screen.field.text.length < 9)
+        val cancel = MotionEvent.obtain(0, 850, MotionEvent.ACTION_CANCEL, 5f, 5f, 0)
+        button.dispatchTouchEvent(cancel)
+        cancel.recycle()
+        val afterCancel = screen.field.text.toString()
+        harness.idleClock(1000)
+        assertEquals("cancel stops deletion", afterCancel, screen.field.text.toString())
+        harness.assertNoTelegramSideEffects()
+    }
+
+    // ------------------------------------------------------------------ category icons
+
+    /**
+     * Failure mode: the category tabs still show the group's title as text instead of the group's
+     * own picture, or they pick the wrong picture - a later emoji, or a fixed per-name table rather
+     * than the group's real first emoji. linux.do's own picker draws each section's tab as the
+     * group's first emoji (`frontend/discourse/app/components/emoji-picker/content.gjs`: the nav
+     * button's `<img src={{tonableEmojiUrl (get emojis "0")}}>`), so the first emoji of each group,
+     * in the site's own order, is the tab icon. The pictures are given asymmetric colours so the
+     * assertion pins which picture landed on which tab, and the group's readable name must stay on
+     * the tab for a screen reader.
+     */
+    @Test
+    fun theCategoryTabsDrawEachGroupsFirstEmojiAsItsIconAndKeepTheNameForScreenReaders() {
+        val screen = openScreen()
+        val red = Color.rgb(214, 40, 40)
+        val blue = Color.rgb(40, 90, 214)
+        val green = Color.rgb(40, 190, 80)
+        val yellow = Color.rgb(230, 200, 40)
+        site.serveImage("emoji/smile.png", solidPng(red, 96))
+        site.serveImage("emoji/joy.png", solidPng(blue, 96))
+        site.serveImage("emoji/book.png", solidPng(green, 96))
+        site.serveImage("emoji/leaf.png", solidPng(yellow, 96))
+        site.serveJson(
+            "emojis.json",
+            catalog(
+                "smileys" to listOf("smile" to imageUrl("smile"), "joy" to imageUrl("joy")),
+                "objects" to listOf("book" to imageUrl("book"), "leaf" to imageUrl("leaf")),
+            ),
+        )
+
+        openPicker(screen)
+        harness.layoutApp()
+        harness.await("the category tabs") { tabs(screen)?.tabsCount == 2 }
+
+        // The readable group name is kept on the tab for a screen reader; the tab no longer shows
+        // that name as its text.
+        assertEquals(
+            "the first tab keeps the group's name for a screen reader",
+            "Smileys",
+            tabView(screen, 0)?.contentDescription,
+        )
+        assertEquals(
+            "the second tab keeps the group's name for a screen reader",
+            "Objects",
+            tabView(screen, 1)?.contentDescription,
+        )
+        assertTrue(
+            "the tab shows an icon, not the group's title text",
+            tabView(screen, 0)?.text?.toString() != "Smileys",
+        )
+
+        // The icon is the group's *first* emoji (red / green), not a later one (blue / yellow).
+        harness.await("the first group's icon") { harness.layoutApp(); stripShows(screen, 0, red) }
+        harness.await("the second group's icon") { harness.layoutApp(); stripShows(screen, 1, green) }
+        assertTrue(
+            "the first tab draws its group's first emoji",
+            stripShows(screen, 0, red),
+        )
+        assertFalse(
+            "the first tab does not draw a later emoji from its group",
+            stripShows(screen, 0, blue),
+        )
+        assertTrue(
+            "the second tab draws its own group's first emoji",
+            stripShows(screen, 1, green),
+        )
+        assertFalse(
+            "the second tab does not draw a later emoji from its group",
+            stripShows(screen, 1, yellow),
+        )
+
+        retain(harness.renderApp("emoji-picker-category-icons"), "emoji-picker-category-icons.png")
+
+        // Switching to the second group keeps its own icon on the tab that is now selected.
+        tabView(screen, 1)!!.performClick()
+        harness.layoutApp()
+        harness.await("the second group selected") { tabs(screen)!!.currentTabId == 1 }
+        assertTrue(
+            "the second group's tab keeps its own icon once selected",
+            stripShows(screen, 1, green),
+        )
+        retain(harness.renderApp("emoji-picker-category-selected"), "emoji-picker-category-selected.png")
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * Failure mode: a custom group - one the site added that is not among Discourse's standard
+     * groups - gets no icon (or a guessed one) because the picker only knows the standard names. A
+     * custom group must show a suitable icon taken from its own real catalog: its first emoji, the
+     * same rule the standard groups follow. The group's own name stays on the tab for a screen
+     * reader.
+     */
+    @Test
+    fun aCustomSiteGroupDrawsItsOwnFirstEmojiAsItsIcon() {
+        val screen = openScreen()
+        val magenta = Color.rgb(200, 40, 190)
+        site.serveImage("emoji/site_wave.png", solidPng(magenta, 96))
+        site.serveJson(
+            "emojis.json",
+            catalog("site_wave" to listOf("site_wave" to imageUrl("site_wave"))),
+        )
+
+        openPicker(screen)
+        harness.layoutApp()
+        harness.await("the custom group's tab") { tabs(screen)?.tabsCount == 1 }
+
+        assertEquals(
+            "the custom group's own name is kept for a screen reader",
+            "Site Wave",
+            tabView(screen, 0)?.contentDescription,
+        )
+        harness.await("the custom group's icon") { harness.layoutApp(); stripShows(screen, 0, magenta) }
+        assertTrue(
+            "a custom group draws its own first emoji as the tab icon",
+            stripShows(screen, 0, magenta),
+        )
+        retain(harness.renderApp("emoji-picker-custom-category"), "emoji-picker-custom-category.png")
         harness.assertNoTelegramSideEffects()
     }
 
@@ -285,7 +474,7 @@ internal class DiscourseEmojiPickerTest {
         serving = good
         tap(empty(screen)!!)
         harness.layoutApp()
-        harness.await("the retry to load the grid") { grid(screen)!!.adapter!!.itemCount == 1 }
+        harness.await("the retry to load the grid") { grid(screen)!!.adapter!!.itemCount == 3 }
         assertFalse("the loaded grid clears the state view", visible(empty(screen)))
 
         // An empty site is its own state, not the error one. A separate cold read: the kept catalog
@@ -444,9 +633,11 @@ internal class DiscourseEmojiPickerTest {
 
         openPicker(screen)
         harness.layoutApp()
-        harness.await("the grid") { grid(screen)!!.adapter!!.itemCount == 1 }
+        harness.await("the grid") { grid(screen)!!.adapter!!.itemCount == 3 }
         harness.await("the tile to bind") { harness.layoutApp(); cellFor(screen, ":grin:") != null }
 
+        search(screen)!!.searchEditText.setText("grin")
+        harness.layoutApp()
         // The reader taps the search field; the real IME opens over the panel's normal place.
         assertTrue("the search field can take focus", search(screen)!!.searchEditText.requestFocus())
         harness.layoutApp()
@@ -475,6 +666,15 @@ internal class DiscourseEmojiPickerTest {
         assertTrue(
             "a result tile rides above the system IME (tile bottom $cellBottom, IME top $imeTop)",
             cellBottom <= imeTop,
+        )
+        val backspace = descendants(screen.picker).first { it.contentDescription == "退格" }
+        val visibleBounds = android.graphics.Rect()
+        assertTrue("backspace has a nonempty on-screen hit target", backspace.getGlobalVisibleRect(visibleBounds))
+        assertEquals("the IME search band does not clip the backspace control", backspace.height, visibleBounds.height())
+        assertTrue("backspace has its full touch-target height", backspace.height >= AndroidUtilities.dp(48f))
+        assertTrue(
+            "the panel's backspace remains reachable above the IME",
+            windowTop(backspace) + backspace.height <= imeTop,
         )
         assertTrue(
             "the capsule stays on screen above the panel",
@@ -573,7 +773,7 @@ internal class DiscourseEmojiPickerTest {
 
         openPicker(screen)
         harness.layoutApp()
-        harness.await("the grid") { grid(screen)?.adapter?.itemCount == 1 }
+        harness.await("the grid") { grid(screen)?.adapter?.itemCount == 3 }
         assertTrue("showing the panel lifts the in-app height", screen.insets.inAppKeyboardHeight > 0)
 
         // The production back path: the fragment offers the press to the composer tools first, and
@@ -607,7 +807,7 @@ internal class DiscourseEmojiPickerTest {
         site.serveJson("emojis.json", catalog("smileys" to listOf("smile" to imageUrl("smile"))))
         openPicker(screen)
         harness.layoutApp()
-        harness.await("the grid") { grid(screen)?.adapter?.itemCount == 1 }
+        harness.await("the grid") { grid(screen)?.adapter?.itemCount == 3 }
 
         val navPx = AndroidUtilities.dp(37f)
         applyInsets(screen.insets, navigationBar = navPx, ime = 0)
@@ -653,7 +853,7 @@ internal class DiscourseEmojiPickerTest {
         harness.layoutApp()
         harness.await("the tile to bind") {
             harness.layoutApp()
-            grid(screen)?.adapter?.itemCount == 1 && cellFor(screen, ":smile:") != null
+            grid(screen)?.adapter?.itemCount == 3 && cellFor(screen, ":smile:") != null
         }
         harness.await("the tile decode to be parked off the main thread") { gate.decodeStarted }
 
@@ -692,6 +892,14 @@ internal class DiscourseEmojiPickerTest {
     @Test
     fun aRefreshedCatalogRebuildsTheCategoryTabs() {
         val screen = openScreen()
+        val red = Color.rgb(214, 40, 40)
+        val green = Color.rgb(40, 190, 80)
+        val yellow = Color.rgb(230, 200, 40)
+        site.serveImage("emoji/smile.png", solidPng(red, 96))
+        site.serveImage("emoji/book.png", solidPng(green, 96))
+        site.serveImage("emoji/leaf.png", solidPng(yellow, 96))
+        val gate = GatedDecodeDispatcher()
+        screen.picker.imageDecodeDispatcher = gate
         site.serveJson(
             "emojis.json",
             catalog(
@@ -702,6 +910,7 @@ internal class DiscourseEmojiPickerTest {
         openPicker(screen)
         harness.layoutApp()
         harness.await("the first catalog's tabs") { tabs(screen)?.tabsCount == 2 }
+        harness.await("the first catalog's parked image decode") { gate.decodeStarted }
         assertEquals("the first catalog drew its own tabs", 2, tabs(screen)!!.tabsCount)
 
         // The kept catalog is refreshed (a topic read re-saved it) with a different set of groups;
@@ -715,12 +924,24 @@ internal class DiscourseEmojiPickerTest {
         )
         screen.picker.dismiss()
         screen.picker.show()
+        gate.releaseDecode()
         harness.layoutApp()
 
         assertEquals(
             "the refreshed catalog's tabs replace the old ones",
             3,
             tabs(screen)!!.tabsCount,
+        )
+        // The group the refresh added draws its own first emoji as its tab icon, and the group that
+        // stayed keeps its own - the strip was rebuilt, not kept.
+        harness.await("the refreshed group's icon") { harness.layoutApp(); stripShows(screen, 2, yellow) }
+        harness.await("the retained group's icon after reopening during decode") { harness.layoutApp(); stripShows(screen, 1, green) }
+        assertTrue("the group the refresh added draws its first emoji", stripShows(screen, 2, yellow))
+        assertTrue("the group that stayed keeps its own icon", stripShows(screen, 1, green))
+        assertEquals(
+            "the added group's name is kept for a screen reader",
+            "Nature",
+            tabView(screen, 2)?.contentDescription,
         )
         harness.assertNoTelegramSideEffects()
     }
@@ -770,7 +991,7 @@ internal class DiscourseEmojiPickerTest {
 
         openPicker(screen)
         harness.layoutApp()
-        harness.await("the grid") { grid(screen)!!.adapter!!.itemCount == 1 }
+        harness.await("the grid") { grid(screen)!!.adapter!!.itemCount == 3 }
         screen.field.setText("abc")
         screen.field.setSelection(1)
         clickEmoji(screen, 0)
@@ -859,8 +1080,11 @@ internal class DiscourseEmojiPickerTest {
 
     private fun clickEmoji(screen: Screen, position: Int) {
         val list = grid(screen) ?: throw AssertionError("no grid to click")
-        val view = list.getChildAt(0) ?: View(list.context)
-        list.onItemClickListener?.onItemClick(view, position)
+        harness.layoutApp()
+        val view = (0 until list.childCount).map { list.getChildAt(it) }
+            .filter { it.contentDescription?.startsWith(":") == true }
+            .getOrNull(position) ?: throw AssertionError("no emoji tile $position to click")
+        list.onItemClickListener?.onItemClick(view, list.getChildAdapterPosition(view))
         harness.idle()
     }
 
@@ -900,6 +1124,7 @@ internal class DiscourseEmojiPickerTest {
     private fun boundEmojiNames(screen: Screen): List<String> =
         grid(screen)?.let { list ->
             (0 until list.childCount).map { list.getChildAt(it) }
+                .filter { it.bottom > 0 && it.top < list.height }
                 .mapNotNull { it.contentDescription?.toString() }
                 .filter { it.startsWith(":") }
         } ?: emptyList()
@@ -913,6 +1138,55 @@ internal class DiscourseEmojiPickerTest {
 
     private fun tabs(screen: Screen): ScrollSlidingTextTabStrip? =
         descendants(screen.picker).filterIsInstance<ScrollSlidingTextTabStrip>().singleOrNull()
+
+    /** The tab view the strip drew at [index]; its text is the icon the reader sees. */
+    private fun tabView(screen: Screen, index: Int): TextView? =
+        tabs(screen)?.tabsContainer?.getChildAt(index) as? TextView
+
+    /**
+     * Whether the strip's tab at [index] actually paints [color]. The tab strip is drawn on its own
+     * (the frame the reader sees), and the tab's own bounds are mapped into it, so a match is the
+     * icon the reader sees on that tab - not a stand-in's property. This is the observable that
+     * separates an icon from the title text: text pixels are never the emoji's own colour.
+     */
+    private fun stripShows(screen: Screen, index: Int, color: Int): Boolean {
+        val tabs = tabs(screen) ?: return false
+        val container = tabs.tabsContainer
+        val tab = container.getChildAt(index) ?: return false
+        val width = tabs.width
+        val height = tabs.height
+        if (width <= 0 || height <= 0 || tab.width <= 0 || tab.height <= 0) {
+            return false
+        }
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        try {
+            tabs.draw(Canvas(bitmap))
+            val left = (container.left + tab.left - tabs.scrollX).coerceIn(0, width - 1)
+            val top = (container.top + tab.top).coerceIn(0, height - 1)
+            val right = (left + tab.width).coerceAtMost(width)
+            val bottom = (top + tab.height).coerceAtMost(height)
+            for (y in top until bottom) {
+                for (x in left until right) {
+                    if (closeColor(bitmap.getPixel(x, y), color)) {
+                        return true
+                    }
+                }
+            }
+        } finally {
+            bitmap.recycle()
+        }
+        return false
+    }
+
+    /** A pixel close enough to [expected] to be that flat-colour picture (ignores the alpha edge). */
+    private fun closeColor(pixel: Int, expected: Int, tolerance: Int = 40): Boolean {
+        if (Color.alpha(pixel) < 200) {
+            return false
+        }
+        return kotlin.math.abs(Color.red(pixel) - Color.red(expected)) <= tolerance &&
+            kotlin.math.abs(Color.green(pixel) - Color.green(expected)) <= tolerance &&
+            kotlin.math.abs(Color.blue(pixel) - Color.blue(expected)) <= tolerance
+    }
 
     private fun search(screen: Screen): SearchField? =
         descendants(screen.picker).filterIsInstance<SearchField>().singleOrNull()

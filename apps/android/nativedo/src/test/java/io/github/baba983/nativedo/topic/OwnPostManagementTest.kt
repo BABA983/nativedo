@@ -59,6 +59,8 @@ import java.util.concurrent.TimeUnit
  *       silently mangles the post;</li>
  *   <li>an edit answer applied to the row without reading back what the site actually cooked;</li>
  *   <li>a failed edit that throws the reader's work away;</li>
+ *   <li>a failed edit whose strip is not put back, leaving the reader still editing with no label
+ *       and - because the strip's own close button is the only way out - no way to cancel;</li>
  *   <li>an edit that eats the reply draft the field was holding;</li>
  *   <li>a second press that sends a second write;</li>
  *   <li>a write the site refused that still changes the row;</li>
@@ -337,6 +339,28 @@ internal class OwnPostManagementTest {
         val dialog = awaitDialog("编辑失败")
         println("own-post: refusal dialog = " + dialogButtonTexts(dialog))
         assertEquals("the reader's edit is kept", "still mine to send", composer().getFieldText()?.toString())
+        // The enter view takes the strip down at the start of every send, and the strip's own close
+        // button is the only way out of edit mode. A refusal has to put the strip back, or the reader
+        // is left editing this post with no label and no cancel - and the next press re-sends it.
+        harness.await("the edit strip to come back with the refused edit") {
+            composer().isTopViewVisible()
+        }
+        val strip = findReplyStrip(composer())
+            ?: throw AssertionError("the composer hosted no edit strip after the refusal")
+        println("own-post: strip after a refusal, name=" + strip.current().name.text)
+        assertTrue(
+            "the strip still says what the reader is doing",
+            strip.current().name.text.toString().contains("编辑"),
+        )
+        val close = findCloseButton(composer()) ?: throw AssertionError("the edit strip has no close button")
+        assertEquals(
+            "and its close is announced as cancelling the edit, not a reply",
+            "取消编辑",
+            close.contentDescription.toString(),
+        )
+        // The retained picture of the fixed state: the refused edit with its text and its strip.
+        // The refusal dialog is its own window, so this draws the topic under it.
+        harness.renderApp("own-post-edit-refused-strip")
         harness.idleClock(5_000)
         assertEquals(
             "one press sent one write",
@@ -344,6 +368,16 @@ internal class OwnPostManagementTest {
             site.recordedRequests.count { it == "PUT /posts/$POST_ID.json" },
         )
         harness.renderComposite(".amp/in/artifacts/nativedo/own-post-edit-failed.png")
+        // The strip's own close is the way out of edit mode; a refusal that put the strip back has
+        // to leave that press working.
+        close.performClick()
+        harness.idleClock(400)
+        harness.layoutApp()
+        assertFalse("its close still cancels the edit", composer().isTopViewVisible())
+        assertTrue(
+            "and the reader is out of edit mode",
+            composer().getFieldText().isNullOrEmpty(),
+        )
         harness.assertNoTelegramSideEffects()
     }
 
@@ -958,8 +992,15 @@ internal class OwnPostManagementTest {
             ?: error("the screen has no composer")
     }
 
+    /** The native strip the composer hosts, reached the way the reader's own tap reaches it. */
+    private fun findReplyStrip(view: View): org.telegram.ui.Components.ChatReplyContainer? = when (view) {
+        is org.telegram.ui.Components.ChatReplyContainer -> view
+        is ViewGroup -> (0 until view.childCount).firstNotNullOfOrNull { findReplyStrip(view.getChildAt(it)) }
+        else -> null
+    }
+
     private fun findCloseButton(view: View): View? {
-        if (view.contentDescription == "取消回复") return view
+        if (view.contentDescription == "取消回复" || view.contentDescription == "取消编辑") return view
         if (view is ViewGroup) {
             for (index in 0 until view.childCount) {
                 findCloseButton(view.getChildAt(index))?.let { return it }

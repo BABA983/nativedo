@@ -117,7 +117,8 @@ public class DiscourseMentionsAdapter extends MentionsAdapter {
                         candidate.getUsername(),
                         candidate.getDisplayName(),
                         candidate.getAvatarTemplate(),
-                        baseUrl));
+                        baseUrl,
+                        candidate.getAnimatedAvatarUrl()));
                 chats.add(null);
             }
         }
@@ -199,6 +200,14 @@ public class DiscourseMentionsAdapter extends MentionsAdapter {
         TLRPC.User user = position >= 0 && position < users.size() ? users.get(position) : null;
         if (user != null) {
             cell.setUser(user);
+            org.telegram.messenger.ImageLocation location = DiscourseAvatars.INSTANCE.imageLocation(user);
+            if (location != null) {
+                // MentionCell's first child is its upstream avatar view; the synthetic peer's
+                // account photo ask cannot carry the local animation location.
+                org.telegram.ui.Components.BackupImageView avatar =
+                        (org.telegram.ui.Components.BackupImageView) cell.getChildAt(0);
+                avatar.setImage(location, "50_50", avatar.getImageReceiver().getDrawable(), user);
+            }
             return;
         }
         TLRPC.Chat chat = position >= 0 && position < chats.size() ? chats.get(position) : null;

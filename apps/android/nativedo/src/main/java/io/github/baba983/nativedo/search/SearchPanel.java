@@ -406,7 +406,8 @@ public class SearchPanel extends FrameLayout {
         }
         for (SearchUserSummary person : userHits) {
             userPeers.add(DiscourseAvatars.INSTANCE.user(
-                    person.getUsername(), person.getName(), person.getAvatarTemplate(), baseUrl));
+                    person.getUsername(), person.getName(), person.getAvatarTemplate(), baseUrl,
+                    person.getAnimatedAvatarUrl()));
         }
         for (int page = PAGE_TOPICS; page <= PAGE_USERS; page++) {
             pages.get(page).showResults();

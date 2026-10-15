@@ -93,7 +93,7 @@ internal class ProfileScreenTest {
     @Test
     fun tappingTheAuthorsAvatarOpensTheirSiteProfile() {
         val avatarPath = "user_avatar/linux.do/baba/96/1.png"
-        site.serveFixture("u/baba.json", "user-profile.json")
+        site.serveJson("u/baba.json", staticProfile().toString())
         site.serveImage(avatarPath, magentaPng(96, 96))
         site.serveCooked(TOPIC_ID, "<p>你好。</p>")
 
@@ -156,7 +156,7 @@ internal class ProfileScreenTest {
         val path = "uploads/late-profile-${System.nanoTime()}.png"
         val entered = CountDownLatch(1)
         val release = CountDownLatch(1)
-        val profile = org.json.JSONObject(harness.fixture("user-profile.json"))
+        val profile = staticProfile()
         profile.getJSONObject("user").put("avatar_template", "/$path")
         site.serveJson("u/baba.json", profile.toString())
         val bytes = magentaPng(96, 96)
@@ -207,7 +207,7 @@ internal class ProfileScreenTest {
      */
     @Test
     fun theCollapsingHeaderKeepsTheProfileReadable() {
-        site.serveFixture("u/baba.json", "user-profile.json")
+        site.serveJson("u/baba.json", staticProfile().toString())
         site.serveImage("user_avatar/linux.do/baba/96/1.png", magentaPng(96, 96))
 
         harness.bootApp()
@@ -287,6 +287,11 @@ internal class ProfileScreenTest {
             }
         }
         return magenta
+    }
+
+    /** These pixel checks serve PNGs; animated-avatar coverage lives in GifMediaTest. */
+    private fun staticProfile() = org.json.JSONObject(harness.fixture("user-profile.json")).apply {
+        getJSONObject("user").remove("animated_avatar")
     }
 
     private fun magentaPng(width: Int, height: Int): ByteArray {

@@ -164,11 +164,22 @@ object DiscourseImageBridge {
         // The files this client fetches itself, told to the seam as the body is built - before any
         // cell can ask about one. A block then reads its loading state from this client's own
         // transfer, and never hands its file to upstream's downloader, which has no datacenter for
-        // it. See NativeDoHooks.mediaBlockLoading and mediaAutoDownload.
+        // it. See NativeDoHooks.mediaBlockLoading and mediaAutoDownload. An image whose source is a
+        // GIF is registered as an animation too, so the block's own loader plays it instead of
+        // drawing one frame; the site's smaller preview is registered on its own source, so a still
+        // preview is never mistaken for one.
         for (image in images) {
-            NativeDoHooks.setClientMediaFile(photoFileName(image), true)
+            val name = photoFileName(image)
+            NativeDoHooks.setClientMediaFile(name, true)
+            if (isAnimatedSource(image.url)) {
+                NativeDoHooks.setClientMediaAnimated(name, true)
+            }
             if (image.previewUrl != null) {
-                NativeDoHooks.setClientMediaFile(FileLoader.getAttachFileName(previewSizeOf(image)), true)
+                val previewName = FileLoader.getAttachFileName(previewSizeOf(image))
+                NativeDoHooks.setClientMediaFile(previewName, true)
+                if (isAnimatedSource(image.previewUrl)) {
+                    NativeDoHooks.setClientMediaAnimated(previewName, true)
+                }
             }
         }
         // Inline emoji: the site's cook leaves each one as an `img.emoji` (standard twemoji, or a
@@ -805,6 +816,13 @@ object DiscourseImageBridge {
         val extension = name.substringAfterLast('.', "")
         return if (extension.length in 2..4) extension.lowercase() else "jpg"
     }
+
+    /**
+     * Whether the asset at [url] is an animation. Discourse serves an animated upload as a GIF, and
+     * the extension survives the lightbox's original resolution, so the source this client actually
+     * fetches decides it - not the block's own name in the cache.
+     */
+    private fun isAnimatedSource(url: String): Boolean = extensionOf(url) == "gif"
 
     /**
      * The id has to survive between runs: the cached file is named after it, and the next launch

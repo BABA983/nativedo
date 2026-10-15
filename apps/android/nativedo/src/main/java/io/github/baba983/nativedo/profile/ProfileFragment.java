@@ -1077,7 +1077,8 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                     loaded.getUsername(),
                     loaded.getDisplayName(),
                     loaded.getAvatarTemplate(),
-                    container.getBaseUrl());
+                    container.getBaseUrl(),
+                    loaded.getAnimatedAvatarUrl());
             // The pull-down draws the same picture across the whole screen width; the site's own
             // template takes a size, so the expanded state reads a larger copy of it.
             expandedAvatarUser = DiscourseAvatars.INSTANCE.user(
@@ -1085,6 +1086,7 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                     loaded.getDisplayName(),
                     loaded.getAvatarTemplate(),
                     container.getBaseUrl(),
+                    loaded.getAnimatedAvatarUrl(),
                     DiscourseAvatars.EXPANDED_SIZE);
             runAfterFlight(() -> {
                 // The views or session may have changed while this answer waited.

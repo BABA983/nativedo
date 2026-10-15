@@ -132,6 +132,14 @@ internal class SearchTest {
 
     @Test
     fun aPersonHitOpensTheirSiteProfile() {
+        // Search must retain the site's animated avatar, not just its sized still template.
+        val response = JSONObject(harness.fixture("search.json"))
+        response.getJSONArray("users").getJSONObject(0)
+            .put("animated_avatar", "/uploads/search-avatar.gif")
+        site.serveJson("search.json", response.toString())
+        site.serveImage("uploads/search-avatar.gif", java.util.Base64.getDecoder().decode(
+            "R0lGODlhCAAIAPAAAP8AAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQAAAAAACwAAAAACAAIAAAC" +
+                "B4SPqcvtXQAAIfkEABQAAAAsAAAAAAgACACAAAD/AAAAAgeEj6nL7V0AADs="), "image/gif")
         harness.bootApp()
         harness.await("the topic list to load") { rowCount() == 2 }
 
@@ -147,6 +155,14 @@ internal class SearchTest {
         val list = panel.pageList(SearchPanel.PAGE_USERS)
         harness.await("the person hit to be a laid-out row") { list.childCount == 1 }
         val person = list.getChildAt(0)
+        harness.await("the person's animated avatar") {
+            harness.drawApp()
+            harness.idleUpstreamQueues()
+            (person as org.telegram.ui.Cells.ProfileSearchCell).avatarImage.imageDrawable is
+                org.telegram.ui.Components.AnimatedFileDrawable
+        }
+        assertTrue("the animation uses the session client",
+            site.cookieHeaderFor("uploads/search-avatar.gif") != null)
         println("search: the person hit is a " + person.javaClass.simpleName)
         list.clickItem(person, 0)
         harness.await("the person's profile") { site.requestPaths.contains("u/baba.json") }

@@ -41,7 +41,7 @@ import org.telegram.ui.Components.RecyclerListView
  * (`reply_count`) while a session only ever holds some of the direct replies, so a footer that drew
  * its own count would under-report, and one that invented faces for the replies not yet read would
  * lie about who answered. The footer belongs to the *end* of a floor: a body that splits into a run
- * of bubbles (text, a onebox, more text) draws it once, not on every bubble. And nothing reads the
+ * of bubbles (text, a poll, more text) draws it once, not on every bubble. And nothing reads the
  * replies endpoint just to draw the footer - the endpoint carries the replies themselves, so it is
  * opened lazily, when the reader asks for the thread.</p>
  */
@@ -82,24 +82,22 @@ internal class TopicReplyFooterTest {
     }
 
     /**
-     * A floor whose body splits into three bubbles (text, a onebox, text) draws the footer only on
+     * A floor whose body splits into three bubbles (text, a poll, text) draws the footer only on
      * its last bubble, and the footer's count is the site's own `reply_count`, not the number of
-     * direct replies this session happens to hold.
+     * direct replies this session happens to hold. A poll is the one cut a body still keeps: a post's
+     * own links, onebox or not, stay in the bubble they were written in.
      */
     @Test
     fun aMultiSegmentFloorDrawsTheFooterOnceAndKeepsTheSitesOwnCount() {
-        val link = site.url("docs/start")
-        val onebox = """
-            <aside class="onebox allowlistedgeneric" data-onebox-src="$link">
-              <header class="source"><a href="$link" target="_blank">docs.example</a></header>
-              <article class="onebox-body"><h3><a href="$link" target="_blank">Getting started</a></h3><p>How the service is set up.</p></article>
-            </aside>
+        val poll = """
+            <div class="poll" data-poll-name="q1"><div class="poll-container"><ul>
+            <li data-poll-option-id="opt-a">A</li></ul></div></div>
         """.trimIndent()
         // Floor 1: three bubbles, five direct replies per the site, three of them loaded (alice
         // twice and carol once). Floor 5 answers nobody and carries no replies.
         val posts = listOf(
             post(id = 99001, floor = 1, username = "op", name = "Op", replyCount = 5,
-                cooked = "<p>intro</p>$onebox<p>tail</p>"),
+                cooked = "<p>intro</p>$poll<p>tail</p>", polls = pollPayload()),
             post(id = 99002, floor = 2, username = "alice", name = "Alice", replyTo = 1, cooked = "<p>a</p>"),
             post(id = 99003, floor = 3, username = "carol", name = "Carol", replyTo = 1, cooked = "<p>c</p>"),
             post(id = 99004, floor = 4, username = "alice", name = "Alice", replyTo = 1, cooked = "<p>a again</p>"),
@@ -117,13 +115,13 @@ internal class TopicReplyFooterTest {
         // Floor 1's three bubbles lead the list; floor 2, 3, 4, 5 are one each.
         assertEquals("floor 1 is three bubbles", 3, floorBubbleCount(fragment, 0))
         val first = bubbles[0]
-        val card = bubbles[1]
+        val middle = bubbles[1]
         val last = bubbles[2]
 
         assertTrue("the last bubble of the floor carries the footer", last.hasReplies())
         assertEquals("the count is the site's own reply_count", 5, last.getRepliesCount())
         assertFalse("the floor's first bubble draws no footer", first.hasReplies())
-        assertFalse("neither does the onebox bubble in the middle", card.hasReplies())
+        assertFalse("neither does the poll bubble in the middle", middle.hasReplies())
 
         // Faces come only from replies this session loaded, deduplicated by author: alice wrote two
         // of them, so two faces, never five.
@@ -278,7 +276,7 @@ internal class TopicReplyFooterTest {
 
     private fun post(
         id: Long, floor: Int, username: String, name: String, cooked: String,
-        replyTo: Int? = null, replyCount: Int = 0,
+        replyTo: Int? = null, replyCount: Int = 0, polls: JSONArray? = null,
     ): JSONObject = JSONObject().apply {
         put("id", id)
         put("post_number", floor)
@@ -289,7 +287,23 @@ internal class TopicReplyFooterTest {
         put("cooked", cooked)
         put("avatar_template", "")
         if (replyTo != null) put("reply_to_post_number", replyTo)
+        if (polls != null) put("polls", polls)
     }
+
+    /** The site's `polls[]` payload for the `q1` poll the body of floor 1 names. */
+    private fun pollPayload(): JSONArray = JSONArray().put(JSONObject().apply {
+        put("id", 7001L)
+        put("name", "q1")
+        put("type", "regular")
+        put("status", "open")
+        put("results", "always")
+        put("voters", 3)
+        put("options", JSONArray().put(JSONObject().apply {
+            put("id", "opt-a")
+            put("html", "A")
+            put("votes", 3)
+        }))
+    })
 
     private fun topicJson(posts: List<JSONObject>, streamIds: List<Long>): String {
         val base = JSONObject(harness.fixture("topic-detail.json"))

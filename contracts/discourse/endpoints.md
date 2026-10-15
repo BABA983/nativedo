@@ -176,11 +176,19 @@ Source (pinned to discourse main at the time of writing):
   this reader join answers the usual 403/4xx. Fixture at `fixtures/discourse/chat-membership.json`.
 - `POST /chat/{id}.json` - sends one message. This is the **chat controller route, not
   `chat/api/...`** (`post "/:chat_channel_id" => "api/channel_messages#create"`); the form fields are
-  `message` (required unless uploads), optional `in_reply_to_id` and `staged_id`, and it requires
+  `message` (required unless uploads), optional `upload_ids[]`, `in_reply_to_id` and `staged_id`, and it requires
   `X-CSRF-Token`. The answer is an acknowledgement only - `{success:"OK", message_id:<id>}` - **not
   the cooked message**, so a client reads the accepted id back with the messages route rather than
   drawing the write itself; a readback that fails keeps the accepted id rather than replaying the
   write. Fixture at `fixtures/discourse/chat-message-sent.json`.
+- Chat audio first uses the same `POST /uploads.json` multipart route as forum uploads, but with
+  `upload_type=chat-composer`, `synchronous=true` and no `channel_id`. The resulting upload ID is
+  referenced by `upload_ids[]` above. The server enforces upload ownership, audio extensions and
+  `chat_allow_uploads`; a successful local recording does not prove the site will accept it.
+  A received message carries `uploads[]` metadata alongside its cooked `<audio>`; fixture at
+  `fixtures/discourse/chat-messages-audio.json`. Forum audio instead inserts
+  `![name|audio](upload://...)` into post raw, using `upload_type=composer`; `.m4a` is audio,
+  while `.mp4` is video under the site's extension-based classification.
 - `PUT /chat/api/channels/{id}/read.json` - advances the reader's own last-read position; the form
   field is `message_id` and it answers `{success:"OK"}`. Requires `X-CSRF-Token`. Fixture at
   `fixtures/discourse/chat-read.json`.

@@ -53,6 +53,30 @@ object DiscourseAvatars {
     }
 
     /**
+     * The animation's own URL, by the photo id the synthetic avatar is built with.
+     *
+     * <p>An animated avatar is not a different picture upstream can ask for by itself: the site
+     * hands the animation's own URL in its `animated_avatar` metadata, this client fetches it, and
+     * the loader only plays it when the location it is handed is marked as an animation. That URL
+     * is remembered next to the asset the whole binding path already shares — the id is derived
+     * from the URL itself, so a still template and an animation for the same person are two
+     * different entries — so both the download and the hand-over pick the animation without the
+     * caller having to carry it too.</p>
+     */
+    private val animatedAvatarUrls = java.util.concurrent.ConcurrentHashMap<Long, String>()
+
+    /** The id of the avatar asset a peer was built with, or null for a peer with no picture. */
+    private fun avatarId(user: TLRPC.User?): Long? =
+        user?.photo?.photo_id?.takeIf { it != 0L }
+
+    /** Whether the peer's avatar is the animation the site advertised. */
+    fun isAnimated(user: TLRPC.User?): Boolean = avatarId(user)?.let { animatedAvatarUrls.containsKey(it) } ?: false
+
+    /** Whether a URL names a GIF, the extension a Discourse animation is served under. */
+    private fun isGif(url: String): Boolean =
+        url.substringBefore('?').lowercase().endsWith(".gif")
+
+    /**
      * The photo upstream asks for. `photo_small` is the size a chat list and a message cell use;
      * `dc_id = 0` and `volume_id = 0` keep `FileLoader` off Telegram's file-path database.
      */
@@ -77,18 +101,26 @@ object DiscourseAvatars {
         displayName: String,
         avatarTemplate: String,
         baseUrl: String,
+        animatedAvatar: String = "",
         size: Int = DEFAULT_SIZE,
     ): TLRPC.TL_user {
         val user = TLRPC.TL_user()
         user.id = DiscourseRows.userId(username)
         user.username = username
         user.first_name = displayName.ifEmpty { username }
-        val avatarUrl = url(avatarTemplate, baseUrl, size)
+        // The animation's own URL when the site names one; the sized still template otherwise.
+        val animatedUrl = url(animatedAvatar, baseUrl, size)
+        val avatarUrl = animatedUrl ?: url(avatarTemplate, baseUrl, size)
         if (avatarUrl != null) {
             // Upstream builds an avatar location only for a peer with an access hash, and it never
             // fetches anything from a datacenter when the file is already where that location names.
             user.access_hash = 1
             user.photo = photo(idOf(avatarUrl))
+            // The site's metadata is the authority; a site that names none but serves a GIF template
+            // is still an animation, decided by the asset this client actually fetches.
+            if (animatedUrl != null || isGif(avatarUrl)) {
+                animatedAvatarUrls[idOf(avatarUrl)] = animatedUrl ?: avatarUrl
+            }
         }
         return user
     }
@@ -106,9 +138,22 @@ object DiscourseAvatars {
         return listOf(attach, cache).distinct()
     }
 
-    /** Use the HTTP download's path, not a pending Telegram datacenter load with the same id. */
-    fun imageLocation(user: TLRPC.User): org.telegram.messenger.ImageLocation? =
-        localFile(user)?.let { org.telegram.messenger.ImageLocation.getForPath(it.absolutePath) }
+    /**
+     * The location the loader reads, at the path our HTTP download put the bytes.
+     *
+     * <p>A peer whose avatar the site says animates is handed an <em>animation</em> location -
+     * upstream's own "decode this path frame by frame" one - so its own image loader builds the
+     * animated drawable rather than decoding a single still. Every other peer keeps the plain path
+     * location it has always had, so nothing that is not an animation changes.</p>
+     */
+    fun imageLocation(user: TLRPC.User): org.telegram.messenger.ImageLocation? {
+        val file = localFile(user) ?: return null
+        return if (isAnimated(user)) {
+            org.telegram.messenger.ImageLocation.getForVideoPath(file.absolutePath)
+        } else {
+            org.telegram.messenger.ImageLocation.getForPath(file.absolutePath)
+        }
+    }
 
     /** Whether an avatar is already on disk, checked the way the two readers would. */
     fun isCached(user: TLRPC.User?): Boolean =
@@ -118,6 +163,14 @@ object DiscourseAvatars {
     fun localFile(user: TLRPC.User?): File? =
         localFiles(user).firstOrNull { it.exists() && it.length() > 0 }
 
+    /**
+     * Fetches a peer's avatar with the app's own client.
+     *
+     * <p>The bytes fetched are the peer's own avatar: when the site advertised an animation, that
+     * animation's URL is the one downloaded, whatever URL the caller re-derived from the static
+     * template. The still the site serves beside the animation is not what plays, and the file both
+     * readers look in must hold the animation.</p>
+     */
     suspend fun cache(client: OkHttpClient, avatarUrl: String, user: TLRPC.User): File? =
         withContext(Dispatchers.IO) {
             val targets = localFiles(user)
@@ -128,11 +181,12 @@ object DiscourseAvatars {
             if (targets.all { it.exists() && it.length() > 0 }) {
                 return@withContext file
             }
+            val url = avatarId(user)?.let { animatedAvatarUrls[it] } ?: avatarUrl
             runCatching {
-                client.newCall(Request.Builder().url(avatarUrl).build()).execute().use { response ->
-                    check(response.isSuccessful) { "GET $avatarUrl answered ${response.code}" }
+                client.newCall(Request.Builder().url(url).build()).execute().use { response ->
+                    check(response.isSuccessful) { "GET $url answered ${response.code}" }
                     // An avatar is small, and both readers need their own copy of the bytes.
-                    val bytes = response.body?.bytes() ?: error("GET $avatarUrl answered no body")
+                    val bytes = response.body?.bytes() ?: error("GET $url answered no body")
                     targets.forEach { target ->
                         check(AtomicFileWrite.bytes(target, bytes)) {
                             "cannot move ${target.name} into place"

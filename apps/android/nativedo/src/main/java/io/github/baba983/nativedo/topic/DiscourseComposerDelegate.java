@@ -1,16 +1,49 @@
 package io.github.baba983.nativedo.topic;
 
+import android.view.MotionEvent;
+
 import org.telegram.ui.Components.ChatActivityEnterView;
+
+import io.github.baba983.nativedo.hooks.NativeDoHooks;
 
 /**
  * The composer's delegate for a field that writes to linux.do.
  *
- * <p>Upstream's interface is the whole surface of its chat composer - recording, stickers, editing,
- * slow mode - and a screen that writes a forum post offers none of it. This base answers all of it
- * with "nothing to do", so a screen states only the messages it has an answer for: the text changed,
- * and the send button was pressed.</p>
+ * <p>Upstream's interface spans its entire chat input: recording, stickers, editing and slow mode.
+ * This base leaves unsupported callbacks inert; a Discourse screen supplies its own text/send
+ * actions and binds its local recording host without invoking Telegram's account services.</p>
+ *
+ * <p>It is also the seam upstream's microphone gesture reaches (see
+ * {@link NativeDoHooks.ComposerRecordHost}): upstream's single touch call site hands this delegate
+ * in, and it forwards to the one recording host its screen bound. No process-wide table is involved,
+ * and a screen that never bound a host (or a real Telegram composer, whose delegate is not this
+ * class) forwards to nothing and keeps upstream's own gesture.</p>
  */
-public abstract class DiscourseComposerDelegate implements ChatActivityEnterView.ChatActivityEnterViewDelegate {
+public abstract class DiscourseComposerDelegate
+        implements ChatActivityEnterView.ChatActivityEnterViewDelegate, NativeDoHooks.ComposerRecordHost {
+
+    /** The recording host bound to the owning screen, or null when none is bound. */
+    private NativeDoHooks.ComposerRecordHost recordHost;
+
+    /**
+     * Binds the recording host for the composer this delegate belongs to; a null host unbinds it.
+     * Only one host is ever bound, so a screen replacing its host swaps this reference rather than
+     * growing a list.
+     */
+    public final void setRecordHost(NativeDoHooks.ComposerRecordHost host) {
+        this.recordHost = host;
+    }
+
+    /** The recording host currently bound, or null. A host releases only its own binding. */
+    public final NativeDoHooks.ComposerRecordHost getRecordHost() {
+        return recordHost;
+    }
+
+    @Override
+    public boolean onRecordTouch(MotionEvent event) {
+        NativeDoHooks.ComposerRecordHost host = recordHost;
+        return host != null && host.onRecordTouch(event);
+    }
 
     @Override
     public void needSendTyping() {

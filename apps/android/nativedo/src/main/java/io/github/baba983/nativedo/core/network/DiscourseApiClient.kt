@@ -59,6 +59,20 @@ private const val CHAT_CHANNELS_PAGE_SIZE = 25
 /** How many messages one `GET /chat/api/channels/{id}/messages.json` window asks for. */
 private const val CHAT_MESSAGES_PAGE_SIZE = 50
 
+/**
+ * The site's own kind of upload (`upload_type` on `POST /uploads.json`). The site decides which
+ * kinds it accepts a file for; the web composer sends `composer` for a post and the chat client
+ * sends `chat-composer` for a chat message. There is no `channel_id` on an upload - the chat
+ * message that references it carries the channel.
+ */
+enum class DiscourseUploadType(val wireValue: String) {
+    /** A post/reply attachment (`upload_type=composer`). */
+    Composer("composer"),
+
+    /** A chat message attachment (`upload_type=chat-composer`). */
+    ChatComposer("chat-composer"),
+}
+
 /** The message window direction before a target (`Chat::MessagesQuery::VALID_DIRECTIONS`). */
 const val CHAT_DIRECTION_PAST = "past"
 
@@ -313,13 +327,17 @@ class DiscourseApiClient(
      * Sends one message and answers the id the site accepted. The acknowledgement is **not** the
      * cooked message, so the caller reads the id back with [fetchChatMessages] (a window at that id)
      * rather than drawing the write itself; a readback that fails keeps the accepted id, so the
-     * message is never silently resent. Requires the session's CSRF token.
+     * message is never silently resent. [uploadIds] are uploads this reader already sent to the site
+     * (`upload_type=chat-composer`); the site enforces that they belong to this reader and that the
+     * channel allows uploads, and the message may be blank when there are uploads. Requires the
+     * session's CSRF token.
      */
     suspend fun createChatMessage(
         channelId: Long,
         message: String,
         inReplyToId: Long? = null,
         stagedId: String? = null,
+        uploadIds: List<Long> = emptyList(),
     ): Long = runWithSessionBoundary(requiresAuthentication = true) {
         val csrfToken = chatCsrfToken()
         readableRefusal {
@@ -328,6 +346,7 @@ class DiscourseApiClient(
                 message = message,
                 inReplyToId = inReplyToId,
                 stagedId = stagedId,
+                uploadIds = uploadIds.takeIf { it.isNotEmpty() },
                 csrfToken = csrfToken,
             )
             if (answer.success != "OK") {
@@ -627,15 +646,18 @@ class DiscourseApiClient(
     }
 
     /**
-     * Uploads a file to the site as the web composer does (`POST /uploads.json`,
-     * `upload_type=composer`, synchronous) and reports the file's own progress as its bytes leave
-     * the device. The URL comes back as the site wrote it - usually absolute, a path when the site
-     * answered one - and the caller resolves it.
+     * Uploads a file to the site as the web composer does (`POST /uploads.json`, synchronous) and
+     * reports the file's own progress as its bytes leave the device. [uploadType] is the site's own
+     * kind of upload - `composer` for a post/reply, `chat-composer` for a chat message - and it
+     * decides which the site accepts the file for; it defaults to `composer`, which is what every
+     * existing caller already sent. The URL comes back as the site wrote it - usually absolute, a
+     * path when the site answered one - and the caller resolves it.
      */
     suspend fun uploadFile(
         file: File,
         mimeType: String?,
         onProgress: (Float) -> Unit,
+        uploadType: DiscourseUploadType = DiscourseUploadType.Composer,
     ): UploadedFile = runWithSessionBoundary(requiresAuthentication = true) {
         val csrfToken = service.csrf().csrf
         val response = service.upload(
@@ -644,7 +666,7 @@ class DiscourseApiClient(
                 file.name,
                 ProgressRequestBody(file, mimeType, onProgress),
             ),
-            uploadType = "composer".toUploadField(),
+            uploadType = uploadType.wireValue.toUploadField(),
             synchronous = "true".toUploadField(),
             csrfToken = csrfToken,
         )

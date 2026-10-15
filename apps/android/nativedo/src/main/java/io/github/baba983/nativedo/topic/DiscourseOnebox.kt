@@ -1,35 +1,18 @@
 package io.github.baba983.nativedo.topic
 
-import io.github.baba983.nativedo.core.model.Post
-import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
-import org.telegram.messenger.MessageObject
-import org.telegram.tgnet.TLRPC
+import org.jsoup.parser.Tag
 
 /**
- * A Discourse onebox: the link preview the site renders for a link in a post, as the message shape
- * upstream draws for one.
+ * A Discourse onebox: the link preview the site renders for a link in a post.
  *
- * Upstream's rich body has no preview block - the blocks its importer knows are text, media,
- * tables, quotes and so on - but it has a complete link preview for a message that carries a
- * `TL_messageMediaWebPage`: site name, title, description and a thumbnail, in the compact card
- * every chat shows under a link. The card is *not* a rich body either (a message whose media is a
- * webpage is a text message, by upstream's own `isMediaEmpty`), so a onebox becomes a bubble of its
- * own, exactly like a poll: the run of markup around it stays text, and this card is where the site
- * put it. What the site's own renderer does with the bare link line - taking it out of the text,
- * because the card stands for it - is done to the segment that held it.
+ * Upstream's rich body has no preview block - the blocks its importer knows are text, media, tables,
+ * quotes and so on - so a onebox is not lifted out into a message of its own. Its parts are read
+ * back into the post's run of text ([preview]), where the link was written, and the bare link line
+ * the card stands for goes out of the text the way the site's own renderer takes it: one rich
+ * bubble, in the reader's order.
  */
 object DiscourseOnebox {
-
-    /** The parts of a onebox the card draws, plus the prepared body its thumbnail downloads from. */
-    class Card internal constructor(
-        @JvmField val url: String,
-        @JvmField val siteName: String,
-        @JvmField val title: String,
-        @JvmField val description: String,
-        @JvmField val body: PreparedPostBody,
-        @JvmField val photo: TLRPC.Photo?,
-    )
 
     /** Whether a body element is one of the site's oneboxes. */
     @JvmStatic
@@ -37,88 +20,62 @@ object DiscourseOnebox {
         (element.tagName() == "aside" || element.tagName() == "div") && element.hasClass("onebox")
 
     /**
-     * Reads one onebox's own markup. Null for a box with nothing to draw: a card needs a title, a
-     * description or a thumbnail, and a box that has none of the three is better left in the text.
+     * The parts of [onebox] as body markup, in the order the site wrote them: the site's own name as
+     * a link, the thumbnail, then the linked page's title as a link and the description it found.
+     * Empty for a box with nothing to draw, so the caller can leave the box (and its bare link)
+     * where they are.
+     *
+     * <p>The parts are the site's preview read back into the post's own text, not a message of their
+     * own: upstream's rich body has no preview block, and a preview a reader can only see as a second
+     * message is worse than its own parts read in place. The decoration - the favicon, the metadata
+     * row, the clearing div - is dropped, because it says nothing the parts do not.</p>
      */
     @JvmStatic
-    fun card(oneboxHtml: String, baseUrl: String): Card? {
-        val element = Jsoup.parseBodyFragment(oneboxHtml).body().children().firstOrNull() ?: return null
-        val title = element.selectFirst("article.onebox-body h3, h3")?.text().orEmpty().trim()
-        val description = element.selectFirst("article.onebox-body p, p")?.text().orEmpty().trim()
-        val header = element.selectFirst("header.source a[href], header a[href]")
-        val link = element.selectFirst("article.onebox-body h3 a[href], h3 a[href]")
-            ?: header
-            ?: element.selectFirst("article.onebox-body a[href], a[href]")
-        val url = link?.attr("href").orEmpty().ifEmpty { element.attr("data-onebox-src") }
-        val siteName = header?.text().orEmpty().trim()
-        if (title.isEmpty() && description.isEmpty() && element.selectFirst("img.thumbnail") == null) {
-            return null
+    fun preview(onebox: Element): List<Element> {
+        val header = onebox.selectFirst("header.source, header")
+        val siteName = header?.selectFirst("a[href]")?.text()?.trim().orEmpty()
+        val body = onebox.selectFirst("article.onebox-body") ?: onebox
+        val title = body.selectFirst("h3 a[href], h3")?.text()?.trim().orEmpty()
+        val description = body.selectFirst("p")?.text()?.trim().orEmpty()
+        val thumbnail = onebox.selectFirst("img.thumbnail") ?: largestImage(onebox)
+        val url = onebox.attr("data-onebox-src").trim()
+            .ifEmpty { (body.selectFirst("a[href]") ?: header?.selectFirst("a[href]"))?.attr("href").orEmpty() }
+        if (siteName.isEmpty() && title.isEmpty() && description.isEmpty() && thumbnail == null) {
+            return emptyList()
         }
-        // The thumbnail goes through the same bridge a post's own images do: it is downloaded by the
-        // session's client and given the id and location upstream's image loader reads from a path.
-        val body = DiscourseImageBridge.prepare(element.html(), baseUrl)
-        val thumbnail = body.images.maxByOrNull { image -> image.width * image.height }
-        return Card(
-            url = url,
-            siteName = siteName,
-            title = title,
-            description = description,
-            body = body,
-            photo = thumbnail?.let { image -> DiscourseImageBridge.photoOf(image) },
-        )
+        val parts = ArrayList<Element>()
+        if (siteName.isNotEmpty()) parts += linkedParagraph(url, siteName)
+        if (thumbnail != null) parts += thumbnail.clone()
+        if (title.isNotEmpty()) parts += linkedParagraph(url, title)
+        if (description.isNotEmpty()) parts += Element(Tag.valueOf("p"), "").text(description)
+        return parts
     }
 
     /**
-     * One onebox as a bubble of its own. The message's text is the link the card stands for, which
-     * is what upstream shows above such a card, and the card's own fields are the parts the site
-     * rendered: the site's name, the linked page's title and the description it found for it.
+     * The largest picture in [onebox] that is not the site's own decoration, for a box whose
+     * thumbnail carries no `thumbnail` class. Null when the box has no such picture.
      */
-    @JvmStatic
-    @JvmOverloads
-    fun message(
-        post: Post,
-        card: Card,
-        topicId: Long,
-        users: HashMap<Long, TLRPC.User>,
-        baseUrl: String,
-        replyTo: TLRPC.Message? = null,
-    ): MessageObject {
-        val user = DiscourseRows.author(post, baseUrl)
-        users[user.id] = user
-
-        val webpage = TLRPC.TL_webPage()
-        webpage.url = card.url
-        webpage.display_url = displayUrl(card)
-        webpage.site_name = card.siteName.ifEmpty { displayUrl(card) }
-        webpage.title = card.title
-        webpage.description = card.description
-        // "article" is what makes upstream draw the thumbnail as the small card image, the way the
-        // site's own onebox does, rather than as a full-width photo.
-        webpage.type = "article"
-        card.photo?.let { photo ->
-            webpage.photo = photo
-            webpage.flags = webpage.flags or 1
+    private fun largestImage(onebox: Element): Element? {
+        var best: Element? = null
+        var bestArea = 0
+        for (image in onebox.select("img")) {
+            if (image.hasClass("site-icon")) continue
+            val area = (image.attr("width").toIntOrNull() ?: 0) * (image.attr("height").toIntOrNull() ?: 0)
+            if (best == null || area > bestArea) {
+                best = image
+                bestArea = area
+            }
         }
-
-        val media = TLRPC.TL_messageMediaWebPage()
-        media.webpage = webpage
-
-        val message = DiscourseRows.localMessage(
-            post.id.toInt(),
-            DiscourseRows.epochSeconds(post.createdAt),
-            topicId,
-            user.id,
-            media,
-        )
-        // A onebox the floor's body opens with is that floor's first bubble, so it carries the reply
-        // header like any other first bubble (set before the MessageObject reads it).
-        DiscourseRows.applyReply(message, replyTo)
-        return DiscourseRows.messageObject(message, users)
+        return best
     }
 
-    /** What the card shows as the link's address: the host, as the site prints it in its header. */
-    private fun displayUrl(card: Card): String {
-        val host = runCatching { java.net.URI(card.url).host }.getOrNull().orEmpty()
-        return host.ifEmpty { card.siteName }
+    /** A paragraph holding one link: the shape upstream's importer reads as a clickable URL. */
+    private fun linkedParagraph(url: String, label: String): Element {
+        val paragraph = Element(Tag.valueOf("p"), "")
+        val anchor = Element(Tag.valueOf("a"), "")
+        if (url.isNotEmpty()) anchor.attr("href", url)
+        anchor.text(label)
+        paragraph.appendChild(anchor)
+        return paragraph
     }
 }

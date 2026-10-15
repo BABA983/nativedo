@@ -1,11 +1,14 @@
 package io.github.baba983.nativedo.topic
 
 import android.view.View
+import android.view.ViewGroup
 import io.github.baba983.nativedo.app.NativeDo
 import io.github.baba983.nativedo.core.di.AppContainer
 import io.github.baba983.nativedo.harness.FakeDiscourseSite
 import io.github.baba983.nativedo.harness.UpstreamUiHarness
+import io.github.baba983.nativedo.harness.clickMenuItem
 import io.github.baba983.nativedo.harness.contentListOf
+import io.github.baba983.nativedo.harness.latestItemOptionsMenu
 import io.github.baba983.nativedo.harness.shadows.ShadowAnimatedFileNative
 import io.github.baba983.nativedo.harness.shadows.ShadowConnectionsManager
 import io.github.baba983.nativedo.harness.shadows.ShadowIntro
@@ -44,7 +47,9 @@ import org.telegram.ui.Components.RecyclerListView
  *    an empty page;
  *  * the same for a topic, whose cached floors are drawn with the retry said in passing;
  *  * a write is not sent while those cached rows are on screen, because the permissions behind them
- *    are the site's answer, and the site has not answered;
+ *    are the site's answer, and the site has not answered - and a reply or an edit the reader
+ *    pressed there keeps its text and its strip, since the strip's close button is the only way
+ *    back out of a reply or an edit;
  *  * a refusal (403) is not answered from the cache - the site was reached and said no;
  *  * the retry replaces the cached rows with the site's new answer and clears the screen's
  *    persistent offline marker (the bar's / the capsule's own line), not merely asks again.</p>
@@ -247,6 +252,83 @@ internal class OfflineReadingTest {
             "no write is sent while the cached rows are on screen",
             site.recordedRequests.none { it.startsWith("POST ") && it.contains("bookmarks.json") },
         )
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * An edit sent while the cached topic is on screen: the write is refused, and the reader keeps
+     * the edit, the strip that labels it and the way out of edit mode.
+     *
+     * <p>Upstream's enter view clears its own field and takes the reply/edit strip down at the start
+     * of <em>every</em> send (ChatActivityEnterView 7396-7412), so a write that did not land has to
+     * put both back. The edit path is the one that cannot be recovered by hand: the strip's close
+     * button is the only way out of edit mode (`cancelEdit` is what `exitEditMode` is reachable
+     * from, and `startEdit` refuses while one is open), so losing the strip traps the reader in an
+     * edit of a post they can no longer read - and losing the text throws their work away.</p>
+     */
+    @Test
+    fun anEditSuppressedWhileTheCachedTopicIsShownKeepsTheTextAndTheStrip() {
+        val raw = "Hello from **Android**."
+        val pressed = "a pressed edit the site never takes"
+        site.serveTopic(TOPIC_ID) { post ->
+            post.put("can_edit", true)
+            post.put("can_delete", true)
+            post.put("raw", raw)
+        }
+        site.serveJson(
+            "posts/$POST_ID.json",
+            """{"id":$POST_ID,"post_number":1,"reply_to_post_number":null,"reply_count":0,
+                "username":"baba","name":"Baba","avatar_template":"/user_avatar/linux.do/baba/{size}/1.png",
+                "created_at":"2024-01-01T10:00:00.000Z","updated_at":"2024-01-01T10:05:00.000Z","version":2,
+                "yours":true,"can_edit":true,"can_delete":true,"can_recover":false,"deleted_at":null,
+                "bookmarked":false,"cooked":"<p>Hello from <strong>Android</strong>.</p>",
+                "raw":"Hello from **Android**.","polls":[]}""",
+        )
+        harness.bootApp()
+        harness.await("the topic list to load") { rowCount() == 2 }
+        harness.present(TopicFragment.forTopic(TOPIC_ID, ORIGINAL_TITLE))
+        harness.await("the live topic") { rowCount() == 1 }
+        harness.await("the first row to be drawn") { harness.layoutApp(); laidOutCells().isNotEmpty() }
+
+        // The reader opens the editor while the site still answers, and writes.
+        openMenuItem("编辑")
+        harness.await("the editor to open on the stored markdown") {
+            composer().getFieldText()?.toString() == raw
+        }
+        composer().setFieldText(pressed)
+        harness.idle()
+        harness.layoutApp()
+        harness.await("the edit's strip to be up") { composer().isTopViewVisible() }
+
+        // The site goes away and the cached window takes over.
+        runCatching { Bulletin.hideVisible() }
+        site.serveResponse("t/$TOPIC_ID.json") { disconnect() }
+        val topic = harness.visibleFragment() as TopicFragment
+        invokeNoArg(topic, "runRetry")
+        harness.await("the cached topic") {
+            topicShowingCached(topic) && topicCapsuleSubtitle(topic).contains(offlineLabel())
+        }
+        harness.idleClock(400)
+        assertEquals("the cached window is still the post being edited", pressed,
+            composer().getFieldText()?.toString())
+
+        composer().sendMessage()
+        harness.idleClock(600)
+        assertTrue(
+            "no write is sent while the cached rows are on screen",
+            site.recordedRequests.none { it.startsWith("PUT ") },
+        )
+        assertEquals(
+            "the reader's edit is not thrown away",
+            pressed,
+            composer().getFieldText()?.toString(),
+        )
+        harness.await("the edit's strip to still be up") { composer().isTopViewVisible() }
+        val close = findCloseButton(composer()) ?: throw AssertionError("the edit strip has no close button")
+        close.performClick()
+        harness.idleClock(400)
+        harness.layoutApp()
+        assertFalse("and the reader can still leave the edit", composer().isTopViewVisible())
         harness.assertNoTelegramSideEffects()
     }
 
@@ -504,8 +586,54 @@ internal class OfflineReadingTest {
 
     private fun listView(): RecyclerListView? = contentListOf(harness.activity)
 
+    /** The visible topic's composer, reached the way the screen reaches it. */
+    private fun composer(): org.telegram.ui.Components.ChatActivityEnterView {
+        val view = harness.visibleFragment()?.fragmentView ?: error("the screen has no view")
+        return viewsUnder(view).filterIsInstance<org.telegram.ui.Components.ChatActivityEnterView>().lastOrNull()
+            ?: error("the screen has no composer")
+    }
+
+    private fun laidOutCells(): List<org.telegram.ui.Cells.ChatMessageCell> {
+        val list = listView() ?: return emptyList()
+        return (0 until list.childCount).map { list.getChildAt(it) }
+            .filterIsInstance<org.telegram.ui.Cells.ChatMessageCell>()
+    }
+
+    /** The first row's post menu, opened the way the reader's own long press opens it. */
+    private fun openMenuItem(label: String) {
+        val cell = laidOutCells().firstOrNull() ?: throw AssertionError("the topic drew no cell")
+        cell.delegate.didLongPress(cell, 0f, 0f)
+        harness.idle()
+        clickMenuItem(latestItemOptionsMenu(harness.activity), label)
+        harness.idle()
+    }
+
+    /** The strip's own close button, whichever action it is labelled for. */
+    private fun findCloseButton(view: View): View? {
+        if (view.contentDescription == "取消回复" || view.contentDescription == "取消编辑") return view
+        if (view is ViewGroup) {
+            for (index in 0 until view.childCount) {
+                findCloseButton(view.getChildAt(index))?.let { return it }
+            }
+        }
+        return null
+    }
+
+    private fun viewsUnder(root: View): List<View> {
+        val found = mutableListOf<View>()
+        fun walk(view: View) {
+            found += view
+            if (view is ViewGroup) {
+                for (index in 0 until view.childCount) walk(view.getChildAt(index))
+            }
+        }
+        walk(root)
+        return found
+    }
+
     private companion object {
         const val TOPIC_ID = 101L
+        const val POST_ID = 1001L
         const val ORIGINAL_TITLE = "Welcome to NativeDo Android"
     }
 }

@@ -113,6 +113,7 @@ import androidx.dynamicanimation.animation.DynamicAnimation;
 import androidx.dynamicanimation.animation.SpringAnimation;
 import androidx.dynamicanimation.animation.SpringForce;
 import androidx.interpolator.view.animation.FastOutSlowInInterpolator;
+import io.github.baba983.nativedo.hooks.NativeDoHooks;
 import org.telegram.ui.recyclerview.ChatListItemAnimator;
 import androidx.recyclerview.widget.LinearLayoutManager;
 
@@ -2991,6 +2992,9 @@ public class ChatActivityEnterView extends FrameLayout implements
 
             @Override
             public boolean onTouchEvent(MotionEvent motionEvent) {
+                if (NativeDoHooks.handleRecordGesture(delegate, motionEvent)) {
+                    return true;
+                }
                 if (isLiveComment) return false;
                 createRecordCircle();
                 if (motionEvent.getAction() == MotionEvent.ACTION_DOWN) {

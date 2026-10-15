@@ -474,7 +474,6 @@ private class ReactionUsersView(context: Context, private val container: AppCont
     private val note = org.telegram.ui.Cells.TextInfoPrivacyCell(context)
     private var users = emptyList<PostReactionUser>()
     private var destroyed = false
-    private val avatars = HashMap<String, android.graphics.Bitmap>()
     private val adapter = object : RecyclerListView.SelectionAdapter() {
         override fun isEnabled(holder: RecyclerView.ViewHolder) = true
         override fun getItemCount() = users.size
@@ -484,10 +483,13 @@ private class ReactionUsersView(context: Context, private val container: AppCont
             })
         override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
             val user = users[position]
-            val peer = DiscourseAvatars.user(user.username, user.displayName, "", container.baseUrl)
+            val peer = DiscourseAvatars.user(user.username, user.displayName, user.avatarTemplate,
+                container.baseUrl, user.animatedAvatarUrl)
             (holder.itemView as UserCell).apply {
                 setData(peer, user.displayName.ifBlank { user.username }, "@${user.username}", 0)
-                avatars[user.username]?.let { avatarImageView.setImageBitmap(it) }
+                DiscourseAvatars.imageLocation(peer)?.let { location ->
+                    avatarImageView.setImage(location, "50_50", avatarImageView.imageReceiver.getDrawable(), peer)
+                }
             }
         }
     }
@@ -533,13 +535,10 @@ private class ReactionUsersView(context: Context, private val container: AppCont
                         state.visibility = View.GONE
                         for (user in users) scope.launch {
                             val url = DiscourseAvatars.url(user.avatarTemplate, container.baseUrl) ?: return@launch
-                            val peer = DiscourseAvatars.user(user.username, user.displayName, user.avatarTemplate, container.baseUrl)
+                            val peer = DiscourseAvatars.user(user.username, user.displayName, user.avatarTemplate,
+                                container.baseUrl, user.animatedAvatarUrl)
                             val file = DiscourseAvatars.cache(container.imageOkHttpClient, url, peer)
-                            val bitmap = kotlinx.coroutines.withContext(Dispatchers.IO) {
-                                file?.let { android.graphics.BitmapFactory.decodeFile(it.absolutePath) }
-                            }
-                            if (!destroyed && bitmap != null) {
-                                avatars[user.username] = bitmap
+                            if (!destroyed && file != null) {
                                 adapter.notifyDataSetChanged()
                             }
                         }

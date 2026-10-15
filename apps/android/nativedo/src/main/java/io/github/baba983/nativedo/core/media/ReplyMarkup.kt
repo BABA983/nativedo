@@ -20,20 +20,38 @@ internal fun replyMediaMarkup(alt: String, url: String, width: Int = 0, height: 
  */
 internal fun replyAttachmentMarkup(name: String, url: String, humanSize: String?): String {
     if (url.isBlank()) return ""
-    val label = name.trim()
-        .replace("[", "")
-        .replace("]", "")
-        .replace("|", "")
-        .replace("\n", " ")
-        .ifBlank { "file" }
+    val label = replyUploadLabel(name, "file")
     val size = humanSize?.trim()?.takeIf { it.isNotEmpty() }?.let { " ($it)" }.orEmpty()
     return "[$label|attachment](${url.trim()})$size"
 }
 
 /**
- * Which of the two the site would write for this file, and where it points: its own composer asks
- * the file's kind (`FileHelper.is_supported_image?`), embeds the answer's `upload://` handle, and
- * falls back to the resolved URL only for a site that answered without one.
+ * The site's own markdown for an audio upload: `![name|audio](upload://...)`, an image-shaped link
+ * whose label carries the `|audio` marker. That marker - not the URL, and not a generic
+ * `|attachment` - is what makes the cook emit `<audio controls>` for the upload, so a recorded clip
+ * is embedded and playable rather than offered as a download. The site appends no size here, unlike
+ * an attachment. `[`, `]` and `|` are stripped from the label the way the site's composer strips
+ * them.
+ */
+internal fun replyAudioMarkup(name: String, url: String): String {
+    if (url.isBlank()) return ""
+    val label = replyUploadLabel(name, "audio")
+    return "![$label|audio](${url.trim()})"
+}
+
+/** A link label safe to sit inside `[...]`: the site's composer strips the delimiters and newlines. */
+private fun replyUploadLabel(name: String, fallback: String): String = name.trim()
+    .replace("[", "")
+    .replace("]", "")
+    .replace("|", "")
+    .replace("\n", " ")
+    .ifBlank { fallback }
+
+/**
+ * Which of the three the site would write for this file, and where it points: its own composer asks
+ * the file's kind (`FileHelper.is_supported_image?`, and audio by extension), embeds the answer's
+ * `upload://` handle, and falls back to the resolved URL only for a site that answered without one.
+ * Audio is checked before the generic attachment so a recorded `.m4a` is embedded, never downloaded.
  */
 internal fun replyUploadMarkup(
     name: String,
@@ -46,10 +64,10 @@ internal fun replyUploadMarkup(
 ): String {
     val target = shortUrl?.trim().takeIf { !it.isNullOrEmpty() } ?: url
     val isVisual = mimeType?.startsWith("image/") == true || mimeType?.startsWith("video/") == true
-    return if (isVisual) {
-        replyMediaMarkup(name, target, width, height)
-    } else {
-        replyAttachmentMarkup(name, target, humanSize)
+    return when {
+        isAudioUpload(mimeType, name) -> replyAudioMarkup(name, target)
+        isVisual -> replyMediaMarkup(name, target, width, height)
+        else -> replyAttachmentMarkup(name, target, humanSize)
     }
 }
 

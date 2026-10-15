@@ -7,13 +7,24 @@ package io.github.baba983.nativedo.topic
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.ColorFilter
+import android.graphics.PixelFormat
+import android.graphics.RectF
+import android.graphics.drawable.Drawable
+import android.text.SpannableString
+import android.text.Spanned
 import android.text.TextUtils
+import android.text.style.DynamicDrawableSpan
+import android.text.style.ImageSpan
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.view.WindowInsetsCompat
@@ -36,17 +47,21 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.FileLog
+import org.telegram.messenger.R
 import org.telegram.ui.ActionBar.Theme
+import org.telegram.ui.Cells.StickerSetNameCell
 import org.telegram.ui.Components.BackupImageView
 import org.telegram.ui.Components.EditTextBoldCursor
 import org.telegram.ui.Components.EmptyTextProgressView
 import org.telegram.ui.Components.LayoutHelper
 import org.telegram.ui.Components.RecyclerListView
+import org.telegram.ui.Components.ScaleStateListAnimator
 import org.telegram.ui.Components.ScrollSlidingTextTabStrip
 import org.telegram.ui.Components.SearchField
 import org.telegram.ui.Components.inset.InAppKeyboardInsetView
 import org.telegram.ui.Components.inset.WindowInsetsInAppController
 import org.telegram.ui.Components.inset.WindowInsetsProvider
+import org.telegram.ui.recyclerview.LinearSmoothScrollerCustom
 
 /**
  * The linux.do emoji picker: the site's own catalog, drawn with upstream's own input components.
@@ -59,7 +74,9 @@ import org.telegram.ui.Components.inset.WindowInsetsProvider
  * for its own lists - upstream [RecyclerListView] over a [GridLayoutManager] for the grid,
  * [ScrollSlidingTextTabStrip] for the tabs, [SearchField] for the search box,
  * [EmptyTextProgressView] for the loading/error/empty states and [BackupImageView] for each tile -
- * and is pointed at the site's catalog instead.</p>
+ * and is pointed at the site's catalog instead. Each category tab carries the group's own first
+ * emoji as its icon, the rule linux.do's picker uses for a section tab, with the group's readable
+ * name kept on the tab as its content description.</p>
  *
  * <p>Selection inserts the exact site shortcode `:name:` at the caret (replacing a selection) into
  * the composer's field, and nothing else: no Telegram document, no animated-emoji span, no reaction
@@ -149,6 +166,20 @@ class DiscourseEmojiPicker @JvmOverloads constructor(
     private val grid: RecyclerListView
     private val empty: EmptyTextProgressView
     private val adapter: GridAdapter
+    private val backspace: ImageView
+    private var backspaceHeld = false
+    private var backspaceRepeated = false
+    private var backspaceDelay = 350L
+    private val repeatBackspace = object : Runnable {
+        override fun run() {
+            if (!backspaceHeld || !isOpen()) return
+            deleteBackward()
+            backspaceRepeated = true
+            backspaceDelay = (backspaceDelay - 100L).coerceAtLeast(50L)
+            postDelayed(this, backspaceDelay)
+        }
+    }
+    private var categoryScrolling = false
 
     init {
         setBackgroundColor(Theme.getColor(Theme.key_chat_emojiPanelBackground, resourcesProvider))
@@ -176,9 +207,8 @@ class DiscourseEmojiPicker @JvmOverloads constructor(
                 }
             }
         }
-        column.addView(search, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, HEADER_HEIGHT_DP))
-
         tabs = ScrollSlidingTextTabStrip(context, resourcesProvider)
+        tabs.setUseMinimalWidth(true)
         tabs.setColors(
             Theme.key_chat_emojiPanelStickerPackSelectorLine,
             Theme.key_chat_attachActiveTab,
@@ -194,15 +224,46 @@ class DiscourseEmojiPicker @JvmOverloads constructor(
             }
         })
         column.addView(tabs, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, TABS_HEIGHT_DP))
+        column.addView(search, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, HEADER_HEIGHT_DP))
 
         val gridHolder = FrameLayout(context)
 
         adapter = GridAdapter()
 
-        grid = RecyclerListView(context)
-        grid.layoutManager = GridLayoutManager(context, COLUMNS)
+        grid = object : RecyclerListView(context) {
+            override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+                super.onSizeChanged(w, h, oldw, oldh)
+                val manager = layoutManager as GridLayoutManager
+                manager.spanCount = maxOf(1, w / AndroidUtilities.dp(if (AndroidUtilities.isTablet()) 60f else 45f))
+                post {
+                    if (!destroyed && this@DiscourseEmojiPicker.adapter.browsing) {
+                        this@DiscourseEmojiPicker.adapter.notifyItemChanged(this@DiscourseEmojiPicker.adapter.itemCount - 1)
+                    }
+                }
+            }
+        }
+        val gridManager = GridLayoutManager(context, COLUMNS)
+        gridManager.spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
+            override fun getSpanSize(position: Int): Int =
+                if (adapter.getItemViewType(position) == 0) 1 else gridManager.spanCount
+        }
+        grid.layoutManager = gridManager
         grid.adapter = adapter
         grid.isVerticalScrollBarEnabled = false
+        grid.setInstantClick(true)
+        grid.setPadding(AndroidUtilities.dp(5f), 0, AndroidUtilities.dp(5f), 0)
+        grid.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
+                if (newState != RecyclerView.SCROLL_STATE_SETTLING) categoryScrolling = false
+            }
+
+            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                if (dy == 0 || categoryScrolling || !adapter.browsing) return
+                val first = gridManager.findFirstVisibleItemPosition()
+                val index = adapter.sectionPositions.indexOfLast { it <= first }
+                if (index >= 0 && index != tabs.currentTabId) tabs.selectTabWithId(index, 1f)
+            }
+        })
         grid.setOnItemClickListener(object : RecyclerListView.OnItemClickListener {
             override fun onItemClick(view: View, position: Int) {
                 selectAt(position)
@@ -220,6 +281,40 @@ class DiscourseEmojiPicker @JvmOverloads constructor(
         gridHolder.addView(empty, LayoutHelper.createFrameMatchParent())
 
         column.addView(gridHolder, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 0, 1f))
+        val controls = FrameLayout(context)
+        fun control(icon: Int, description: String, gravity: Int): ImageView = ImageView(context).apply {
+            setImageResource(icon)
+            setColorFilter(Theme.getColor(Theme.key_chat_emojiPanelBackspace, resourcesProvider))
+            scaleType = ImageView.ScaleType.CENTER
+            contentDescription = description
+            isFocusable = true
+            ScaleStateListAnimator.apply(this)
+            controls.addView(this, LayoutHelper.createFrame(48, 48, gravity))
+        }
+        control(R.drawable.smiles_tab_search, SEARCH_HINT, Gravity.LEFT).setOnClickListener {
+            search.searchEditText.requestFocus()
+            AndroidUtilities.showKeyboard(search.searchEditText)
+        }
+        backspace = control(R.drawable.smiles_tab_clear, "退格", Gravity.RIGHT)
+        backspace.setOnClickListener { deleteBackward() }
+        backspace.setOnTouchListener { view, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    backspaceHeld = true
+                    backspaceRepeated = false
+                    backspaceDelay = 350L
+                    view.isPressed = true
+                    postDelayed(repeatBackspace, backspaceDelay)
+                }
+                MotionEvent.ACTION_UP -> {
+                    stopBackspace()
+                    if (!backspaceRepeated) view.performClick()
+                }
+                MotionEvent.ACTION_CANCEL -> stopBackspace()
+            }
+            true
+        }
+        column.addView(controls, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48))
         addView(column, LayoutHelper.createFrameMatchParent())
 
         // Nothing is loaded until the panel is opened; an unopened picker makes no request.
@@ -263,8 +358,23 @@ class DiscourseEmojiPicker @JvmOverloads constructor(
             return
         }
         navigationBarHeight = height
-        setPadding(paddingLeft, paddingTop, paddingRight, height)
+        updateBottomPadding()
         requestLayout()
+    }
+
+    private fun updateBottomPadding(panelHeight: Int = height) {
+        // The host animates from the old panel height to IME + panel. Reserving the full raw
+        // IME before it grows would collapse the search field and make it lose focus.
+        val imeSpace = minOf(imeBottomInsetPx(), (panelHeight - panelHeightPx()).coerceAtLeast(0))
+        val bottom = if (searching) maxOf(navigationBarHeight, imeSpace) else navigationBarHeight
+        setPadding(paddingLeft, paddingTop, paddingRight, bottom)
+    }
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        // Reserve the keyboard before measuring the column; doing it during layout leaves its
+        // weighted grid and bottom controls measured to the old, larger content height.
+        updateBottomPadding(MeasureSpec.getSize(heightMeasureSpec))
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
     }
 
     /**
@@ -298,6 +408,7 @@ class DiscourseEmojiPicker @JvmOverloads constructor(
         if (ime <= 0) {
             return
         }
+        updateBottomPadding()
         val expanded = ime + panelHeightPx()
         if (expandedHeightPx == expanded) {
             return
@@ -308,6 +419,7 @@ class DiscourseEmojiPicker @JvmOverloads constructor(
 
     /** Returns the panel to its own height, e.g. when the search field loses focus. */
     private fun collapseToPanel() {
+        updateBottomPadding()
         if (expandedHeightPx == 0) {
             return
         }
@@ -335,6 +447,7 @@ class DiscourseEmojiPicker @JvmOverloads constructor(
         generation++
         searching = false
         expandedHeightPx = 0
+        updateBottomPadding()
         visibility = VISIBLE
         insertionTarget?.let { AndroidUtilities.hideKeyboard(it) }
         insetsController?.requestInAppKeyboardHeightIncludeNavbar(panelHeightPx())
@@ -355,9 +468,12 @@ class DiscourseEmojiPicker @JvmOverloads constructor(
         if (destroyed) {
             return
         }
+        stopBackspace()
+        grid.stopScroll()
         generation++
         searching = false
         expandedHeightPx = 0
+        updateBottomPadding()
         visibility = GONE
         // Drop the search field's focus so the system IME is told to close: a dismiss - back, or a
         // tap outside - is the panel going away, not the keyboard replacing it.
@@ -382,6 +498,8 @@ class DiscourseEmojiPicker @JvmOverloads constructor(
         if (destroyed) {
             return
         }
+        stopBackspace()
+        grid.stopScroll()
         destroyed = true
         generation++
         searching = false
@@ -448,7 +566,8 @@ class DiscourseEmojiPicker @JvmOverloads constructor(
         rebuildTabs(built)
         tabs.visibility = VISIBLE
         search.getSearchEditText()?.setText("")
-        adapter.submit(built[0].emojis)
+        adapter.showCatalog()
+        (grid.layoutManager as GridLayoutManager).scrollToPositionWithOffset(0, 0)
         updateEmptyState()
     }
 
@@ -465,17 +584,103 @@ class DiscourseEmojiPicker @JvmOverloads constructor(
         // views, so a group the site added or dropped is drawn rather than the previous set being
         // kept because the strip was not empty.
         tabs.removeTabs()
-        built.forEachIndexed { index, category -> tabs.addTextTab(index, category.title) }
+        built.forEachIndexed { index, category ->
+            tabs.addTextTab(index, categoryTabLabel(category))
+            // The group's readable name stays on the tab for a screen reader; what the reader sees
+            // is the group's own icon (below), not the name.
+            tabs.getTabsContainer().getChildAt(index)?.contentDescription = category.title
+            category.emojis.firstOrNull()?.let { icon -> requestImage(icon) }
+        }
         tabs.finishAddingTabs()
         tabs.setInitialTabId(0)
         tabs.updateColors()
+    }
+
+    /**
+     * The tab's content: the group's own first emoji drawn as its icon, the way linux.do's picker
+     * draws a section tab (its nav button is `<img src={{tonableEmojiUrl (get emojis "0")}}>` over
+     * the group's own list - the first emoji of the group, in the site's order). The picture is the
+     * site's own catalog image, so a custom group shows a real emoji from its own catalog rather
+     * than a guessed glyph. The group's title is carried on the tab separately (its content
+     * description) for a screen reader; a group with no usable picture keeps its name as the tab's
+     * text instead of an empty tab.
+     */
+    private fun categoryTabLabel(category: DiscourseEmojiCategory): CharSequence {
+        val icon = category.emojis.firstOrNull()
+        if (icon == null || icon.url.isEmpty()) {
+            return category.title
+        }
+        val drawable = CategoryIconDrawable(icon.url)
+        return SpannableString(TAB_ICON_PLACEHOLDER).apply {
+            setSpan(
+                ImageSpan(drawable, DynamicDrawableSpan.ALIGN_CENTER),
+                0,
+                length,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+            )
+        }
+    }
+
+    /**
+     * One tab's icon: the site emoji picture, read from the picker's decoded-tile cache at draw time
+     * so a picture that arrives after the tab was built appears without rebuilding the strip. Its
+     * intrinsic size is fixed, so the tab measures the same whether or not the picture has landed;
+     * the placeholder character is replaced entirely by the picture.
+     */
+    private inner class CategoryIconDrawable(private val url: String) : Drawable() {
+
+        private val size = AndroidUtilities.dp(CATEGORY_ICON_DP.toFloat())
+
+        init {
+            // An ImageSpan built from a ready-made Drawable does not set the drawable's bounds, and
+            // DynamicDrawableSpan sizes and places the span from `getBounds()`; without this the
+            // span measures zero and draws nothing.
+            setBounds(0, 0, size, size)
+        }
+
+        override fun getIntrinsicWidth(): Int = size
+        override fun getIntrinsicHeight(): Int = size
+        override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
+        override fun setAlpha(alpha: Int) {}
+        override fun setColorFilter(colorFilter: ColorFilter?) {}
+
+        override fun draw(canvas: Canvas) {
+            val bitmap = bitmapFor(url) ?: return
+            if (bounds.width() <= 0 || bounds.height() <= 0) {
+                return
+            }
+            val scale = minOf(
+                bounds.width().toFloat() / bitmap.width,
+                bounds.height().toFloat() / bitmap.height,
+            )
+            val width = bitmap.width * scale
+            val height = bitmap.height * scale
+            val left = bounds.left + (bounds.width() - width) / 2f
+            val top = bounds.top + (bounds.height() - height) / 2f
+            canvas.drawBitmap(bitmap, null, RectF(left, top, left + width, top + height), null)
+        }
+    }
+
+    /** A tile picture that just landed may be a tab's icon; redraw the strip so the icon appears. */
+    private fun invalidateCategoryIcons() {
+        val container = tabs.getTabsContainer()
+        for (index in 0 until container.childCount) {
+            container.getChildAt(index).invalidate()
+        }
     }
 
     private fun showCategoryAt(index: Int) {
         if (state != State.LOADED) {
             return
         }
-        categories.getOrNull(index)?.let { adapter.submit(it.emojis) }
+        val position = adapter.sectionPositions.getOrNull(index) ?: return
+        grid.stopScroll()
+        val scroller = object : LinearSmoothScrollerCustom(context, LinearSmoothScrollerCustom.POSITION_TOP) {
+            override fun onStart() { categoryScrolling = true }
+            override fun onEnd() { categoryScrolling = false }
+        }
+        scroller.targetPosition = position
+        (grid.layoutManager as GridLayoutManager).startSmoothScroll(scroller)
         updateEmptyState()
     }
 
@@ -483,11 +688,13 @@ class DiscourseEmojiPicker @JvmOverloads constructor(
         if (state != State.LOADED) {
             return
         }
+        grid.stopScroll()
         val trimmed = query.trim()
         if (trimmed.isEmpty()) {
             tabs.visibility = VISIBLE
             val index = tabs.getCurrentTabId().coerceIn(0, (categories.size - 1).coerceAtLeast(0))
-            categories.getOrNull(index)?.let { adapter.submit(it.emojis) } ?: adapter.submit(emptyList())
+            adapter.showCatalog()
+            (grid.layoutManager as GridLayoutManager).scrollToPositionWithOffset(adapter.sectionPositions[index], 0)
             updateEmptyState()
             return
         }
@@ -498,6 +705,7 @@ class DiscourseEmojiPicker @JvmOverloads constructor(
             .distinctBy { emoji -> emoji.name }
             .toList()
         adapter.submit(matches)
+        (grid.layoutManager as GridLayoutManager).scrollToPositionWithOffset(0, 0)
         updateEmptyState()
     }
 
@@ -555,6 +763,29 @@ class DiscourseEmojiPicker @JvmOverloads constructor(
         field.setSelection(from + shortcode.length)
     }
 
+    private fun deleteBackward() {
+        val field = insertionTarget ?: return
+        val start = field.selectionStart
+        val end = field.selectionEnd
+        if (start == end && start > 0) {
+            val prefix = field.text.subSequence(0, start).toString()
+            val token = categories.asSequence().flatMap { it.emojis.asSequence() }
+                .map { ":${it.name}:" }.filter { prefix.endsWith(it) }.maxByOrNull { it.length }
+            if (token != null) {
+                field.text.delete(start - token.length, start)
+                return
+            }
+        }
+        field.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL))
+        field.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DEL))
+    }
+
+    private fun stopBackspace() {
+        backspaceHeld = false
+        backspace.isPressed = false
+        removeCallbacks(repeatBackspace)
+    }
+
     // ------------------------------------------------------------------ tiles
 
     /** The decoded picture for [url], or null while it is not here yet (the tile shows its name). */
@@ -571,7 +802,6 @@ class DiscourseEmojiPicker @JvmOverloads constructor(
             return
         }
         pendingImages.add(url)
-        val generationAtStart = generation
         // Scheduled, not run inline: this coroutine starts during a bind (the tile has no picture
         // yet), and its read can return without ever suspending (a disk hit, or a failure that skips
         // the decode). On the scope's `Dispatchers.Main.immediate` that completion would run
@@ -581,18 +811,18 @@ class DiscourseEmojiPicker @JvmOverloads constructor(
         // current layout pass.
         scope.launch(Dispatchers.Main) {
             val file = runCatching { imageFetcher(url) }.getOrNull()
-            if (destroyed || generationAtStart != generation) {
+            if (destroyed || !isOpen()) {
                 pendingImages.remove(url)
                 return@launch
             }
             val bitmap = file?.let { cached ->
                 withContext(imageDecodeDispatcher) { BitmapFactory.decodeFile(cached.absolutePath) }
             }
-            // The decode runs off the main thread, so the panel can be torn down (or reopened)
-            // while it runs. `destroy` has already recycled and cleared every kept tile by now, so
-            // storing this one would leak it - and notifying would hand a fresh bitmap to a panel
-            // that is gone. Recheck liveness here, after the decode, before touching either.
-            if (destroyed || generationAtStart != generation) {
+            // Pictures are URL-keyed for this panel's lifetime, so a reopened live panel can use
+            // its pending decode. Dropping it solely for a new show generation would leave the
+            // reopened panel waiting for a picture it deliberately did not request twice.
+            // Closed/destroyed panels must still discard the decode without repainting.
+            if (destroyed || !isOpen()) {
                 if (bitmap != null && !bitmap.isRecycled) {
                     bitmap.recycle()
                 }
@@ -606,6 +836,9 @@ class DiscourseEmojiPicker @JvmOverloads constructor(
             }
             pendingImages.remove(url)
             adapter.notifyDataSetChanged()
+            // The same picture can be a category tab's icon; redraw the strip so it appears there
+            // without waiting for another draw.
+            invalidateCategoryIcons()
         }
     }
 
@@ -628,7 +861,8 @@ class DiscourseEmojiPicker @JvmOverloads constructor(
                 LayoutHelper.MATCH_PARENT,
                 AndroidUtilities.dp(CELL_HEIGHT_DP.toFloat()),
             )
-            addView(image, LayoutHelper.createFrame(IMAGE_SIZE_DP, IMAGE_SIZE_DP, Gravity.CENTER))
+            val imageSize = if (AndroidUtilities.isTablet()) 40 else 32
+            addView(image, LayoutHelper.createFrame(imageSize, imageSize, Gravity.CENTER))
 
             label.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 10f)
             label.setTextColor(Theme.getColor(Theme.key_chat_emojiPanelEmptyText, resourcesProvider))
@@ -642,6 +876,10 @@ class DiscourseEmojiPicker @JvmOverloads constructor(
             addView(label, LayoutHelper.createFrameMatchParent())
 
             setPadding(AndroidUtilities.dp(2f), AndroidUtilities.dp(2f), AndroidUtilities.dp(2f), AndroidUtilities.dp(2f))
+        }
+
+        override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+            super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(widthMeasureSpec), MeasureSpec.EXACTLY))
         }
 
         fun bind(emoji: DiscourseEmoji) {
@@ -667,9 +905,26 @@ class DiscourseEmojiPicker @JvmOverloads constructor(
 
     private inner class GridAdapter : RecyclerView.Adapter<EmojiHolder>() {
 
-        val items = ArrayList<DiscourseEmoji>()
+        val items = ArrayList<DiscourseEmoji?>()
+        val sectionPositions = ArrayList<Int>()
+        var browsing = false
+
+        fun showCatalog() {
+            browsing = true
+            items.clear()
+            sectionPositions.clear()
+            categories.forEach { category ->
+                sectionPositions.add(items.size)
+                items.add(null)
+                items.addAll(category.emojis)
+            }
+            items.add(null)
+            notifyDataSetChanged()
+        }
 
         fun submit(next: List<DiscourseEmoji>) {
+            browsing = false
+            sectionPositions.clear()
             items.clear()
             items.addAll(next)
             notifyDataSetChanged()
@@ -677,21 +932,48 @@ class DiscourseEmojiPicker @JvmOverloads constructor(
 
         override fun getItemCount(): Int = items.size
 
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): EmojiHolder =
-            EmojiHolder(EmojiCell(parent.context))
+        override fun getItemViewType(position: Int): Int = when {
+            items[position] != null -> 0
+            position == items.lastIndex -> 2
+            else -> 1
+        }
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): EmojiHolder = EmojiHolder(
+            when (viewType) {
+                0 -> EmojiCell(parent.context)
+                1 -> StickerSetNameCell(parent.context, true, resourcesProvider, false)
+                else -> object : View(parent.context) {
+                    // Like EmojiView's final spacer, let even a short last section reach the top.
+                    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                        val spans = (grid.layoutManager as GridLayoutManager).spanCount
+                        val rows = (categories.last().emojis.size + spans - 1) / spans
+                        val rowHeight = (grid.width - grid.paddingLeft - grid.paddingRight + spans - 1) / spans
+                        val height = (grid.measuredHeight - AndroidUtilities.dp(27f) - rows *
+                            rowHeight).coerceAtLeast(0)
+                        setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), height)
+                    }
+                }
+            }.apply { layoutParams = RecyclerView.LayoutParams(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT) },
+        )
 
         override fun onBindViewHolder(holder: EmojiHolder, position: Int) {
-            (holder.itemView as EmojiCell).bind(items[position])
+            when (holder.itemViewType) {
+                0 -> (holder.itemView as EmojiCell).bind(items[position]!!)
+                1 -> (holder.itemView as StickerSetNameCell).setText(categories[sectionPositions.indexOf(position)].title, 0)
+            }
         }
     }
 
     private companion object {
         const val COLUMNS = 8
         const val CELL_HEIGHT_DP = 48
-        const val HEADER_HEIGHT_DP = 58
-        const val TABS_HEIGHT_DP = 44
+        const val HEADER_HEIGHT_DP = 50
+        const val TABS_HEIGHT_DP = 36
         const val PANEL_HEIGHT_DP = 300
-        const val IMAGE_SIZE_DP = 36
+        const val CATEGORY_ICON_DP = 22
+
+        /** The character a category tab's icon span replaces; it is never drawn. */
+        const val TAB_ICON_PLACEHOLDER = "\u00a0"
         const val SEARCH_HINT = "搜索表情"
         const val EMPTY_TEXT = "这个站点还没有表情"
         const val ERROR_TEXT = "表情加载失败，点击重试"

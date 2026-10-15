@@ -1566,7 +1566,7 @@ internal class TopicRepliesThreadTest {
 
     /** The reply strip's own close button, reached the way a tap is. */
     private fun findCloseButton(view: View): View? {
-        if (view.contentDescription == "取消回复") return view
+        if (view.contentDescription == "取消回复" || view.contentDescription == "取消编辑") return view
         if (view is ViewGroup) {
             for (index in 0 until view.childCount) {
                 findCloseButton(view.getChildAt(index))?.let { return it }

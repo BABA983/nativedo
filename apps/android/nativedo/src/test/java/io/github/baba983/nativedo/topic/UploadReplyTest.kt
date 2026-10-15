@@ -158,7 +158,36 @@ internal class UploadReplyTest {
         val composer = composer() ?: throw AssertionError("the screen has no composer")
         composer.getAttachButton().performClick()
         harness.idle()
+        // The paperclip opens the attachment sheet; the file action is what reaches the picker.
+        chooseSheetAction(FILES_POSITION)
+        harness.idle()
         return composer
+    }
+
+    /**
+     * The attachment sheet, as the latest dialog, and one of its tabs fired the way the shipped
+     * list fires it (its own item-click callback, not a bare view click).
+     */
+    private fun chooseSheetAction(position: Int) {
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            ?: throw AssertionError("the paperclip opened no sheet")
+        val list = viewsUnder(dialog.window!!.decorView).filterIsInstance<RecyclerListView>().firstOrNull()
+            ?: throw AssertionError("the sheet has no tab list")
+        list.clickItem(null, position)
+    }
+
+    private fun viewsUnder(root: android.view.View): List<android.view.View> {
+        val found = mutableListOf<android.view.View>()
+        fun walk(view: android.view.View) {
+            found += view
+            if (view is ViewGroup) {
+                for (index in 0 until view.childCount) {
+                    walk(view.getChildAt(index))
+                }
+            }
+        }
+        walk(root)
+        return found
     }
 
     @Test
@@ -183,6 +212,8 @@ internal class UploadReplyTest {
         )
 
         strip.performClick()
+        harness.idle()
+        chooseSheetAction(FILES_POSITION)
         harness.idle()
         pickFile("second.png", transparentPng())
         harness.await("the second upload to land in the field") {
@@ -313,5 +344,7 @@ internal class UploadReplyTest {
 
     private companion object {
         const val TOPIC_ID = 809L
+        /** The file tab of the attachment sheet, by the order its list shows them. */
+        const val FILES_POSITION = 1
     }
 }

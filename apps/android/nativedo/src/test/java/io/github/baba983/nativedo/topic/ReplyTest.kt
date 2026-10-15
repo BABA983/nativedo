@@ -92,11 +92,12 @@ internal class ReplyTest {
 
         val composer = composer() ?: throw AssertionError("the screen has no composer")
         println("reply: composer = " + composer.javaClass.name)
-        // An empty field would offer Telegram's voice button, and this client has no voice behind it.
+        // An empty field offers this client's own microphone (the shared forum voice host), not
+        // Telegram's account-backed recorder.
         harness.renderApp("topic-reply-empty")
         assertEquals(
-            "no button while there is nothing to send",
-            android.view.View.GONE,
+            "an empty reply offers this client's own microphone",
+            android.view.View.VISIBLE,
             composer.getSendButton()?.visibility,
         )
 

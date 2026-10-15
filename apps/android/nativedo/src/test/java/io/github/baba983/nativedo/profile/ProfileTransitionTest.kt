@@ -111,7 +111,7 @@ internal class ProfileTransitionTest {
         }
         val gate = java.util.concurrent.CountDownLatch(1)
         val imageId = "flight-${System.nanoTime()}"
-        val response = org.json.JSONObject(harness.fixture("user-profile.json"))
+        val response = staticProfile()
         response.getJSONObject("user").put("avatar_template", "/user_avatar/linux.do/baba/{size}/$imageId.png")
         site.serveImage("user_avatar/linux.do/baba/96/$imageId.png", magentaPng(96, 96))
         site.serveImage("user_avatar/linux.do/baba/720/$imageId.png", magentaPng(720, 720))
@@ -296,7 +296,7 @@ internal class ProfileTransitionTest {
     fun aProfileAnswerDuringTheFlightWaitsForTheLanding() {
         openTopic()
         val gate = java.util.concurrent.CountDownLatch(1)
-        val response = JSONObject(harness.fixture("user-profile.json"))
+        val response = staticProfile()
         response.getJSONObject("user").apply {
             put("can_send_private_message_to_user", true)
             put("can_follow", true)
@@ -783,7 +783,7 @@ internal class ProfileTransitionTest {
 
     /** A profile with the real linux.do action fields, shaped like the site's own answer. */
     private fun otherUserProfileJson(): String {
-        val profile = JSONObject(harness.fixture("user-profile.json"))
+        val profile = staticProfile()
         profile.getJSONObject("user").apply {
             put("username", "momo199412")
             put("name", "momo")
@@ -810,7 +810,7 @@ internal class ProfileTransitionTest {
      */
     @Test
     fun thePushedProfileReachesIntoTheGestureArea() {
-        site.serveFixture("u/baba.json", "user-profile.json")
+        site.serveJson("u/baba.json", staticProfile().toString())
         harness.bootApp()
         harness.await("the topic list to load") { listRowCount() == 2 }
         harness.present(ProfileFragment.forUser("baba", "Baba"))
@@ -861,7 +861,7 @@ internal class ProfileTransitionTest {
         destroyShell()
         // Discourse also hands avatar templates whose size lives inside an upload path; the answer
         // names one, and this test serves nothing for it, so the bytes never land.
-        val response = JSONObject(harness.fixture("user-profile.json"))
+        val response = staticProfile()
         response.getJSONObject("user").put("avatar_template", "/uploads/avatar/baba/{size}.png")
         val gate = java.util.concurrent.CountDownLatch(1)
         site.serveResponse("u/baba.json") {
@@ -916,7 +916,7 @@ internal class ProfileTransitionTest {
     fun theLoadingShimmerStartsAtTheHeadersRestHeight() {
         openTopic()
         val gate = java.util.concurrent.CountDownLatch(1)
-        val response = JSONObject(harness.fixture("user-profile.json"))
+        val response = staticProfile()
         site.serveResponse("u/baba.json") {
             gate.await(30, java.util.concurrent.TimeUnit.SECONDS)
             okhttp3.mockwebserver.MockResponse()
@@ -964,7 +964,7 @@ internal class ProfileTransitionTest {
     fun aProfileAnswerDuringTheDefaultTransitionWaitsForTheTransition() {
         destroyShell()
         val gate = java.util.concurrent.CountDownLatch(1)
-        val response = JSONObject(harness.fixture("user-profile.json"))
+        val response = staticProfile()
         site.serveResponse("u/baba.json") {
             gate.await(30, java.util.concurrent.TimeUnit.SECONDS)
             okhttp3.mockwebserver.MockResponse()
@@ -1064,7 +1064,7 @@ internal class ProfileTransitionTest {
 
     private fun openTopic() {
         destroyShell()
-        site.serveFixture("u/baba.json", "user-profile.json")
+        site.serveJson("u/baba.json", staticProfile().toString())
         site.serveFixture("u/baba/summary.json", "user-summary.json")
         site.serveImage("user_avatar/linux.do/baba/96/1.png", magentaPng(96, 96))
         site.serveCooked(TOPIC_ID, "<p>你好。</p>")
@@ -1284,6 +1284,11 @@ internal class ProfileTransitionTest {
 
     private fun listRowCount(): Int =
         findView(harness.activity.window.decorView, RecyclerListView::class.java)?.adapter?.itemCount ?: 0
+
+    /** Transition pixel controls serve stills; GifMediaTest exercises animated profile headers. */
+    private fun staticProfile() = JSONObject(harness.fixture("user-profile.json")).apply {
+        getJSONObject("user").remove("animated_avatar")
+    }
 
     private fun magentaPng(width: Int, height: Int): ByteArray {
         val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)

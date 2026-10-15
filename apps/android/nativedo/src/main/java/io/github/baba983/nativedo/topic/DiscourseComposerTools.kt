@@ -21,8 +21,15 @@ import org.telegram.ui.Components.blur3.drawable.color.impl.BlurredBackgroundPro
 import org.telegram.ui.Components.chat.ChatInputViewsContainer
 import org.telegram.ui.Components.inset.WindowInsetsStateHolder
 
-/** Site input tools shared by reply and new-topic screens; their owner forwards lifecycle/insets. */
-class DiscourseComposerTools(
+/**
+ * Site input tools shared by reply and new-topic screens; their owner forwards lifecycle/insets.
+ *
+ * <p>The same tools own this client's hold-to-record microphone when the screen hands in the
+ * composer's own delegate (see [ComposerVoiceController]): a forum post records and uploads a voice
+ * attachment the way it attaches a file, and the screen only makes its empty microphone visible.
+ * A screen that hands in no delegate - the chat binds its own host directly - gets no voice here.</p>
+ */
+class DiscourseComposerTools @JvmOverloads constructor(
     fragment: BaseFragment,
     container: AppContainer,
     private val composer: ChatActivityEnterView,
@@ -30,8 +37,22 @@ class DiscourseComposerTools(
     inputInsets: WindowInsetsStateHolder,
     glassHost: GlassPanelHost,
     topicId: Long?,
+    recordDelegate: DiscourseComposerDelegate? = null,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    /**
+     * The composer's own voice band, or null when the screen offered no recording delegate. Its
+     * microphone is the composer's empty mic; a screen reads [isVoiceReady] to decide whether that
+     * microphone is offered at all.
+     */
+    val voice: ComposerVoiceController? = recordDelegate?.let { delegate ->
+        fragment.parentActivity?.let { activity ->
+            ComposerVoiceController(
+                activity, container, composer, delegate, inputViews, fragment.resourceProvider,
+            )
+        }
+    }
     private val picker = DiscourseEmojiPicker(composer.context, container, fragment.resourceProvider)
     internal val mentions = DiscourseMentions.install(
         composer, inputViews, fragment, fragment.resourceProvider, container.baseUrl, topicId,
@@ -96,7 +117,14 @@ class DiscourseComposerTools(
             panel.layoutParams = params
         }
         updateEmojiIcon()
+        voice?.onComposerGeometryChanged()
     }
+
+    /** Whether this screen's composer offers its own microphone (a recording host is bound). */
+    fun isVoiceReady(): Boolean = voice != null
+
+    /** The microphone permission answer; forwarded to this screen's recording host. */
+    fun onPermissionResult(requestCode: Int) = voice?.onPermissionResult(requestCode)
 
     /** Returns true when this input owns Back; predictive probes never mutate UI. */
     fun onBackPressed(invoked: Boolean): Boolean {
@@ -114,11 +142,13 @@ class DiscourseComposerTools(
     fun onResume() = mentions.onResume()
 
     fun onPause() {
+        voice?.onPause()
         mentions.onPause()
         if (picker.isOpen()) picker.dismiss()
     }
 
     fun onDestroy() {
+        voice?.onDestroy()
         mentions.onDestroy()
         picker.destroy()
         scope.cancel()
