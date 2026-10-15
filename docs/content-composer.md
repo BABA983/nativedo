@@ -74,6 +74,8 @@ have distinct accessibility labels. Offline-suppressed edits follow the same rul
 Public Discourse Chat sends text, reply targets and recorded-audio uploads.
 Its upload/message path is distinct from forum attachment insertion; sharing the
 upstream input component does not grant Chat the forum's rich editor or poll form.
+Channel/session permissions gate the whole input host, not its mic/send children:
+upstream owns their visibility transitions, including while a channel is loading.
 
 [DiscourseComposerTools](../apps/android/nativedo/src/main/java/io/github/baba983/nativedo/topic/DiscourseComposerTools.kt)
 owns mention/emoji lifecycle. Mentions merge local authors and server-ranked site

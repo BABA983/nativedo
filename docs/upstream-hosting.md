@@ -51,6 +51,10 @@ Composer pause/resume/destroy, theme delegates, system/IME insets, viewer state
 and Back arbitration matter as much as constructor arguments. A predictive Back
 probe must not commit a screen change; an open input panel, selection or viewer
 gets its own Back handling before page navigation.
+Runtime permission results follow the same upstream ownership: the activity
+forwards to its top fragment, and a tab host forwards to its visible page. A
+microphone permission answer must release that page's pending request without
+restarting the activity or starting a recording automatically.
 
 ## Visual state is upstream state
 

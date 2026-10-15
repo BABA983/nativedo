@@ -835,7 +835,11 @@ class DiscourseEmojiPicker @JvmOverloads constructor(
                 failedImages.add(url)
             }
             pendingImages.remove(url)
-            adapter.notifyDataSetChanged()
+            // Image completion changes artwork, not catalog positions. Keep a category scroll's
+            // target holder valid while cold tiles finish loading.
+            adapter.items.forEachIndexed { position, item ->
+                if (item?.url == url) adapter.notifyItemChanged(position, url)
+            }
             // The same picture can be a category tab's icon; redraw the strip so it appears there
             // without waiting for another draw.
             invalidateCategoryIcons()

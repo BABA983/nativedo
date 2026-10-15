@@ -93,6 +93,16 @@ internal class ChatChannelTest {
 
         harness.layoutApp()
         harness.idleClock(400)
+        val composer = descendants(fragment.fragmentView).filterIsInstance<ChatActivityEnterView>().single()
+        assertTrue("a loaded writable channel exposes the empty field's microphone", composer.sendButton.isShown)
+        composer.setFieldText("device-visible send")
+        harness.idleClock(400)
+        harness.layoutApp()
+        assertTrue("typing exposes the actual send button, not only an editable field", composer.sendButtonInternal.isShown)
+        composer.setFieldText("")
+        harness.idleClock(400)
+        harness.layoutApp()
+        assertTrue("clearing text restores the microphone", composer.sendButton.isShown)
         harness.renderApp("chat-conversation-light")
 
         val original = Theme.getCurrentTheme()

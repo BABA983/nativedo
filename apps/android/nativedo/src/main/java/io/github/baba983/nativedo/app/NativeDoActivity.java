@@ -801,6 +801,16 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         }
     }
 
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        // LaunchActivity forwards to the top fragment; ViewPagerActivity forwards to its active tab.
+        BaseFragment fragment = actionBarLayout == null ? null : actionBarLayout.getLastFragment();
+        if (fragment != null) {
+            fragment.onRequestPermissionsResultFragment(requestCode, permissions, grantResults);
+        }
+    }
+
     /**
      * The app going to the background is an app-wide fact, and a screen that counts reading time has
      * to know it: upstream's fragments are not AndroidX fragments and are only told what the layout

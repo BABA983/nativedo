@@ -261,6 +261,7 @@ internal class DiscourseEmojiPickerTest {
         site.serveJson("emojis.json", catalog(
             "smileys" to (1..63).map { "face_$it" to imageUrl("face_$it") },
             "objects" to (1..54).map { "object_$it" to imageUrl("object_$it") },
+            "food" to (1..55).map { "food_$it" to imageUrl("food_$it") },
         ))
         openPicker(screen)
         harness.await("the catalog") { harness.layoutApp(); cellFor(screen, ":face_1:") != null }
@@ -271,6 +272,14 @@ internal class DiscourseEmojiPickerTest {
             harness.idleClock(100); harness.layoutApp()
             boundEmojiNames(screen).firstOrNull()?.startsWith(":object_") == true
         }
+        // Seeing the requested group during the animation is insufficient: a seek can pass
+        // through it and continue into the next group after the tab has already highlighted.
+        harness.await("the category animation to settle") {
+            harness.idleClock(20); harness.layoutApp()
+            grid(screen)!!.scrollState == RecyclerView.SCROLL_STATE_IDLE
+        }
+        assertEquals("the settled jump stays at the selected section's first row",
+            ":object_1:", boundEmojiNames(screen).firstOrNull())
         grid(screen)!!.scrollBy(0, -AndroidUtilities.dp(800f))
         harness.await("manual scrolling after the jump selects smileys") {
             harness.layoutApp(); tabs(screen)!!.currentTabId == 0

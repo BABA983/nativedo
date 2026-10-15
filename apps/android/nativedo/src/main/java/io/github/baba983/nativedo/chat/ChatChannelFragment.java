@@ -1636,20 +1636,10 @@ public class ChatChannelFragment extends BaseFragment {
         if (composer == null) {
             return;
         }
-        // Upstream decides the mic/send toggle from the field itself: the microphone while the field
-        // is empty, the send button once there is text. The screen only says whether the channel may
-        // be written to at all; forcing the toggle here is what used to keep the microphone hidden
-        // on an empty, writable composer. A hold can therefore only start with the mic showing,
-        // which is exactly "authenticated, can post, and the field is empty".
+        // Permission hides the whole input host in updateComposerVisibility. Do not hide the
+        // upstream mic/send child while the channel is loading: checkSendButton relies on its
+        // previous visibility to transition between the two controls once the channel arrives.
         composer.checkSendButton(false);
-        boolean canPost = lastSessionState instanceof AppSessionState.Authenticated
-                && channel != null && channel.getCanPost();
-        if (!canPost) {
-            View button = composer.getSendButton();
-            if (button != null) {
-                button.setVisibility(View.GONE);
-            }
-        }
         if (voicePanel != null) {
             positionVoicePanel();
         }
