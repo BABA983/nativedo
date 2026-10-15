@@ -115,31 +115,32 @@ for profile in "$HOME/.bash_profile" "$HOME/.bashrc"; do
 done
 log "Toolchain environment exported to ~/.bash_profile and ~/.bashrc"
 
-# --- Keep a page cache on a small orb ----------------------------------------
-# The Gradle and Kotlin daemons are the biggest memory users in an orb. On a
-# 2 vCPU / 4 GB orb the repo's two 2 GB heap settings leave the kernel almost no
-# page cache, and a cold build then thrashes on disk instead of compiling (a
-# Kotlin task that needs ~75s with free memory can stall for the whole budget).
-# The cap goes into the user-level Gradle file, so the repo's gradle.properties
-# and local developer machines stay untouched. Bigger orbs skip it.
+# --- Bound build memory without modifying the upstream subtree ---------------
+# Upstream gives Gradle an 8 GB heap. Combined with test/native allocations that
+# can exhaust even a 16 GB orb. User-level properties take precedence over the
+# subtree's defaults; refresh only our managed block on stale snapshots.
 gradle_user_props="$HOME/.gradle/gradle.properties"
 mem_total_kb="$(awk '/^MemTotal:/ { print $2 }' /proc/meminfo)"
 mem_total_kb="${mem_total_kb:-0}"
 if (( mem_total_kb < 6000000 )); then
-  log "Small orb ($(( mem_total_kb / 1024 )) MiB RAM): capping daemon heaps in $gradle_user_props"
-  mkdir -p "$(dirname "$gradle_user_props")"
-  if ! grep -qF 'linuxdo-native orb memory cap' "$gradle_user_props" 2>/dev/null; then
-    cat >>"$gradle_user_props" <<'EOF'
-
-# linuxdo-native orb memory cap (managed by .agents/setup): on a small orb two
-# 2 GB daemon heaps starve the page cache and stall cold builds.
-org.gradle.jvmargs=-Xmx1536m -Dfile.encoding=UTF-8
+  gradle_heap=1536m
+else
+  gradle_heap=3g
+fi
+log "Orb RAM $(( mem_total_kb / 1024 )) MiB: Gradle heap $gradle_heap, 2 workers in $gradle_user_props"
+mkdir -p "$(dirname "$gradle_user_props")"
+if [[ -f "$gradle_user_props" ]]; then
+  # The old small-orb block and the current block both end at this property.
+  sed -i '/^# linuxdo-native orb memory cap/,/^kotlin\.daemon\.jvmargs=/d' "$gradle_user_props"
+fi
+cat >>"$gradle_user_props" <<EOF
+# linuxdo-native orb memory cap (managed by .agents/setup)
+org.gradle.jvmargs=-Xmx$gradle_heap -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8
+org.gradle.workers.max=2
+org.gradle.parallel=false
+kotlin.compiler.execution.strategy=in-process
 kotlin.daemon.jvmargs=-Xmx1024m
 EOF
-  fi
-else
-  log "Orb RAM $(( mem_total_kb / 1024 )) MiB: keeping the repo's JVM settings"
-fi
 
 # --- Sparse Telegram tree (optional, used by scripts/vendor-*.sh) -------------
 # Vendor tooling only reads Java sources at the pinned and reference commits.
@@ -244,7 +245,7 @@ if ! grep -qF "$guidance_marker" "$guidance" 2>/dev/null; then
 ## linuxdo-native orb notes
 
 - Android toolchain is preinstalled: JDK 17, Android SDK in `$HOME/Android/Sdk` (`ANDROID_HOME` exported for login shells), and `apps/android/local.properties` already points at it. Gradle downloads dependencies on the first relevant build or test; keep `~/.gradle` / `~/.m2` caches after that.
-- On a small orb (under 6 GiB RAM) `.agents/setup` caps the Gradle and Kotlin daemon heaps in `~/.gradle/gradle.properties`; two 2 GiB heaps on a 4 GiB orb starve the page cache and turn builds into disk thrashing. Do not raise the caps on a small orb.
+- `.agents/setup` caps Gradle at 3 GiB (1536 MiB below 6 GiB RAM), 2 workers and no project parallelism in `~/.gradle/gradle.properties`; Kotlin compiles in process. NativeDo tests use a 3 GiB heap and one fresh JVM per class to bound native-graphics accumulation. These are memory budgets, not universal best-practice values; do not raise them blindly.
 - Orbs have no emulator or device (no KVM): `adb` and instrumentation tests cannot run. Verify with `:app:testDebugUnitTest` and Paparazzi instead.
 - Paparazzi goldens are recorded on Linux, the same environment as the orb and CI, so `:app:verifyPaparazziDebug` is a real local gate: CI runs `runUnitAndScreenshotTests` (the full unit suite plus the pixel comparison), and any diff is either an intentional UI change or a bug. Inspect it, and re-record with `:app:recordPaparazziDebug` only for intentional changes.
 - `../telegram` (sibling of the repo, override with `NATIVEDO_TELEGRAM_VENDOR_DIR`) is a shallow sparse checkout of Telegram's Java sources at the pinned commit, so `scripts/vendor-index.sh` / `vendor-diff.sh` / the guard work immediately without a full upstream clone.

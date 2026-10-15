@@ -312,6 +312,18 @@ jobs:
       - name: Dependency and hook-guard tool tests
         run: python3 -m unittest discover -s scripts/tests -t scripts/tests -p 'test_telegram_*.py'
 
+      - name: Bound build memory
+        # Override upstream's 8 GB daemon without editing the subtree. Tests
+        # separately bound their heap and recycle native-graphics state per class.
+        run: |
+          mkdir -p ~/.gradle
+          cat >> ~/.gradle/gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8
+          org.gradle.workers.max=2
+          org.gradle.parallel=false
+          kotlin.compiler.execution.strategy=in-process
+          EOF
+
       - name: Unit tests
         run: ./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:testDebugUnitTest --quiet
 

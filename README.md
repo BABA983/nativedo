@@ -36,6 +36,24 @@ Alternatively open `apps/android/telegram` in Android Studio and run `nativedo`.
 No separate Telegram clone or copied prebuilt `.so` is needed for this build.
 The subtree import is the pin; dependency and hook tools resolve it from Git history.
 
+Orb setup and the active CI job override upstream's 8 GB Gradle heap with 3 GB,
+2 workers, no project parallelism and in-process Kotlin compilation. This is a
+memory budget, not a universal optimum or a total-process memory limit. Local
+16 GB machines can use the same settings in `~/.gradle/gradle.properties`:
+
+```properties
+org.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8
+org.gradle.workers.max=2
+org.gradle.parallel=false
+kotlin.compiler.execution.strategy=in-process
+```
+
+Orbs below 6 GiB use a smaller 1536 MiB Gradle heap; that does not establish that
+the full native build or test suite fits on such an orb. NativeDo tests separately
+limit their heap to 3 GB, run one JVM at a time and restart it between classes to
+release native-graphics allocations. Full tests are slower, but do not keep
+accumulating those allocations in one process.
+
 ## Checks
 
 Run Gradle commands sequentially, not in parallel. Test scope and device limitations
