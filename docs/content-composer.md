@@ -31,6 +31,16 @@ is not a second Discourse post. Polls still need separate bubbles because upstre
 cannot draw a poll as a rich-text block. [DiscourseRows](../apps/android/nativedo/src/main/java/io/github/baba983/nativedo/topic/DiscourseRows.java)
 then adapts posts into the presentation objects upstream `ChatMessageCell` draws.
 
+Discourse quote asides retain their author and quoted blocks, including lists and
+media; they are not converted to decorative pull-quotes. An existing attribution
+link is preserved. When it is absent, positive `data-topic` / `data-post` values
+make the attribution a link to that topic and floor (not a post ID). `<details>`
+uses upstream's expandable details block and remeasures the retained message when
+toggled. These are separate semantics: `data-full` identifies a whole-post quote,
+not a collapsed one. Automatic three-line quote folding and fetching an expanded
+original for a truncated Discourse quote are not implemented; the native reader
+currently shows the quoted content supplied in `cooked`.
+
 Media bridges supply the local paths and stable identities upstream loaders expect,
 with Discourse-aware downloads. Photos, document blocks and PhotoViewer use those
 paths, not fake Telegram downloads. A site's smaller photo preview can appear while
@@ -40,6 +50,14 @@ controls. Failed, cancelled or non-image responses never become a completed phot
 cache entry; duplicate consumers share the transfer and its outcome. Fetching video
 bytes remains a separate action from rendering its cover. Never retain recycled
 view/block instances as a data cache.
+
+PhotoViewer groups the media of one rich message into upstream's thumbnail strip;
+single-media messages have no strip, and neighbouring posts are not combined.
+Thumbnail receivers use downloaded local previews or originals, never synthetic
+Telegram datacenter locations. Preview completion is published under the preview's
+own file identity. Newly available files rebind the strip's existing receivers
+without clearing its current picture or gesture state. Upstream still owns the
+image backdrop, progress overlay, zoom, swiping and transitions.
 
 GIF post images use upstream's animated-file loader in the bubble and PhotoViewer;
 a static optimized preview stays static while the GIF original downloads. Avatars

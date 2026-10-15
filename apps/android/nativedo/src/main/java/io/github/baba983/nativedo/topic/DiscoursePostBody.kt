@@ -56,6 +56,15 @@ object DiscoursePostBody {
             val quote = aside.children().firstOrNull { it.normalName() == "blockquote" } ?: continue
             val title = aside.children().firstOrNull { it.hasClass("title") }?.clone()
             title?.select(".quote-controls, img.avatar")?.remove()
+            // Whole-post quotes omit the title link. data-post is a floor number, not a post id.
+            val sourceTopic = aside.attr("data-topic").toLongOrNull()?.takeIf { it > 0 }
+            val sourceFloor = aside.attr("data-post").toIntOrNull()?.takeIf { it > 0 }
+            if (title != null && sourceTopic != null && sourceFloor != null && title.selectFirst("a[href]") == null) {
+                val sourceLink = Element(Tag.valueOf("a"), "")
+                    .attr("href", "/t/$sourceTopic/$sourceFloor")
+                sourceLink.appendChildren(title.childNodes().toList())
+                title.appendChild(sourceLink)
+            }
             if (title != null && title.text().isNotBlank()) {
                 val cite = Element(Tag.valueOf("cite"), "")
                 cite.appendChildren(title.childNodes().toList())

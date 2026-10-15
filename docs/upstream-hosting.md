@@ -17,8 +17,10 @@ maintain a second per-call-site ledger here.
 
 - tgnet initialization and Telegram database opening are gated off.
 - Browser hosting answers the shell questions upstream normally asks
-  `LaunchActivity`: current fragment, tabs and overlay. This preserves upstream
-  `ArticleViewer` sheets, minimization and restoration without a Telegram activity.
+  `LaunchActivity`: current fragment, tabs, overlay and the per-activity sheet stack.
+  Sheet dismissal retains its original stack rather than looking up a replacement
+  activity's stack. This preserves upstream `ArticleViewer` sheets, minimization
+  and restoration without a Telegram activity.
 - Editor and mention adapters bind product behavior to an individual component,
   not a global callback that outlives its owning screen.
 - Other hooks cover concrete host differences such as local media loading and
@@ -28,6 +30,13 @@ Ordinary links default to the in-app browser; the reader can disable this in set
 [LinkOpenSettings](../apps/android/nativedo/src/main/java/io/github/baba983/nativedo/settings/LinkOpenSettings.kt)
 owns that local choice because Telegram's server-delivered browser settings never
 arrive in this host.
+
+The browser overflow opens a locally backed settings sheet using upstream
+`UniversalFragment` cells; it does not instantiate Telegram's account/browser
+settings. History keeps upstream's local browser-history screen and sharing uses
+Android's chooser. Saved Messages bookmark entries are omitted because their
+Telegram account storage/send path is unavailable. Clearing browser cookies is
+not offered here: those cookies can belong to the client's forum session.
 
 ## Startup and lifecycle are part of hosting
 

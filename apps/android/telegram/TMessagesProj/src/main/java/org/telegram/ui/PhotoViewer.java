@@ -4166,6 +4166,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             if (io.github.baba983.nativedo.hooks.NativeDoHooks.isClientMediaFile(location)) { // NativeDo: HTTP photos become available to the existing viewer
                 setImages();
             }
+            io.github.baba983.nativedo.hooks.NativeDoHooks.refreshGroupedPhotos(location, groupedPhotosListView); // NativeDo: a client preview landing re-binds the viewer's strip
             for (int a = 0; a < 3; a++) {
                 if (currentFileNames[a] != null && currentFileNames[a].equals(location)) {
                     boolean animated = a == 0 || a == 1 && sideImage == rightImage || a == 2 && sideImage == leftImage;

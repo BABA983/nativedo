@@ -6,7 +6,10 @@ import io.github.baba983.nativedo.core.web.DiscourseLinks
 import io.github.baba983.nativedo.core.web.DiscourseTopicLink
 import io.github.baba983.nativedo.harness.FakeDiscourseSite
 import io.github.baba983.nativedo.harness.UpstreamUiHarness
+import io.github.baba983.nativedo.harness.clickMenuItem
 import io.github.baba983.nativedo.harness.contentListOf
+import io.github.baba983.nativedo.harness.latestItemOptionsMenu
+import io.github.baba983.nativedo.harness.menuItemLabels
 import io.github.baba983.nativedo.harness.shadows.ShadowAnimatedFileNative
 import io.github.baba983.nativedo.harness.shadows.ShadowConnectionsManager
 import io.github.baba983.nativedo.harness.shadows.ShadowIntro
@@ -19,8 +22,11 @@ import io.github.baba983.nativedo.harness.shadows.ShadowSQLiteDatabase
 import io.github.baba983.nativedo.harness.shadows.ShadowSQLitePreparedStatement
 import io.github.baba983.nativedo.harness.shadows.ShadowUtilities
 import io.github.baba983.nativedo.hooks.NativeDoHooks
+import io.github.baba983.nativedo.settings.BrowserSettingsFragment
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -28,12 +34,21 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowDialog
 import org.telegram.messenger.ApplicationLoader
+import org.telegram.messenger.LocaleController
 import org.telegram.ui.ActionBar.ActionBarLayout
+import org.telegram.ui.ActionBar.BaseFragment
+import org.telegram.ui.ActionBar.BottomSheet
+import org.telegram.ui.ActionBar.INavigationLayout
 import org.telegram.ui.ArticleViewer
 import org.telegram.ui.Cells.ChatMessageCell
 import org.telegram.ui.Components.RecyclerListView
 import org.telegram.ui.LaunchActivity
+import org.telegram.ui.web.BrowserHistory
+import org.telegram.ui.web.HistoryFragment
+import org.telegram.ui.web.WebActionBar
+import org.telegram.ui.web.WebMetadataCache
 
 /**
  * A link in a post, pressed while this shell hosts the app.
@@ -88,7 +103,12 @@ internal class PostLinkBrowserTest {
 
     @After
     fun tearDown() {
+        // Browser transitions hold NotificationCenter.doOnIdle, including the next test's load.
+        harness.idleClock(600)
         site.stop()
+        // Upstream's browser history is process-wide; a page this test visited must not put the
+        // History row in front of the next one. clearHistory is safe when nothing was loaded.
+        runCatching { BrowserHistory.clearHistory() }
     }
 
     @Test
@@ -178,6 +198,97 @@ internal class PostLinkBrowserTest {
     }
 
     /**
+     * The browser's own overflow - the action bar above the page - opens Settings and History and
+     * returns, the way the reader does it: open, dismiss, reopen, and back through both.
+     *
+     * <p>The failure this pins: {@code ArticleViewer.openWebSettings} hands the sheet to upstream's
+     * {@code BaseFragment.showAsSheet}, which unconditionally added the new sheet's layout to
+     * {@code LaunchActivity.instance.sheetFragmentsStack} and removed it again on dismiss. This
+     * client is hosted by {@code NativeDoActivity}, so that static instance is null and the tap
+     * crashed with a NullPointerException instead of opening the screen. The sheet has to open on
+     * the host's own per-activity stack and be removed again when it is dismissed, on a repeat, and
+     * for History (the same {@code showAsSheet} call), without any Telegram network or database
+     * activity.</p>
+     */
+    @Test
+    fun theBrowserOverflowOpensSettingsAndHistoryAndReturns() {
+        val actionBar = webActionBar(openBrowser())
+        assertNull("this test is about the host that is not a LaunchActivity", launchInstance())
+
+        // Settings: open, dismiss, reopen. The stack has to be empty after each dismissal, or the
+        // host is leaking sheets the second open would then trip over.
+        openOverflow(actionBar)
+        clickMenuItem(latestItemOptionsMenu(harness.activity), LocaleController.getString(org.telegram.messenger.R.string.Settings))
+        harness.idle()
+        assertNotNull(
+            "the Settings row did not open the browser settings sheet",
+            hostedFragment(BrowserSettingsFragment::class.java),
+        )
+        dismissLatestSheet()
+        assertTrue("the dismissed settings sheet was left on the host's stack", sheetStack().isEmpty())
+
+        openOverflow(actionBar)
+        clickMenuItem(latestItemOptionsMenu(harness.activity), LocaleController.getString(org.telegram.messenger.R.string.Settings))
+        harness.idle()
+        assertNotNull("the settings sheet did not reopen", hostedFragment(BrowserSettingsFragment::class.java))
+        dismissLatestSheet()
+        assertTrue(sheetStack().isEmpty())
+
+        // History: a visited page is what puts the row there (upstream hides it with no history);
+        // it opens through the very same showAsSheet call and must not crash either.
+        BrowserHistory.pushHistory(historyEntry(LINK))
+        openOverflow(actionBar)
+        clickMenuItem(latestItemOptionsMenu(harness.activity), LocaleController.getString(org.telegram.messenger.R.string.WebHistory))
+        harness.idle()
+        assertNotNull("the History row did not open the history sheet", hostedFragment(HistoryFragment::class.java))
+        dismissLatestSheet()
+        assertTrue("the dismissed history sheet was left on the host's stack", sheetStack().isEmpty())
+
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * The browser overflow's Share row goes to Android's own chooser, not Telegram's {@code
+     * ShareAlert} (which would send the link as a Telegram message), and the saved-message rows are
+     * not offered: their backing store is Telegram's Saved Messages and the server round trip
+     * behind {@code ArticleViewer.addBookmark}, neither of which exists in this host.
+     */
+    @Test
+    fun theBrowserOverflowSharesThroughTheSystemChooserAndHidesSavedMessages() {
+        val actionBar = webActionBar(openBrowser())
+        openOverflow(actionBar)
+        val rows = latestItemOptionsMenu(harness.activity)
+        val labels = menuItemLabels(rows)
+        assertTrue("the browser overflow did not open", labels.isNotEmpty())
+        assertFalse(
+            "Telegram's bookmark-this-page entry is still offered",
+            labels.contains(LocaleController.getString(org.telegram.messenger.R.string.WebBookmark)),
+        )
+        assertFalse(
+            "Telegram's saved-messages list is still offered",
+            labels.contains(LocaleController.getString(org.telegram.messenger.R.string.WebBookmarks)),
+        )
+        assertTrue(
+            "the Settings row is still offered",
+            labels.contains(LocaleController.getString(org.telegram.messenger.R.string.Settings)),
+        )
+
+        clickMenuItem(rows, LocaleController.getString(org.telegram.messenger.R.string.ShareFile))
+        harness.idle()
+        val chooser = org.robolectric.Shadows.shadowOf(harness.activity).nextStartedActivity
+        assertNotNull("the Share row did not reach the system chooser", chooser)
+        assertEquals(android.content.Intent.ACTION_CHOOSER, chooser!!.action)
+        val send = chooser.getParcelableExtra<android.content.Intent>(android.content.Intent.EXTRA_INTENT)!!
+        assertEquals(android.content.Intent.ACTION_SEND, send.action)
+        assertEquals("text/plain", send.type)
+        assertTrue(
+            "the shared address is empty",
+            !send.getStringExtra(android.content.Intent.EXTRA_TEXT).isNullOrEmpty(),
+        )
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
      * The four addresses the site gives a topic - bare id, id with a floor, slug with an id, and
      * slug with an id and a floor - read the same way the site routes them, and a link that only
      * looks like the site's is refused rather than guessed at.
@@ -217,6 +328,82 @@ internal class PostLinkBrowserTest {
     }
 
     private fun listView(): RecyclerListView? = contentListOf(harness.activity)
+
+    // ------------------------------------------------------------- browser overflow helpers
+
+    /**
+     * Drives the shipped flow up to the in-app browser: the feed, a topic, a link pressed in a
+     * post. Returns the browser sheet on the shell's layout, the way `ArticleViewer` presents it.
+     */
+    private fun openBrowser(): ArticleViewer.Sheet {
+        harness.bootApp()
+        harness.await("the topic list to load") { rowCount() == 2 }
+        harness.present(TopicFragment.forTopic(TOPIC_ID, "Link"))
+        harness.await("the topic to load") { rowCount() == 1 }
+        val cell = laidOutCells().firstOrNull() ?: throw AssertionError("the topic drew no cell")
+        strictActivityResolution()
+        cell.delegate.didPressUrl(cell, URLSpan(LINK), false)
+        harness.idle()
+        // The press is over; a later startActivity (the share chooser) is a real one, and strict
+        // checking would make Robolectric refuse the chooser that has no registered handler.
+        relaxActivityResolution()
+        val layout = NativeDoHooks.getSafeLastFragment()?.parentLayout as? ActionBarLayout
+        val sheet = layout?.getSheetFragment(false)?.getLastSheet() as? ArticleViewer.Sheet
+            ?: throw AssertionError("the link did not reach the in-app browser")
+        val pages = ArticleViewer::class.java.getDeclaredField("pages").apply { isAccessible = true }
+            .get(sheet.getArticleViewer()) as Array<*>
+        // WebView loading is deferred until the browser sheet's transition finishes.
+        harness.idleClock(600)
+        harness.await("the browser's web page to load its address") {
+            (pages[0] as ArticleViewer.PageLayout).webView?.url == LINK
+        }
+        return sheet
+    }
+
+    /** The browser's own action bar, whose overflow is the menu this test drives. */
+    private fun webActionBar(sheet: ArticleViewer.Sheet): WebActionBar {
+        val field = ArticleViewer::class.java.getDeclaredField("actionBar").apply { isAccessible = true }
+        return field.get(sheet.getArticleViewer()) as WebActionBar
+    }
+
+    /** Opens the browser's overflow the way the reader taps it. */
+    private fun openOverflow(actionBar: WebActionBar) {
+        actionBar.menuButton.performClick()
+        harness.idle()
+    }
+
+    /** The sheets the shell has opened through `BaseFragment.showAsSheet`, on its own stack. */
+    private fun sheetStack(): List<INavigationLayout> = NativeDoHooks.sheetFragmentsStack().orEmpty()
+
+    /** The hosted fragment of [clazz] among the shell's open sheets, or null. */
+    private fun hostedFragment(clazz: Class<*>): BaseFragment? =
+        sheetStack().asSequence()
+            .flatMap { it.fragmentStack.asSequence() }
+            .firstOrNull { clazz.isInstance(it) }
+
+    /** Dismisses the sheet just shown, through the same dialog dismiss the reader's Back uses. */
+    private fun dismissLatestSheet() {
+        val dialog = ShadowDialog.getLatestDialog()
+        assertTrue("no bottom sheet was shown", dialog is BottomSheet && dialog.isShowing)
+        dialog!!.dismiss()
+        harness.idle()
+    }
+
+    private fun launchInstance(): Any? =
+        LaunchActivity::class.java.getDeclaredField("instance").apply { isAccessible = true }.get(null)
+
+    private fun relaxActivityResolution() {
+        org.robolectric.Shadows.shadowOf(org.robolectric.RuntimeEnvironment.getApplication())
+            .checkActivities(false)
+    }
+
+    /** A visited page, the way upstream's browser records one; its meta must be present. */
+    private fun historyEntry(url: String) = BrowserHistory.Entry().apply {
+        id = 1L
+        time = System.currentTimeMillis()
+        this.url = url
+        meta = WebMetadataCache.WebMetadata()
+    }
 
     private companion object {
         const val TOPIC_ID = 709L

@@ -1011,6 +1011,12 @@ object DiscourseImageBridge {
     fun photoFileName(image: PostImage): String = FileLoader.getAttachFileName(sizeOf(image))
 
     /**
+     * The name the site's own smaller preview is keyed by. It is a file of its own - registered as
+     * client media in {@code prepare} - so a report about it never stands in for the original.
+     */
+    fun previewFileName(image: PostImage): String = FileLoader.getAttachFileName(previewSizeOf(image))
+
+    /**
      * Where upstream looks for the image. An `ImageReceiver` asks for cache type 0, which is the
      * images directory, while the loader that misses it there asks for cache type 1, which is the
      * cache directory - on a device those are two directories, and a copy in only one of them is a
@@ -1191,6 +1197,11 @@ object DiscourseImageBridge {
                 val previewOutcome = transferPhoto(client, preview, previewLocalFiles(image), null, call, cancelled)
                 if (previewOutcome == PhotoDownload.Stored) {
                     withContext(Dispatchers.Main.immediate) { onBytes() }
+                    // The preview is its own file under its own name, so it is reported under that
+                    // name - never as the original, which is not on disk yet. The viewer's strip
+                    // watches for exactly this, so a preview that lands late still reaches it.
+                    postPhotoNotification(NotificationCenter.fileLoaded, previewFileName(image),
+                        previewLocalFiles(image).first().absolutePath)
                 }
                 if (previewOutcome == PhotoDownload.Cancelled) {
                     PhotoDownload.Cancelled

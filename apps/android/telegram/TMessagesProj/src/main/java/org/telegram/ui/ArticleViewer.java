@@ -4779,6 +4779,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                     url = pages[0].adapter.currentPage.url;
                 }
                 url = BotWebViewContainer.magic2tonsite(url);
+                if (io.github.baba983.nativedo.hooks.NativeDoHooks.shareInAppBrowser(parentActivity, url)) return; // NativeDo: the shell shares through the system chooser, not Telegram's dialog
                 showDialog(new ShareAlert(parentActivity, null, url, false, url, false, AndroidUtilities.computePerceivedBrightness(actionBar.getBackgroundColor()) < .721f ? new DarkThemeResourceProvider() : null));
             } else if (id == WebActionBar.bookmark_item) {
                 String url;
@@ -5146,6 +5147,10 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
     }
 
     public void openWebSettings() {
+        if (io.github.baba983.nativedo.hooks.NativeDoHooks.browserHostPresent()) { // NativeDo: this shell shows its own locally-backed browser settings
+            io.github.baba983.nativedo.hooks.NativeDoHooks.openBrowserSettings();
+            return;
+        }
         BaseFragment lastFragment = LaunchActivity.getSafeLastFragment();
         if (lastFragment != null) {
             BaseFragment.BottomSheetParams params = new BaseFragment.BottomSheetParams();

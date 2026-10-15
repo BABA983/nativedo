@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.os.SystemClock
+import android.text.Spanned
 import android.view.MotionEvent
 import android.view.ViewGroup
 import androidx.collection.LongSparseArray
@@ -35,6 +36,7 @@ import org.telegram.ui.Cells.ChatMessageCell
 import org.telegram.ui.Components.RecyclerListView
 import org.telegram.ui.Components.URLSpanReplacement
 import org.telegram.ui.iv.RichHtml
+import org.telegram.ui.iv.RichTextStyle
 import org.telegram.ui.iv.TableModel
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -231,6 +233,12 @@ internal class TopicBodyFidelityTest {
         assertTrue("Discourse's aside must become an upstream quote container", rich.blocks[0] is TL_iv.pageBlockBlockquoteBlocks)
         val quote = rich.blocks[0] as TL_iv.pageBlockBlockquoteBlocks
         assertEquals("Quoted writer", RichMessageLayout.getString(quote.caption))
+        // The title's own link came from the site, so it must survive as a same-site floor link that
+        // the reader can open - the aside's numbers are only a fallback when the title has none.
+        val caption = RichTextStyle.toSpannable(quote.caption) as Spanned
+        assertEquals("the title's own link must not be dropped",
+            listOf(site.url("t/ref/300/2")),
+            caption.getSpans(0, caption.length, URLSpanReplacement::class.java).map { it.url })
         assertEquals(3, quote.blocks.size)
         assertTrue(quote.blocks[1] is TL_iv.pageBlockList)
         val photo = quote.blocks[2] as TL_iv.pageBlockPhoto
@@ -244,6 +252,75 @@ internal class TopicBodyFidelityTest {
                 .any { it.imageReceiver.bitmap != null }
         }
         harness.renderApp("body-discourse-quote")
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * Failure modes: a whole-post quote loses the source it names, so the post it quoted can never
+     * be opened; the source link opens the quoted post's <em>id</em> instead of its floor; and the
+     * source link is dropped when the quote shares the body with a details block.
+     *
+     * <p>Discourse cooks a quote of a whole post (its `full:true` quote) with `data-topic` and
+     * `data-post` but no link in the title - only the author's name, e.g. `writer:` - so nothing but
+     * those two numbers says where the quote came from. The body must turn them into the site's own
+     * floor link, a real tap on the drawn link must open that topic at that floor, the details beside
+     * the quote must keep its content, and the whole-post quote must not be taken for a collapsed
+     * one (`data-full` is the whole post, not a folded one).</p>
+     */
+    @Test
+    fun aWholePostQuoteOpensItsSourceFloorAndKeepsADetailsBesideIt() {
+        open("<aside class='quote no-group' data-username='writer' data-post='$QUOTED_FLOOR' " +
+            "data-topic='$QUOTED_TOPIC' data-full='true'><div class='title'>" +
+            "<div class='quote-controls'></div><img class='avatar' src='/quote-avatar.png'> writer:</div>" +
+            "<blockquote><p>the entire quoted post</p></blockquote></aside>" +
+            "<details open><summary>Fold title</summary><p>fold body kept</p></details>" +
+            "<p>answer tail</p>")
+
+        val rich = cell().messageObject.messageOwner.rich_message
+        println("body-quote-source: blocks = " + rich.blocks.map { it.javaClass.simpleName })
+        assertEquals("the quote, the details and the tail must all survive", 3, rich.blocks.size)
+        val quote = rich.blocks[0] as TL_iv.pageBlockBlockquote
+        assertEquals("the quote keeps its author", "writer:", RichMessageLayout.getString(quote.caption))
+        assertEquals("the quote keeps its own body", "the entire quoted post",
+            RichMessageLayout.getString(quote.text))
+        assertFalse("a whole-post quote must not start collapsed", quote.collapsed)
+        val details = rich.blocks[1] as TL_iv.pageBlockDetails
+        assertEquals("the details beside the quote keeps its body", "fold body kept",
+            RichMessageLayout.getString(details.blocks[0].text))
+        assertEquals("answer tail", RichMessageLayout.getString(rich.blocks[2].text))
+
+        val caption = RichTextStyle.toSpannable(quote.caption) as Spanned
+        val modelLink = caption.getSpans(0, caption.length, URLSpanReplacement::class.java).single()
+        assertEquals("the quote's source must become the site's own floor link",
+            site.url("t/$QUOTED_TOPIC/$QUOTED_FLOOR"), modelLink.url)
+
+        harness.renderApp("body-whole-post-quote-source")
+        // A real tap on the drawn link, at the point the production layout reports it sits.
+        val cell = cell()
+        val layout = cell.messageObject.richLayout
+        val drawnAuthor = layout.blocks.filterIsInstance<RichMessageLayout.RichQuoteBlock>().single()
+            .author.layout.text as Spanned
+        val link = drawnAuthor.getSpans(0, drawnAuthor.length, URLSpanReplacement::class.java).single()
+        val found = layout.findLink(link) ?: throw AssertionError("the drawn quote link is not tappable")
+        val line = found.layout.getLineForOffset(found.start)
+        val x = cell.textX + found.x + found.layout.getPrimaryHorizontal(found.start) + 4f
+        val y = cell.textY + found.y +
+            (found.layout.getLineTop(line) + found.layout.getLineBottom(line)) / 2f
+        val stackBefore = harness.fragmentStack().size
+        val now = SystemClock.uptimeMillis()
+        for (action in intArrayOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
+            val event = MotionEvent.obtain(now, now, action, x, y, 0)
+            assertTrue("the production cell must handle the quote link tap", cell.onTouchEvent(event))
+            event.recycle()
+        }
+        harness.await("the quoted floor to open") { harness.fragmentStack().size > stackBefore }
+
+        val opened = harness.topFragment()
+        assertTrue("a tap on the quote must open the topic screen, was $opened", opened is TopicFragment)
+        assertEquals("the tapped link must open the quoted topic", QUOTED_TOPIC,
+            harness.topFragment()!!.arguments?.getLong("topic_id", 0L))
+        assertEquals("the tapped link must open the quoted floor, not the post's id", QUOTED_FLOOR,
+            harness.topFragment()!!.arguments?.getInt("floor", 0))
         harness.assertNoTelegramSideEffects()
     }
 
@@ -692,5 +769,11 @@ internal class TopicBodyFidelityTest {
         .map { list().getChildAt(it) }.filterIsInstance<ChatMessageCell>()
     private fun cell(): ChatMessageCell = cells().first()
 
-    private companion object { const val TOPIC = 8409L }
+    private companion object {
+        const val TOPIC = 8409L
+
+        /** The quoted post's own topic and floor, neither of them this post's id or number. */
+        const val QUOTED_TOPIC = 424242L
+        const val QUOTED_FLOOR = 7
+    }
 }

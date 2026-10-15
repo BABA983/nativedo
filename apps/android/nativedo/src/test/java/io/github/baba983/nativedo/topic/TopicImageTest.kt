@@ -38,6 +38,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.telegram.messenger.ApplicationLoader
+import org.telegram.messenger.ImageReceiver
 import org.telegram.messenger.RichMessageLayout
 import org.telegram.tgnet.tl.TL_iv
 import org.telegram.ui.PhotoViewer
@@ -772,6 +773,298 @@ internal class TopicImageTest {
         assertTrue(magentaPixels(retain(harness.renderApp("photo-return-retried"))) > 1000)
         harness.assertNoTelegramSideEffects()
     }
+
+    /**
+     * Upstream's viewer groups the strip under its pictures by each page block's group id and draws
+     * every cell from that block's own thumb; a bridge-built post carries neither, so the pictures
+     * open but the strip never appears - a tap that opens the second picture cannot show, or move
+     * to, its neighbours. The oracle is the strip's own decoded cells, next to a render, not a
+     * group id flag.
+     */
+    @Test
+    fun aPostWithThreePicturesOpensTheTappedOneAndTheStripShowsThemAll() {
+        val paths = listOf("uploads/three-a.png", "uploads/three-b.png", "uploads/three-c.png")
+        val colors = listOf(Color.RED, Color.GREEN, Color.BLUE)
+        site.serveImage(paths[0], solidPng(400, 300, colors[0]))
+        site.serveImage(paths[2], solidPng(400, 300, colors[2]))
+        // The picture the reader taps is cold (still arriving) when the viewer opens.
+        site.serveThrottled(paths[1], solidPng(400, 300, colors[1]), "image/png",
+            bytesPerPeriod = 256, periodMillis = 500)
+        site.serveCooked(TOPIC_ID, picturePost(paths))
+        harness.bootApp()
+        harness.await("home") { rowCount() == 2 }
+        harness.present(TopicFragment.forTopic(TOPIC_ID, "Three pictures"))
+        harness.await("the post") { rowCount() == 1 && laidOutCells().isNotEmpty() }
+        assertEquals("the post owns three pictures, one viewer group", 3, mediaBlocks().size)
+        assertTrue("tapping the second picture opens the viewer at it", openTheImageAt(1))
+        val viewer = PhotoViewer.getInstance()
+        harness.idleClock(400)
+        renderViewer("photo-strip-three-cold")
+        assertEquals("the viewer is on the picture that was tapped", 1,
+            field(viewer, "currentIndex"))
+        assertEquals("the strip lists exactly this post's three pictures", 3, strip().count)
+        assertEquals("the strip marks the picture the viewer is on", 1, strip().index)
+        harness.await("all three cells to decode their own colours") {
+            harness.idleUpstreamQueues()
+            stripCellColor(0) == Color.RED &&
+                stripCellColor(1) == Color.GREEN &&
+                stripCellColor(2) == Color.BLUE
+        }
+        assertEquals("the first cell shows the first picture", Color.RED, stripCellColor(0))
+        assertEquals("the second cell shows the tapped picture", Color.GREEN, stripCellColor(1))
+        assertEquals("the third cell shows the third picture", Color.BLUE, stripCellColor(2))
+        harness.await("the viewer to draw the tapped picture's original") {
+            (field(PhotoViewer.getInstance(), "centerImage") as ImageReceiver).bitmap
+                ?.let { Color.green(it.getPixel(it.width / 2, it.height / 2)) > 200 } == true
+        }
+        renderViewer("photo-strip-three")
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * A picture whose bytes land after the viewer is already open must reach the strip that is
+     * already drawn. The hook knows the preview is its own file - reported under its own name, never
+     * as the original - and re-binds the strip without resetting the item the reader is on.
+     */
+    @Test
+    fun aLateThirdPictureAppearsInTheAlreadyOpenStrip() {
+        val paths = listOf("uploads/late-a.png", "uploads/late-b.png", "uploads/late-c.png")
+        val colors = listOf(Color.RED, Color.GREEN, Color.BLUE)
+        val release = CountDownLatch(1)
+        val entered = CountDownLatch(1)
+        site.serveImage(paths[0], solidPng(400, 300, colors[0]))
+        site.serveImage(paths[1], solidPng(400, 300, colors[1]))
+        site.serveResponse(paths[2]) {
+            entered.countDown()
+            release.await(60, TimeUnit.SECONDS)
+            MockResponse().setHeader("Content-Type", "image/png")
+                .setBody(Buffer().write(solidPng(400, 300, colors[2])))
+        }
+        site.serveCooked(TOPIC_ID, picturePost(paths))
+        harness.bootApp()
+        harness.await("home") { rowCount() == 2 }
+        harness.present(TopicFragment.forTopic(TOPIC_ID, "Late third"))
+        harness.await("the post") { rowCount() == 1 && laidOutCells().isNotEmpty() }
+        harness.await("the third picture's request to be in flight") { entered.count == 0L }
+        try {
+            assertTrue(openTheImageAt(0))
+            harness.idleClock(400)
+            renderViewer("photo-strip-late-before")
+            assertEquals("the strip shows all three positions before the third lands", 3, strip().count)
+            assertNull("the missing picture's cell is a placeholder, not a fake image",
+                stripCellBitmap(2))
+        } finally {
+            release.countDown()
+        }
+        harness.await("the late picture to appear in the open strip") {
+            harness.idleUpstreamQueues()
+            harness.idleClock(200)
+            stripCellColor(2) == Color.BLUE
+        }
+        assertEquals("the strip stayed on the picture the reader opened", 0, strip().index)
+        assertEquals("a late cell does not move the neighbours", Color.RED, stripCellColor(0))
+        renderViewer("photo-strip-late-after")
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * The strip is not a picture: a press on one of its cells, or a slide across it, must move the
+     * viewer to that picture. Both paths go through upstream's own strip delegate, so a strip drawn
+     * but not wired to the viewer fails here.
+     */
+    @Test
+    fun tappingAndSlidingTheStripMoveTheViewer() {
+        val paths = listOf("uploads/nav-a.png", "uploads/nav-b.png", "uploads/nav-c.png")
+        val colors = listOf(Color.RED, Color.GREEN, Color.BLUE)
+        paths.forEachIndexed { index, path -> site.serveImage(path, solidPng(400, 300, colors[index])) }
+        site.serveCooked(TOPIC_ID, picturePost(paths))
+        harness.bootApp()
+        harness.await("home") { rowCount() == 2 }
+        harness.present(TopicFragment.forTopic(TOPIC_ID, "Strip navigation"))
+        harness.await("the post") { rowCount() == 1 && laidOutCells().isNotEmpty() }
+        harness.await("the three pictures on disk") {
+            paths.all { site.cookieHeaderFor(it) != null }
+        }
+        assertTrue(openTheImageAt(0))
+        val viewer = PhotoViewer.getInstance()
+        harness.idleClock(400)
+        renderViewer("photo-strip-nav-open")
+        harness.await("the third cell's decode to be on screen before the tap") {
+            harness.idleUpstreamQueues()
+            stripCellColor(2) == Color.BLUE
+        }
+
+        tapStripCell(2)
+        harness.idleClock(400)
+        assertEquals("a press on the strip's third cell moves the viewer there", 2,
+            field(viewer, "currentIndex"))
+        harness.await("the viewer to draw the third picture") {
+            (field(viewer, "centerImage") as ImageReceiver).bitmap
+                ?.let { Color.blue(it.getPixel(it.width / 2, it.height / 2)) > 200 } == true
+        }
+        renderViewer("photo-strip-nav-tapped")
+
+        slideStripTo(1)
+        harness.idleClock(400)
+        assertEquals("sliding the strip back moves the viewer to the second picture", 1,
+            field(viewer, "currentIndex"))
+        harness.await("the viewer to draw the second picture") {
+            (field(viewer, "centerImage") as ImageReceiver).bitmap
+                ?.let { Color.green(it.getPixel(it.width / 2, it.height / 2)) > 200 } == true
+        }
+        renderViewer("photo-strip-nav-slid")
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /** A post with one picture is a group of one: upstream hides its own strip. */
+    @Test
+    fun aSinglePictureOpensWithoutAStrip() {
+        site.serveImage("uploads/solo.png", solidPng(400, 300, Color.GREEN))
+        site.serveCooked(TOPIC_ID, picturePost(listOf("uploads/solo.png")))
+        harness.bootApp()
+        harness.await("home") { rowCount() == 2 }
+        harness.present(TopicFragment.forTopic(TOPIC_ID, "Solo picture"))
+        harness.await("the post") { rowCount() == 1 && laidOutCells().isNotEmpty() }
+        assertTrue(openTheImageAt(0))
+        harness.idleClock(400)
+        assertFalse("one picture must not show a strip", strip().hasPhotos())
+        assertEquals("and it has no cells", 0, strip().count)
+        harness.await("the single picture to be drawn") {
+            (field(PhotoViewer.getInstance(), "centerImage") as ImageReceiver).bitmap
+                ?.let { Color.green(it.getPixel(it.width / 2, it.height / 2)) > 200 } == true
+        }
+        renderViewer("photo-strip-single")
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * The site's preview and its original are two files. When the preview is refused, the original
+     * must still arrive: the block and the strip fall back to the size whose bytes are on disk, so
+     * a refused preview never leaves the reader on an empty shape.
+     */
+    @Test
+    fun aRefusedPreviewStillShowsTheOriginalInTheViewerAndTheStrip() {
+        val preview = "uploads/fail-preview.png"
+        val original = "uploads/fail-original.png"
+        site.serveResponse(preview) {
+            MockResponse().setResponseCode(500).setBody("boom")
+        }
+        site.serveImage(original, solidPng(1600, 900, Color.CYAN))
+        site.serveImage("uploads/fail-control.png", solidPng(400, 300, Color.RED))
+        val html = """
+            <p>看这张图：</p>
+            <p><div class="lightbox-wrapper"><a class="lightbox" href="${site.url(original)}">
+            <img src="$preview" width="400" height="300"></a></div></p>
+            <p>另一张图片</p><p><img src="${site.url("uploads/fail-control.png")}" width="400" height="300"></p>
+        """.trimIndent()
+        val image = DiscourseImageBridge.prepare(html, site.url("")).images.first()
+        site.serveCooked(TOPIC_ID, html)
+        harness.bootApp()
+        harness.await("home") { rowCount() == 2 }
+        harness.present(TopicFragment.forTopic(TOPIC_ID, "Refused preview"))
+        harness.await("the post") { rowCount() == 1 && laidOutCells().isNotEmpty() }
+        harness.await("the original to arrive after the refused preview") {
+            DiscourseImageBridge.localFiles(image).any { it.length() > 0 }
+        }
+        assertTrue(openTheImageAt(0))
+        harness.idleClock(400)
+        renderViewer("photo-strip-refused-open")
+        harness.await("the viewer to draw the original") {
+            (field(PhotoViewer.getInstance(), "centerImage") as ImageReceiver).bitmap
+                ?.let { it.getPixel(it.width / 2, it.height / 2) } == Color.CYAN
+        }
+        harness.await("the strip's cell to fall back to the original") {
+            harness.idleUpstreamQueues()
+            stripCellColor(0) == Color.CYAN
+        }
+        renderViewer("photo-strip-refused-preview")
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /** Every media block the openable post holds, in body order. */
+    private fun mediaBlocks(): List<TL_iv.PageBlock> {
+        val layout = laidOutCells().first().messageObject!!.richLayout
+        val media = ArrayList<TL_iv.PageBlock>()
+        layout.collectMediaBlocks(media)
+        return media
+    }
+
+    /** Opens the viewer on the post's media block at [index], the way a tap on it does. */
+    private fun openTheImageAt(index: Int): Boolean {
+        val cell = laidOutCells().firstOrNull()
+            ?: throw AssertionError("the topic drew no ChatMessageCell")
+        val media = mediaBlocks()
+        val block = media.getOrNull(index)
+            ?: throw AssertionError("the post has no media block at $index")
+        val opened = cell.delegate.openArticlePhoto(cell, block)
+        harness.idle()
+        return opened
+    }
+
+    /** Upstream's own strip, as the open viewer holds it. */
+    private fun strip(): org.telegram.ui.Components.GroupedPhotosListView =
+        field(PhotoViewer.getInstance(), "groupedPhotosListView")
+            as org.telegram.ui.Components.GroupedPhotosListView
+
+    /** The strip's drawn cell for picture [index], or null when it is not on screen. */
+    private fun stripCell(index: Int): ImageReceiver? =
+        (field(strip(), "imagesToDraw") as ArrayList<*>)
+            .filterIsInstance<ImageReceiver>()
+            .firstOrNull { it.param == index }
+
+    private fun stripCellBitmap(index: Int): Bitmap? = stripCell(index)?.bitmap
+
+    /** The colour at the centre of the strip cell for picture [index], or null when undecoded. */
+    private fun stripCellColor(index: Int): Int? {
+        val bitmap = stripCellBitmap(index) ?: return null
+        return bitmap.getPixel(bitmap.width / 2, bitmap.height / 2)
+    }
+
+    /** A press on the strip cell for picture [index], using upstream's own item geometry. */
+    private fun tapStripCell(index: Int) {
+        val strip = strip()
+        val density = harness.context.resources.displayMetrics.density
+        val itemWidth = (42 * density).toInt()
+        val itemSpacing = (1 * density).toInt()
+        val itemHeight = (56 * density).toInt()
+        val itemY = (10 * density).toInt()
+        val startX = strip.width / 2 - itemWidth / 2
+        val x = (startX + (index - strip.index) * (itemWidth + itemSpacing) + itemWidth / 2).toFloat()
+        val y = (itemY + itemHeight / 2).toFloat()
+        val now = android.os.SystemClock.uptimeMillis()
+        val event = MotionEvent.obtain(now, now, MotionEvent.ACTION_UP, x, y, 0)
+        try {
+            strip.onSingleTapUp(event)
+        } finally {
+            event.recycle()
+        }
+        harness.idle()
+    }
+
+    /** A slide across the strip to picture [index], through upstream's own gesture handler. */
+    private fun slideStripTo(index: Int) {
+        val strip = strip()
+        val density = harness.context.resources.displayMetrics.density
+        val step = ((42 + 1) * density).toInt()
+        val distanceX = ((index - strip.index) * step).toFloat()
+        val now = android.os.SystemClock.uptimeMillis()
+        val down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, 0f, 0f, 0)
+        val move = MotionEvent.obtain(now, now + 16, MotionEvent.ACTION_MOVE, distanceX, 0f, 0)
+        try {
+            strip.onDown(down)
+            strip.onScroll(down, move, distanceX, 0f)
+        } finally {
+            down.recycle()
+            move.recycle()
+        }
+        harness.idle()
+    }
+
+    /** A body with one picture block per path, kept apart by text so none is a collage. */
+    private fun picturePost(paths: List<String>): String =
+        paths.mapIndexed { index, path ->
+            "<p>第 ${index + 1} 张图：</p><p><img src='${site.url(path)}' width='400' height='300'></p>"
+        }.joinToString("")
 
     /** The body text's own dark pixels inside [cell]'s drawn bounds, read from a real render. */
     private fun darkPixelsIn(cell: org.telegram.ui.Cells.ChatMessageCell): Int {

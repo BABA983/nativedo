@@ -70,6 +70,8 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         INavigationLayout.INavigationLayoutDelegate {
 
     private ActionBarLayout actionBarLayout;
+    /** The per-activity sheet stack LaunchActivity normally owns. */
+    private final ArrayList<INavigationLayout> sheetFragmentsStack = new ArrayList<>();
     /** Upstream's browser hands its minimized pages to its host's overlay; this is that view. */
     private BottomSheetTabsOverlay browserTabsOverlay;
     private DrawerLayoutContainer drawerLayoutContainer;
@@ -181,17 +183,33 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
 
             @Override
             public BaseFragment getLastFragment() {
+                if (!sheetFragmentsStack.isEmpty()) {
+                    return sheetFragmentsStack.get(sheetFragmentsStack.size() - 1).getLastFragment();
+                }
                 return actionBarLayout == null ? null : actionBarLayout.getLastFragment();
             }
 
             @Override
             public BaseFragment getSafeLastFragment() {
+                if (!sheetFragmentsStack.isEmpty()) {
+                    return sheetFragmentsStack.get(sheetFragmentsStack.size() - 1).getSafeLastFragment();
+                }
                 return actionBarLayout == null ? null : actionBarLayout.getSafeLastFragment();
             }
 
             @Override
             public void checkSystemBarColors() {
                 updateSystemBarColors();
+            }
+
+            @Override
+            public ArrayList<INavigationLayout> getSheetFragmentsStack() {
+                return sheetFragmentsStack;
+            }
+
+            @Override
+            public BaseFragment createBrowserSettings() {
+                return new io.github.baba983.nativedo.settings.BrowserSettingsFragment();
             }
         });
 

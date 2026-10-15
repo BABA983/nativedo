@@ -6,6 +6,7 @@ import android.graphics.RectF;
 import android.net.Uri;
 import android.view.View;
 
+import io.github.baba983.nativedo.hooks.NativeDoHooks;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLoader;
 import org.telegram.messenger.FileLog;
@@ -70,9 +71,81 @@ public final class ArticlePhotoViewer {
         if (index < 0) {
             return false;
         }
+        groupMedia(message, media);
         PhotoViewer viewer = PhotoViewer.getInstance();
         viewer.setParentActivity(fragment.getParentActivity(), fragment.getResourceProvider());
         return viewer.openPhoto(index, new BlocksAdapter(message, media), new SourceProvider(message, media, list));
+    }
+
+    /**
+     * Gives the viewer's strip what upstream's own chat media has and this client's page blocks do
+     * not: a group id per cell and the cell's own thumb.
+     *
+     * <p>Upstream groups the strip by {@code PageBlock.groupId} and draws each cell from
+     * {@code PageBlock.thumb}/{@code thumbObject} - the same fields its article viewer fills in
+     * {@code ArticleViewer.addAllMediaFromBlock}. Our blocks are built by the bridge and carry
+     * neither, so the strip never appeared. Every picture this message holds goes into one group,
+     * named by the message, so the strip offers exactly this message's media and never stitches a
+     * neighbouring post's pictures onto it. A message with one picture is left ungrouped - upstream
+     * groups only galleries, and an id of its own would make it draw an empty strip. The thumb
+     * prefers the site's own smaller preview (the same one the block draws), falling back to the
+     * closest regular size - the original - when there is none.</p>
+     */
+    private static void groupMedia(MessageObject message, List<TL_iv.PageBlock> media) {
+        if (media.size() < 2) {
+            return;
+        }
+        TL_iv.RichMessage page = message.messageOwner.rich_message;
+        int groupId = message.getId();
+        if (groupId == 0) {
+            groupId = 1;
+        }
+        for (TL_iv.PageBlock block : media) {
+            block.groupId = groupId;
+            if (block instanceof TL_iv.pageBlockPhoto) {
+                TLRPC.Photo photo = photoOf(page, ((TL_iv.pageBlockPhoto) block).photo_id);
+                if (photo == null) {
+                    continue;
+                }
+                TLRPC.PhotoSize thumb = NativeDoHooks.photoThumbSize(photo.sizes);
+                if (thumb == null) {
+                    thumb = FileLoader.getClosestPhotoSizeWithSize(photo.sizes, 56, true);
+                }
+                block.thumb = thumb;
+                block.thumbObject = photo;
+            } else if (block instanceof TL_iv.pageBlockVideo) {
+                TLRPC.Document document = documentOf(page, ((TL_iv.pageBlockVideo) block).video_id);
+                if (document == null) {
+                    continue;
+                }
+                block.thumb = FileLoader.getClosestPhotoSizeWithSize(document.thumbs, 56, true);
+                block.thumbObject = document;
+            }
+        }
+    }
+
+    private static TLRPC.Photo photoOf(TL_iv.RichMessage page, long photoId) {
+        if (page == null || page.photos == null) {
+            return null;
+        }
+        for (TLRPC.Photo photo : page.photos) {
+            if (photo != null && photo.id == photoId) {
+                return photo;
+            }
+        }
+        return null;
+    }
+
+    private static TLRPC.Document documentOf(TL_iv.RichMessage page, long documentId) {
+        if (page == null || page.documents == null) {
+            return null;
+        }
+        for (TLRPC.Document document : page.documents) {
+            if (document != null && document.id == documentId) {
+                return document;
+            }
+        }
+        return null;
     }
 
     /** ChatActivity's rich-media source lookup, using this topic's list and actual content insets. */

@@ -100,6 +100,7 @@ public class GroupedPhotosListView extends View implements GestureDetector.OnGes
     }
 
     public void fillList() {
+        io.github.baba983.nativedo.hooks.NativeDoHooks.refreshGroupedPhotoLocations(currentPhotos, currentObjects, imagesToDraw, delegate.getParentObject()); // NativeDo: late local bytes rebind without restarting a drag
         if (ignoreChanges) {
             ignoreChanges = false;
             return;
@@ -317,7 +318,7 @@ public class GroupedPhotosListView extends View implements GestureDetector.OnGes
                         TL_iv.PageBlock object = pageBlockArr.get(a);
                         if (object.groupId == currentGroupId) {
                             currentObjects.add(object);
-                            currentPhotos.add(ImageLocation.getForObject(object.thumb, object.thumbObject));
+                            io.github.baba983.nativedo.hooks.NativeDoHooks.addGroupedPhotoThumb(currentPhotos, object, currentPhotos.size()); // NativeDo: the strip loads only locally fetched bytes
                         } else {
                             break;
                         }
@@ -329,7 +330,7 @@ public class GroupedPhotosListView extends View implements GestureDetector.OnGes
                         TL_iv.PageBlock object = pageBlockArr.get(a);
                         if (object.groupId == currentGroupId) {
                             currentObjects.add(0, object);
-                            currentPhotos.add(0, ImageLocation.getForObject(object.thumb, object.thumbObject));
+                            io.github.baba983.nativedo.hooks.NativeDoHooks.addGroupedPhotoThumb(currentPhotos, object, 0); // NativeDo: the strip loads only locally fetched bytes
                             currentImage++;
                         } else {
                             break;

@@ -238,13 +238,13 @@ public class WebActionBar extends FrameLayout {
                 }
                 o.add(R.drawable.msg_reset, getString(R.string.Refresh), click.run(reload_item));
                 o.add(R.drawable.msg_search, getString(R.string.Search), click.run(search_item));
-                o.add(R.drawable.msg_saved, getString(R.string.WebBookmark), click.run(bookmark_item));
+                io.github.baba983.nativedo.hooks.NativeDoHooks.addBrowserMenuSavedEntry(o, bookmark_item, R.drawable.msg_saved, getString(R.string.WebBookmark), click.run(bookmark_item)); // NativeDo: saved messages are not available in this host
                 o.add(R.drawable.msg_share, getString(R.string.ShareFile), click.run(share_item));
                 o.addGap();
                 if (!BrowserHistory.getHistory().isEmpty()) {
                     o.add(R.drawable.menu_views_recent, getString(R.string.WebHistory), click.run(history_item));
                 }
-                o.add(R.drawable.menu_browser_bookmarks, getString(R.string.WebBookmarks), click.run(bookmarks_item));
+                io.github.baba983.nativedo.hooks.NativeDoHooks.addBrowserMenuSavedEntry(o, bookmarks_item, R.drawable.menu_browser_bookmarks, getString(R.string.WebBookmarks), click.run(bookmarks_item)); // NativeDo: saved messages are not available in this host
                 o.add(R.drawable.msg_settings_old, getString(R.string.Settings), click.run(settings_item));
             }
             o.setOnDismiss(() -> {

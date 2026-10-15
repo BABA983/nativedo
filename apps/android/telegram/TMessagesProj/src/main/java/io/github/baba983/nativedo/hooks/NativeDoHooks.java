@@ -240,6 +240,48 @@ public final class NativeDoHooks {
         return org.telegram.messenger.ImageLocation.getForPhoto(size, photo);
     }
 
+    /** Article thumbnails use the same local-only photo sources as their full-size blocks. */
+    private static org.telegram.messenger.ImageLocation groupedPhotoThumb(org.telegram.tgnet.tl.TL_iv.PageBlock block) {
+        if (!(block.thumbObject instanceof org.telegram.tgnet.TLRPC.Photo)) {
+            return browserHostPresent() ? null : org.telegram.messenger.ImageLocation.getForObject(block.thumb, block.thumbObject);
+        }
+        org.telegram.tgnet.TLRPC.Photo photo = (org.telegram.tgnet.TLRPC.Photo) block.thumbObject;
+        org.telegram.messenger.ImageLocation location = photoImageLocation(block.thumb, photo);
+        if (location != null) return location;
+        for (org.telegram.tgnet.TLRPC.PhotoSize size : photo.sizes) {
+            location = photoImageLocation(size, photo);
+            if (location != null) return location;
+        }
+        return null;
+    }
+
+    public static void addGroupedPhotoThumb(java.util.ArrayList<org.telegram.messenger.ImageLocation> out,
+            org.telegram.tgnet.tl.TL_iv.PageBlock block, int index) {
+        out.add(index, groupedPhotoThumb(block));
+    }
+
+    /** Replace only newly available locations, keeping the strip's drag, index and receivers. */
+    public static void refreshGroupedPhotoLocations(java.util.ArrayList<org.telegram.messenger.ImageLocation> locations,
+            java.util.ArrayList<Object> objects, java.util.ArrayList<org.telegram.messenger.ImageReceiver> receivers,
+            Object parent) {
+        for (int i = 0; i < objects.size(); i++) {
+            if (!(objects.get(i) instanceof org.telegram.tgnet.tl.TL_iv.PageBlock)) continue;
+            org.telegram.tgnet.tl.TL_iv.PageBlock block = (org.telegram.tgnet.tl.TL_iv.PageBlock) objects.get(i);
+            if (!isClientMediaFile(org.telegram.messenger.FileLoader.getAttachFileName(block.thumb))) continue;
+            org.telegram.messenger.ImageLocation next = groupedPhotoThumb(block);
+            org.telegram.messenger.ImageLocation previous = locations.get(i);
+            if (next == null || previous != null && java.util.Objects.equals(previous.path, next.path)) continue;
+            locations.set(i, next);
+            for (org.telegram.messenger.ImageReceiver receiver : receivers) {
+                if (receiver.getParam() == i) receiver.setImage(null, null, next, "80_80", 0, null, parent, 1);
+            }
+        }
+    }
+
+    public static void refreshGroupedPhotos(String fileName, org.telegram.ui.Components.GroupedPhotosListView strip) {
+        if (strip != null && isClientMediaFile(fileName)) strip.fillList();
+    }
+
     /** Keeps RichPhotoBlock's receiver parameters while withholding missing synthetic files. */
     public static boolean applyPhotoImage(org.telegram.messenger.ImageReceiver receiver,
             org.telegram.tgnet.TLRPC.PhotoSize full, org.telegram.tgnet.TLRPC.PhotoSize thumb,
@@ -358,6 +400,10 @@ public final class NativeDoHooks {
         org.telegram.ui.ActionBar.BaseFragment getSafeLastFragment();
 
         void checkSystemBarColors();
+
+        java.util.ArrayList<org.telegram.ui.ActionBar.INavigationLayout> getSheetFragmentsStack();
+
+        org.telegram.ui.ActionBar.BaseFragment createBrowserSettings();
     }
 
     private static volatile BrowserHost browserHost;
@@ -415,6 +461,34 @@ public final class NativeDoHooks {
             }
         }
         return null;
+    }
+
+    /** Sheets belong to the activity that opened them, not Telegram's absent LaunchActivity. */
+    public static java.util.ArrayList<org.telegram.ui.ActionBar.INavigationLayout> sheetFragmentsStack() {
+        if (browserHost != null) {
+            java.util.ArrayList<org.telegram.ui.ActionBar.INavigationLayout> stack = browserHost.getSheetFragmentsStack();
+            if (stack != null) {
+                return stack;
+            }
+        }
+        return org.telegram.ui.LaunchActivity.instance != null
+                ? org.telegram.ui.LaunchActivity.instance.sheetFragmentsStack : null;
+    }
+
+    /** Capture the owning stack so a late dismissal cannot remove a replacement activity's sheet. */
+    public static java.util.ArrayList<org.telegram.ui.ActionBar.INavigationLayout> addSheetFragment(org.telegram.ui.ActionBar.INavigationLayout layout) {
+        java.util.ArrayList<org.telegram.ui.ActionBar.INavigationLayout> stack = sheetFragmentsStack();
+        if (stack != null) {
+            stack.add(layout);
+        }
+        return stack;
+    }
+
+    public static void removeSheetFragment(java.util.ArrayList<org.telegram.ui.ActionBar.INavigationLayout> stack,
+            org.telegram.ui.ActionBar.INavigationLayout layout) {
+        if (stack != null) {
+            stack.remove(layout);
+        }
     }
 
     /**
@@ -526,6 +600,50 @@ public final class NativeDoHooks {
         android.net.Uri uri = android.net.Uri.parse(url);
         String scheme = uri.getScheme();
         return scheme == null || "http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme);
+    }
+
+    /** Local settings only: Telegram account settings and shared-cookie clearing are not hosted. */
+    public static void openBrowserSettings() {
+        org.telegram.ui.ActionBar.BaseFragment lastFragment = getSafeLastFragment();
+        BrowserHost host = browserHost;
+        if (lastFragment == null || host == null) {
+            return;
+        }
+        org.telegram.ui.ActionBar.BaseFragment.BottomSheetParams params = new org.telegram.ui.ActionBar.BaseFragment.BottomSheetParams();
+        params.transitionFromLeft = true;
+        lastFragment.showAsSheet(host.createBrowserSettings(), params);
+    }
+
+    /**
+     * Sharing the browser's current address through the system's own share sheet, rather than
+     * Telegram's {@code ShareAlert} (which sends the link as a Telegram message and offers Telegram
+     * chats). Returns true when the shell handled it; a real Telegram host keeps upstream's dialog.
+     */
+    public static boolean shareInAppBrowser(android.app.Activity activity, String url) {
+        if (browserHost == null || activity == null || url == null) {
+            return false;
+        }
+        android.content.Intent send = new android.content.Intent(android.content.Intent.ACTION_SEND);
+        send.setType("text/plain");
+        send.putExtra(android.content.Intent.EXTRA_TEXT, url);
+        activity.startActivity(android.content.Intent.createChooser(send, null));
+        return true;
+    }
+
+    /**
+     * Adds one of the web browser's saved-message overflow entries
+     * ({@code WebActionBar.bookmark_item} and {@code bookmarks_item}). The backing store upstream
+     * uses is Telegram's Saved Messages and the server round trip behind it
+     * ({@code ArticleViewer.addBookmark}), neither of which exists in this host, so the entries are
+     * not offered while the shell hosts the browser. A real Telegram host keeps them.
+     */
+    public static void addBrowserMenuSavedEntry(org.telegram.ui.Components.ItemOptions options, int id, int icon, CharSequence text, Runnable action) {
+        if (browserHost != null
+                && (id == org.telegram.ui.web.WebActionBar.bookmark_item
+                    || id == org.telegram.ui.web.WebActionBar.bookmarks_item)) {
+            return;
+        }
+        options.add(icon, text, action);
     }
 
     /**
