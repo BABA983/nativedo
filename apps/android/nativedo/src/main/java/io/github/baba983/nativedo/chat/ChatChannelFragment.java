@@ -1150,7 +1150,10 @@ public class ChatChannelFragment extends BaseFragment {
     /**
      * Fetches the pictures one message draws, reporting each as its bytes land so a picture already
      * on disk is drawn without waiting behind a slow neighbour. A picture the site serves as a
-     * preview then an original reports again when the original replaces it.
+     * preview then an original reports again when the original replaces it. One message's inline
+     * emoji are fetched on the same pass, and each landing picture is handed to the drawable already
+     * bound to its document, so the span the row first drew shows the artwork in place of the
+     * placeholder without the message being rebuilt.
      */
     private void fetchMessageMedia(int index) {
         if (container == null || index < 0 || index >= bodies.size()) {
@@ -1161,23 +1164,31 @@ public class ChatChannelFragment extends BaseFragment {
             return;
         }
         List<PostImage> images = body.getImages();
-        if (images == null || images.isEmpty()) {
-            return;
-        }
-        for (PostImage image : images) {
-            String name = DiscourseImageBridge.INSTANCE.photoFileName(image);
-            if (photoStarters.containsKey(name)) continue;
-            Runnable starter = () -> DiscourseLoader.INSTANCE.fetchPostPhoto(container, image, chat -> {
+        if (images != null && !images.isEmpty()) {
+            for (PostImage image : images) {
+                String name = DiscourseImageBridge.INSTANCE.photoFileName(image);
+                if (photoStarters.containsKey(name)) continue;
+                Runnable starter = () -> DiscourseLoader.INSTANCE.fetchPostPhoto(container, image, chat -> {
+                    refreshMessageMedia(chat);
+                    return kotlin.Unit.INSTANCE;
+                });
+                DiscourseImageBridge.INSTANCE.registerPhotoStarter(name, starter);
+                photoStarters.put(name, starter);
+            }
+            DiscourseLoader.INSTANCE.cachePostPhotos(container, images, chat -> {
                 refreshMessageMedia(chat);
                 return kotlin.Unit.INSTANCE;
             });
-            DiscourseImageBridge.INSTANCE.registerPhotoStarter(name, starter);
-            photoStarters.put(name, starter);
         }
-        DiscourseLoader.INSTANCE.cachePostPhotos(container, images, chat -> {
-            refreshMessageMedia(chat);
-            return kotlin.Unit.INSTANCE;
-        });
+        List<PostImage> emojis = body.getEmojis();
+        if (emojis != null && !emojis.isEmpty()) {
+            DiscourseLoader.INSTANCE.cacheImages(container, emojis, () -> {
+                for (PostImage emoji : emojis) {
+                    DiscourseImageBridge.INSTANCE.applyEmojiArtwork(emoji);
+                }
+                return kotlin.Unit.INSTANCE;
+            });
+        }
     }
 
     /**

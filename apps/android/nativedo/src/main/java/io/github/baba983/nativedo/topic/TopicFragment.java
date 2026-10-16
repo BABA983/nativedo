@@ -4456,84 +4456,6 @@ public class TopicFragment extends BaseFragment
     }
 
     /**
-     * Upgrades inline artwork without replacing rows. The cooked body and bubble count are
-     * unchanged; only the rich layouts need updating. Preserve expanded details and the viewport.
-     * Structural changes such as edits and polls still use {@link #rebuildFloor}.
-     */
-    private void refreshFloorInPlace(int floor) {
-        if (floor < 0 || floor >= floors.size()) {
-            return;
-        }
-        int first = -1;
-        int count = 0;
-        for (int index = 0; index < bubbleFloors.size(); index++) {
-            if (bubbleFloors.get(index) == floor) {
-                if (first < 0) {
-                    first = index;
-                }
-                count++;
-            }
-        }
-        if (first < 0) {
-            return;
-        }
-        List<MessageObject> rebuilt = new ArrayList<>();
-        List<PreparedPostBody> rebuiltBodies = new ArrayList<>();
-        buildBubbles(floors.get(floor), topicId, rebuilt, rebuiltBodies);
-        LinearLayoutManager manager = listView == null ? null : (LinearLayoutManager) listView.getLayoutManager();
-        int anchorPosition = manager == null ? -1 : manager.findFirstVisibleItemPosition();
-        View anchor = manager == null ? null : manager.findViewByPosition(anchorPosition);
-        int offset = anchor == null || listView == null ? 0 : anchor.getTop() - listView.getPaddingTop();
-        int last = first + count - 1;
-        // The cooked body and its block order are unchanged. Preserve details opened while the
-        // artwork was downloading, including details in sibling segments.
-        ArrayList<Boolean> detailsOpen = new ArrayList<>();
-        for (int i = first; i <= last; i++) {
-            RichMessageLayout layout = bubbles.get(i).richLayout;
-            if (layout == null) continue;
-            for (RichMessageLayout.RichBlock block : layout.blocks) {
-                if (block instanceof RichMessageLayout.RichDetailsBlock) {
-                    detailsOpen.add(((RichMessageLayout.RichDetailsBlock) block).block.open);
-                }
-            }
-        }
-        for (int index = 0; index < count; index++) {
-            MessageObject target = bubbles.get(first + index);
-            target.messageOwner.rich_message = rebuilt.get(index).messageOwner.rich_message;
-            target.generateLayout(null);
-            bubbleBodies.set(first + index, rebuiltBodies.get(index));
-            // buildBubbles records reply targets for its temporary messages, not the kept rows.
-            replyTargetFloors.remove(rebuilt.get(index));
-        }
-        // Put the details the reader opened back, then re-measure the rows on screen.
-        int detail = 0;
-        for (int i = first; i <= last; i++) {
-            RichMessageLayout layout = bubbles.get(i).richLayout;
-            if (layout == null) continue;
-            for (RichMessageLayout.RichBlock block : layout.blocks) {
-                if (block instanceof RichMessageLayout.RichDetailsBlock && detail < detailsOpen.size()) {
-                    ((RichMessageLayout.RichDetailsBlock) block).block.open = detailsOpen.get(detail++);
-                }
-            }
-            if (!detailsOpen.isEmpty()) layout.layout(null);
-        }
-        if (manager != null) {
-            // Visible rows update in place; off-screen rows bind their updated body on return.
-            for (int index = 0; index < count; index++) {
-                View view = manager.findViewByPosition(first + index);
-                if (view instanceof ChatMessageCell) {
-                    ((ChatMessageCell) view).forceResetMessageObject();
-                    view.requestLayout();
-                    view.invalidate();
-                }
-            }
-        }
-        if (anchor != null) {
-            manager.scrollToPositionWithOffset(anchorPosition, offset);
-        }
-    }
-
-    /**
      * What the reader can do with a post: copy its text, copy a link to it, bookmark it, or reply
      * to it. The choices are upstream's own scrim popup, anchored on the bubble that was pressed —
      * the shape a chat uses for a message's menu — and the site's reactions lead it as upstream's
@@ -5834,17 +5756,13 @@ public class TopicFragment extends BaseFragment
         List<PostVideo> videos = body.getVideos();
         List<PostImage> emojis = body.getEmojis();
         Runnable onEmojisReady = () -> {
-            // An emoji drawn as its readable label because its picture was not on disk becomes the
-            // tag upstream draws once the picture lands. Emoji cannot change the segment count, so
-            // refresh the floor where it sits instead of replacing its rows.
-            if (anyEmojiCached(emojis)) {
-                int floor = floorOf(message);
-                if (floor >= 0) {
-                    refreshFloorInPlace(floor);
-                    return;
-                }
+            // The span and the box it fills were laid out from the body's first draw, so a picture
+            // that lands now only has to reach the drawable already bound to its document: the
+            // artwork replaces the placeholder the span is showing, and nothing about the row, the
+            // body or the message is rebuilt. A picture that never lands keeps the placeholder.
+            for (PostImage emoji : emojis) {
+                DiscourseImageBridge.INSTANCE.applyEmojiArtwork(emoji);
             }
-            onReady.run();
         };
         Runnable onAttachmentsReady = () -> {
             DiscourseImageBridge.INSTANCE.applyAttachmentFiles(message.messageOwner, attachments);
@@ -5871,16 +5789,6 @@ public class TopicFragment extends BaseFragment
             onReady.run();
             return kotlin.Unit.INSTANCE;
         });
-    }
-
-    /** Whether any of a body's emoji pictures is now on disk, so its label can become artwork. */
-    private static boolean anyEmojiCached(List<PostImage> emojis) {
-        for (PostImage emoji : emojis) {
-            if (DiscourseImageBridge.INSTANCE.emojiCached(emoji)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /**

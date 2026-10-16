@@ -113,8 +113,12 @@ localized recovery text, not a full-screen progress label or raw exception messa
 Its tap retries the read or opens visible session recovery as appropriate. Paging
 failures retain readable posts and use the existing upstream Bulletin instead.
 
-Inline emoji fallback-to-artwork upgrades need new rich runs, so they regenerate
-the body inside the retained message while restoring expanded details and the viewport.
+Inline emoji reserve their upstream `AnimatedEmojiSpan` from the first layout,
+including on a cold cache. A document path thumbnail supplies Telegram's SVG
+placeholder while NativeDo fetches the picture over HTTP. Completion updates only
+the existing `ImageReceiver` with a local file path, without rebuilding the body
+or changing line breaks, expanded details or the viewport. Failed downloads keep
+the same placeholder; the covered shortcode remains available for copy and accessibility.
 A late reply target updates only the first bubble's preview, keeping its body and
 pending media callbacks. A capsule title arriving after initial layout requests
 measurement again so its marquee layer does not retain the empty title's short bounds.

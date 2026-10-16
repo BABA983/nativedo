@@ -17,7 +17,9 @@ import org.jsoup.nodes.TextNode
 import org.jsoup.parser.Tag
 import org.telegram.messenger.FileLoader
 import org.telegram.messenger.FileLog
+import org.telegram.messenger.ImageLocation
 import org.telegram.messenger.NotificationCenter
+import org.telegram.messenger.SvgHelper
 import org.telegram.messenger.UserConfig
 import org.telegram.tgnet.TLRPC
 import org.telegram.ui.Components.AnimatedEmojiDrawable
@@ -185,25 +187,25 @@ object DiscourseImageBridge {
         // Inline emoji: the site's cook leaves each one as an `img.emoji` (standard twemoji, or a
         // custom emoji it uploaded) carrying the picture's own src and a readable shortcode as
         // alt/title. Upstream's importer drops a bare inline img, so each becomes an
-        // `animated-emoji` element - the tag upstream's rich renderer draws from a document id -
-        // once its picture is on disk; until then it stays the readable label it came with, so a
-        // slow or refused fetch never leaves a blank square. The picture is fetched through the
-        // same image cache as a post photo, by the id both the tag and the document share.
+        // `animated-emoji` element - the tag upstream's rich renderer draws from a document id.
+        // The element is written from the first layout, whether or not the picture is on disk:
+        // upstream's own placeholder (a path-size thumb on the document) fills the span's box while
+        // the picture is missing, and the span keeps the emoji's footprint, so nothing has to be
+        // rebuilt when the bytes land - the artwork is handed to the drawable already bound to the
+        // document. The picture itself is fetched through the same image cache as a post photo, by
+        // the id both the tag and the document share.
         val emojiImages = ArrayList<PostImage>()
         if (emojiCatalog.isNotEmpty()) resolveShortcodes(body, baseUrl, emojiCatalog, emojiImages)
         for (image in body.select("img.emoji")) {
             val asset = emojiAsset(image, baseUrl)
             if (asset == null) {
+                // No picture this client can fetch: leave the readable label exactly as it came.
                 image.replaceWith(TextNode(image.attr("alt").ifBlank { image.attr("title") }))
                 continue
             }
-            if (emojiCached(asset.image)) {
-                seedEmojiDocument(asset.image)
-                image.replaceWith(animatedEmojiElement(asset))
-            } else {
-                emojiImages += asset.image
-                image.replaceWith(TextNode(asset.label))
-            }
+            if (!emojiCached(asset.image)) emojiImages += asset.image
+            seedEmojiDocument(asset.image)
+            image.replaceWith(animatedEmojiElement(asset))
         }
         for (wrapper in body.select(WRAPPERS)) {
             wrapper.unwrap()
@@ -633,6 +635,10 @@ object DiscourseImageBridge {
     /** The size reserved for an emoji whose own markup named none: the site's own 20px default. */
     private const val EMOJI_PX = 20
 
+    /** Unit-square path, scaled to the document thumbnail dimensions before upstream draws it. */
+    private const val EMOJI_PLACEHOLDER_PATH =
+        "M .125 0 H .875 Q 1 0 1 .125 V .875 Q 1 1 .875 1 H .125 Q 0 1 0 .875 V .125 Q 0 0 .125 0 Z"
+
     /** One cooked emoji: the id/label upstream's tag carries, and the picture both share. */
     private data class EmojiAsset(val label: String, val image: PostImage)
 
@@ -686,9 +692,17 @@ object DiscourseImageBridge {
      * picture sits in the file cache this client fills is what lets the renderer draw it with no
      * database and no datacenter: the document's own thumbnail names the file, and its id is the one
      * the tag carries.</p>
+     *
+     * <p>The document is seeded whether or not the picture is on disk yet, because the span is
+     * allocated from the first layout either way. A second, path-size thumbnail is the placeholder
+     * upstream draws in the span's box while the file is missing: its importer turns it into an
+     * `SvgHelper` drawable, and {@code AnimatedEmojiDrawable} keeps it as the receiver's static
+     * thumb until the picture itself loads over it. So the emoji never collapses to a blank hole,
+     * and nothing about the body has to be rebuilt when the bytes arrive - see
+     * {@link #applyEmojiArtwork}.</p>
      */
     private fun seedEmojiDocument(image: PostImage) {
-        val file = localFiles(image).firstOrNull { it.exists() }
+        val file = if (emojiCached(image)) localFiles(image).firstOrNull { it.exists() && it.length() > 0 } else null
         val document = TLRPC.TL_document().apply {
             id = image.id
             dc_id = 0
@@ -696,7 +710,13 @@ object DiscourseImageBridge {
             file_name = "emoji." + image.extension
             mime_type = mimeOf(image.extension)
             size = file?.length() ?: 0L
-            thumbs = arrayListOf(sizeOf(image))
+            // The picture's own size names the file the receiver loads, and the path size is drawn
+            // in its place until that file exists. The file size carries no location until the file
+            // is on disk: upstream's loader reads an absent location as "nothing to fetch", where a
+            // location with no file behind it would send it after a Telegram datacenter that does
+            // not exist, and its request would never end. The picture is handed over separately,
+            // once it lands - see {@link #applyEmojiArtwork}.
+            thumbs = arrayListOf<TLRPC.PhotoSize>(emojiFileSize(image, file != null), emojiPlaceholderThumb(image))
             attributes = arrayListOf()
         }
         // Upstream keys the fetcher by account: the renderer asks the selected one, the rest of this
@@ -706,6 +726,57 @@ object DiscourseImageBridge {
         if (selected != 0) {
             AnimatedEmojiDrawable.getDocumentFetcher(selected).putDocument(document)
         }
+    }
+
+    /** The emoji's own size in the document, with the file's location only once it is on disk. */
+    private fun emojiFileSize(image: PostImage, present: Boolean): TLRPC.TL_photoSize =
+        sizeOf(image).apply { if (!present) location = null }
+
+    /**
+     * Upstream's own placeholder for an emoji whose picture is not on disk: a path-size thumb its
+     * importer draws as an `SvgHelper` shimmer in the span's box, the same shape an animated
+     * sticker's document carries while its file loads.
+     */
+    private fun emojiPlaceholderThumb(image: PostImage): TLRPC.TL_photoPathSize = TLRPC.TL_photoPathSize().apply {
+        type = "p"
+        w = image.width
+        h = image.height
+        svgPath = SvgHelper.doPath(EMOJI_PLACEHOLDER_PATH).apply {
+            transform(android.graphics.Matrix().apply { setScale(image.width.toFloat(), image.height.toFloat()) })
+        }
+    }
+
+    /**
+     * Hands a picture that has just landed to the emoji drawable already bound to its document.
+     *
+     * <p>The span and its box were laid out from the first draw, showing the placeholder while the
+     * picture was missing; this only tells that drawable's receiver to read the file now, the same
+     * local-only location the block path hands upstream. Nothing about the row, the body or the
+     * message is rebuilt - a failed or still-missing picture simply keeps the placeholder, and the
+     * readable shortcode stays the span's covered text for copy and selection.</p>
+     */
+    fun applyEmojiArtwork(image: PostImage) {
+        if (!emojiCached(image)) {
+            return
+        }
+        val file = localFiles(image).firstOrNull { it.exists() && it.length() > 0 } ?: return
+        val drawable = AnimatedEmojiDrawable.make(
+            UserConfig.selectedAccount, AnimatedEmojiDrawable.CACHE_TYPE_MESSAGES, image.id, null,
+        )
+        // Theme/lite-mode changes can reinitialize this drawable from its retained document.
+        drawable.document?.apply {
+            thumbs = arrayListOf<TLRPC.PhotoSize>(emojiFileSize(image, true), emojiPlaceholderThumb(image))
+            size = file.length()
+        }
+        val receiver = drawable.imageReceiver ?: return
+        val side = drawable.sizedp
+        // A filesystem path is cache-only in ImageLoader, so nothing here can become a datacenter
+        // request; the placeholder is kept as the static thumb so it shimmers until the bytes decode.
+        receiver.setImage(
+            ImageLocation.getForPath(file.absolutePath),
+            "${side}_${side}",
+            null, null, receiver.staticThumb, 0L, image.extension, null, 1,
+        )
     }
 
     /** A picture's file name, without its extension, as a readable shortcode label. */
@@ -718,8 +789,9 @@ object DiscourseImageBridge {
     /**
      * Raw shortcodes the site's cook left as literal text: `:name:` becomes the same emoji a cooked
      * one would, but only when the loaded catalog names that shortcode. An unknown literal, and any
-     * text inside a code/pre block, is left exactly as written. Only missing pictures are queued
-     * for download, so a warm picture cannot cause an unrelated failed label to rebuild the floor.
+     * text inside a code/pre block, is left exactly as written. A recognized shortcode becomes the
+     * `animated-emoji` tag from the first layout, like a cooked one; only its missing picture is
+     * queued for download.
      */
     private fun resolveShortcodes(
         root: Element,
@@ -746,13 +818,9 @@ object DiscourseImageBridge {
                 }
                 val label = ":$name:"
                 val image = PostImage(idOf(url), url, EMOJI_PX, EMOJI_PX, extensionOf(url))
-                if (emojiCached(image)) {
-                    seedEmojiDocument(image)
-                    pieces += animatedEmojiElement(EmojiAsset(label, image))
-                } else {
-                    out += image
-                    pieces += TextNode(label)
-                }
+                if (!emojiCached(image)) out += image
+                seedEmojiDocument(image)
+                pieces += animatedEmojiElement(EmojiAsset(label, image))
                 last = match.range.last + 1
             }
             if (pieces.isEmpty()) {
@@ -1369,7 +1437,7 @@ class PreparedPostBody(
     val images: List<PostImage>,
     val attachments: List<PostAttachment> = emptyList(),
     val videos: List<PostVideo> = emptyList(),
-    /** Missing emoji pictures to fetch, then upgrade their labels to upstream's inline artwork. */
+    /** Missing emoji pictures to fetch, then hand to the drawable already bound to their document. */
     val emojis: List<PostImage> = emptyList(),
 )
 

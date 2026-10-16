@@ -44,16 +44,21 @@ import java.util.concurrent.TimeUnit
  *
  * <p>The failure modes this pins, all through `FakeDiscourseSite` -> `TopicFragment`:</p>
  * <ul>
- *   <li>an emoji whose picture is already on disk must reach upstream's rich renderer as an
- *       `animated-emoji` tag - a `textCustomEmoji` / `AnimatedEmojiSpan` with a decoded bitmap -
- *       beside zh/en/bold/anchor runs, not as its `:shortcode:` label;</li>
- *   <li>an emoji whose picture is still arriving must read as its label at first, then become the
- *       artwork once the fetch completes, without the list moving or its adapter being replaced;</li>
- *   <li>an emoji the site will not hand over (or serves as something undecodable) must stay its
- *       readable label rather than a blank square;</li>
- *   <li>two distinct emoji must never share a picture;</li>
+ *   <li>a <em>cold</em> body emoji - one whose picture is not on disk yet - claims its Telegram
+ *       emoji-span box at the first layout, so it reflows nothing when the artwork later arrives:
+ *       the rendered line breaks and the bubble's height are the same before and after the fetch,
+ *       and the label it covers stays available for copy and accessibility;</li>
+ *   <li>only the artwork changes at HTTP completion - the same span, on the same visible row, draws
+ *       the site's picture (its own colour) in place of the placeholder, with the reader's place,
+ *       the floor and any expanded details untouched, and no full-floor reconstruction;</li>
+ *   <li>a fetch the site refuses or answers with something undecodable keeps the same stable,
+ *       visible placeholder - it never tightens back into a literal shortcode or blanks the run;</li>
+ *   <li>a source this client cannot fetch at all (no `src`, or one that is not `http(s)`) stays the
+ *       literal label it came with;</li>
  *   <li>a raw shortcode is an emoji only when the loaded catalog names it, and never inside
- *       code/pre.</li>
+ *       code/pre, and it too claims its span at once rather than reflowing;</li>
+ *   <li>two distinct emoji must never share a picture, and an emoji must draw inside the body text
+ *       line, tracking the body font.</li>
  * </ul>
  *
  * <p>Every run also asserts the stock code reached no Telegram path: no tgnet initialisation, no
@@ -146,28 +151,41 @@ internal class DiscourseEmojiRenderTest {
     }
 
     /**
-     * A picture that is blocked mid-transfer: the emoji must read as its label at first, then, once
-     * the transfer finishes, become the artwork - on the same visible row, with the reader's place,
-     * the floor and any expanded details untouched. The failure this pins is the emoji refresh
-     * replacing the floor's rows: a remove/insert (or a change notice the cell animation cannot
-     * reuse) re-creates the visible {@code ChatMessageCell}, so the floor flashes and the reader's
-     * row is recycled. The adapter, the visible row's identity, its pixel anchor and its content
-     * must all survive. Nothing navigates and nothing reaches tgnet while it waits.
+     * The accepted change: a cold body emoji claims its Telegram emoji-span box at the first layout
+     * - a visible placeholder the size of the artwork that will replace it - and only the artwork
+     * arrives later. The failure this pins is the old label-first path: a `:shortcode:` that
+     * occupies text width until the fetch lands, then turns into a span, re-wrapping the paragraph
+     * and rebuilding the floor. The oracle is the rendered line breaks and bubble geometry taken
+     * while two distinct custom emoji are still cold and again after their pictures land: they must
+     * be identical, so nothing re-wrapped, and each placeholder box must already be the emoji-span
+     * square, not the label's text width. Chinese body text sits on the wrap boundary, so a
+     * text-width placeholder would move a line. The reader's expanded details, the visible row, the
+     * adapter and the pixel anchor must all survive, and nothing may reach tgnet.
      */
     @Test
-    fun blockedEmojiFetchStaysALabelThenUpgradesInPlaceWithoutNavigation() {
+    fun coldBodyEmojiClaimsItsSpanThenOnlyArtworkArrives() {
         val entered = CountDownLatch(1)
         val release = CountDownLatch(1)
-        val path = "emoji/${runToken()}-blocked.png"
-        val bytes = solidPng(Color.rgb(220, 40, 120), 40)
+        val slow = "emoji/${runToken()}-slow.png"
+        val quick = "emoji/${runToken()}-quick.png"
+        val slowColor = Color.rgb(220, 40, 120)
+        val quickColor = Color.rgb(0, 170, 160)
+        val bytes = solidPng(slowColor, 40)
         try {
             openWith({ s ->
-                s.serveResponse(path) {
+                // The first emoji's picture is held mid-transfer; the second is served normally, so
+                // the loader reaches it only once the first completes.
+                s.serveResponse(slow) {
                     entered.countDown()
                     check(release.await(60, TimeUnit.SECONDS))
                     MockResponse().setHeader("Content-Type", "image/png").setBody(Buffer().write(bytes))
                 }
-                "<p>Anchor <img class='emoji' alt=':slow:' src='${s.url(path)}' width='20' height='20'> tail</p>" +
+                s.serveImage(quick, solidPng(quickColor, 40))
+                // Chinese original text sits on the wrap boundary: a placeholder that measured the
+                // `:shortcode:` label would wrap this paragraph differently to the artwork's square.
+                "<p>你说这事整的，那去朝鲜领不就行了呗，国服朝鲜，最便宜的国家奥 <img class='emoji' alt=':slow:' " +
+                    "src='${s.url(slow)}' width='20' height='20'> 中文继续 <img class='emoji' alt=':quick:' " +
+                    "src='${s.url(quick)}' width='20' height='20'> 结尾文字</p>" +
                     "<details><summary>More</summary><p>Expanded while emoji waits</p></details>"
             }, count = 20)
             harness.await("the emoji request to be in flight") { entered.count == 0L }
@@ -178,14 +196,40 @@ internal class DiscourseEmojiRenderTest {
             manager.scrollToPositionWithOffset(8, -37)
             harness.layoutApp()
             harness.idleClock(100)
-            val before = cell()
-            val top = before.top
-            val floorId = before.messageObject.id
             assertEquals("test must start away from the first floor", 8, manager.findFirstVisibleItemPosition())
-            assertTrue("no artwork may exist before the picture is on disk", emojiHolders().isEmpty())
-            assertTrue("the emoji must read as its label first",
-                before.messageObject.richLayout.joinedText.contains(":slow:"))
             assertTrue("nothing may navigate while the fetch waits", harness.topFragment() is TopicFragment)
+
+            // Cold: both emoji are already emoji spans that reserve the emoji-span square, but no
+            // artwork has arrived. The label stays the covered text, so copy/accessibility keep it.
+            harness.drawApp()
+            val cold = emojiHolders()
+            assertEquals("a cold emoji must already be an emoji span, not a literal label", 2,
+                cold.count { (it.span?.documentId ?: 0L) != 0L })
+            assertTrue("no artwork may exist before a picture is on disk",
+                cold.none { it.drawable?.imageReceiver?.bitmap != null })
+            val coldBoxes = emojiBoxesByDocument()
+            assertEquals("each cold emoji must reserve its own emoji-span box", 2, coldBoxes.size)
+            assertTrue("the placeholder must occupy a real emoji-span square",
+                coldBoxes.values.all { it.first >= 2 && it.second >= 2 })
+            val line = bodyLineHeight()
+            assertTrue("the cold placeholder must reserve an emoji-span square the size of its line, " +
+                "not a text-width shortcode sliver: boxes=$coldBoxes line=$line",
+                coldBoxes.values.all { it.first >= line * 0.5f && it.second >= line * 0.5f })
+            assertEquals("each placeholder must cover its own label for copy/accessibility",
+                setOf(":slow:", ":quick:"), cold.map { emojiCoveredText(it) }.toSet())
+            assertTrue("the cold emoji must read as its label in the joined text",
+                cell().messageObject.richLayout.joinedText.toString().contains(":slow:") &&
+                    cell().messageObject.richLayout.joinedText.toString().contains(":quick:"))
+            renderTo("emoji-cold-light")
+            switchTo(dark = true)
+            rebindPosts()
+            renderTo("emoji-cold-dark")
+            switchTo(dark = false)
+            rebindPosts()
+            harness.drawApp()
+
+            // Expand details while the fetch is still blocked; the artwork upgrade must keep it.
+            val before = cell()
             val header = before.messageObject.richLayout.blocks
                 .filterIsInstance<RichMessageLayout.RichDetailsBlock>().first()
             val x = before.textX + header.padding.left + 80f
@@ -199,14 +243,28 @@ internal class DiscourseEmojiRenderTest {
             harness.drawApp()
             assertTrue("the details must actually expand before the fetch ends",
                 before.messageObject.richLayout.joinedText.contains("Expanded while emoji waits"))
-            renderTo("emoji-blocked-label")
+
+            val top = before.top
+            val floorId = before.messageObject.id
+            val coldGeometry = bodyGeometry()
+            renderTo("emoji-cold-expanded-light")
 
             release.countDown()
-            harness.await("the blocked emoji to become artwork") {
+            harness.await("both blocked emoji to become artwork") {
                 harness.drawApp()
-                emojiHolders().any { it.drawable?.imageReceiver?.bitmap != null }
+                emojiHolders().count { it.drawable?.imageReceiver?.bitmap != null } == 2
             }
 
+            // Only the drawing changed: same line breaks, same bubble, same span boxes, same row.
+            assertEquals("the artwork upgrade must not re-wrap the body", coldGeometry, bodyGeometry())
+            assertEquals("the emoji-span box must not move when artwork replaces the placeholder",
+                coldBoxes, emojiBoxesByDocument())
+            assertEquals("each span must decode its own artwork",
+                setOf(slowColor, quickColor), emojiHolders().mapNotNull { holder ->
+                    holder.drawable?.imageReceiver?.bitmap?.let { it.getPixel(it.width / 2, it.height / 2) }
+                }.toSet())
+            assertEquals("each loaded emoji must keep its label as covered text for copy/accessibility",
+                setOf(":slow:", ":quick:"), emojiHolders().map { emojiCoveredText(it) }.toSet())
             assertSame("the adapter must not be replaced by the upgrade", adapter, list.adapter)
             assertSame("the visible row must be kept, not removed and re-created", before, cell())
             assertTrue("the upgrade must not navigate", harness.topFragment() is TopicFragment)
@@ -214,18 +272,51 @@ internal class DiscourseEmojiRenderTest {
             assertEquals("the floor's pixel anchor must not move", top, cell().top)
             assertTrue("emoji completion must not close the reader's expanded details",
                 cell().messageObject.richLayout.joinedText.contains("Expanded while emoji waits"))
-            assertTrue("the upgrade must replace the label with artwork",
-                emojiHolders().any { it.span?.documentId != null })
-            renderTo("emoji-blocked-upgraded")
+            harness.await("the loaded artwork crossfade to finish") {
+                harness.drawApp()
+                emojiHolders().all { it.drawable?.imageReceiver?.currentAlpha == 1f }
+            }
+            renderTo("emoji-loaded-light")
+            switchTo(dark = true)
+            rebindPosts()
+            harness.await("the artwork to remain visible in dark mode") {
+                harness.drawApp()
+                emojiHolders().size == 2 && emojiHolders().all {
+                    it.drawable?.imageReceiver?.let { receiver -> receiver.bitmap != null && receiver.currentAlpha == 1f } == true
+                }
+            }
+            renderTo("emoji-loaded-dark")
+            switchTo(dark = false)
+            rebindPosts()
+            harness.drawApp()
+
+            // Warm reopen: the cached artwork is drawn without any new download.
+            val fetches = site.requestPaths.count { it.contains("-slow.png") || it.contains("-quick.png") }
+            harness.topFragment()!!.finishFragment()
+            harness.idleClock(600)
+            harness.present(TopicFragment.forTopic(TOPIC, "Emoji render"))
+            harness.await("cached emoji to render after reopening") {
+                harness.drawApp()
+                cells().isNotEmpty() &&
+                    emojiHolders().count { it.drawable?.imageReceiver?.bitmap != null } == 2
+            }
+            assertEquals("reopening must not redownload cached artwork", fetches,
+                site.requestPaths.count { it.contains("-slow.png") || it.contains("-quick.png") })
             assertNoSideEffects()
         } finally {
             release.countDown()
         }
     }
 
-    /** An emoji the site refuses, or answers with something that is not a picture, stays a label. */
+    /**
+     * A picture the site refuses (404) or answers with something undecodable (a 200 that is not an
+     * image) is still a recognized, valid source: the emoji keeps the same stable, visible
+     * placeholder its cold sibling had instead of tightening back into a literal `:shortcode:` or
+     * blanking the run. The sources this client cannot even try - no `src`, or a scheme that is not
+     * `http(s)` - stay literal. A warm reopen keeps the same stable placeholder.
+     */
     @Test
-    fun anEmojiTheSiteWillNotHandOverOrServesGarbageStaysALabel() {
+    fun anEmojiTheSiteWillNotHandOverOrServesGarbageKeepsItsStablePlaceholder() {
         val absent = "emoji/" + runToken() + "-absent.png"
         val garbage = "emoji/" + runToken() + "-garbage.png"
         openWith({ s ->
@@ -233,8 +324,8 @@ internal class DiscourseEmojiRenderTest {
             s.serveResponse(garbage) {
                 MockResponse().setHeader("Content-Type", "image/png").setBody("this is not a png")
             }
-            "<p>Keep <img class='emoji' alt=':missing:' src='${s.url(absent)}' width='20' height='20'> " +
-                "and <img class='emoji' alt=':bad:' src='${s.url(garbage)}' width='20' height='20'> readable " +
+            "<p>保留 <img class='emoji' alt=':missing:' src='${s.url(absent)}' width='20' height='20'> " +
+                "和 <img class='emoji' alt=':bad:' src='${s.url(garbage)}' width='20' height='20'> 文字 " +
                 "<img class='emoji' alt=':no_source:'> " +
                 "<img class='emoji' title=':bad_source:' src='javascript:alert(1)'></p>"
         })
@@ -245,41 +336,100 @@ internal class DiscourseEmojiRenderTest {
         }
         harness.idleClock(300)
         harness.drawApp()
-        assertTrue("an undrawable picture must leave no emoji span", emojiHolders().isEmpty())
+
+        // Both valid sources stay emoji spans in their placeholder state.
+        val holders = emojiHolders()
+        assertEquals("a refused and a corrupt picture must each keep an emoji span", 2,
+            holders.count { (it.span?.documentId ?: 0L) != 0L })
+        assertTrue("no artwork may be drawn for a refused or corrupt picture",
+            holders.none { it.drawable?.imageReceiver?.bitmap != null })
+        assertTrue("the failed emoji must still occupy the emoji-span square",
+            emojiBoxesByDocument().values.all { it.first >= 2 && it.second >= 2 })
         val joined = cell().messageObject.richLayout.joinedText.toString()
-        assertTrue("a refused picture must not blank the run: $joined", joined.contains("Keep :missing:"))
-        assertTrue("a garbage picture must not blank the run: $joined", joined.contains(":bad: readable"))
-        assertTrue("missing src must keep the label: $joined", joined.contains(":no_source:"))
-        assertTrue("unsupported src must keep the title: $joined", joined.contains(":bad_source:"))
-        renderTo("emoji-missing-label", "rich-message-layout/emoji")
+        assertTrue("a refused picture must not blank the run: $joined", joined.contains("保留 :missing:"))
+        assertTrue("a garbage picture must not blank the run: $joined", joined.contains(":bad: 文字"))
+        assertTrue("missing src must keep the label literal: $joined", joined.contains(":no_source:"))
+        assertTrue("unsupported src must keep the title literal: $joined", joined.contains(":bad_source:"))
+        assertEquals("a source-less or unsupported emoji must not become a span", setOf(":missing:", ":bad:"),
+            holders.map { emojiCoveredText(it) }.toSet())
+        val geometry = bodyGeometry()
+        renderTo("emoji-failure-light")
+        switchTo(dark = true)
+        rebindPosts()
+        harness.drawApp()
+        renderTo("emoji-failure-dark")
+        switchTo(dark = false)
+        rebindPosts()
+        harness.drawApp()
+
+        // Warm reopen: the failure must not turn into a reflow on the next open.
+        harness.topFragment()!!.finishFragment()
+        harness.idleClock(600)
+        harness.present(TopicFragment.forTopic(TOPIC, "Emoji render"))
+        harness.await("the failed emoji to come back as placeholder spans") {
+            harness.drawApp()
+            cells().isNotEmpty() && emojiHolders().count { (it.span?.documentId ?: 0L) != 0L } == 2
+        }
+        assertTrue("a failed fetch must not start drawing artwork on reopen",
+            emojiHolders().none { it.drawable?.imageReceiver?.bitmap != null })
+        assertEquals("a failed fetch must reopen with the same stable geometry", geometry, bodyGeometry())
+        assertTrue("the labels must survive the reopen",
+            cell().messageObject.richLayout.joinedText.contains(":missing:") &&
+                cell().messageObject.richLayout.joinedText.contains(":bad:"))
         assertNoSideEffects()
     }
 
     /**
      * A raw shortcode the cook left as text: only a shortcode the loaded catalog names becomes an
-     * emoji, and inside a `<code>` block even a known one stays literal.
+     * emoji - and it claims its span at once, so the run never reflows - while an unknown literal,
+     * and any text inside a `<code>` block, stays exactly as written.
      */
     @Test
-    fun aRawShortcodeIsResolvedOnlyWhenTheLoadedCatalogNamesIt() {
+    fun aRawShortcodeBecomesASpanOnlyWhenTheLoadedCatalogNamesIt() {
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
         val wave = "emoji/${runToken()}-wave.png"
-        openWith({ s ->
-            s.serveImage(wave, solidPng(Color.rgb(80, 200, 120), 40))
-            // The catalog the topic read carries: only `site_wave` is a known shortcode.
-            s.serveJson("emojis.json", """{"custom":[{"name":"site_wave","url":"${s.url(wave)}"}]}""")
-            "<p>hi :site_wave: and :not_a_thing: and <code>:site_wave:</code></p>"
-        })
+        val bytes = solidPng(Color.rgb(80, 200, 120), 40)
+        try {
+            openWith({ s ->
+                // The catalog-named shortcode's picture is held mid-transfer, so the cold state is
+                // observable: a `:shortcode:` that measured as text first would reflow this run.
+                s.serveResponse(wave) {
+                    entered.countDown()
+                    check(release.await(60, TimeUnit.SECONDS))
+                    MockResponse().setHeader("Content-Type", "image/png").setBody(Buffer().write(bytes))
+                }
+                // The catalog the topic read carries: only `site_wave` is a known shortcode.
+                s.serveJson("emojis.json", """{"custom":[{"name":"site_wave","url":"${s.url(wave)}"}]}""")
+                "<p>hi :site_wave: and :not_a_thing: and <code>:site_wave:</code></p>"
+            })
+            harness.await("the shortcode's request to be in flight") { entered.count == 0L }
 
-        harness.await("the known shortcode to render as artwork") {
+            // The catalog-named shortcode claims its span at once; nothing else is a span, and no
+            // artwork exists yet.
             harness.drawApp()
-            emojiHolders().any { it.drawable?.imageReceiver?.bitmap != null }
+            assertEquals("the catalog-named shortcode must claim its span at once", 1,
+                emojiHolders().count { (it.span?.documentId ?: 0L) != 0L })
+            assertEquals("the known shortcode's span must cover its own label", setOf(":site_wave:"),
+                emojiHolders().filter { (it.span?.documentId ?: 0L) != 0L }.map { emojiCoveredText(it) }.toSet())
+            assertTrue("no artwork may exist before the picture is on disk",
+                emojiHolders().none { it.drawable?.imageReceiver?.bitmap != null })
+
+            release.countDown()
+            harness.await("the known shortcode to render as artwork") {
+                harness.drawApp()
+                emojiHolders().any { it.drawable?.imageReceiver?.bitmap != null }
+            }
+            val joined = cell().messageObject.richLayout.joinedText.toString()
+            assertEquals("only the catalog's shortcode is an emoji", 1, emojiHolders().count { it.span?.documentId != null })
+            assertTrue("a known shortcode must resolve: $joined", joined.contains("hi :site_wave:"))
+            assertTrue("an unknown shortcode must stay literal: $joined", joined.contains(":not_a_thing:"))
+            assertTrue("a shortcode inside code must stay literal: $joined", joined.contains(":site_wave:"))
+            renderTo("emoji-raw-shortcode", "rich-message-layout/emoji")
+            assertNoSideEffects()
+        } finally {
+            release.countDown()
         }
-        val joined = cell().messageObject.richLayout.joinedText.toString()
-        assertEquals("only the catalog's shortcode is an emoji", 1, emojiHolders().count { it.span?.documentId != null })
-        assertTrue("a known shortcode must resolve: $joined", joined.contains("hi :site_wave:"))
-        assertTrue("an unknown shortcode must stay literal: $joined", joined.contains(":not_a_thing:"))
-        assertTrue("a shortcode inside code must stay literal: $joined", joined.contains(":site_wave:"))
-        renderTo("emoji-raw-shortcode", "rich-message-layout/emoji")
-        assertNoSideEffects()
     }
 
     /**
@@ -398,9 +548,13 @@ internal class DiscourseEmojiRenderTest {
      */
     private fun emojiSideAndTextLine(): Pair<Float, Float> {
         val holder = emojiHolders().first { it.drawable?.imageReceiver?.bitmap != null }
+        return holder.drawableBounds.width().toFloat() to bodyLineHeight()
+    }
+
+    /** The body text paint's own line height in pixels: what an inline emoji must fit inside. */
+    private fun bodyLineHeight(): Float {
         val metrics = cell().messageObject.richLayout.textPaint.fontMetricsInt
-        val line = (kotlin.math.abs(metrics.ascent) + kotlin.math.abs(metrics.descent)).toFloat()
-        return holder.drawableBounds.width().toFloat() to line
+        return (kotlin.math.abs(metrics.ascent) + kotlin.math.abs(metrics.descent)).toFloat()
     }
 
     private fun emojiHolders(): List<AnimatedEmojiSpan.AnimatedEmojiHolder> =
@@ -408,6 +562,39 @@ internal class DiscourseEmojiRenderTest {
 
     private fun richTextBlocks(): List<RichMessageLayout.RichTextBlock> =
         cell().messageObject.richLayout.blocks.filterIsInstance<RichMessageLayout.RichTextBlock>()
+
+    /** The text an emoji span covers: the label copy and accessibility must keep. */
+    private fun emojiCoveredText(holder: AnimatedEmojiSpan.AnimatedEmojiHolder): String {
+        val layout = holder.layout ?: return ""
+        val spannable = layout.text as? android.text.Spanned ?: return ""
+        val span = holder.span ?: return ""
+        val start = spannable.getSpanStart(span)
+        val end = spannable.getSpanEnd(span)
+        return if (start in 0 until end) spannable.subSequence(start, end).toString() else ""
+    }
+
+    /** Each emoji's document id and the square the span reserved for it, in the visible cell. */
+    private fun emojiBoxesByDocument(): Map<Long, Pair<Int, Int>> = emojiHolders().mapNotNull { holder ->
+        val id = holder.span?.documentId ?: return@mapNotNull null
+        id to (holder.drawableBounds.width() to holder.drawableBounds.height())
+    }.toMap()
+
+    /**
+     * The visible body's own rendering geometry: the wrap points and pixel widths of every line,
+     * the body block's height, the rich layout's height and the cell's position and height. A
+     * placeholder that measured a shortcode label instead of the emoji-span square - or a rebuild
+     * that re-wrapped the paragraph - changes this between the cold and loaded states.
+     */
+    private fun bodyGeometry(): String {
+        val rich = cell().messageObject.richLayout
+        val body = rich.blocks.filterIsInstance<RichMessageLayout.RichTextBlock>().firstOrNull() ?: return ""
+        val layout = body.text.layout ?: return ""
+        val lines = (0 until layout.lineCount).joinToString("|") { i ->
+            "${layout.getLineStart(i)}-${layout.getLineEnd(i)}@${layout.getLineWidth(i).toInt()}"
+        }
+        return "cell=${cell().top},${cell().height}|bubble=${cell().backgroundDrawableLeft}," +
+            "${cell().backgroundDrawableRight}|rich=${rich.getHeight()}|block=${body.getHeight()}|lines=$lines"
+    }
 
     /** The cached file an emoji document id names: the same id/photo-size shape the tag carries. */
     private fun emojiFile(documentId: Long): File =
