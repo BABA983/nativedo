@@ -30,6 +30,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import org.robolectric.shadows.ShadowDialog
 import org.telegram.messenger.ApplicationLoader
 import org.telegram.ui.ActionBar.AlertDialog
@@ -46,6 +47,7 @@ import org.telegram.ui.Components.RecyclerListView
  * that page opens with the reader still signed in.</p>
  */
 @RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(
     application = ApplicationLoader::class,
     instrumentedPackages = ["org.telegram"],
@@ -84,6 +86,94 @@ internal class SettingsTabTest {
     fun tearDown() {
         NativeDo.setContainerFactory { context -> site.authenticatedContainer(context) }
         site.stop()
+    }
+
+    @Test
+    fun sessionDiagnosticsCanBeSharedAfterExpiryWithoutSharingCredentialsOrBodies() {
+        val shell = harness.bootApp()
+        harness.await("the topic list") { currentFragmentName(shell) == "TopicListFragment" }
+        tapTab(2)
+        harness.await("settings") { currentFragmentName(shell) == "SettingsFragment" }
+        clickNamedRow("诊断")
+        harness.await("diagnostics") { currentFragmentName(shell) == "DiagnosticsFragment" }
+        harness.layoutApp()
+        harness.renderApp("diagnostics-off")
+
+        // Before consent, even a real request leaves no recorded event in the export.
+        kotlinx.coroutines.runBlocking { runCatching { container.discourseApiClient.fetchCurrentUser() } }
+        clickNamedRow("导出诊断日志")
+        val empty = sharedDiagnosticFiles()
+        assertFalse("recording is opt-in", empty.values.any { it.contains("event=") })
+
+        clickNamedRow("记录会话诊断")
+        val consent = ShadowDialog.getLatestDialog() as AlertDialog
+        confirmButton(consent, "开启")
+        harness.layoutApp()
+        harness.renderApp("diagnostics-on")
+
+        site.serveResponse("session/current.json") {
+            okhttp3.mockwebserver.MockResponse().setResponseCode(401)
+                .setHeader("Content-Type", "application/json")
+                .setHeader("Set-Cookie", "_t=PRIVATE-COOKIE-MARKER; Path=/; HttpOnly")
+                .setBody("""{"error_type":"not_logged_in","errors":["PRIVATE-BODY-MARKER"]}""")
+        }
+        kotlinx.coroutines.runBlocking { runCatching { container.discourseApiClient.fetchCurrentUser() } }
+        harness.await("the session to expire") {
+            container.sessionCoordinator.sessionState.value is io.github.baba983.nativedo.core.session.AppSessionState.Expired
+        }
+        back()
+        harness.await("settings after expiry") { currentFragmentName(shell) == "SettingsFragment" }
+        clickNamedRow("诊断")
+        harness.await("diagnostics still accessible after expiry") {
+            currentFragmentName(shell) == "DiagnosticsFragment"
+        }
+        harness.renderApp("diagnostics-expired")
+        clickNamedRow("导出诊断日志")
+        val files = sharedDiagnosticFiles()
+        assertTrue("the archive has build metadata", files.containsKey("build.txt"))
+        val events = files.filterKeys { it.endsWith(".log") }.values.joinToString("\n")
+        assertTrue("the classified HTTP failure is recorded", events.contains("status=401"))
+        assertTrue("the server logout reason is distinguishable", events.contains("expired_ServerLoggedOut"))
+        for (secret in listOf("PRIVATE-COOKIE-MARKER", "PRIVATE-BODY-MARKER", "session-token", "forum-session", site.baseUrl)) {
+            assertFalse("the archive excludes $secret", files.values.any { it.contains(secret) })
+        }
+
+        clickNamedRow("记录会话诊断") // Stop; exporting does not implicitly re-enable it.
+        clickNamedRow("清除诊断日志")
+        confirmButton(ShadowDialog.getLatestDialog() as AlertDialog, "清除")
+        harness.await("clear completion") {
+            val dialog = ShadowDialog.getLatestDialog() as? AlertDialog
+            dialog != null && "日志已清除" in dialogTexts(dialog)
+        }
+        confirmButton(ShadowDialog.getLatestDialog() as AlertDialog, "好")
+        clickNamedRow("导出诊断日志")
+        assertFalse("clear removes the recorded events", sharedDiagnosticFiles().values.any { it.contains("event=") })
+        harness.assertNoTelegramSideEffects()
+    }
+
+    private fun sharedDiagnosticFiles(): Map<String, String> {
+        var chooser: android.content.Intent? = null
+        harness.await("the system share chooser") {
+            chooser = org.robolectric.Shadows.shadowOf(harness.activity).nextStartedActivity
+            chooser != null
+        }
+        assertEquals(android.content.Intent.ACTION_CHOOSER, chooser!!.action)
+        val send = chooser!!.getParcelableExtra<android.content.Intent>(android.content.Intent.EXTRA_INTENT)!!
+        assertEquals(android.content.Intent.ACTION_SEND, send.action)
+        assertEquals("application/zip", send.type)
+        assertTrue("the receiver gets a temporary read grant",
+            send.flags and android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION != 0)
+        val uri = send.getParcelableExtra<android.net.Uri>(android.content.Intent.EXTRA_STREAM)!!
+        assertEquals("content", uri.scheme)
+        assertEquals("${harness.context.packageName}.provider", uri.authority)
+        return java.util.zip.ZipInputStream(harness.context.contentResolver.openInputStream(uri)).use { zip ->
+            buildMap {
+                while (true) {
+                    val entry = zip.nextEntry ?: break
+                    put(entry.name, zip.readBytes().toString(Charsets.UTF_8))
+                }
+            }
+        }
     }
 
     @Test

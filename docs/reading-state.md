@@ -14,6 +14,31 @@ experiment produces a separate User API Key; it is **not** the production cookie
 session and does not grant a general read/write mode. See its
 [contract](../contracts/discourse/device-authorization.md).
 
+### User-shared session diagnostics
+
+The active build offers Settings → 诊断 for session recording, export and clear,
+including while signed out or expired. Recording defaults off and enabling it asks
+for consent. The choice persists across restarts; recording retains at most two
+256 KiB event files in private, non-backed-up storage. Export includes only those
+files and build/Android-version metadata in one cache ZIP via FileProvider and the
+system share chooser, never an automatic upload. Disabling stops new recording but
+keeps existing files; clearing deletes both event files and that export. If recording
+remains enabled, subsequent events can create new logs. Already shared copies cannot
+be revoked by clearing local files.
+
+The [recorder](../apps/android/nativedo/src/main/java/io/github/baba983/nativedo/core/session/SessionDiagnostics.kt)
+uses the existing fixed session events and response classifications, not arbitrary
+logcat, Telegram's entire logs directory or exception messages. Cookie presence and
+rotation are booleans/counters; cookie values, full URLs, account identities, request
+and response bodies, databases and drafts are excluded from the archive. File writes
+run on a single background queue; storage failures do not change request/session
+results. Queued events from an earlier recording interval cannot reappear after
+disable or clear. These logs provide classification evidence, not proof that every
+login failure has the same cause. The host settings flow exercises a classified
+response in the shared ZIP and access after expiry; isolated checks cover persistence,
+bounded retention and pending-write isolation. Device sharing remains a separate
+acceptance step.
+
 ## Reading progress is not the viewport
 
 There are three distinct facts:

@@ -32,6 +32,7 @@ public class NativeDoApplication extends ApplicationLoader {
     @Override
     public void onCreate() {
         super.onCreate();
+        io.github.baba983.nativedo.core.session.SessionDiagnostics.initialize(this);
         loadRuntimeConfig();
         loadShellRuntime();
         // The reader's link choice is process-wide and the browser hook is static: it is read back
@@ -146,4 +147,3 @@ public class NativeDoApplication extends ApplicationLoader {
         return BuildConfig.APPLICATION_ID;
     }
 }
-

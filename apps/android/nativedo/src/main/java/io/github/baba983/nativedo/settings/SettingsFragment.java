@@ -87,6 +87,7 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
     private static final int ROW_SIGN_IN = 15;
     /** The reader's private messages: the inbox, the sent box and the unread ones. */
     private static final int ROW_MESSAGES = 16;
+    private static final int ROW_DIAGNOSTICS = 17;
 
     /** Upstream's header block: a 120dp avatar container and the two titles, 200dp minus the 12dp
      * the list adds above it ({@code SettingsActivity.fillItems}'s {@code asCustomShadow(topView,
@@ -652,6 +653,9 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
         items.add(UItem.asShadow(null));
 
         items.add(UItem.asHeader("帮助"));
+        items.add(SettingCell.Factory.of(ROW_DIAGNOSTICS,
+                IconBackgroundColors.BLUE_LIGHT.top, IconBackgroundColors.BLUE_LIGHT.bottom,
+                org.telegram.messenger.R.drawable.settings_faq, "诊断", "记录、导出与清除会话日志"));
         items.add(SettingCell.Factory.of(ROW_HELP_ABOUT,
                 IconBackgroundColors.ORANGE.top, IconBackgroundColors.ORANGE.bottom,
                 org.telegram.messenger.R.drawable.settings_ask, "关于 linux.do"));
@@ -703,6 +707,8 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
             presentFragment(new PreferencesFragment(PreferencesFragment.MODE_NOTIFICATIONS));
         } else if (item.id == ROW_STORAGE) {
             presentFragment(new StorageFragment());
+        } else if (item.id == ROW_DIAGNOSTICS) {
+            presentFragment(new DiagnosticsFragment());
         } else if (item.id == ROW_POWER) {
             // Upstream's own power-saving page: its flags are what this shell's blur, liquid glass
             // and list compression read (SharedConfig/LiteMode), so the page changes this client.
