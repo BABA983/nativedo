@@ -21,6 +21,45 @@ apply plugin: 'org.telegram.build-app-plugin'
 apply plugin: 'org.jetbrains.kotlin.android'
 apply plugin: 'org.jetbrains.kotlin.plugin.serialization'
 
+// --- Shared signing key ------------------------------------------------------
+// Every builder (Mac, another PC, orb, CI) has to sign with the same key: a package signed by
+// another machine's key cannot replace an install in place, and the installer reports
+// `INSTALL_FAILED_UPDATE_INCOMPATIBLE` (-7). Gradle's default debug key is generated per machine,
+// so the shared key is supplied from outside the repository and never committed:
+//
+//   apps/android/nativedo/keystore.properties         (gitignored)
+//     storeFile=/path/to/nativedo.jks    # absolute, or relative to this module
+//     storePassword=...
+//     keyAlias=...
+//     keyPassword=...                    # optional; defaults to storePassword
+//
+// or the same four values as `NATIVEDO_KEYSTORE_FILE`, `NATIVEDO_KEYSTORE_PASSWORD`,
+// `NATIVEDO_KEY_ALIAS` and `NATIVEDO_KEY_PASSWORD`. Without either, debug and preview fall back to
+// the per-machine debug key, which is what the warning below says out loud.
+def sharedSigningProps = new Properties()
+def sharedSigningPropsFile = file('keystore.properties')
+def sharedSigningSource = null
+if (sharedSigningPropsFile.exists()) {
+    sharedSigningPropsFile.withInputStream { sharedSigningProps.load(it) }
+    sharedSigningSource = sharedSigningPropsFile.path
+} else if (System.getenv('NATIVEDO_KEYSTORE_FILE')) {
+    sharedSigningProps.setProperty('storeFile', System.getenv('NATIVEDO_KEYSTORE_FILE'))
+    sharedSigningProps.setProperty('storePassword', System.getenv('NATIVEDO_KEYSTORE_PASSWORD') ?: '')
+    sharedSigningProps.setProperty('keyAlias', System.getenv('NATIVEDO_KEY_ALIAS') ?: '')
+    sharedSigningProps.setProperty('keyPassword', System.getenv('NATIVEDO_KEY_PASSWORD') ?: '')
+    sharedSigningSource = 'NATIVEDO_KEYSTORE_FILE'
+}
+def sharedSigningFile = sharedSigningSource == null ? null : file(sharedSigningProps.getProperty('storeFile'))
+def sharedSigningAlias = sharedSigningProps.getProperty('keyAlias')
+def sharedSigningStorePassword = sharedSigningProps.getProperty('storePassword')
+def sharedSigningKeyPassword = sharedSigningProps.getProperty('keyPassword') ?: sharedSigningStorePassword
+
+if (sharedSigningFile == null) {
+    logger.warn('nativedo: no shared signing key configured (keystore.properties or NATIVEDO_* ' +
+        'environment): this build is signed with the per-machine debug key, so its APK cannot be ' +
+        'installed over one built elsewhere - INSTALL_FAILED_UPDATE_INCOMPATIBLE (-7).')
+}
+
 android {
     namespace 'io.github.baba983.nativedo'
     compileSdkVersion 36
@@ -28,6 +67,17 @@ android {
     // Stripping the native library needs an NDK; without this AGP has no strip binary and ships
     // the 351 MB unstripped libtmessages.49.so.
     ndkVersion '27.2.12479018'
+
+    signingConfigs {
+        if (sharedSigningFile != null) {
+            shared {
+                storeFile sharedSigningFile
+                storePassword sharedSigningStorePassword
+                keyAlias sharedSigningAlias
+                keyPassword sharedSigningKeyPassword
+            }
+        }
+    }
 
     defaultConfig {
         applicationId 'io.github.baba983.nativedo'
@@ -59,6 +109,11 @@ android {
 
     buildTypes {
         debug {
+            // `preview` inherits this too, so the two variants stay update-compatible with builds
+            // from other machines.
+            if (sharedSigningFile != null) {
+                signingConfig signingConfigs.shared
+            }
             // Upstream's own app build sets these; without debugSymbolLevel AGP leaves the 351 MB
             // unstripped libtmessages.49.so in the APK instead of moving the symbols out.
             jniDebuggable true

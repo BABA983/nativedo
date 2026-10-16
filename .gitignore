@@ -15,6 +15,9 @@ captures/
 
 *.jks
 *.keystore
+# Signing credentials for the shared key: `:nativedo` reads them from this file, and the key
+# itself is already covered by the two rules above.
+apps/android/nativedo/keystore.properties
 
 .ace-tool/
 .superpowers/

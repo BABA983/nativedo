@@ -327,6 +327,32 @@ jobs:
       - name: Unit tests
         run: ./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:testDebugUnitTest --quiet
 
+      - name: Shared signing key (optional)
+        # The key the Mac and orb builds use, when this repository holds it as secrets. With it the
+        # APK this job assembles can replace an install made on another machine; without it the
+        # assemble below still runs and verifies the code, signed with Gradle's per-machine debug
+        # key (which cannot update another machine's install).
+        # Secrets: NATIVEDO_KEYSTORE_B64 (base64 of the .jks file), NATIVEDO_KEYSTORE_PASSWORD,
+        # NATIVEDO_KEY_ALIAS, NATIVEDO_KEY_PASSWORD. The materialized files are gitignored and
+        # never land in an uploaded artifact (those paths are all under `build/`).
+        env:
+          KEYSTORE_B64: ${{ secrets.NATIVEDO_KEYSTORE_B64 }}
+          STORE_PASSWORD: ${{ secrets.NATIVEDO_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.NATIVEDO_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.NATIVEDO_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "no NATIVEDO_KEYSTORE_B64 secret: the arm64 APK uses the per-machine debug key"
+            exit 0
+          fi
+          printf '%s' "$KEYSTORE_B64" | base64 -d > apps/android/nativedo/signing.jks
+          {
+            echo "storeFile=signing.jks"
+            echo "storePassword=$STORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=${KEY_PASSWORD:-$STORE_PASSWORD}"
+          } > apps/android/nativedo/keystore.properties
+
       - name: arm64 assemble
         run: ./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:assembleDebug -Pandroid.injected.build.abi=arm64-v8a -Pandroid.injected.testOnly=false --quiet
 

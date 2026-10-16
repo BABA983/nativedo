@@ -48,10 +48,25 @@ It appears as **NativeDo 测试版**, with application ID
 `io.github.baba983.nativedo.preview` and separate login, drafts and storage.
 The normal `debug` application's ID is unchanged. Preview inherits debug build
 settings and uses the debug Telegram library, but does not include `src/debug`'s
-developer menu or glass-probe activity. Neither build has a shared signing key
-configured: to update the same package across Mac, orb and CI without uninstalling,
-all builders must use the same securely backed-up keystore (the original Mac key
-for existing installations). Do not commit private keys or passwords to Git.
+developer menu or glass-probe activity.
+
+Both variants sign with the shared key when one is configured, which is what lets an
+APK from any builder replace the same package in place instead of failing with
+`INSTALL_FAILED_UPDATE_INCOMPATIBLE` (-7). The key is never committed: write
+`apps/android/nativedo/keystore.properties` (gitignored)
+
+```properties
+storeFile=/path/to/nativedo.jks   # absolute, or relative to apps/android/nativedo
+storePassword=...
+keyAlias=...
+keyPassword=...                   # optional; defaults to storePassword
+```
+
+or set `NATIVEDO_KEYSTORE_FILE`, `NATIVEDO_KEYSTORE_PASSWORD`, `NATIVEDO_KEY_ALIAS`
+and `NATIVEDO_KEY_PASSWORD`, which is what CI reads from repository secrets. Existing
+installations were signed with the Mac key, so every builder needs *that* key to update
+them in place; a build without this configuration falls back to Gradle's per-machine
+debug key, and its APK only installs after the older one is uninstalled.
 
 Orb setup and the active CI job override upstream's 8 GB Gradle heap with 3 GB,
 2 workers, no project parallelism and in-process Kotlin compilation. This is a
