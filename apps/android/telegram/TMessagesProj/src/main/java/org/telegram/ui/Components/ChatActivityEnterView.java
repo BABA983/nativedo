@@ -941,14 +941,16 @@ public class ChatActivityEnterView extends FrameLayout implements
                 }
             } else {
                 if (Build.VERSION.SDK_INT >= 23 && parentActivity.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                    parentActivity.requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 3);
+                    NativeDoHooks.requestComposerRecordPermission(delegate, parentActivity, () -> parentActivity.requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 3));
                     return;
                 }
 
                 delegate.needStartRecordAudio(1);
                 startedDraggingX = -1;
                 TL_stories.StoryItem storyItem = delegate != null ? delegate.getReplyToStory() : null;
-                MediaController.getInstance().startRecording(currentAccount, dialog_id, replyingMessageObject, getThreadMessage(), storyItem, recordingGuid, true, parentFragment != null ? parentFragment.getMessageChatSendParams() : null, getSendMonoForumPeerId(), getSendMessageSuggestionParams());
+                if (!NativeDoHooks.startComposerRecording(delegate, currentAccount, recordingGuid, () -> MediaController.getInstance().startRecording(currentAccount, dialog_id, replyingMessageObject, getThreadMessage(), storyItem, recordingGuid, true, parentFragment != null ? parentFragment.getMessageChatSendParams() : null, getSendMonoForumPeerId(), getSendMessageSuggestionParams()))) {
+                    return;
+                }
                 recordingAudioVideo = true;
                 updateRecordInterface(RECORD_STATE_ENTER, true);
                 if (recordTimerView != null) {
@@ -1802,13 +1804,13 @@ public class ChatActivityEnterView extends FrameLayout implements
                         delegate.toggleVideoRecordingPause();
                     } else {
                         final Runnable resume = () -> {
-                            if (!MediaController.getInstance().isRecordingPaused()) {
+                            if (!NativeDoHooks.isComposerRecordingPaused(delegate, () -> MediaController.getInstance().isRecordingPaused())) {
                                 MessagesController.getGlobalMainSettings().edit().putInt("voicepausehint", 3).apply();
                             }
                             if (sendButtonVisible) {
                                 calledRecordRunnable = true;
                             }
-                            MediaController.getInstance().toggleRecordingPause(voiceOnce);
+                            NativeDoHooks.toggleComposerRecordingPause(delegate, () -> MediaController.getInstance().toggleRecordingPause(voiceOnce));
                             delegate.needStartRecordAudio(0);
                             if (slideText != null) {
                                 slideText.setEnabled(false);
@@ -1820,10 +1822,10 @@ public class ChatActivityEnterView extends FrameLayout implements
                         if (audioTimelineView != null) {
                             audioTimelineView.setPlaying(false);
                         }
-                        if (MediaController.getInstance().isRecordingPaused() && (audioTimelineView.getAudioLeft() > 0.01f || audioTimelineView.getAudioRight() < 0.99f)) {
+                        if (NativeDoHooks.isComposerRecordingPaused(delegate, () -> MediaController.getInstance().isRecordingPaused()) && (audioTimelineView.getAudioLeft() > 0.01f || audioTimelineView.getAudioRight() < 0.99f)) {
                             final Runnable trim = () -> {
                                 millisecondsRecorded = audioTimelineView.getAudioRightMs() - audioTimelineView.getAudioLeftMs();
-                                MediaController.getInstance().trimCurrentRecording(audioTimelineView.getAudioLeftMs(), audioTimelineView.getAudioRightMs(), resume);
+                                NativeDoHooks.trimComposerRecording(delegate, audioTimelineView.getAudioLeftMs(), audioTimelineView.getAudioRightMs(), resume, () -> MediaController.getInstance().trimCurrentRecording(audioTimelineView.getAudioLeftMs(), audioTimelineView.getAudioRightMs(), resume));
                             };
                             if (MessagesController.getGlobalMainSettings().getBoolean("trimvoicehint", true)) {
                                 new AlertDialog.Builder(getContext(), resourcesProvider)
@@ -3039,7 +3041,7 @@ public class ChatActivityEnterView extends FrameLayout implements
                                     });
                                     return true;
                                 }
-                                MediaController.getInstance().stopRecording(isInScheduleMode() ? 3 : 1, true, 0, voiceOnce, 0);
+                                NativeDoHooks.stopComposerRecording(delegate, isInScheduleMode() ? 3 : 1, () -> MediaController.getInstance().stopRecording(isInScheduleMode() ? 3 : 1, true, 0, voiceOnce, 0));
                                 delegate.needStartRecordAudio(0);
                             }
                             recordingAudioVideo = false;
@@ -3077,7 +3079,7 @@ public class ChatActivityEnterView extends FrameLayout implements
                                 sendButton.setEffect(effectId = 0);
                             } else {
                                 delegate.needStartRecordAudio(0);
-                                MediaController.getInstance().stopRecording(0, false, 0, voiceOnce, 0);
+                                NativeDoHooks.stopComposerRecording(delegate, 0, () -> MediaController.getInstance().stopRecording(0, false, 0, voiceOnce, 0));
                             }
                             millisecondsRecorded = 0;
                             recordingAudioVideo = false;
@@ -3105,7 +3107,7 @@ public class ChatActivityEnterView extends FrameLayout implements
                             sendButton.setEffect(effectId = 0);
                         } else {
                             delegate.needStartRecordAudio(0);
-                            MediaController.getInstance().stopRecording(0, false, 0, voiceOnce, 0);
+                            NativeDoHooks.stopComposerRecording(delegate, 0, () -> MediaController.getInstance().stopRecording(0, false, 0, voiceOnce, 0));
                         }
                         millisecondsRecorded = 0;
                         recordingAudioVideo = false;
@@ -3158,7 +3160,7 @@ public class ChatActivityEnterView extends FrameLayout implements
                                     AlertsCreator.createScheduleDatePickerDialog(parentActivity, parentFragment.getDialogId(), (notify, scheduleDate, scheduleRepeatPeriod) -> MediaController.getInstance().stopRecording(1, notify, scheduleDate, false, 0), () -> MediaController.getInstance().stopRecording(0, false, 0, false, 0), resourcesProvider);
                                 }
                                 delegate.needStartRecordAudio(0);
-                                MediaController.getInstance().stopRecording(isInScheduleMode() ? 3 : 1, true, 0, voiceOnce, 0);
+                                NativeDoHooks.stopComposerRecording(delegate, isInScheduleMode() ? 3 : 1, () -> MediaController.getInstance().stopRecording(isInScheduleMode() ? 3 : 1, true, 0, voiceOnce, 0));
                             }
                             recordingAudioVideo = false;
                             messageTransitionIsRunning = false;
@@ -3212,7 +3214,7 @@ public class ChatActivityEnterView extends FrameLayout implements
                             sendButton.setEffect(effectId = 0);
                         } else {
                             delegate.needStartRecordAudio(0);
-                            MediaController.getInstance().stopRecording(0, false, 0, voiceOnce, 0);
+                            NativeDoHooks.stopComposerRecording(delegate, 0, () -> MediaController.getInstance().stopRecording(0, false, 0, voiceOnce, 0));
                         }
                         recordingAudioVideo = false;
                         updateRecordInterface(RECORD_STATE_CANCEL_BY_GESTURE, true);
@@ -4094,6 +4096,7 @@ public class ChatActivityEnterView extends FrameLayout implements
 
         audioTimelineView = new RecordedAudioPlayerView(getContext(), resourcesProvider);
         recordedAudioPanel.addView(audioTimelineView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 32, Gravity.CENTER_VERTICAL | Gravity.LEFT, DEFAULT_HEIGHT, 0, 4, 0));
+        NativeDoHooks.bindComposerVoiceEditor(delegate, audioTimelineView, () -> hideRecordedAudioPanel(true));
 
         updateFieldRight(lastAttachVisible);
     }
@@ -4107,7 +4110,7 @@ public class ChatActivityEnterView extends FrameLayout implements
             delegate.needStartRecordVideo(2, true, 0, 0, voiceOnce ? 0x7FFFFFFF : 0, effectId, 0);
             sendButton.setEffect(effectId = 0);
         } else {
-            MessageObject playing = MediaController.getInstance().getPlayingMessageObject();
+            MessageObject playing = NativeDoHooks.composerPlayingMessage(delegate, () -> MediaController.getInstance().getPlayingMessageObject());
             if (playing != null && playing == audioToSendMessageObject) {
                 MediaController.getInstance().cleanupPlayer(true, true);
             }
@@ -4118,9 +4121,9 @@ public class ChatActivityEnterView extends FrameLayout implements
             }
             new File(audioToSendPath).delete();
         }
-        MediaController.getInstance().cleanRecording(true);
-        MediaDataController.getInstance(currentAccount).pushDraftVoiceMessage(dialog_id, parentFragment != null && parentFragment.isTopic ? parentFragment.getTopicId() : 0, null);
-        MediaController.getInstance().stopRecording(0, false, 0, false, 0);
+        NativeDoHooks.cleanComposerRecording(delegate, true, () -> MediaController.getInstance().cleanRecording(true));
+        NativeDoHooks.composerVoiceAccountAction(delegate, () -> MediaDataController.getInstance(currentAccount).pushDraftVoiceMessage(dialog_id, parentFragment != null && parentFragment.isTopic ? parentFragment.getTopicId() : 0, null));
+        NativeDoHooks.stopComposerRecording(delegate, 0, () -> MediaController.getInstance().stopRecording(0, false, 0, false, 0));
         millisecondsRecorded = 0;
         hideRecordedAudioPanel(false);
         checkSendButton(true);
@@ -6204,7 +6207,7 @@ public class ChatActivityEnterView extends FrameLayout implements
             sendButton.setEffect(effectId = 0);
         } else {
             delegate.needStartRecordAudio(0);
-            MediaController.getInstance().stopRecording(0, false, 0, false, 0);
+            NativeDoHooks.stopComposerRecording(delegate, 0, () -> MediaController.getInstance().stopRecording(0, false, 0, false, 0));
         }
         recordingAudioVideo = false;
         updateRecordInterface(RECORD_STATE_CANCEL, true);
@@ -6501,7 +6504,7 @@ public class ChatActivityEnterView extends FrameLayout implements
             audioTimelineView.destroy();
         }
         if (audioTimelineView != null && audioToSend != null) {
-            MediaDataController.getInstance(currentAccount).setDraftVoiceRegion(dialog_id, parentFragment != null && parentFragment.isTopic ? parentFragment.getTopicId() : 0, audioTimelineView == null ? 0.0f : audioTimelineView.getAudioLeft(), audioTimelineView == null ? 1.0f : audioTimelineView.getAudioRight());
+            NativeDoHooks.composerVoiceAccountAction(delegate, () -> MediaDataController.getInstance(currentAccount).setDraftVoiceRegion(dialog_id, parentFragment != null && parentFragment.isTopic ? parentFragment.getTopicId() : 0, audioTimelineView == null ? 0.0f : audioTimelineView.getAudioLeft(), audioTimelineView == null ? 1.0f : audioTimelineView.getAudioRight()));
         }
         destroyed = true;
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.recordStarted);
@@ -7278,6 +7281,7 @@ public class ChatActivityEnterView extends FrameLayout implements
     }
 
     protected boolean sendMessageInternal(boolean notify, int scheduleDate, int scheduleRepeatPeriod, long payStars, boolean allowConfirm) {
+        if (NativeDoHooks.sendComposerVoice(delegate)) return false;
         final boolean allowConfirmFinal = allowConfirm && !animatorEphemeralMessageVisibility.getValue();
 
         final Runnable send = () -> {
@@ -8824,6 +8828,7 @@ public class ChatActivityEnterView extends FrameLayout implements
 
     private int lastRecordState;
     protected void updateRecordInterface(int recordState, boolean animated) {
+        if (NativeDoHooks.redirectRecordInterfaceState(delegate, recordState, value -> updateRecordInterface(value, animated))) return;
         if (moveToSendStateRunnable != null) {
             AndroidUtilities.cancelRunOnUIThread(moveToSendStateRunnable);
             moveToSendStateRunnable = null;
@@ -8843,7 +8848,7 @@ public class ChatActivityEnterView extends FrameLayout implements
                 if (controlsView != null) {
                     controlsView.periodDrawable.setValue(1, false, false);
                 }
-                MediaDataController.getInstance(currentAccount).toggleDraftVoiceOnce(dialog_id, parentFragment != null && parentFragment.isTopic ? parentFragment.getTopicId() : 0, voiceOnce);
+                NativeDoHooks.composerVoiceAccountAction(delegate, () -> MediaDataController.getInstance(currentAccount).toggleDraftVoiceOnce(dialog_id, parentFragment != null && parentFragment.isTopic ? parentFragment.getTopicId() : 0, voiceOnce));
                 millisecondsRecorded = 0;
             }
 
@@ -14071,14 +14076,14 @@ public class ChatActivityEnterView extends FrameLayout implements
                 sendButton.setEffect(effectId = 0);
             } else {
                 delegate.needStartRecordAudio(0);
-                MediaController.getInstance().stopRecording(0, false, 0, voiceOnce, 0);
+                NativeDoHooks.stopComposerRecording(delegate, 0, () -> MediaController.getInstance().stopRecording(0, false, 0, voiceOnce, 0));
             }
             audioToSend = null;
             audioToSendMessageObject = null;
             videoToSendMessageObject = null;
             millisecondsRecorded = 0;
             recordingAudioVideo = false;
-            MediaDataController.getInstance(currentAccount).pushDraftVoiceMessage(dialog_id, parentFragment != null && parentFragment.isTopic ? parentFragment.getTopicId() : 0, null);
+            NativeDoHooks.composerVoiceAccountAction(delegate, () -> MediaDataController.getInstance(currentAccount).pushDraftVoiceMessage(dialog_id, parentFragment != null && parentFragment.isTopic ? parentFragment.getTopicId() : 0, null));
             updateRecordInterface(RECORD_STATE_CANCEL, true);
             checkSendButton(true);
         }

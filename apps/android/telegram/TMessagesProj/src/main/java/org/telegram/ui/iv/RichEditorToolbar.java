@@ -28,6 +28,7 @@ import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.RLottieDrawable;
 import org.telegram.ui.Components.RLottieImageView;
 import org.telegram.ui.Components.ScaleStateListAnimator;
+import io.github.baba983.nativedo.hooks.NativeDoHooks;
 
 import java.util.ArrayList;
 
@@ -130,7 +131,7 @@ public class RichEditorToolbar extends FrameLayout {
         backButton.setColorFilter(new PorterDuffColorFilter(color(Theme.key_windowBackgroundWhiteBlackText), PorterDuff.Mode.SRC_IN));
         ScaleStateListAnimator.apply(backButton);
         backButton.setContentDescription(getString(R.string.AccDescrGoBack));
-        backButton.setOnClickListener(v -> delegate.onBack());
+        NativeDoHooks.richAttachBack(delegate, backButton); // NativeDo: the hosted pane's button closes its own sheet; a Telegram toolbar keeps upstream's delegate
         topPanel.addView(backButton, LayoutHelper.createFrame(44, 44, Gravity.TOP | Gravity.LEFT, 8, 8, 8, 8));
 
         historyButtons = new LinearLayout(context);
@@ -183,6 +184,7 @@ public class RichEditorToolbar extends FrameLayout {
         ScaleStateListAnimator.apply(aiButton);
         aiButton.setContentDescription("AI");
         aiButton.setOnClickListener(v -> delegate.onAi());
+        NativeDoHooks.richAttachControl(delegate, aiButton); // NativeDo: hide Telegram-only controls
 
         final FrameLayout blocksContainer2 = new FrameLayout(context);
         blocksContainer2.setClipToPadding(false);
@@ -233,7 +235,7 @@ public class RichEditorToolbar extends FrameLayout {
         addBlockButton(R.drawable.iv_text, BLOCK_TEXT, false);
         addBlockButton(R.drawable.iv_lists, BLOCK_LIST, true);
         addBlockButton(R.drawable.iv_table, BLOCK_TABLE, true);
-        addBlockButton(R.drawable.iv_math, BLOCK_MATH, true);
+        NativeDoHooks.richAttachControl(delegate, addBlockButton(R.drawable.iv_math, BLOCK_MATH, true)); // NativeDo: formulas have no site round-trip
 
         addButton = new ImageView(context);
         addButton.setImageResource(R.drawable.outline_poll_attach_24);
@@ -244,6 +246,7 @@ public class RichEditorToolbar extends FrameLayout {
         ScaleStateListAnimator.apply(addButton);
         addButton.setContentDescription("Attach");
         addButton.setOnClickListener(v -> delegate.onAttach());
+        NativeDoHooks.richAttachControl(delegate, addButton); // NativeDo: hide Telegram-only controls
 
         bottomPanel.addView(blocksContainer2, LayoutHelper.createLinear(0, 44, 1f));
 
@@ -357,6 +360,7 @@ public class RichEditorToolbar extends FrameLayout {
         inlineButton.setBackgroundColorKey(Theme.key_glass_targetMainTabs);
         inlineButton.setContentDescription(getString(R.string.RichEditorButton));
         inlineButton.setOnClickListener(v -> delegate.onButton(v));
+        NativeDoHooks.richAttachControl(delegate, inlineButton); // NativeDo: hide Telegram-only controls
         formattingPanelLayout.addView(inlineButton, LayoutHelper.createLinear(38, 38, Gravity.CENTER_VERTICAL, formattingPanelLayout.getChildCount() == 0 ? 0 : 2, 0, 0, 0));
 
         formattingLayout2 = new LinearLayout(context);
@@ -374,6 +378,7 @@ public class RichEditorToolbar extends FrameLayout {
         dateButton.setBackgroundColorKey(Theme.key_glass_targetMainTabs);
         dateButton.setContentDescription(getString(R.string.AccDescrIVInsertDate));
         dateButton.setOnClickListener(v -> delegate.onDate());
+        NativeDoHooks.richAttachControl(delegate, dateButton); // NativeDo: hide Telegram-only controls
         formattingLayout2.addView(dateButton, LayoutHelper.createLinear(38, 38, Gravity.CENTER_VERTICAL));
 
         formattingLayout3 = new LinearLayout(context);
@@ -388,6 +393,7 @@ public class RichEditorToolbar extends FrameLayout {
         premiumButtons.add(mathButton);
         mathButton.setContentDescription(getString(R.string.AccDescrIVFormula));
         mathButton.setOnClickListener(v -> delegate.onMath());
+        NativeDoHooks.richAttachControl(delegate, mathButton); // NativeDo: hide Telegram-only controls
         formattingLayout3.addView(mathButton, LayoutHelper.createLinear(38, 38, Gravity.CENTER_VERTICAL));
 
         formattingLayout1 = new LinearLayout(context);
@@ -401,6 +407,7 @@ public class RichEditorToolbar extends FrameLayout {
         aiStyleButton.setBackgroundColorKey(Theme.key_glass_targetMainTabs);
         aiStyleButton.setContentDescription(getString(R.string.AIEditor));
         aiStyleButton.setOnClickListener(v -> delegate.onAiStyle());
+        NativeDoHooks.richAttachControl(delegate, aiStyleButton); // NativeDo: hide Telegram-only controls
         formattingLayout1.addView(aiStyleButton, LayoutHelper.createLinear(38, 38, Gravity.CENTER_VERTICAL));
 
         sendButton = new ChatActivityEnterView.SendButton(context, R.drawable.send_plane_24, resourcesProvider, true) {

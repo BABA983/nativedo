@@ -23,6 +23,16 @@ maintain a second per-call-site ledger here.
   and restoration without a Telegram activity.
 - Editor and mention adapters bind product behavior to an individual component,
   not a global callback that outlives its owning screen.
+- The attachment sheet (`ChatAttachAlert`) and the composer's recording gesture are
+  hosted the same way. A `DiscourseAttachSheet` subclass answers upstream's
+  account-backed questions (tab set, poll pane, article pane, whether the files pane
+  needs a storage grant) while rendering stays upstream's; a record touch reaches only
+  a delegate that implements the recording seam, so a real Telegram composer keeps its
+  own recorder and video note. Forum voice review also uses upstream's actual
+  `RecordedAudioPlayerView` and controls. The fragment supplies `ChatActivity`'s
+  overlay insets and glass factory; the instance-bound host supplies AAC capture,
+  sample-table trim/join and Discourse upload, not Telegram's Opus/account services.
+  See [recorded audio](content-composer.md#attachment-sheet-and-recorded-audio).
 - Other hooks cover concrete host differences such as local media loading and
   in-app-browser preferences. They do not authorize redesigning upstream renderers.
 
@@ -60,6 +70,11 @@ Composer pause/resume/destroy, theme delegates, system/IME insets, viewer state
 and Back arbitration matter as much as constructor arguments. A predictive Back
 probe must not commit a screen change; an open input panel, selection or viewer
 gets its own Back handling before page navigation.
+A hosted attachment sheet is the same kind of object: the screen that opens it only
+dismisses it, so the alert subclass owns its teardown - once upstream has removed the
+panes it built, the subclass brings the gallery and the alert's notification observers
+down exactly once - and a retained alert that has already been torn down ignores later
+pause/resume and permission callbacks instead of driving dead views.
 Runtime permission results follow the same upstream ownership: the activity
 forwards to its top fragment, and a tab host forwards to its visible page. A
 microphone permission answer must release that page's pending request without

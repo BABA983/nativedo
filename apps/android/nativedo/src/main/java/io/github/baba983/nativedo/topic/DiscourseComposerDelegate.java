@@ -46,6 +46,52 @@ public abstract class DiscourseComposerDelegate
     }
 
     @Override
+    public boolean onComposerRecordStart(int account, int guid) {
+        return recordHost != null && recordHost.onComposerRecordStart(account, guid);
+    }
+
+    @Override
+    public void onComposerRecordStop(int send) {
+        if (recordHost != null) recordHost.onComposerRecordStop(send);
+    }
+
+    @Override
+    public void onComposerRecordTogglePause() {
+        if (recordHost != null) recordHost.onComposerRecordTogglePause();
+    }
+
+    @Override
+    public boolean isComposerRecordingPaused() {
+        return recordHost != null && recordHost.isComposerRecordingPaused();
+    }
+
+    @Override
+    public boolean onComposerRecordPermission(android.app.Activity activity) {
+        if (recordHost != null) recordHost.onComposerRecordPermission(activity);
+        return true;
+    }
+
+    @Override
+    public int mapRecordInterfaceState(int state) {
+        return recordHost == null ? state : recordHost.mapRecordInterfaceState(state);
+    }
+
+    @Override
+    public void onComposerVoiceEditor(org.telegram.ui.Components.RecordedAudioPlayerView editor, Runnable clear) {
+        if (recordHost != null) recordHost.onComposerVoiceEditor(editor, clear);
+    }
+
+    @Override
+    public boolean onComposerVoiceSend() {
+        return recordHost != null && recordHost.onComposerVoiceSend();
+    }
+
+    @Override
+    public void onComposerVoiceTrim(long start, long end, Runnable done) {
+        if (recordHost != null) recordHost.onComposerVoiceTrim(start, end, done);
+    }
+
+    @Override
     public void needSendTyping() {
     }
 

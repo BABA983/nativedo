@@ -24,6 +24,7 @@ data class VoiceRecording(
     val name: String,
     val mimeType: String,
     val durationMillis: Long,
+    val waveform: ByteArray = byteArrayOf(),
 )
 
 /**

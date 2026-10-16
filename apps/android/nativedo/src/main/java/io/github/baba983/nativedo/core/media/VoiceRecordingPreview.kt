@@ -16,6 +16,18 @@ interface VoiceRecordingPreview {
 
     /** The file being previewed, or null. */
     val playing: File?
+
+    /** The live playback position of the clip, in milliseconds, or 0 when nothing is playing. */
+    fun positionMillis(): Int = 0
+
+    /** The duration of the clip being previewed, in milliseconds, or 0. */
+    fun durationMillis(): Int = 0
+
+    /**
+     * Notified when a preview reaches its own end (or errors), so a screen can put its transport
+     * back to play. A caller's own [stop] does not notify; the default listener does nothing.
+     */
+    fun setOnPlaybackFinished(listener: (() -> Unit)?) {}
 }
 
 /** [VoiceRecordingPreview] over `android.media.MediaPlayer`; one preview at a time. */
@@ -23,17 +35,30 @@ class MediaPlayerVoiceRecordingPreview : VoiceRecordingPreview {
 
     private var player: MediaPlayer? = null
     private var current: File? = null
+    private var onPlaybackFinished: (() -> Unit)? = null
 
     override val playing: File? get() = current
+
+    override fun positionMillis(): Int = runCatching { player?.currentPosition ?: 0 }.getOrDefault(0)
+
+    override fun durationMillis(): Int = runCatching { player?.duration ?: 0 }.getOrDefault(0)
+
+    override fun setOnPlaybackFinished(listener: (() -> Unit)?) {
+        onPlaybackFinished = listener
+    }
 
     override fun play(file: File) {
         stop()
         val created = runCatching { MediaPlayer() }.getOrNull() ?: return
         try {
             created.setDataSource(file.absolutePath)
-            created.setOnCompletionListener { stop() }
+            created.setOnCompletionListener {
+                stop()
+                onPlaybackFinished?.invoke()
+            }
             created.setOnErrorListener { _, _, _ ->
                 stop()
+                onPlaybackFinished?.invoke()
                 true
             }
             created.prepare()

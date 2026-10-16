@@ -15,6 +15,9 @@ interface VoiceRecorder {
     /** Whether a capture is currently running. */
     val isRecording: Boolean
 
+    /** Peak PCM magnitude since the last read, for the live waves and recorded envelope. */
+    val amplitude: Int get() = 0
+
     /**
      * Starts capturing into a fresh private file. Returns false when the device refused to start
      * (the microphone is busy, permission was revoked between the check and the start); the caller
@@ -43,9 +46,10 @@ class AndroidVoiceRecorder(
 
     private var recorder: MediaRecorder? = null
     private var file: File? = null
-    private var startedAt = 0L
 
     override val isRecording: Boolean get() = recorder != null
+
+    override val amplitude: Int get() = runCatching { recorder?.maxAmplitude ?: 0 }.getOrDefault(0)
 
     override fun start(): Boolean {
         if (recorder != null) return false
@@ -72,7 +76,6 @@ class AndroidVoiceRecorder(
         }
         recorder = created
         file = target
-        startedAt = nowMillis()
         return true
     }
 
@@ -95,11 +98,15 @@ class AndroidVoiceRecorder(
             target.delete()
             return null
         }
+        val duration = runCatching { VoiceRecordingEditor().durationMillis(target) }.getOrElse {
+            target.delete()
+            return null
+        }
         return VoiceRecording(
             file = target,
             name = target.name,
             mimeType = VOICE_RECORDING_MIME_TYPE,
-            durationMillis = (nowMillis() - startedAt).coerceAtLeast(0L),
+            durationMillis = duration,
         )
     }
 

@@ -16,6 +16,7 @@ import io.github.baba983.nativedo.harness.shadows.ShadowSQLiteCursor
 import io.github.baba983.nativedo.harness.shadows.ShadowSQLiteDatabase
 import io.github.baba983.nativedo.harness.shadows.ShadowSQLitePreparedStatement
 import io.github.baba983.nativedo.harness.shadows.ShadowUtilities
+import io.github.baba983.nativedo.hooks.NativeDoHooks
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -32,20 +33,30 @@ import org.telegram.ui.Components.ChatActivityEnterView
 import org.telegram.ui.Components.SizeNotifierFrameLayout
 
 /**
- * The hold-to-record microphone bound to a composer's own delegate.
+ * The recording service bound to a composer's own delegate.
  *
- * <p>What is pinned here, none of which needs a device microphone (the recorder is a fake, the
- * clock is Robolectric's):</p>
+ * <p>Upstream owns the microphone gesture now, so what is pinned here is the boundary this client
+ * replaces: the touch is left to upstream, and the recorder service upstream would hand to
+ * `MediaController` is served by this host instead. None of it needs a device microphone (the
+ * recorder is a fake, the clock is Robolectric's).</p>
+ *
+ * <p>The failure modes:</p>
  * <ul>
- *   <li>a <em>tap</em> records nothing - the hold has to survive its threshold, and a release
- *       before it is only a hint;</li>
- *   <li>a hold released under the minimum is discarded, not delivered;</li>
- *   <li>a slide to cancel and a system {@code ACTION_CANCEL} both discard, and the release that
- *       follows delivers nothing;</li>
- *   <li>a busy screen ([captureAllowed] false) starts nothing;</li>
- *   <li>a missing microphone permission is asked for once and never starts a capture;</li>
- *   <li>the binding is instance-bound: the delegate carries the gesture in, and a teardown releases
- *       only its own binding.</li>
+ *   <li>a hold starts upstream's own recording while this host owns the bytes - the host must not
+ *       consume the touch, but a live capture must always be releasable even if the screen turns
+ *       busy mid-hold, or the microphone would be left open;</li>
+ *   <li>a busy screen still refuses the gesture, so a second capture cannot race an upload, and a
+ *       repeat start while a capture is already live opens no second recorder;</li>
+ *   <li>the lock's own pause control ends the take into review rather than sitting inert (an `.m4a`
+ *       recorder cannot truly pause);</li>
+ *   <li>the `MediaController` fallback must never run while a host is bound (Telegram's recorder
+ *       must be unreachable), and must run unchanged when none is;</li>
+ *   <li>a release delivers the take, a cancel discards it, and a too-short take is deleted, not
+ *       delivered;</li>
+ *   <li>the permission request is this client's, raised once, and released by its own answer;</li>
+ *   <li>upstream's send-state exit is mapped to a plain exit, so no send animation fights the
+ *       screen's review band;</li>
+ *   <li>the binding is instance-bound: a teardown releases only its own binding.</li>
  * </ul>
  */
 @RunWith(RobolectricTestRunner::class)
@@ -72,7 +83,7 @@ internal class ComposerVoiceInputTest {
     private val harness = UpstreamUiHarness()
 
     private lateinit var composer: ChatActivityEnterView
-    private lateinit var delegate: DiscourseComposerDelegate
+    private lateinit var delegate: TestDelegate
     private lateinit var feedback: RecordingFeedback
     private lateinit var recorder: FakeRecorder
     private var allowed = true
@@ -86,6 +97,7 @@ internal class ComposerVoiceInputTest {
         harness.content.addView(parent)
         composer = ChatActivityEnterView(harness.activity, parent, null, true, null)
         delegate = TestDelegate()
+        composer.setDelegate(delegate)
         feedback = RecordingFeedback()
         recorder = FakeRecorder(File(harness.activity.cacheDir, "voice-test.m4a").apply { writeBytes(ByteArray(16)) })
         allowed = true
@@ -112,100 +124,186 @@ internal class ComposerVoiceInputTest {
     )
 
     @Test
-    fun theDelegateCarriesTheGestureInAndTheHostOwnsIt() {
+    fun theGestureIsUpstreamsWhileACaptureMayStart() {
         val input = bind()
         assertSame("the host is bound to the composer's own delegate", input, delegate.getRecordHost())
-        assertTrue("a touch is owned while bound", touch(MotionEvent.ACTION_DOWN, 200f))
-        // The host owns the whole gesture, so upstream's Telegram recorder (and its video note) never
-        // runs: every action is consumed while a host is bound.
-        assertTrue("a move is owned", touch(MotionEvent.ACTION_MOVE, 200f))
-        assertTrue("a cancel is owned", touch(MotionEvent.ACTION_CANCEL, 200f))
-        assertTrue("an up is owned", touch(MotionEvent.ACTION_UP, 200f))
+        // Upstream owns the whole gesture (RecordCircle, slide-to-cancel, lock, timer), so the host
+        // answers "not mine" and upstream's own handling runs.
+        assertFalse("a down is left to upstream", touch(MotionEvent.ACTION_DOWN, 200f))
+        assertFalse("so is a move", touch(MotionEvent.ACTION_MOVE, 200f))
+        assertFalse("so is an up", touch(MotionEvent.ACTION_UP, 200f))
     }
 
     @Test
-    fun aTapRecordsNothingAndOnlyHints() {
+    fun aBusyScreenRefusesTheGestureSoNoSecondCaptureCanRace() {
+        allowed = false
         bind()
-        touch(MotionEvent.ACTION_DOWN, 200f)
-        // The finger is gone before the hold threshold: no recorder is ever built.
-        touch(MotionEvent.ACTION_UP, 200f)
-        harness.idleClock(300)
-        assertNull("a tap never opens the recorder", recorder.lastStart)
-        assertEquals("a tap is only a hold hint", 1, feedback.holdHints)
-        assertTrue("nothing was delivered", delivered.isEmpty())
+        assertTrue("a hold is consumed while an upload is in flight", touch(MotionEvent.ACTION_DOWN, 200f))
+        assertTrue("and its whole gesture stays consumed", touch(MotionEvent.ACTION_MOVE, 200f))
+        assertTrue(touch(MotionEvent.ACTION_UP, 200f))
+    }
+
+    /**
+     * Failure mode: a session change mid-hold turns [captureAllowed] false. If the release were
+     * swallowed on that basis, upstream would never stop the recorder and the microphone would stay
+     * open with no way to close it.
+     */
+    @Test
+    fun aLiveCaptureAlwaysEndsEvenIfCaptureAllowedTurnsFalseMidHold() {
+        val input = bind()
+        assertFalse("the hold starts a capture", touch(MotionEvent.ACTION_DOWN, 200f))
+        NativeDoHooks.startComposerRecording(delegate, 0, 0) {}
+        assertTrue("a capture is live", input.isRecording)
+
+        allowed = false // the account went away while the finger is still down
+        assertFalse("the release still reaches upstream", touch(MotionEvent.ACTION_UP, 200f))
+
+        NativeDoHooks.stopComposerRecording(delegate, 0) {}
+        assertFalse("the recorder is stopped, not left holding the microphone", input.isRecording)
+    }
+
+    /**
+     * Failure mode: a second start would open a second `MediaRecorder` over the first, leaking the
+     * device microphone with no callsite left to release it.
+     */
+    @Test
+    fun aRepeatStartWhileACaptureIsLiveIsRefused() {
+        bind()
+        assertTrue("the first start is served", NativeDoHooks.startComposerRecording(delegate, 0, 0) {})
+        assertEquals("one recorder opened", 1, recorder.starts)
+        assertFalse("a second start is refused", NativeDoHooks.startComposerRecording(delegate, 0, 0) {})
+        assertEquals("no second recorder is opened", 1, recorder.starts)
+    }
+
+    /** Failure mode: pause discarded resumability or a resume re-latched the take's account. */
+    @Test
+    fun theLockPauseControlKeepsAResumableTakeInsteadOfEndingTheSession() {
+        val input = bind()
+        NativeDoHooks.startComposerRecording(delegate, 0, 0) {}
+        var fallbackRan = false
+        NativeDoHooks.toggleComposerRecordingPause(delegate) { fallbackRan = true }
+        assertFalse("upstream's own pause path is not run behind the host", fallbackRan)
+        assertEquals("the finished take is delivered to review", 1, delivered.size)
+        assertEquals("and it is the recorder's own file", recorder.file, delivered.single().file)
+        assertTrue("pause remains resumable", input.isComposerRecordingPaused())
+        NativeDoHooks.toggleComposerRecordingPause(delegate) { fallbackRan = true }
+        assertTrue("resume opens a new playable segment", input.isRecording)
+        assertFalse("no longer paused", input.isComposerRecordingPaused())
+        assertEquals("the new segment uses our recorder, not Telegram's", 2, recorder.starts)
+        input.onDestroy()
+    }
+
+    /** A sub-700ms continuation is not a new take: rejecting it would lose earlier speech. */
+    @Test
+    fun aShortContinuationIsKeptWithThePreviousTake() {
+        val input = bind()
+        input.onComposerRecordStart(0, 0)
+        input.onComposerRecordTogglePause()
+        input.onComposerRecordTogglePause()
+        recorder.durationMillis = 200L
+        input.onComposerRecordTogglePause()
+        assertEquals("both segments are handed to the same editor", 2, delivered.size)
+        assertEquals("no earlier speech is discarded", 0, feedback.discards)
+        input.onDestroy()
     }
 
     @Test
-    fun aHoldRecordsAndADeliveryCarriesTheTake() {
+    fun theStartBoundaryOpensThisClientsRecorderAndSkipsMediaController() {
+        val input = bind()
+        var fallbackRan = false
+        assertTrue(
+            "the host owns the capture",
+            NativeDoHooks.startComposerRecording(delegate, 0, 0) { fallbackRan = true },
+        )
+        assertFalse("Telegram's recorder is never started behind the host", fallbackRan)
+        assertEquals("this client's recorder started", 1, recorder.starts)
+        assertTrue("a capture is live", input.isRecording)
+    }
+
+    @Test
+    fun aReleaseDeliversTheTakeAndACancelDiscardsIt() {
         bind()
-        touch(MotionEvent.ACTION_DOWN, 200f)
-        harness.idleClock(200) // the hold threshold passes: the recorder opens
-        assertTrue("the recorder started", recorder.starts == 1)
-        assertTrue("the screen was told recording began", feedback.started == 1)
-        harness.idleClock(800)
-        touch(MotionEvent.ACTION_UP, 200f)
-        assertEquals("a real hold is delivered", 1, delivered.size)
+        NativeDoHooks.startComposerRecording(delegate, 0, 0) {}
+        NativeDoHooks.stopComposerRecording(delegate, 1) {}
+        assertEquals("a release hands the finished take on", 1, delivered.size)
         assertEquals("the take is the recorder's own file", recorder.file, delivered.single().file)
-    }
 
-    @Test
-    fun aHoldReleasedTooSoonIsDiscarded() {
+        // A fresh capture cancelled by the reader is discarded, never delivered.
+        delivered = mutableListOf()
         bind()
-        touch(MotionEvent.ACTION_DOWN, 200f)
-        harness.idleClock(200)
-        touch(MotionEvent.ACTION_UP, 200f) // well under the minimum
-        assertEquals("the short take is aborted, not stopped", 1, recorder.aborts)
-        assertEquals("and never delivered", 0, delivered.size)
+        NativeDoHooks.startComposerRecording(delegate, 0, 0) {}
+        NativeDoHooks.stopComposerRecording(delegate, 0) {}
+        assertTrue("a cancel delivers nothing", delivered.isEmpty())
+        assertEquals("and the recorder is aborted", 1, recorder.aborts)
         assertTrue("the discard was reported", feedback.discards >= 1)
     }
 
     @Test
-    fun slidingToCancelDiscardsAndTheReleaseDeliversNothing() {
+    fun aTooShortTakeIsDeletedNotDelivered() {
+        recorder = FakeRecorder(File(harness.activity.cacheDir, "voice-short.m4a").apply { writeBytes(ByteArray(16)) }, durationMillis = 200L)
         bind()
-        touch(MotionEvent.ACTION_DOWN, 900f)
-        harness.idleClock(200)
-        touch(MotionEvent.ACTION_MOVE, 0f) // far left of the press
-        assertEquals("the slide aborted the capture", 1, recorder.aborts)
-        touch(MotionEvent.ACTION_UP, 0f)
-        assertEquals("the release that follows delivers nothing", 0, delivered.size)
+        val file = recorder.file
+        NativeDoHooks.startComposerRecording(delegate, 0, 0) {}
+        NativeDoHooks.stopComposerRecording(delegate, 1) {}
+        assertTrue("a take under the minimum is never delivered", delivered.isEmpty())
+        assertFalse("and its private file goes with it", file.exists())
     }
 
     @Test
-    fun aSystemCancelDiscards() {
-        bind()
-        touch(MotionEvent.ACTION_DOWN, 200f)
-        harness.idleClock(200)
-        touch(MotionEvent.ACTION_CANCEL, 200f)
-        assertEquals("a stolen gesture aborts the capture", 1, recorder.aborts)
-        assertEquals(0, delivered.size)
+    fun anUnboundDelegateRunsUpstreamsOwnRecording() {
+        // A genuine upstream delegate, not NativeDo's recorder host with its binding removed.
+        val plain = java.lang.reflect.Proxy.newProxyInstance(
+            ChatActivityEnterView.ChatActivityEnterViewDelegate::class.java.classLoader,
+            arrayOf(ChatActivityEnterView.ChatActivityEnterViewDelegate::class.java),
+        ) { _, _, _ -> null } as ChatActivityEnterView.ChatActivityEnterViewDelegate
+        var fallbackRan = false
+        assertTrue(
+            "the composer may start its own recording",
+            NativeDoHooks.startComposerRecording(plain, 0, 0) { fallbackRan = true },
+        )
+        assertTrue("upstream's own recorder is what runs", fallbackRan)
     }
 
     @Test
-    fun aBusyScreenStartsNoCapture() {
-        allowed = false
-        bind()
-        touch(MotionEvent.ACTION_DOWN, 200f)
-        harness.idleClock(300)
-        assertNull("no recorder while a send/upload/recovery is in flight", recorder.lastStart)
-        assertEquals(0, delivered.size)
-    }
-
-    @Test
-    fun aMissingPermissionIsAskedForOnceAndRecordsNothing() {
+    fun aMissingPermissionIsRaisedOnceByThisClientAndReleasedByItsAnswer() {
         grantRecordPermission(false)
-        bind()
-        touch(MotionEvent.ACTION_DOWN, 200f)
-        harness.idleClock(300)
-        assertEquals("the permission was asked for", 1, feedback.permissions)
-        assertNull("no capture without permission", recorder.lastStart)
-        // A second hold while the request is still being decided does not raise a second request.
-        touch(MotionEvent.ACTION_UP, 200f)
-        touch(MotionEvent.ACTION_DOWN, 200f)
-        harness.idleClock(300)
+        val input = bind()
+        var upstreamRequest = false
+        NativeDoHooks.requestComposerRecordPermission(delegate, harness.activity) { upstreamRequest = true }
+        assertFalse("upstream's own request code is not used for this client", upstreamRequest)
+        assertEquals("this client raised its own request", 1, feedback.permissions)
+        assertNull("a permission request never starts a capture", recorder.lastStart)
+
+        // A second hold while the answer is still pending does not raise a second request.
+        NativeDoHooks.requestComposerRecordPermission(delegate, harness.activity) { upstreamRequest = true }
         assertEquals("still one request", 1, feedback.permissions)
-        // The answer arrives; a later hold may record.
-        val input = delegate.getRecordHost() as ComposerVoiceInput
+
+        // The screen's answer reaches the host for this client's code, releasing the pending request.
         input.onPermissionResult()
+        NativeDoHooks.requestComposerRecordPermission(delegate, harness.activity) { upstreamRequest = true }
+        assertEquals("the pending request was released", 2, feedback.permissions)
+    }
+
+    @Test
+    fun theReleaseStateBecomesAPlainExitForAHostAndIsUntouchedForUpstream() {
+        bind()
+        NativeDoHooks.startComposerRecording(delegate, 0, 0) {}
+        NativeDoHooks.stopComposerRecording(delegate, 1) {}
+        assertEquals(
+            "a forum release stays in upstream's review interface, not a send animation",
+            ChatActivityEnterView.RECORD_STATE_PREPARING,
+            NativeDoHooks.mapRecordInterfaceState(delegate, ChatActivityEnterView.RECORD_STATE_SENDING),
+        )
+        assertEquals(
+            "an unrelated state is untouched",
+            ChatActivityEnterView.RECORD_STATE_ENTER,
+            NativeDoHooks.mapRecordInterfaceState(delegate, ChatActivityEnterView.RECORD_STATE_ENTER),
+        )
+        assertEquals(
+            "a real Telegram delegate keeps upstream's own state",
+            ChatActivityEnterView.RECORD_STATE_SENDING,
+            NativeDoHooks.mapRecordInterfaceState(TestDelegate(), ChatActivityEnterView.RECORD_STATE_SENDING),
+        )
     }
 
     @Test
@@ -221,21 +319,18 @@ internal class ComposerVoiceInputTest {
     }
 
     @Test
-    fun anUnboundDelegateLetsUpstreamRunUnchanged() {
-        // A delegate with no host bound answers "not mine", so upstream's own gesture runs.
-        assertFalse("a delegate with no host does not own the touch", delegate.onRecordTouch(down(200f)))
+    fun atenDestroyedHostDeliversNothingAndLeavesNoFile() {
+        val input = bind()
+        NativeDoHooks.startComposerRecording(delegate, 0, 0) {}
+        val file = recorder.file
+        input.onDestroy()
+        NativeDoHooks.stopComposerRecording(delegate, 1) {}
+        assertTrue("nothing survives the screen", delivered.isEmpty())
+        assertFalse("the private file goes with the host", file.exists())
     }
 
-    private fun touch(action: Int, x: Float): Boolean {
-        val event = when (action) {
-            MotionEvent.ACTION_UP -> MotionEvent.obtain(0, 0, action, x, 0f, 0)
-            MotionEvent.ACTION_CANCEL -> MotionEvent.obtain(0, 0, action, x, 0f, 0)
-            else -> MotionEvent.obtain(0, 0, action, x, 0f, 0)
-        }
-        return delegate.onRecordTouch(event)
-    }
-
-    private fun down(x: Float): MotionEvent = MotionEvent.obtain(0, 0, MotionEvent.ACTION_DOWN, x, 0f, 0)
+    private fun touch(action: Int, x: Float): Boolean =
+        delegate.onRecordTouch(MotionEvent.obtain(0, 0, action, x, 0f, 0))
 
     private class TestDelegate : DiscourseComposerDelegate() {
         override fun onMessageSend(
@@ -249,7 +344,7 @@ internal class ComposerVoiceInputTest {
         override fun onTextChanged(text: CharSequence?, bigChange: Boolean, fromDraft: Boolean) = Unit
     }
 
-    private class FakeRecorder(val file: File) : VoiceRecorder {
+    private class FakeRecorder(val file: File, var durationMillis: Long = 1_500L) : VoiceRecorder {
         var starts = 0
         var aborts = 0
         var lastStart: Boolean? = null
@@ -260,8 +355,9 @@ internal class ComposerVoiceInputTest {
             return true
         }
 
-        override fun stop(): VoiceRecording? = VoiceRecording(file, file.name, "audio/mp4", 1_000L)
+        override fun stop(): VoiceRecording = VoiceRecording(file, file.name, "audio/mp4", durationMillis)
         override fun abort() {
+            file.delete()
             aborts++
         }
 

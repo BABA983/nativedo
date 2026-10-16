@@ -1,53 +1,60 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Port of org/telegram/ui/Components/ChatAttachAlert.java: upstream's attachment alert, bound to
+// Discourse instead of a Telegram account.
+
 package io.github.baba983.nativedo.topic;
 
 import android.content.Context;
-import android.os.Bundle;
-import android.view.Gravity;
-import android.view.MotionEvent;
-import android.view.View;
-import android.view.ViewConfiguration;
-import android.view.ViewGroup;
-import android.widget.FrameLayout;
-import android.widget.LinearLayout;
-import android.widget.ScrollView;
+import android.net.Uri;
 
 import androidx.annotation.NonNull;
-import androidx.recyclerview.widget.LinearLayoutManager;
-import androidx.recyclerview.widget.RecyclerView;
+import androidx.annotation.Nullable;
 
-import org.telegram.messenger.AndroidUtilities;
-import org.telegram.ui.ActionBar.BottomSheet;
+import org.telegram.messenger.MediaController;
+import org.telegram.messenger.MessageObject;
+import org.telegram.tgnet.TLRPC;
+import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
-import org.telegram.ui.Components.LayoutHelper;
-import org.telegram.ui.Components.RecyclerListView;
-import org.telegram.ui.Components.glass.GlassTabView;
+import org.telegram.ui.Components.BulletinFactory;
+import org.telegram.ui.Components.ChatAttachAlert;
+import org.telegram.ui.Components.ChatAttachAlert.ChatAttachViewDelegate;
+import org.telegram.ui.Components.ChatAttachAlertDocumentLayout;
+import org.telegram.ui.Components.ChatAttachAlertPhotoLayout;
+import org.telegram.ui.iv.BlockRow;
+import org.telegram.ui.iv.ChatAttachAlertRichLayout;
+
+import java.io.File;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+
+import io.github.baba983.nativedo.hooks.NativeDoHooks;
 
 /**
- * A Telegram-shaped attachment sheet: the paperclip's own menu, in upstream's
- * {@link BottomSheet} shape over one horizontal list of account-free attach tabs.
+ * The paperclip's attachment sheet: upstream's own {@link ChatAttachAlert}, bound to Discourse.
  *
- * <p>Upstream's attach menu is {@code ChatAttachAlert}, but that object is account-backed: it
- * builds Telegram's gallery, media controllers and send helpers, none of which exist for a
- * Discourse account. This sheet is the same shape without them. The list, the tab strip and the
- * drag are upstream's own components (a {@link RecyclerListView} of {@link GlassTabView} install
- * tabs inside a {@link BottomSheet}); what each tab does is this client's, and every action here
- * reaches a site endpoint or the site's own raw, never a Telegram one.</p>
+ * <p>This is not a lookalike. Upstream's alert is the real container - its {@code BottomSheet}
+ * drag, its glass tab capsule, its {@code RecyclerListView} of tabs, its pane transitions, its
+ * photo grid, its document browser and its rich article pane. What this subclass changes is only
+ * what the tabs mean: the gallery and files panes hand their selection to this client's own
+ * URI upload path, the article pane is seeded and read back as Discourse markdown, and the poll
+ * pane is the site's own poll raw rather than a Telegram poll message. Nothing here builds a
+ * Telegram message, reaches Telegram RPC or writes Telegram's database.</p>
  *
- * <p>The sheet opens compact - the drag handle and one row of tabs - and expands by dragging the
- * sheet up, the way upstream's attach alert grows toward the full height of its host. The expanded
- * area is not blank: the active tab's own content fills it. The Poll tab keeps its question,
- * option and settings form inline, above the tab row, so the poll is written where it is read
- * instead of in a second popup; dragging back down settles the sheet compact again, and only a
- * downward drag while it is already compact dismisses it, which is upstream's own dismiss
- * gesture.</p>
+ * <p>The alert's own account-backed behavior is answered through the instance-bound
+ * {@link NativeDoHooks.AttachSheetHost} seam: this alert is the host, so the upstream call sites
+ * hand the alert straight in and a real Telegram alert (not an instance of the interface) runs
+ * unchanged. The tab set, the poll pane and the rich pane are the three places that seam is
+ * reached.</p>
  *
- * <p>Gallery and File cannot show an account-free grid, so they hand off to Android's own content
- * picker, and the rich-text tab opens upstream's editor - both are choices the site can carry.
- * There is no location, contact, music, sticker, emoji or premium tab, because a Discourse account
- * has no send path for any of them and a drawn control with nothing behind it is exactly what this
- * sheet exists to avoid.</p>
+ * <p>The screen owns the field the raw lands in. This sheet reports what the reader chose through
+ * {@link Listener} (a picked URI set, the applied markdown) and {@link PollSink} (the site's poll
+ * raw); it never writes a Telegram draft or sends a Telegram message. Leaving the article pane
+ * saves supported text back into the host draft; other cancelled panes leave the field alone.</p>
  */
-public class DiscourseAttachSheet extends BottomSheet {
+public class DiscourseAttachSheet extends ChatAttachAlert
+        implements NativeDoHooks.AttachSheetHost, ChatAttachViewDelegate,
+        ChatAttachAlertDocumentLayout.DocumentSelectActivityDelegate {
 
     /** The actions the site can carry. Wire them to the content picker, the rich editor or a poll. */
     public enum Action {
@@ -59,347 +66,337 @@ public class DiscourseAttachSheet extends BottomSheet {
 
     /** What a chosen tab means to the host screen. */
     public interface Listener {
+        /**
+         * A tab that hands off to the screen's own picker (the files pane's system-file entry) or
+         * that the screen owns end to end. The gallery and files panes do not use this for a picked
+         * file: they report it through {@link #onAttachUris(List)}.
+         */
         void onAttachAction(Action action);
+
+        /**
+         * Files the reader picked in the gallery or files pane, as local URIs for the screen's own
+         * upload path. Never a Telegram media object.
+         */
+        default void onAttachUris(@NonNull List<Uri> uris) {
+        }
+
+        /** The markdown the reader built in the article pane. */
+        default void onRichText(@NonNull String raw) {
+        }
     }
 
     /**
-     * Where the sheet's inline poll raw goes: the host writes the poll into its own field. The sheet
-     * requires one, because the Poll tab keeps its form in the sheet rather than in a second popup.
+     * Where the sheet's poll raw goes: the host writes the poll into its own field. The site's
+     * {@code [poll]} raw, exactly as the site's own composer would write it.
      */
     public interface PollSink {
         void onPoll(String raw);
     }
 
-    private static final int HANDLE_WIDTH_DP = 36;
-    private static final int HANDLE_TOP_MARGIN_DP = 8;
-    private static final int HANDLE_HEIGHT_DP = 4;
-    private static final int ROW_TOP_MARGIN_DP = 6;
-    private static final int ROW_HEIGHT_DP = 70;
-    private static final int ROW_BOTTOM_MARGIN_DP = 6;
-    /** How far the sheet must be dragged before a finger counts as expanding/collapsing it. */
-    private static final float SETTLE_FRACTION = 0.35f;
-
     private final Listener listener;
     private final PollSink pollSink;
-    private final FrameLayout content;
-    private final LinearLayout root;
-    private final FrameLayout bodyHost;
-    private final RecyclerListView row;
-    private final ItemsAdapter adapter;
-    private final DiscoursePollComposer.Form pollForm;
-
-    private final int touchSlop;
-    private float dragStartRawY = -1f;
-    private boolean dragging;
-    /** The height the content had when the drag began. */
-    private int dragStartHeight;
-    /** The height the content has been asked for, so the drag math never depends on a layout pass. */
-    private int currentContentHeight;
-    private boolean expanded;
-    private Action selectedAction;
+    private final String initialRaw;
+    private final Theme.ResourcesProvider resourcesProvider;
+    /** The site's own poll pane, created once and reused, so its identity is stable. */
+    private ChatAttachAlert.AttachAlertLayout pollLayout;
+    private List<BlockRow> articleRows;
 
     /**
-     * The sheet: the paperclip's menu. The Poll tab keeps its question/options/settings form in the
-     * sheet, filling the expanded area above the tabs, and a successful Create hands the site's raw
-     * to [pollSink]. The other tabs hand their action to [listener] and dismiss the sheet.
+     * @param host         the screen hosting the sheet; upstream uses it for the activity and the
+     *                     clipboard, and this client uses it as the non-chat host fragment. It must
+     *                     not be a {@code ChatActivity} - that path is Telegram's.
+     * @param listener     where a chosen tab and its picked files go
+     * @param pollSink     where the site's poll raw goes
+     * @param initialRaw   the composer's markdown, seeding the article pane; may be null
      */
-    public DiscourseAttachSheet(@NonNull Context context, Theme.ResourcesProvider resourcesProvider,
-            @NonNull Listener listener, @NonNull PollSink pollSink) {
-        super(context, false, resourcesProvider);
+    public DiscourseAttachSheet(@NonNull Context context, @NonNull BaseFragment host,
+            Theme.ResourcesProvider resourcesProvider, @NonNull Listener listener, @NonNull PollSink pollSink,
+            @Nullable String initialRaw) {
+        super(context, host, false, false, false, resourcesProvider);
         this.listener = listener;
         this.pollSink = pollSink;
-        this.touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
+        this.initialRaw = initialRaw;
+        this.resourcesProvider = resourcesProvider;
 
-        setBackgroundColor(getThemedColor(Theme.key_dialogBackground));
-        setOpenNoDelay(true);
-
-        // The sheet's rounded background is upstream's own (the container view's shadow drawable).
-        // The content is a column that fills whatever height the sheet has been asked for: the drag
-        // handle, the active tab's body (weighted, so it takes the expanded space) and the tab row.
-        content = new FrameLayout(context);
-        root = new LinearLayout(context);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setGravity(Gravity.CENTER_HORIZONTAL);
-
-        View handle = new View(context);
-        handle.setBackground(Theme.createRoundRectDrawable(
-                AndroidUtilities.dp(2), getThemedColor(Theme.key_dialogScrollGlow)));
-        handle.setContentDescription("拖动或点击展开、收起");
-        // A drag reaches the sheet through its own touch hook; a plain tap on the handle toggles
-        // the same state, so a reader who cannot drag (an accessibility service) can still open and
-        // close the panel.
-        handle.setFocusable(true);
-        handle.setClickable(true);
-        handle.setOnClickListener(view -> setExpanded(!expanded));
-        // LayoutHelper applies its own dp conversion to these sizes and margins, so they are dp
-        // values here (not pixels): the compact height below sums exactly the space this handle and
-        // the tab row take, and a pre-converted value would be scaled twice and overflow it.
-        root.addView(handle, LayoutHelper.createLinear(
-                HANDLE_WIDTH_DP, HANDLE_HEIGHT_DP,
-                Gravity.CENTER_HORIZONTAL, 0, HANDLE_TOP_MARGIN_DP, 0, 0));
-
-        bodyHost = new FrameLayout(context);
-        bodyHost.setClipToPadding(false);
-        root.addView(bodyHost, LayoutHelper.createLinear(
-                LayoutHelper.MATCH_PARENT, 0, 1f));
-
-        row = new RecyclerListView(context);
-        row.setLayoutManager(new LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false));
-        row.setAdapter(adapter = new ItemsAdapter(context));
-        row.setVerticalScrollBarEnabled(false);
-        row.setHorizontalScrollBarEnabled(false);
-        row.setItemAnimator(null);
-        row.setPadding(AndroidUtilities.dp(8), 0, AndroidUtilities.dp(8), 0);
-        row.setClipToPadding(false);
-        row.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
-        row.setOnItemClickListener((view, position) -> choose(adapter.actionAt(position)));
-        root.addView(row, LayoutHelper.createLinear(
-                LayoutHelper.MATCH_PARENT, ROW_HEIGHT_DP,
-                0, ROW_TOP_MARGIN_DP, 0, ROW_BOTTOM_MARGIN_DP));
-
-        content.addView(root, LayoutHelper.createFrame(
-                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP));
-
-        // The poll is the one tab whose content lives in the sheet: it is built once and kept in the
-        // weighted body, so expanding the sheet reveals it rather than a blank area.
-        pollForm = DiscoursePollComposer.inline(context, resourcesProvider, raw -> {
-            dismiss();
-            pollSink.onPoll(raw);
-        });
-        ScrollView scroller = new ScrollView(context);
-        scroller.setFillViewport(true);
-        scroller.setClipToPadding(false);
-        scroller.addView(pollForm.getView(), LayoutHelper.createFrame(
-                LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP));
-        bodyHost.addView(scroller, LayoutHelper.createFrame(
-                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP));
-        selectedAction = Action.POLL;
-
-        setCustomView(content);
+        // The alert's own actions are answered by this sheet: the gallery exit and the files pane's
+        // system-file entry. Upstream's Telegram send never runs because the delegate is this.
+        setDelegate((ChatAttachViewDelegate) this);
+        setDocumentsDelegate(this);
     }
 
     /**
-     * The container now holds the custom view, so the content can be given its compact height before
-     * the sheet is first measured; without this the weighted body would measure to full height and
-     * the sheet would open tall instead of as the tab row.
+     * Shows the alert the way upstream's chat does: {@code init()} picks the opening pane (the
+     * gallery, the default) and lays out the tabs, then the sheet is shown. A caller that only
+     * calls the ordinary dialog {@code show()} would leave the alert on a blank frame.
      */
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        if (currentContentHeight <= 0) {
-            currentContentHeight = compactHeightPx();
-        }
-        applyContentHeight();
+    public void open() {
+        init();
+        show();
     }
 
-    /** A tab was tapped. Poll stays in the sheet; the rest hand off and the sheet goes away. */
-    private void choose(Action action) {
-        if (action == Action.POLL) {
-            selectAction(action);
-            setExpanded(true);
-            pollForm.focusQuestion();
+    public void openArticle() {
+        selectAction(Action.RICH_EDITOR);
+    }
+
+    @Override
+    public void showLayout(ChatAttachAlert.AttachAlertLayout layout) {
+        if (articleRows != null && getCurrentAttachLayout() instanceof ChatAttachAlertRichLayout
+                && getCurrentAttachLayout() != layout) {
+            if (!canCloseRichAttachPane(articleRows, true)) {
+                return;
+            }
+            onRichAttachPersistDraft(articleRows);
+            setTypeButtonsHidden(false, false);
+        }
+        super.showLayout(layout);
+    }
+
+    @Override
+    public void setTypeButtonsHidden(boolean hidden, boolean animated) {
+        super.setTypeButtonsHidden(hidden, animated);
+        // Creating a seeded article hides the tabs before showLayout resets their alpha. Its
+        // onShow repeats the same hidden state, which upstream treats as a no-op. Apply that
+        // settled state again so the attachment capsule cannot cover the article toolbar.
+        if (hidden && !animated) {
+            buttonsRecyclerViewWrapper.setAlpha(0f);
+            buttonsRecyclerViewWrapper.setVisibility(android.view.View.INVISIBLE);
+        }
+    }
+
+    /** Drive the upstream tab's own action, including its layout registration and transitions. */
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    public void selectAction(Action action) {
+        int position = action.ordinal();
+        androidx.recyclerview.widget.RecyclerView.Adapter adapter = buttonsRecyclerView.getAdapter();
+        androidx.recyclerview.widget.RecyclerView.ViewHolder holder =
+                adapter.createViewHolder(buttonsRecyclerView, adapter.getItemViewType(position));
+        adapter.bindViewHolder(holder, position);
+        buttonsRecyclerView.getOnItemClickListener().onItemClick(holder.itemView, position);
+    }
+
+    // ------------------------------------------------------ lifecycle
+
+    /**
+     * Upstream's dismissal removes the panes it built ({@code layouts[1..]}) but leaves the gallery
+     * ({@code layouts[0]}) and every {@code NotificationCenter} observer this alert registered
+     * alive until the host calls {@link #onDestroy()}. A chat screen calls it from its own destroy;
+     * this client's screens only {@link #dismiss()} the sheet, so without this the gallery keeps its
+     * observers for the life of the activity and a dismissed alert is never really torn down.
+     *
+     * <p>This runs after upstream's own removal, so the panes upstream already destroyed are gone
+     * and only the gallery and the alert's observers are torn down - exactly once. It is the
+     * teardown of a sheet that has actually closed; a pane that refuses to close (an unsaved
+     * article the site cannot store, upstream's {@code checkDiscard}) never reaches a dismissal at
+     * all, and this writes nothing: Apply, back, pane changes and pause persist the article before
+     * its rows are cleared, so teardown cannot double-write the composer's field.</p>
+     */
+    @Override
+    public void dismissInternal() {
+        super.dismissInternal();
+        if (!destroyed) {
+            onDestroy();
+        }
+    }
+
+    /**
+     * The screens keep their {@code attachSheet} field until the fragment is destroyed and call
+     * these on it even after the reader dismissed it. Once the alert is torn down they are no-ops:
+     * upstream's own {@code onPause}/{@code onResume} iterate the panes and the gallery, which no
+     * longer have a live sheet to drive.
+     */
+    @Override
+    public void onPause() {
+        if (!destroyed) {
+            if (!isDismissed() && articleRows != null
+                    && getCurrentAttachLayout() instanceof ChatAttachAlertRichLayout) {
+                onRichAttachPersistDraft(articleRows);
+            }
+            super.onPause();
+        }
+    }
+
+    @Override
+    public void onResume() {
+        if (!destroyed) {
+            super.onResume();
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResultFragment(int requestCode, String[] permissions, int[] grantResults) {
+        if (destroyed) {
             return;
+        }
+        super.onRequestPermissionsResultFragment(requestCode, permissions, grantResults);
+        if (requestCode == org.telegram.ui.BasePermissionsActivity.REQUEST_CODE_EXTERNAL_STORAGE) {
+            getPhotoLayout().checkStorage();
+            MediaController.loadGalleryPhotosAlbums(0);
+        }
+    }
+
+    // ------------------------------------------------------ NativeDoHooks.AttachSheetHost
+
+    @Override
+    public ChatAttachAlert.AttachAlertLayout attachSheetPollLayout(ChatAttachAlert alert) {
+        if (pollLayout == null) {
+            pollLayout = new DiscoursePollLayout(alert, alert.getContext(), resourcesProvider, raw -> {
+                dismiss();
+                pollSink.onPoll(raw);
+            });
+        }
+        return pollLayout;
+    }
+
+    @Override
+    public boolean attachSheetIsPollLayout(ChatAttachAlert.AttachAlertLayout layout) {
+        return layout != null && layout == pollLayout;
+    }
+
+    /** The composer's markdown, as the HTML upstream's rich list seeds from. */
+    @Override
+    public String richAttachSeedHtml() {
+        if (initialRaw == null || initialRaw.trim().isEmpty()) {
+            return null;
+        }
+        return DiscourseRichText.INSTANCE.rawToHtml(initialRaw);
+    }
+
+    @Override
+    public void bindRichAttachRows(List<BlockRow> rows) {
+        articleRows = rows;
+    }
+
+    /**
+     * The article pane's Apply. The markdown is written back to the composer and the pane closes;
+     * content the site cannot store keeps the pane open and tells the reader, and the answer stays
+     * "handled" so upstream's Telegram article send never runs for it.
+     */
+    @Override
+    public boolean onRichAttachApply(List<BlockRow> rows) {
+        try {
+            listener.onRichText(DiscourseRichText.INSTANCE.blocksToRaw(rows));
+            dismiss();
+        } catch (DiscourseRichText.UnsupportedContentException unsupported) {
+            showUnsupported(unsupported);
+        }
+        return true;
+    }
+
+    /**
+     * The article pane is keeping the reader's work (a back press, a transition out). The markdown
+     * is written back; the pane is already leaving.
+     */
+    @Override
+    public boolean onRichAttachPersistDraft(List<BlockRow> rows) {
+        try {
+            listener.onRichText(DiscourseRichText.INSTANCE.blocksToRaw(rows));
+        } catch (DiscourseRichText.UnsupportedContentException ignored) {
+            // Nothing can be written for content the site cannot store; the draft is left alone.
+        }
+        return true;
+    }
+
+    @Override
+    public boolean canCloseRichAttachPane(List<BlockRow> rows, boolean showError) {
+        try {
+            DiscourseRichText.INSTANCE.blocksToRaw(rows);
+            return true;
+        } catch (DiscourseRichText.UnsupportedContentException unsupported) {
+            if (showError) {
+                showUnsupported(unsupported);
+            }
+            return false;
+        }
+    }
+
+    private void showUnsupported(DiscourseRichText.UnsupportedContentException unsupported) {
+        BaseFragment base = getBaseFragment();
+        if (base == null) {
+            return;
+        }
+        BulletinFactory.of(base)
+                .createSimpleBulletin(org.telegram.messenger.R.raw.error,
+                        "暂不支持的内容：" + unsupported.getConstruct())
+                .show();
+    }
+
+    // ------------------------------------------------------ ChatAttachViewDelegate
+
+    /**
+     * The alert's own done action. Action 7 is the gallery's exit: the reader's selected device
+     * images become local URIs for the screen's upload path, then the sheet closes. Every other
+     * button is Telegram's and is not run - this sheet has no Telegram send.
+     */
+    @Override
+    public void didPressedButton(int button, boolean arg, boolean notify, int scheduleDate,
+            int scheduleRepeatPeriod, long effectId, boolean invertMedia, boolean forceDocument, long payStars) {
+        if (button == 7) {
+            List<Uri> picked = selectedPhotoUris();
+            if (!picked.isEmpty()) {
+                listener.onAttachUris(picked);
+            }
+            dismiss();
+        }
+    }
+
+    // ------------------------------------------------------ DocumentSelectActivityDelegate
+
+    /**
+     * The files pane's own list produced paths. Each becomes a local URI for the screen's upload
+     * path; the sheet closes.
+     */
+    @Override
+    public void didSelectFiles(ArrayList<String> files, String caption, ArrayList<TLRPC.MessageEntity> captionEntities,
+            ArrayList<MessageObject> fmessages, boolean notify, int scheduleDate, int scheduleRepeatPeriod,
+            long effectId, boolean invertMedia, long payStars) {
+        List<Uri> picked = new ArrayList<>();
+        if (files != null) {
+            for (String path : files) {
+                if (path != null) {
+                    picked.add(Uri.fromFile(new File(path)));
+                }
+            }
+        }
+        if (!picked.isEmpty()) {
+            listener.onAttachUris(picked);
         }
         dismiss();
-        if (listener != null && action != null) {
-            listener.onAttachAction(action);
-        }
     }
 
     /**
-     * Marks one tab chosen and shows its content. The tap drives this; a host that already knows
-     * which tab it wants (a screen reusing the sheet) can set it directly.
-     */
-    public void selectAction(Action action) {
-        selectedAction = action;
-        adapter.notifyDataSetChanged();
-    }
-
-    /** Whether the sheet has been dragged to (or settled at) full height. */
-    public boolean isExpanded() {
-        return expanded;
-    }
-
-    /**
-     * Grows the sheet to full height or back to its compact row. The shipped gesture reaches this
-     * through {@link #onContainerTouchEvent(MotionEvent)}; a host that already knows the state (a
-     * chat screen reusing the sheet) can set it directly.
-     */
-    public void setExpanded(boolean expanded) {
-        this.expanded = expanded;
-        setContentHeight(expanded ? maxContentHeight() : compactHeightPx());
-    }
-
-    // --------------------------------------------------------------- dragging
-
-    /**
-     * The sheet's own drag. Upstream's {@link BottomSheet} only tracks a downward finger - the one
-     * that dismisses - so the upward half of the gesture is answered here through upstream's own
-     * touch hook: a finger that leaves the slop going up while the sheet is compact grows it toward
-     * full height, and one going down while it is already expanded settles it back compact. A
-     * downward drag while compact is left to the sheet, which dismisses. A drag that would not
-     * change the state is left to the child (the expanded poll form scrolls under it).
+     * The files pane's system-file entry: the screen's own SAF picker, whose result the screen
+     * already uploads. The sheet closes first so the picker is not behind it.
      */
     @Override
-    protected boolean onContainerTouchEvent(MotionEvent event) {
-        if (event == null) {
-            return false;
+    public void startDocumentSelectActivity() {
+        dismiss();
+        listener.onAttachAction(Action.FILES);
+    }
+
+    // ------------------------------------------------------------- selected media
+
+    /** The gallery pane's selection as local URIs, in the order the reader picked it. */
+    private List<Uri> selectedPhotoUris() {
+        List<Uri> uris = new ArrayList<>();
+        ChatAttachAlertPhotoLayout photoLayout = getPhotoLayout();
+        if (photoLayout == null) {
+            return uris;
         }
-        int action = event.getActionMasked();
-        if (action == MotionEvent.ACTION_DOWN) {
-            dragStartRawY = event.getRawY();
-            dragging = false;
-            return false;
+        HashMap<Object, Object> selected = photoLayout.getSelectedPhotos();
+        ArrayList<Object> order = photoLayout.getSelectedPhotosOrder();
+        if (selected == null || order == null) {
+            return uris;
         }
-        if (dragStartRawY < 0f) {
-            return false;
-        }
-        if (action == MotionEvent.ACTION_MOVE) {
-            float dy = event.getRawY() - dragStartRawY;
-            if (!dragging) {
-                boolean wantsExpand = dy <= -touchSlop && !expanded;
-                boolean wantsCollapse = dy >= touchSlop && expanded;
-                if (!wantsExpand && !wantsCollapse) {
-                    return false;
+        for (Object key : order) {
+            Object item = selected.get(key);
+            if (item instanceof MediaController.PhotoEntry) {
+                MediaController.PhotoEntry photo = (MediaController.PhotoEntry) item;
+                String path = photo.imagePath != null ? photo.imagePath : photo.path;
+                if (path != null && !path.isEmpty()) {
+                    uris.add(Uri.fromFile(new File(path)));
                 }
-                dragging = true;
-                dragStartHeight = currentContentHeight > 0 ? currentContentHeight : compactHeightPx();
-            }
-            applyDragHeight(dy);
-            return true;
-        }
-        if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-            boolean wasDragging = dragging;
-            dragging = false;
-            dragStartRawY = -1f;
-            if (wasDragging) {
-                settle();
-                return true;
-            }
-            return false;
-        }
-        return false;
-    }
-
-    private void applyDragHeight(float dy) {
-        int full = maxContentHeight();
-        // A finger going up (negative dy) grows the sheet and one going down shrinks it, so the
-        // height is the drag's start minus how far the finger has travelled.
-        int target = Math.round(dragStartHeight - dy);
-        target = Math.max(compactHeightPx(), Math.min(full, target));
-        setContentHeight(target);
-    }
-
-    private void settle() {
-        int full = maxContentHeight();
-        int compact = compactHeightPx();
-        expanded = currentContentHeight > compact + (full - compact) * SETTLE_FRACTION;
-        setContentHeight(expanded ? full : compact);
-    }
-
-    /** The compact height: the handle, the tab row and their margins. */
-    private int compactHeightPx() {
-        // Sum the same dp values the children were given, so the weighted body is exactly zero when
-        // the sheet is compact even when the density is fractional.
-        return AndroidUtilities.dp(HANDLE_TOP_MARGIN_DP)
-                + AndroidUtilities.dp(HANDLE_HEIGHT_DP)
-                + AndroidUtilities.dp(ROW_TOP_MARGIN_DP)
-                + AndroidUtilities.dp(ROW_HEIGHT_DP)
-                + AndroidUtilities.dp(ROW_BOTTOM_MARGIN_DP);
-    }
-
-    /** The tallest the content may become: the sheet's own host, minus its background padding. */
-    private int maxContentHeight() {
-        ViewGroup sheet = getSheetContainer();
-        ViewGroup host = getContainer();
-        int available = host == null ? 0 : host.getMeasuredHeight();
-        if (available <= 0) {
-            available = AndroidUtilities.displaySize.y;
-        }
-        int padding = sheet == null ? 0 : sheet.getPaddingTop() + sheet.getPaddingBottom();
-        int compact = compactHeightPx();
-        return Math.max(compact, Math.max(compact + 1, available - padding));
-    }
-
-    private void setContentHeight(int height) {
-        currentContentHeight = height;
-        applyContentHeight();
-    }
-
-    private void applyContentHeight() {
-        ViewGroup.LayoutParams params = content.getLayoutParams();
-        if (params == null || params.height == currentContentHeight) {
-            return;
-        }
-        params.height = currentContentHeight;
-        content.setLayoutParams(params);
-        content.requestLayout();
-    }
-
-    // --------------------------------------------------------------- the row
-
-    private class ItemsAdapter extends RecyclerListView.SelectionAdapter {
-
-        private final String[] labels = {"图库", "文件", "富文本", "投票"};
-
-        ItemsAdapter(Context context) {
-        }
-
-        Action actionAt(int position) {
-            switch (position) {
-                case 0:
-                    return Action.GALLERY;
-                case 1:
-                    return Action.FILES;
-                case 2:
-                    return Action.RICH_EDITOR;
-                default:
-                    return Action.POLL;
             }
         }
-
-        @Override
-        public int getItemCount() {
-            return labels.length;
-        }
-
-        @Override
-        public boolean isEnabled(RecyclerView.ViewHolder holder) {
-            return true;
-        }
-
-        @NonNull
-        @Override
-        public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-            GlassTabView tab = GlassTabView.createAttachTab(parent.getContext(), resourcesProvider);
-            tab.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
-            tab.setFocusable(true);
-            tab.setLayoutParams(new RecyclerView.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT));
-            return new RecyclerListView.Holder(tab);
-        }
-
-        @Override
-        public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
-            GlassTabView tab = (GlassTabView) holder.itemView;
-            Action action = actionAt(position);
-            tab.setText(labels[position]);
-            switch (action) {
-                case GALLERY:
-                    tab.setTabAnimation(GlassTabView.TabAnimation.GALLERY);
-                    break;
-                case FILES:
-                    tab.setTabAnimation(GlassTabView.TabAnimation.FILES);
-                    break;
-                case RICH_EDITOR:
-                    tab.setTabAnimation(GlassTabView.TabAnimation.ARTICLE);
-                    break;
-                default:
-                    tab.setTabAnimation(GlassTabView.TabAnimation.POLL);
-                    break;
-            }
-            tab.setSelected(selectedAction == action, false);
-            tab.setContentDescription(labels[position]);
-        }
+        return uris;
     }
 }

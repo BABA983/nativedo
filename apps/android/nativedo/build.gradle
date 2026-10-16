@@ -112,6 +112,9 @@ dependencies {
     implementation 'com.jakewharton.retrofit:retrofit2-kotlinx-serialization-converter:1.0.0'
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
     implementation 'org.jsoup:jsoup:1.18.1'
+    // The voice editor crops/joins a recorded `.m4a` by its container sample table. :TMessagesProj
+    // declares isoparser as `implementation`, so it does not leak onto this module's classpath.
+    implementation 'com.googlecode.mp4parser:isoparser:1.0.6'
 
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.robolectric:robolectric:4.15.1'

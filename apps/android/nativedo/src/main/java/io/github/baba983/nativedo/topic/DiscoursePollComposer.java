@@ -1,8 +1,11 @@
 package io.github.baba983.nativedo.topic;
 
 import android.content.Context;
-import android.graphics.Typeface;
-import android.text.InputType;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffColorFilter;
+import android.graphics.drawable.Drawable;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
@@ -10,13 +13,17 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.core.content.ContextCompat;
 
 import org.telegram.messenger.AndroidUtilities;
-import org.telegram.messenger.LocaleController;
 import org.telegram.ui.ActionBar.Theme;
-import org.telegram.ui.Components.EditTextBoldCursor;
+import org.telegram.ui.Cells.HeaderCell;
+import org.telegram.ui.Cells.PollEditTextCell;
+import org.telegram.ui.Cells.TextCell;
+import org.telegram.ui.Cells.TextCheckCell;
+import org.telegram.ui.Components.CombinedDrawable;
 import org.telegram.ui.Components.LayoutHelper;
-import org.telegram.ui.Components.Switch;
+import org.telegram.ui.Components.ScaleStateListAnimator;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -38,6 +45,16 @@ import java.util.List;
  * is a plain view ({@link #inline}) that the attachment sheet embeds above its tabs, so the poll
  * stays in the sheet instead of a second popup. A poll needs a question and at least two options,
  * and a failure keeps what was typed.</p>
+ *
+ * <p>The form is grouped the way the attachment sheet's own panes are: a rounded card per section
+ * on the sheet's grey background, each with its inline section title, the create action at the top
+ * right of the first card, and the section's rows grouped inside the card. The rows are the
+ * upstream cells the real poll pane draws with - {@link HeaderCell} for a section title,
+ * {@link PollEditTextCell} for the question and every option, {@link TextCheckCell} for the
+ * setting, and {@code TextCell} for the "add an option" row - so the pane reads as the sheet's own
+ * poll pane rather than a form bolted onto it. Only what the site stores is drawn: there is no
+ * description, quiz mode, anonymous voters, duration, subscriber or media-attachment row, because
+ * the site's poll raw has no field for any of them.</p>
  */
 public final class DiscoursePollComposer {
 
@@ -118,13 +135,32 @@ public final class DiscoursePollComposer {
         private final Context context;
         private final Theme.ResourcesProvider resourcesProvider;
         private final Sink sink;
+
         private final LinearLayout root;
-        private final EditTextBoldCursor question;
+        private final PollEditTextCell question;
         private final LinearLayout optionsHost;
-        private final List<EditTextBoldCursor> optionFields = new ArrayList<>();
+        private final List<PollEditTextCell> optionFields = new ArrayList<>();
+        private final TextCell addOptionRow;
         private final TextView helper;
+        private final TextCheckCell multipleCell;
+        private final TextView createButton;
         private final TextView error;
-        private final Switch multipleSwitch;
+
+        /** Marks the create action as ready the moment the question and its two options are filled. */
+        private final TextWatcher fieldWatcher = new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
+                refreshCreateAction();
+            }
+        };
 
         Form(Context context, Theme.ResourcesProvider resourcesProvider, Sink sink) {
             this.context = context;
@@ -133,102 +169,75 @@ public final class DiscoursePollComposer {
 
             root = new LinearLayout(context);
             root.setOrientation(LinearLayout.VERTICAL);
-            root.setPadding(AndroidUtilities.dp(20), AndroidUtilities.dp(6),
-                    AndroidUtilities.dp(20), AndroidUtilities.dp(12));
+            root.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray, resourcesProvider));
+            root.setClipToPadding(false);
+            root.setPadding(0, AndroidUtilities.dp(6), 0, AndroidUtilities.dp(12));
 
-            LinearLayout header = new LinearLayout(context);
-            header.setOrientation(LinearLayout.HORIZONTAL);
-            header.setGravity(Gravity.CENTER_VERTICAL);
+            // --- Question: its own rounded card, with the section title and Create on one row.
+            LinearLayout questionCard = card();
+            createButton = createAction();
+            LinearLayout questionHeader = new LinearLayout(context);
+            questionHeader.setOrientation(LinearLayout.HORIZONTAL);
+            questionHeader.setGravity(Gravity.CENTER_VERTICAL);
+            questionHeader.addView(sectionTitle("问题"),
+                    LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
+            questionHeader.addView(createButton, LayoutHelper.createLinear(
+                    LayoutHelper.WRAP_CONTENT, 28, Gravity.CENTER_VERTICAL, 0, 0, 16, 0));
+            questionCard.addView(questionHeader, LayoutHelper.createLinear(
+                    LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
-            TextView title = new TextView(context);
-            title.setText("新建投票");
-            title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 17);
-            title.setTypeface(Typeface.DEFAULT_BOLD);
-            title.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
-            header.addView(title, LayoutHelper.createLinear(
-                    LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, 1f));
+            question = optionField("问一个问题", null);
+            questionCard.addView(question, LayoutHelper.createLinear(
+                    LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
-            TextView create = new TextView(context);
-            create.setText("创建");
-            create.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
-            create.setTypeface(Typeface.DEFAULT_BOLD);
-            create.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText, resourcesProvider));
-            create.setGravity(Gravity.CENTER);
-            create.setPadding(AndroidUtilities.dp(14), AndroidUtilities.dp(6),
-                    AndroidUtilities.dp(14), AndroidUtilities.dp(6));
-            create.setBackground(Theme.createRoundRectDrawable(AndroidUtilities.dp(14),
-                    Theme.multAlpha(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText, resourcesProvider), 0.12f)));
-            create.setContentDescription("创建投票");
-            create.setFocusable(true);
-            create.setClickable(true);
-            create.setOnClickListener(view -> submit());
-            header.addView(create, LayoutHelper.createLinear(
-                    LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT));
-            root.addView(header, LayoutHelper.createLinear(
-                    LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 0, 0, AndroidUtilities.dp(6)));
+            // --- Options: the title, then the option rows, then the "add an option" row.
+            LinearLayout optionsCard = card();
+            optionsCard.addView(sectionTitle("选项"), LayoutHelper.createLinear(
+                    LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+            optionsHost = new LinearLayout(context);
+            optionsHost.setOrientation(LinearLayout.VERTICAL);
+            optionsCard.addView(optionsHost, LayoutHelper.createLinear(
+                    LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+            addOptionRow = addOptionAction();
+            optionsCard.addView(addOptionRow, LayoutHelper.createLinear(
+                    LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
-            question = field(context, resourcesProvider, "问一个问题");
-            root.addView(question, LayoutHelper.createLinear(
-                    LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 0, 0, AndroidUtilities.dp(12)));
-
-            // The helper is created before the option rows because adding one refreshes it; it is
-            // added to the column below the "add an option" row.
+            // The helper sits on the sheet's grey background, under the options card, the way the
+            // sheet's own poll pane counts down the remaining options.
             helper = new TextView(context);
             helper.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
             helper.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText, resourcesProvider));
 
-            root.addView(section(context, resourcesProvider, "选项"), LayoutHelper.createLinear(
-                    LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 0, 0, AndroidUtilities.dp(2)));
-            optionsHost = new LinearLayout(context);
-            optionsHost.setOrientation(LinearLayout.VERTICAL);
-            root.addView(optionsHost, LayoutHelper.createLinear(
+            // --- Settings: the card with the one setting the site reads.
+            LinearLayout settingsCard = card();
+            settingsCard.addView(sectionTitle("设置"), LayoutHelper.createLinear(
                     LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-            addOption();
-            addOption();
-
-            TextView add = new TextView(context);
-            add.setText("+ 添加选项");
-            add.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
-            add.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText, resourcesProvider));
-            add.setPadding(0, AndroidUtilities.dp(8), 0, AndroidUtilities.dp(4));
-            add.setContentDescription("添加选项");
-            add.setFocusable(true);
-            add.setClickable(true);
-            add.setOnClickListener(view -> addOption());
-            root.addView(add, LayoutHelper.createLinear(
+            multipleCell = new TextCheckCell(context, resourcesProvider);
+            multipleCell.setTextAndCheck("允许选择多项", false, false);
+            multipleCell.getCheckBox().setContentDescription("允许选择多项");
+            multipleCell.setOnClickListener(view -> multipleCell.setChecked(!multipleCell.isChecked()));
+            settingsCard.addView(multipleCell, LayoutHelper.createLinear(
                     LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
-            root.addView(helper, LayoutHelper.createLinear(
-                    LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 0, 0, AndroidUtilities.dp(12)));
-
-            root.addView(section(context, resourcesProvider, "设置"), LayoutHelper.createLinear(
-                    LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 0, 0, AndroidUtilities.dp(2)));
-            LinearLayout setting = new LinearLayout(context);
-            setting.setOrientation(LinearLayout.HORIZONTAL);
-            setting.setGravity(Gravity.CENTER_VERTICAL);
-            TextView settingLabel = new TextView(context);
-            settingLabel.setText("允许选择多项");
-            settingLabel.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
-            settingLabel.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
-            setting.addView(settingLabel, LayoutHelper.createLinear(
-                    LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, 1f));
-            multipleSwitch = new Switch(context, resourcesProvider);
-            multipleSwitch.setColors(Theme.key_switchTrack, Theme.key_switchTrackChecked,
-                    Theme.key_windowBackgroundWhite, Theme.key_windowBackgroundWhite);
-            multipleSwitch.setChecked(false, false);
-            setting.addView(multipleSwitch, LayoutHelper.createLinear(
-                    AndroidUtilities.dp(37), AndroidUtilities.dp(20)));
-            root.addView(setting, LayoutHelper.createLinear(
-                    LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-
+            // --- A missing question or too few options is named in place.
             error = new TextView(context);
             error.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
             error.setTextColor(Theme.getColor(Theme.key_text_RedRegular, resourcesProvider));
             error.setVisibility(View.GONE);
-            root.addView(error, LayoutHelper.createLinear(
-                    LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, AndroidUtilities.dp(8), 0, 0));
 
-            updateHelper();
+            root.addView(questionCard, cardParams(0));
+            root.addView(error, LayoutHelper.createLinear(
+                    LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 21, 8, 21, 0));
+            root.addView(optionsCard, cardParams(10));
+            root.addView(helper, LayoutHelper.createLinear(
+                    LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 21, 8, 21, 0));
+            root.addView(settingsCard, cardParams(10));
+
+            // Two option rows to start, the site's own minimum, added last so the option host is
+            // already in the tree and the helper row already exists.
+            addOption();
+            addOption();
+            refreshOptions();
         }
 
         /** The form's view; a host adds it wherever the poll should live. */
@@ -236,9 +245,26 @@ public final class DiscoursePollComposer {
             return root;
         }
 
+        /**
+         * Whether the reader has started a poll: any question text or any option text. The
+         * attachment sheet reads this before it lets the poll pane be dismissed, the way upstream's
+         * poll pane checks its own fields.
+         */
+        public boolean hasContent() {
+            if (!question.getText().trim().isEmpty()) {
+                return true;
+            }
+            for (PollEditTextCell field : optionFields) {
+                if (!field.getText().trim().isEmpty()) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         /** Gives the question field focus, so a sheet can raise the keyboard onto it. */
         public void focusQuestion() {
-            question.requestFocus();
+            question.getTextView().requestFocus();
         }
 
         /** Adds one option field, up to the site's cap. */
@@ -246,11 +272,15 @@ public final class DiscoursePollComposer {
             if (optionFields.size() >= MAX_OPTIONS) {
                 return;
             }
-            EditTextBoldCursor field = field(context, resourcesProvider, "选项");
+            // The delete action is upstream's own: the cell's trailing icon removes the row. It is
+            // the site's counterpart of the poll pane's per-option action; attaching media to an
+            // option is a Telegram poll feature the site's raw has no field for, so it is skipped.
+            PollEditTextCell field = optionField("选项",
+                    view -> removeOption((PollEditTextCell) view.getParent()));
             optionFields.add(field);
             optionsHost.addView(field, LayoutHelper.createLinear(
-                    LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 0, 0, AndroidUtilities.dp(4)));
-            updateHelper();
+                    LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+            refreshOptions();
         }
 
         /**
@@ -258,69 +288,159 @@ public final class DiscoursePollComposer {
          * is named in place and nothing is emitted, so the reader keeps what they typed.
          */
         public void submit() {
-            String title = question.getText().toString().trim();
+            String title = question.getText().trim();
             List<String> parsed = new ArrayList<>();
-            for (EditTextBoldCursor field : optionFields) {
-                String option = field.getText().toString().trim();
+            for (PollEditTextCell field : optionFields) {
+                String option = field.getText().trim();
                 if (!option.isEmpty()) {
                     parsed.add(option);
                 }
             }
             if (title.isEmpty()) {
-                error.setText("投票需要一个标题");
-                error.setVisibility(View.VISIBLE);
+                showError("投票需要一个标题");
                 return;
             }
             if (parsed.size() < MIN_OPTIONS) {
-                error.setText("投票至少需要两个选项");
-                error.setVisibility(View.VISIBLE);
+                showError("投票至少需要两个选项");
                 return;
             }
             error.setVisibility(View.GONE);
-            sink.onPoll(raw(title, parsed, multipleSwitch.isChecked()));
+            sink.onPoll(raw(title, parsed, multipleCell.isChecked()));
         }
 
-        private void updateHelper() {
+        // ----------------------------------------------------------- the form's own pieces
+
+        /** One option row the reader added, dropped from the form; at least one row always stays. */
+        private void removeOption(PollEditTextCell field) {
+            if (optionFields.size() <= 1) {
+                return;
+            }
+            int index = optionFields.indexOf(field);
+            if (index < 0) {
+                return;
+            }
+            optionFields.remove(index);
+            optionsHost.removeView(field);
+            refreshOptions();
+        }
+
+        private void refreshOptions() {
             int remaining = MAX_OPTIONS - optionFields.size();
             helper.setText("还可以添加 " + remaining + " 个选项");
             helper.setVisibility(remaining > 0 ? View.VISIBLE : View.GONE);
+            addOptionRow.setVisibility(remaining > 0 ? View.VISIBLE : View.GONE);
+            refreshCreateAction();
         }
-    }
 
-    // --------------------------------------------------------------- shared pieces
+        /**
+         * The create action keeps the sheet's own look at either weight: exactly like the alert's
+         * done item, it is full strength once the poll is complete and half strength until then,
+         * and it stays pressable either way so an incomplete form names what is missing.
+         */
+        private void refreshCreateAction() {
+            createButton.setAlpha(isComplete() ? 1.0f : 0.5f);
+        }
 
-    private static TextView section(Context context, Theme.ResourcesProvider resourcesProvider, String text) {
-        TextView view = new TextView(context);
-        view.setText(text);
-        view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
-        view.setTypeface(Typeface.DEFAULT_BOLD);
-        view.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText, resourcesProvider));
-        return view;
-    }
-
-    private static EditTextBoldCursor field(Context context, Theme.ResourcesProvider resourcesProvider,
-            String hint) {
-        EditTextBoldCursor field = new EditTextBoldCursor(context) {
-            @Override
-            protected Theme.ResourcesProvider getResourcesProvider() {
-                return resourcesProvider;
+        private boolean isComplete() {
+            if (question.getText().trim().isEmpty()) {
+                return false;
             }
-        };
-        field.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
-        field.setHintTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteHintText, resourcesProvider));
-        field.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
-        field.setBackgroundDrawable(null);
-        field.setLineColors(
-                Theme.getColor(Theme.key_windowBackgroundWhiteInputField, resourcesProvider),
-                Theme.getColor(Theme.key_windowBackgroundWhiteInputFieldActivated, resourcesProvider),
-                Theme.getColor(Theme.key_text_RedRegular, resourcesProvider));
-        field.setGravity(LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT);
-        field.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
-        field.setSingleLine(true);
-        field.setHint(hint);
-        field.setCursorColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
-        field.setCursorSize(AndroidUtilities.dp(20));
-        field.setCursorWidth(1.5f);
-        return field;
+            int filled = 0;
+            for (PollEditTextCell field : optionFields) {
+                if (!field.getText().trim().isEmpty()) {
+                    filled++;
+                }
+            }
+            return filled >= MIN_OPTIONS;
+        }
+
+        private void showError(String message) {
+            error.setText(message);
+            error.setVisibility(View.VISIBLE);
+        }
+
+        /** A section's own row, with the sheet's section title styling and heading semantics. */
+        private HeaderCell sectionTitle(String text) {
+            HeaderCell header = new HeaderCell(context, Theme.key_windowBackgroundWhiteBlueHeader,
+                    21, 0, false, resourcesProvider);
+            header.setText(text);
+            return header;
+        }
+
+        /** The alert's done item, inlined: a blue pill with its label, at the card's top right. */
+        private TextView createAction() {
+            TextView create = new TextView(context);
+            create.setText("创建");
+            create.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+            create.setTypeface(AndroidUtilities.bold());
+            create.setGravity(Gravity.CENTER);
+            create.setTextColor(Theme.getColor(Theme.key_featuredStickers_buttonText, resourcesProvider));
+            create.setPadding(AndroidUtilities.dp(12), 0, AndroidUtilities.dp(12), 0);
+            create.setBackground(Theme.createRoundRectDrawable(AndroidUtilities.dp(14),
+                    Theme.getColor(Theme.key_featuredStickers_addButton, resourcesProvider)));
+            create.setContentDescription("创建投票");
+            create.setFocusable(true);
+            create.setClickable(true);
+            ScaleStateListAnimator.apply(create);
+            create.setOnClickListener(view -> submit());
+            return create;
+        }
+
+        /** The "add an option" row: the poll pane's own circle-plus icon and blue label. */
+        private TextCell addOptionAction() {
+            TextCell add = new TextCell(context, resourcesProvider);
+            add.setColors(-1, Theme.key_telegram_color_text);
+            Drawable circle = ContextCompat.getDrawable(context,
+                    org.telegram.messenger.R.drawable.poll_add_circle);
+            Drawable plus = ContextCompat.getDrawable(context,
+                    org.telegram.messenger.R.drawable.poll_add_plus);
+            if (circle != null && plus != null) {
+                circle.setColorFilter(new PorterDuffColorFilter(
+                        Theme.getColor(Theme.key_switchTrackChecked, resourcesProvider),
+                        PorterDuff.Mode.MULTIPLY));
+                plus.setColorFilter(new PorterDuffColorFilter(
+                        Theme.getColor(Theme.key_checkboxCheck, resourcesProvider),
+                        PorterDuff.Mode.MULTIPLY));
+                add.setTextAndIcon("添加选项", new CombinedDrawable(circle, plus), false);
+                add.imageLeft = 20;
+                add.offsetFromImage = 58;
+            } else {
+                add.setText("添加选项", false);
+            }
+            add.setContentDescription("添加选项");
+            add.setOnClickListener(view -> addOption());
+            return add;
+        }
+
+        /**
+         * One poll field: the poll pane's own cell, with the site's placeholder as its hint and the
+         * cell's own bottom divider, so the rows read as one group inside their card. The question
+         * has no per-row action; an option's action removes the row.
+         */
+        private PollEditTextCell optionField(String hint, View.OnClickListener onDelete) {
+            PollEditTextCell field = new PollEditTextCell(context, false,
+                    PollEditTextCell.TYPE_DEFAULT, onDelete, resourcesProvider);
+            if (field.moveImageView != null) {
+                // This form has no drag-reordering host; do not advertise a dead drag handle.
+                field.moveImageView.setVisibility(View.INVISIBLE);
+            }
+            field.setTextAndHint("", hint, true);
+            field.addTextWatcher(fieldWatcher);
+            return field;
+        }
+
+        /** A section's rounded white card, on the sheet's grey background. */
+        private LinearLayout card() {
+            LinearLayout card = new LinearLayout(context);
+            card.setOrientation(LinearLayout.VERTICAL);
+            card.setBackground(Theme.createRoundRectDrawable(AndroidUtilities.dp(12),
+                    Theme.getColor(Theme.key_windowBackgroundWhite, resourcesProvider)));
+            return card;
+        }
+
+        private LinearLayout.LayoutParams cardParams(int topMarginDp) {
+            return LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT,
+                    12, topMarginDp, 12, 0);
+        }
     }
 }

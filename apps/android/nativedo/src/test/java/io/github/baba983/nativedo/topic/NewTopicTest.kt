@@ -1,8 +1,10 @@
 package io.github.baba983.nativedo.topic
 
 import android.app.Activity
+import android.app.AppOpsManager
 import android.content.Intent
 import android.net.Uri
+import android.os.Environment
 import android.view.View
 import android.view.ViewGroup
 import io.github.baba983.nativedo.app.NativeDo
@@ -32,9 +34,11 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
+import org.robolectric.shadows.ShadowEnvironment
 import org.telegram.messenger.ApplicationLoader
 import org.telegram.ui.ActionBar.AlertDialog
 import org.telegram.ui.Components.ChatActivityEnterView
+import org.telegram.ui.Components.ChatAttachAlertDocumentLayout
 import org.telegram.ui.Components.EditTextBoldCursor
 import org.telegram.ui.Components.FragmentFloatingButton
 import org.telegram.ui.Components.RecyclerListView
@@ -285,11 +289,29 @@ internal class NewTopicTest {
         composer.getAttachButton().performClick()
         harness.idle()
 
-        val sheet = ShadowDialog.getLatestDialog() ?: throw AssertionError("the paperclip opened no sheet")
-        val list = viewsUnder(sheet.window!!.decorView).filterIsInstance<RecyclerListView>().firstOrNull()
-            ?: throw AssertionError("the sheet has no tab list")
-        list.clickItem(null, 1)
-        harness.idle()
+        ShadowEnvironment.setExternalStorageState(Environment.MEDIA_MOUNTED)
+        ShadowEnvironment.addExternalDir(Environment.getExternalStorageDirectory().absolutePath)
+        shadowOf(harness.context.getSystemService(AppOpsManager::class.java)).setMode(
+            "android:manage_external_storage", harness.context.applicationInfo.uid,
+            harness.context.packageName, AppOpsManager.MODE_ERRORED,
+        )
+        val sheet = ShadowDialog.getLatestDialog() as? DiscourseAttachSheet
+            ?: throw AssertionError("the paperclip opened no sheet")
+        sheet.selectAction(DiscourseAttachSheet.Action.FILES)
+        harness.idleClock(500)
+        val pane = viewsUnder(sheet.window!!.decorView).filterIsInstance<ChatAttachAlertDocumentLayout>().single()
+        val list = ChatAttachAlertDocumentLayout::class.java.getDeclaredField("listView")
+            .apply { isAccessible = true }.get(pane) as RecyclerListView
+        val adapter = list.adapter!!
+        val getItem = adapter.javaClass.getMethod("getItem", Integer.TYPE).apply { isAccessible = true }
+        val storagePosition = (0 until adapter.itemCount).first { position ->
+            val item = getItem.invoke(adapter, position) ?: return@first false
+            val icon = item.javaClass.getField("icon").apply { isAccessible = true }.getInt(item)
+            icon == org.telegram.messenger.R.drawable.files_storage ||
+                icon == org.telegram.messenger.R.drawable.files_internal
+        }
+        list.clickItem(null, storagePosition)
+        harness.idleClock(500)
 
         val activity = harness.activity
         val requested = shadowOf(activity).nextStartedActivityForResult
@@ -327,17 +349,16 @@ internal class NewTopicTest {
 
         val sheet = ShadowDialog.getLatestDialog() as? DiscourseAttachSheet
             ?: throw AssertionError("the paperclip opened no sheet")
-        val list = viewsUnder(sheet.window!!.decorView).filterIsInstance<RecyclerListView>().firstOrNull()
-            ?: throw AssertionError("the sheet has no tab list")
-        list.clickItem(null, POLL_POSITION)
-        harness.idle()
+        sheet.selectAction(DiscourseAttachSheet.Action.POLL)
+        harness.idleClock(500)
 
-        val fields = viewsUnder(sheet.window!!.decorView).filterIsInstance<EditTextBoldCursor>()
+        val pane = viewsUnder(sheet.window!!.decorView).filterIsInstance<DiscoursePollLayout>().single()
+        val fields = viewsUnder(pane).filterIsInstance<EditTextBoldCursor>()
         assertEquals("a question field and at least two option fields", 3, fields.size)
         fields[0].setText("新帖投票")
         fields[1].setText("甲")
         fields[2].setText("乙")
-        viewsUnder(sheet.window!!.decorView)
+        viewsUnder(pane)
             .filterIsInstance<android.widget.TextView>()
             .first { it.text?.toString() == "创建" }
             .performClick()
@@ -419,8 +440,5 @@ internal class NewTopicTest {
         const val TITLE = "构建脚本大家都是怎么组织的"
         const val BODY = "第一次在这里发帖，先问一下大家怎么组织自己的构建脚本。"
         const val CATEGORY = "开发调优"
-
-        /** The poll tab of the attachment sheet, by the order its list shows them. */
-        const val POLL_POSITION = 3
     }
 }

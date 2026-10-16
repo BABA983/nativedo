@@ -647,106 +647,6 @@ public final class NativeDoHooks {
     }
 
     /**
-     * The seam for upstream's rich editor ({@code org.telegram.ui.iv.RichEditor}).
-     *
-     * <p>The editor is bound to a {@code ChatActivity}: its send path builds a Telegram message and
-     * hands it to {@code SendMessagesHelper}, and its draft path writes to Telegram's own draft
-     * database. This client has neither. The host is bound to the editor instance itself - this
-     * client opens the upstream screen through a {@code DiscourseRichEditor} subclass that
-     * implements this interface - so the upstream call sites hand the editor and its live rows
-     * straight in, with no process-wide registry to keep in sync and no reflection to reach a
-     * package-private list. A real Telegram editor is not an instance of this interface, so the
-     * hooks return false and upstream runs unchanged.</p>
-     */
-    public interface RichEditorHost {
-        void bindRows(java.util.List<org.telegram.ui.iv.BlockRow> rows);
-
-        /**
-         * The editor's Apply/send was pressed, with the editor's live blocks. Return true when the
-         * content was applied here (exported to the reader's composer, say); false lets upstream
-         * send it as a Telegram message.
-         */
-        boolean onApply(java.util.List<org.telegram.ui.iv.BlockRow> rows);
-
-        /**
-         * The editor is keeping the reader's work (a back press, a transition out), with the
-         * editor's live blocks. Return true when the content was written here; false lets upstream
-         * persist its own draft.
-         */
-        boolean onPersistDraft(java.util.List<org.telegram.ui.iv.BlockRow> rows);
-
-        boolean canClose(java.util.List<org.telegram.ui.iv.BlockRow> rows, boolean showError);
-    }
-
-    /** The host bound to {@code editor}, or null for a real Telegram editor. */
-    private static RichEditorHost richEditorHost(org.telegram.ui.iv.RichEditor editor) {
-        return editor instanceof RichEditorHost ? (RichEditorHost) editor : null;
-    }
-
-    /** Whether this client's editor owns the screen; upstream's controls ask here. */
-    public static boolean richEditorHostPresent(org.telegram.ui.iv.RichEditor editor) {
-        return richEditorHost(editor) != null;
-    }
-
-    /**
-     * Answered from the editor's own send path with its live rows; true means the content left
-     * through this client and upstream's Telegram send is skipped.
-     */
-    public static boolean onRichEditorSend(org.telegram.ui.iv.RichEditor editor, java.util.List<org.telegram.ui.iv.BlockRow> rows) {
-        RichEditorHost host = richEditorHost(editor);
-        return host != null && host.onApply(rows);
-    }
-
-    /**
-     * Answered from the editor's own draft path with its live rows; true means this client wrote
-     * the draft and upstream's Telegram draft write is skipped.
-     */
-    public static boolean onRichEditorPersistDraft(org.telegram.ui.iv.RichEditor editor, java.util.List<org.telegram.ui.iv.BlockRow> rows) {
-        RichEditorHost host = richEditorHost(editor);
-        return host != null && host.onPersistDraft(rows);
-    }
-
-    public static boolean richEditorCanClose(org.telegram.ui.iv.RichEditor editor, java.util.List<org.telegram.ui.iv.BlockRow> rows, boolean showError) {
-        RichEditorHost host = richEditorHost(editor);
-        return host == null || host.canClose(rows, showError);
-    }
-
-    /**
-     * Telegram's premium lock on the editor, answered by whether this client owns it.
-     *
-     * <p>Upstream reads the lock off a Telegram account's entitlement. This client has no account,
-     * so the lock would cover formatting the site does support (headings, lists, tables, marked,
-     * sub/super) and would block the Apply. While this client owns the editor the lock is off; a
-     * real Telegram editor keeps the value upstream computed.</p>
-     */
-    public static boolean richEditorPremiumLock(org.telegram.ui.iv.RichEditor editor, boolean upstream) {
-        return richEditorHost(editor) == null && upstream;
-    }
-
-    public static void richEditorCreated(org.telegram.ui.iv.RichEditor editor, org.telegram.ui.Components.ChatActivityEnterView.SendButton button, java.util.List<org.telegram.ui.iv.BlockRow> rows) {
-        RichEditorHost host = richEditorHost(editor);
-        if (host != null) {
-            host.bindRows(rows);
-            button.setResourceId(org.telegram.messenger.R.drawable.input_done);
-            button.setContentDescription("完成并返回");
-            button.setOnLongClickListener(null);
-        }
-    }
-
-    /**
-     * One control that only means something inside Telegram (AI, media attach, inline button, date,
-     * formula): hidden while this client owns the editor, so the reader is never offered a screen
-     * this client cannot finish. The view is returned so the upstream call site keeps its chain,
-     * and it is untouched - still visible - in a real Telegram build.
-     */
-    public static <T extends android.view.View> T richEditorControl(org.telegram.ui.iv.RichEditor editor, T control) {
-        if (control != null && richEditorHost(editor) != null) {
-            control.setVisibility(android.view.View.GONE);
-        }
-        return control;
-    }
-
-    /**
      * The seam for upstream's mention panel ({@code org.telegram.ui.Components.MentionsContainerView}).
      *
      * <p>The panel builds its own {@code MentionsAdapter} against Telegram's chat participants,
@@ -902,6 +802,16 @@ public final class NativeDoHooks {
          * gesture (upstream's own handling is then skipped); false lets upstream run unchanged.
          */
         boolean onRecordTouch(android.view.MotionEvent event);
+
+        default boolean onComposerRecordStart(int account, int guid) { return false; }
+        default void onComposerRecordStop(int send) {}
+        default void onComposerRecordTogglePause() {}
+        default boolean isComposerRecordingPaused() { return false; }
+        default boolean onComposerRecordPermission(android.app.Activity activity) { return false; }
+        default int mapRecordInterfaceState(int state) { return state; }
+        default void onComposerVoiceEditor(org.telegram.ui.Components.RecordedAudioPlayerView editor, Runnable clear) {}
+        default boolean onComposerVoiceSend() { return false; }
+        default void onComposerVoiceTrim(long start, long end, Runnable done) {}
     }
 
     /**
@@ -914,6 +824,279 @@ public final class NativeDoHooks {
             org.telegram.ui.Components.ChatActivityEnterView.ChatActivityEnterViewDelegate delegate,
             android.view.MotionEvent event) {
         return delegate instanceof ComposerRecordHost && ((ComposerRecordHost) delegate).onRecordTouch(event);
+    }
+
+    private static ComposerRecordHost composerRecordHost(
+            org.telegram.ui.Components.ChatActivityEnterView.ChatActivityEnterViewDelegate delegate) {
+        return delegate instanceof ComposerRecordHost ? (ComposerRecordHost) delegate : null;
+    }
+
+    public static void requestComposerRecordPermission(
+            org.telegram.ui.Components.ChatActivityEnterView.ChatActivityEnterViewDelegate delegate,
+            android.app.Activity activity, Runnable fallback) {
+        ComposerRecordHost host = composerRecordHost(delegate);
+        if (host == null || !host.onComposerRecordPermission(activity)) fallback.run();
+    }
+
+    public static boolean startComposerRecording(
+            org.telegram.ui.Components.ChatActivityEnterView.ChatActivityEnterViewDelegate delegate,
+            int account, int guid, Runnable fallback) {
+        ComposerRecordHost host = composerRecordHost(delegate);
+        if (host != null) return host.onComposerRecordStart(account, guid);
+        fallback.run();
+        return true;
+    }
+
+    public static void stopComposerRecording(
+            org.telegram.ui.Components.ChatActivityEnterView.ChatActivityEnterViewDelegate delegate,
+            int send, Runnable fallback) {
+        ComposerRecordHost host = composerRecordHost(delegate);
+        if (host != null) host.onComposerRecordStop(send); else fallback.run();
+    }
+
+    public static void toggleComposerRecordingPause(
+            org.telegram.ui.Components.ChatActivityEnterView.ChatActivityEnterViewDelegate delegate,
+            Runnable fallback) {
+        ComposerRecordHost host = composerRecordHost(delegate);
+        if (host != null) host.onComposerRecordTogglePause(); else fallback.run();
+    }
+
+    public static boolean isComposerRecordingPaused(
+            org.telegram.ui.Components.ChatActivityEnterView.ChatActivityEnterViewDelegate delegate,
+            java.util.function.BooleanSupplier fallback) {
+        ComposerRecordHost host = composerRecordHost(delegate);
+        return host == null ? fallback.getAsBoolean() : host.isComposerRecordingPaused();
+    }
+
+    public static void cleanComposerRecording(
+            org.telegram.ui.Components.ChatActivityEnterView.ChatActivityEnterViewDelegate delegate,
+            boolean fromCancel, Runnable fallback) {
+        if (composerRecordHost(delegate) == null) fallback.run();
+    }
+
+    public static int mapRecordInterfaceState(
+            org.telegram.ui.Components.ChatActivityEnterView.ChatActivityEnterViewDelegate delegate, int state) {
+        ComposerRecordHost host = composerRecordHost(delegate);
+        return host == null ? state : host.mapRecordInterfaceState(state);
+    }
+
+    public static boolean redirectRecordInterfaceState(
+            org.telegram.ui.Components.ChatActivityEnterView.ChatActivityEnterViewDelegate delegate,
+            int state, java.util.function.IntConsumer apply) {
+        int mapped = mapRecordInterfaceState(delegate, state);
+        if (mapped == state) return false;
+        apply.accept(mapped);
+        return true;
+    }
+
+    public static void bindComposerVoiceEditor(
+            org.telegram.ui.Components.ChatActivityEnterView.ChatActivityEnterViewDelegate delegate,
+            org.telegram.ui.Components.RecordedAudioPlayerView editor, Runnable clear) {
+        ComposerRecordHost host = composerRecordHost(delegate);
+        if (host != null) host.onComposerVoiceEditor(editor, clear);
+    }
+
+    public static boolean sendComposerVoice(
+            org.telegram.ui.Components.ChatActivityEnterView.ChatActivityEnterViewDelegate delegate) {
+        ComposerRecordHost host = composerRecordHost(delegate);
+        return host != null && host.onComposerVoiceSend();
+    }
+
+    public static void trimComposerRecording(
+            org.telegram.ui.Components.ChatActivityEnterView.ChatActivityEnterViewDelegate delegate,
+            long start, long end, Runnable done, Runnable fallback) {
+        ComposerRecordHost host = composerRecordHost(delegate);
+        if (host != null) host.onComposerVoiceTrim(start, end, done); else fallback.run();
+    }
+
+    /** Draft persistence and Telegram-player cleanup are services, not editor rendering. */
+    public static void composerVoiceAccountAction(
+            org.telegram.ui.Components.ChatActivityEnterView.ChatActivityEnterViewDelegate delegate, Runnable fallback) {
+        if (composerRecordHost(delegate) == null) fallback.run();
+    }
+
+    public static org.telegram.messenger.MessageObject composerPlayingMessage(
+            org.telegram.ui.Components.ChatActivityEnterView.ChatActivityEnterViewDelegate delegate,
+            java.util.function.Supplier<org.telegram.messenger.MessageObject> fallback) {
+        return composerRecordHost(delegate) == null ? fallback.get() : null;
+    }
+
+    public interface AttachSheetHost {
+        org.telegram.ui.Components.ChatAttachAlert.AttachAlertLayout attachSheetPollLayout(org.telegram.ui.Components.ChatAttachAlert alert);
+        boolean attachSheetIsPollLayout(org.telegram.ui.Components.ChatAttachAlert.AttachAlertLayout layout);
+        String richAttachSeedHtml();
+        void bindRichAttachRows(java.util.List<org.telegram.ui.iv.BlockRow> rows);
+        boolean onRichAttachApply(java.util.List<org.telegram.ui.iv.BlockRow> rows);
+        boolean onRichAttachPersistDraft(java.util.List<org.telegram.ui.iv.BlockRow> rows);
+        boolean canCloseRichAttachPane(java.util.List<org.telegram.ui.iv.BlockRow> rows, boolean showError);
+    }
+
+    private static AttachSheetHost attachSheetHost(org.telegram.ui.Components.ChatAttachAlert alert) {
+        return alert instanceof AttachSheetHost ? (AttachSheetHost) alert : null;
+    }
+
+    public static int attachSheetRichTab(org.telegram.ui.Components.ChatAttachAlert alert, int index) {
+        return attachSheetHost(alert) != null ? index : -1;
+    }
+
+    public static int attachSheetPollTab(org.telegram.ui.Components.ChatAttachAlert alert, int richIndex) {
+        return attachSheetHost(alert) != null ? richIndex + 1 : -1;
+    }
+
+    public static int attachSheetTabCount(org.telegram.ui.Components.ChatAttachAlert alert, int count) {
+        return attachSheetHost(alert) != null ? count + 2 : count;
+    }
+
+    public static boolean attachSheetRichTabPremium(org.telegram.ui.Components.ChatAttachAlert alert, boolean upstream) {
+        return attachSheetHost(alert) == null && upstream;
+    }
+
+    public static long attachSheetLayoutId(org.telegram.ui.Components.ChatAttachAlert alert,
+            org.telegram.ui.Components.ChatAttachAlert.AttachAlertLayout layout, long currentId) {
+        AttachSheetHost host = attachSheetHost(alert);
+        return host != null && host.attachSheetIsPollLayout(layout)
+                ? org.telegram.ui.Components.ChatAttachAlert.LAYOUT_TYPE_POLL : currentId;
+    }
+
+    public static boolean attachSheetNeedsStoragePermission(org.telegram.ui.Components.ChatAttachAlert alert) {
+        return attachSheetHost(alert) == null;
+    }
+
+    public static boolean attachDocumentPermissionWarning(org.telegram.ui.Components.ChatAttachAlert alert, boolean upstream) {
+        return attachSheetNeedsStoragePermission(alert) && upstream;
+    }
+
+    public static void setAttachDocumentImageFilter(org.telegram.ui.Components.ChatAttachAlert alert,
+            org.telegram.ui.Components.ChatAttachAlertDocumentLayout layout, boolean imagesOnly) {
+        layout.setCanSelectOnlyImageFiles(attachSheetHost(alert) == null && imagesOnly);
+    }
+
+    public static boolean showAttachPoll(org.telegram.ui.Components.ChatAttachAlert alert, boolean animated, Boolean quiz) {
+        AttachSheetHost host = attachSheetHost(alert);
+        if (host == null) return false;
+        alert.showLayout(host.attachSheetPollLayout(alert));
+        return true;
+    }
+
+    public static void seedRichAttachPane(org.telegram.ui.Components.ChatAttachAlert alert, org.telegram.ui.iv.RichEditorListView listView) {
+        AttachSheetHost host = attachSheetHost(alert);
+        String html = host == null ? null : host.richAttachSeedHtml();
+        if (html != null) listView.loadHtml(html); else listView.seedEmptyArticle();
+    }
+
+    public static boolean richAttachPaneHosted(org.telegram.ui.Components.ChatAttachAlert alert) {
+        return attachSheetHost(alert) != null;
+    }
+
+    public static boolean richAttachPaneApply(org.telegram.ui.Components.ChatAttachAlert alert, java.util.List<org.telegram.ui.iv.BlockRow> rows) {
+        AttachSheetHost host = attachSheetHost(alert);
+        return host != null && host.onRichAttachApply(rows);
+    }
+
+    public static boolean richAttachPanePersistDraft(org.telegram.ui.Components.ChatAttachAlert alert, java.util.List<org.telegram.ui.iv.BlockRow> rows) {
+        AttachSheetHost host = attachSheetHost(alert);
+        return host != null && host.onRichAttachPersistDraft(rows);
+    }
+
+    public static boolean richAttachPaneOpen(org.telegram.ui.Components.ChatAttachAlert alert, java.util.List<org.telegram.ui.iv.BlockRow> rows) {
+        AttachSheetHost host = attachSheetHost(alert);
+        return host == null || host.canCloseRichAttachPane(rows, true);
+    }
+
+    public static boolean richAttachPaneBack(org.telegram.ui.Components.ChatAttachAlert alert, java.util.List<org.telegram.ui.iv.BlockRow> rows) {
+        return attachSheetHost(alert) != null;
+    }
+
+    public static boolean richAttachPremiumLock(org.telegram.ui.Components.ChatAttachAlert alert, boolean upstream) {
+        return attachSheetHost(alert) == null && upstream;
+    }
+
+    /**
+     * The alert behind each hosted rich toolbar, keyed by the toolbar's own delegate instance (so a
+     * real Telegram delegate carries no entry and upstream's own behavior runs). Weak on both sides:
+     * the value holds the alert weakly because the alert already reaches the delegate through its
+     * pane, so a strong value would keep every closed pane's entry alive for the life of the process.
+     */
+    private static final java.util.Map<Object, java.lang.ref.WeakReference<org.telegram.ui.Components.ChatAttachAlert>> hostedRichPanes =
+            java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
+
+    public static void bindRichAttachPane(org.telegram.ui.Components.ChatAttachAlert alert,
+            org.telegram.ui.iv.RichEditorToolbar.Delegate delegate, java.util.List<org.telegram.ui.iv.BlockRow> rows) {
+        AttachSheetHost host = attachSheetHost(alert);
+        if (host != null) {
+            hostedRichPanes.put(delegate, new java.lang.ref.WeakReference<>(alert));
+            host.bindRichAttachRows(rows);
+        }
+    }
+
+    /**
+     * The rich pane's own top-left back button, shown only for the site's hosted pane.
+     *
+     * <p>Upstream hides it in attachment mode. This client's pane is a draft editor with an owning
+     * reader screen, so the same button is shown and closes the pane (see {@link #richAttachBack}).
+     * A real Telegram rich-editor pane keeps upstream's hidden button.</p>
+     */
+    public static void configureRichAttachBack(org.telegram.ui.Components.ChatAttachAlert alert,
+            org.telegram.ui.iv.RichEditorToolbar toolbar, org.telegram.ui.iv.RichEditorListView list) {
+        toolbar.setBackVisible(attachSheetHost(alert) != null);
+        if (attachSheetHost(alert) == null) return;
+        // The standalone RichEditor reserves 60dp for its top controls. Reserve the same space
+        // without introducing a Markdown block, moving the list's touch origin or replacing its layout manager.
+        list.addItemDecoration(new androidx.recyclerview.widget.RecyclerView.ItemDecoration() {
+            @Override
+            public void getItemOffsets(android.graphics.Rect out, android.view.View view,
+                    androidx.recyclerview.widget.RecyclerView parent, androidx.recyclerview.widget.RecyclerView.State state) {
+                if (parent.getChildAdapterPosition(view) == 0) out.top = org.telegram.messenger.AndroidUtilities.dp(60);
+            }
+        });
+    }
+
+    /** The reserved control row belongs to sheet chrome, not to its scrollable Markdown body. */
+    public static int richAttachContentTop(org.telegram.ui.Components.ChatAttachAlert alert,
+            org.telegram.ui.iv.RichEditorListView list, int top) {
+        return attachSheetHost(alert) != null && list.findViewHolderForAdapterPosition(0) != null
+                ? top - org.telegram.messenger.AndroidUtilities.dp(60) : top;
+    }
+
+    public static void richAttachToolbarOffset(org.telegram.ui.Components.ChatAttachAlert alert,
+            org.telegram.ui.iv.RichEditorToolbar toolbar, int offset) {
+        // Full expansion must not put the hosted back control above the safe screen edge.
+        toolbar.setTopButtonsOffset(attachSheetHost(alert) == null ? offset : Math.max(offset,
+                org.telegram.messenger.AndroidUtilities.statusBarHeight + org.telegram.messenger.AndroidUtilities.dp(8)));
+    }
+
+    /**
+     * Where the toolbar's own back button sends a press: the hosted pane's sheet, or upstream's own
+     * {@code delegate.onBack()} when a real Telegram toolbar built this button.
+     *
+     * <p>Pressing it is the sheet's own back, so the pane exits by the same path as the system back
+     * - saving the supported draft, and staying open for content the site cannot store - rather than
+     * Telegram's rich-draft dialog.</p>
+     */
+    public static void richAttachBack(org.telegram.ui.iv.RichEditorToolbar.Delegate delegate,
+            android.widget.ImageView backButton) {
+        java.lang.ref.WeakReference<org.telegram.ui.Components.ChatAttachAlert> pane = hostedRichPanes.get(delegate);
+        final org.telegram.ui.Components.ChatAttachAlert alert = pane == null ? null : pane.get();
+        backButton.setOnClickListener(v -> {
+            if (alert != null) {
+                alert.onBackPressed();
+            } else {
+                delegate.onBack();
+            }
+        });
+    }
+
+    public static void configureRichAttachApply(org.telegram.ui.Components.ChatAttachAlert alert,
+            org.telegram.ui.Components.ChatActivityEnterView.SendButton control) {
+        if (attachSheetHost(alert) != null) {
+            control.setResourceId(org.telegram.messenger.R.drawable.input_done);
+            control.setContentDescription("完成并返回");
+            control.setOnLongClickListener(null);
+        }
+    }
+
+    public static void richAttachControl(org.telegram.ui.iv.RichEditorToolbar.Delegate delegate, android.view.View control) {
+        if (hostedRichPanes.containsKey(delegate)) control.setVisibility(android.view.View.GONE);
     }
 
     private NativeDoHooks() {

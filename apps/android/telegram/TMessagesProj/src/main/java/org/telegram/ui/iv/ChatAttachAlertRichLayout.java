@@ -70,6 +70,7 @@ import org.telegram.ui.Stories.recorder.ButtonWithCounterView;
 import java.util.ArrayList;
 
 import org.telegram.ui.iv.Latex;
+import io.github.baba983.nativedo.hooks.NativeDoHooks;
 
 public class ChatAttachAlertRichLayout extends ChatAttachAlert.AttachAlertLayout implements NotificationCenter.NotificationCenterDelegate {
 
@@ -144,7 +145,7 @@ public class ChatAttachAlertRichLayout extends ChatAttachAlert.AttachAlertLayout
         listView.setAllowTapAboveContent(false);
         addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.FILL));
         addView(listView.getOverlayView(), LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.FILL));
-        listView.seedEmptyArticle();
+        NativeDoHooks.seedRichAttachPane(parentAlert, listView); // NativeDo: seed from the composer's markdown, or upstream's empty article
         listView.resetHistoryBaseline();
 
         setFocusable(true);
@@ -155,8 +156,10 @@ public class ChatAttachAlertRichLayout extends ChatAttachAlert.AttachAlertLayout
         setBackground(null);
         setForeground(null);
 
+        NativeDoHooks.bindRichAttachPane(parentAlert, toolbarDelegate, listView.rows); // NativeDo: bind the host draft and hide unsupported toolbar controls
         toolbar = new RichEditorToolbar(context, toolbarDelegate);
-        toolbar.setBackVisible(false);
+        NativeDoHooks.configureRichAttachApply(parentAlert, toolbar.getSendButton()); // NativeDo: this action applies the draft, never posts it
+        NativeDoHooks.configureRichAttachBack(parentAlert, toolbar, listView); // NativeDo: reserve the hosted pane's own top controls without changing its Markdown
         toolbar.setTopGradientVisible(false);
         updateSendButtonLocked();
         addView(toolbar, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.FILL));
@@ -202,7 +205,7 @@ public class ChatAttachAlertRichLayout extends ChatAttachAlert.AttachAlertLayout
     private void updateToolbarTopOffset() {
         if (toolbar == null) return;
         final int minTop = AndroidUtilities.statusBarHeight + (ActionBar.getCurrentActionBarHeight() - dp(44)) / 2 - dp(8);
-        toolbar.setTopButtonsOffset(Math.max(minTop, firstItemTopRaw()));
+        NativeDoHooks.richAttachToolbarOffset(parentAlert, toolbar, Math.max(minTop, firstItemTopRaw())); // NativeDo: keep the hosted back control inside the safe top edge
     }
 
     private int firstItemTopRaw() {
@@ -214,7 +217,7 @@ public class ChatAttachAlertRichLayout extends ChatAttachAlert.AttachAlertLayout
                 top = child.getTop();
             }
         }
-        return top == Integer.MAX_VALUE ? listView.getPaddingTop() : top;
+        return NativeDoHooks.richAttachContentTop(parentAlert, listView, top == Integer.MAX_VALUE ? listView.getPaddingTop() : top); // NativeDo: the control reserve is chrome, not article content
     }
 
     private void updateHistoryButtons() {
@@ -225,6 +228,11 @@ public class ChatAttachAlertRichLayout extends ChatAttachAlert.AttachAlertLayout
 
     private boolean checkDiscard() {
         if (listView == null) return true;
+        if (!NativeDoHooks.richAttachPaneOpen(parentAlert, listView.rows)) return false; // NativeDo: content the site cannot store keeps the pane open
+        if (NativeDoHooks.richAttachPaneBack(parentAlert, listView.rows)) { // NativeDo: a hosted pane writes its markdown back instead of Telegram's draft dialog
+            persistDraft();
+            return true;
+        }
         if (listView.hasAnyText()) {
             new AlertDialog.Builder(getContext(), resourcesProvider)
                 .setTitle(getString(R.string.ArticleSaveDraftTitle))
@@ -244,6 +252,7 @@ public class ChatAttachAlertRichLayout extends ChatAttachAlert.AttachAlertLayout
     }
 
     private boolean persistDraft() {
+        if (NativeDoHooks.richAttachPanePersistDraft(parentAlert, listView.rows)) return true; // NativeDo: this client's pane writes back to the composer's own field
         if (!(parentAlert.baseFragment instanceof ChatActivity)) return false;
         final ChatActivity chatActivity = (ChatActivity) parentAlert.baseFragment;
         if (!listView.canUndo()) return false;
@@ -336,7 +345,7 @@ public class ChatAttachAlertRichLayout extends ChatAttachAlert.AttachAlertLayout
         }
         final ItemOptions o = ItemOptions.makeOptions(this, resourcesProvider, v, true).dontFocus();
         final ItemOptions headers = o.makeSwipeback();
-        final boolean premiumLock = !MessagesController.getInstance(currentAccount).richEditorAllowed() && !UserConfig.getInstance(currentAccount).isPremium();
+        final boolean premiumLock = NativeDoHooks.richAttachPremiumLock(parentAlert, !MessagesController.getInstance(currentAccount).richEditorAllowed() && !UserConfig.getInstance(currentAccount).isPremium()); // NativeDo: the site's pane is never premium-locked
 
         headers.add(R.drawable.ic_ab_back, getString(R.string.Back), () -> o.closeSwipeback());
         headers.addGap();
@@ -653,7 +662,7 @@ public class ChatAttachAlertRichLayout extends ChatAttachAlert.AttachAlertLayout
             return Integer.MAX_VALUE;
         }
         listView.setTopGlowOffset(Math.max(0, top));
-        final int adjusted = top - AndroidUtilities.statusBarHeight;
+        final int adjusted = NativeDoHooks.richAttachContentTop(parentAlert, listView, top - AndroidUtilities.statusBarHeight); // NativeDo: preserve the sheet anchor above the hosted top controls
         int newOffset = dp(7);
         if (adjusted >= dp(7) && hadFirstChild) {
             newOffset = adjusted;
@@ -809,6 +818,7 @@ public class ChatAttachAlertRichLayout extends ChatAttachAlert.AttachAlertLayout
     }
 
     public boolean sendSelectedItems(boolean notify, int scheduleDate, int scheduleRepeatPeriod, long effectId, boolean invertMedia) {
+        if (NativeDoHooks.richAttachPaneApply(parentAlert, listView.rows)) return true; // NativeDo: this client's pane exports the article to the composer
         if (isSendLocked()) {
             showConversionSheet();
             return false;
@@ -878,6 +888,7 @@ public class ChatAttachAlertRichLayout extends ChatAttachAlert.AttachAlertLayout
     private MessageSendPreview messageSendPreview;
 
     private boolean showSendPreview(View view) {
+        if (NativeDoHooks.richAttachPaneHosted(parentAlert)) return false; // NativeDo: a hosted pane applies its markdown directly, not Telegram's preview
         if (!UserConfig.getInstance(currentAccount).isPremium()) {
             new PremiumFeatureBottomSheet(parentAlert.baseFragment, getContext(), currentAccount, PremiumPreviewFragment.PREMIUM_FEATURE_RICH_EDITOR, true).show();
             return true;
@@ -1136,17 +1147,14 @@ public class ChatAttachAlertRichLayout extends ChatAttachAlert.AttachAlertLayout
 
     private void updateSendButtonLocked() {
         if (toolbar != null) {
-            final boolean premiumLocked = !MessagesController.getInstance(currentAccount).richEditorAllowed()
-                && !UserConfig.getInstance(currentAccount).isPremium();
+            final boolean premiumLocked = NativeDoHooks.richAttachPremiumLock(parentAlert, !MessagesController.getInstance(currentAccount).richEditorAllowed() && !UserConfig.getInstance(currentAccount).isPremium()); // NativeDo: the site's pane is never premium-locked
             toolbar.getSendButton().setLocked(premiumLocked && listView.isLossy());
             toolbar.setPremiumLocked(premiumLocked);
         }
     }
 
     private boolean isSendLocked() {
-        return !MessagesController.getInstance(currentAccount).richEditorAllowed()
-            && !UserConfig.getInstance(currentAccount).isPremium()
-            && listView.isLossy();
+        return NativeDoHooks.richAttachPremiumLock(parentAlert, !MessagesController.getInstance(currentAccount).richEditorAllowed() && !UserConfig.getInstance(currentAccount).isPremium() && listView.isLossy()); // NativeDo: the site's pane is never premium-locked
     }
 
     private void showConversionSheet() {

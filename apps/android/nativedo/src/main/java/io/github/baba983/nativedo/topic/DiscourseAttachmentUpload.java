@@ -39,6 +39,39 @@ public final class DiscourseAttachmentUpload {
     private DiscourseAttachmentUpload() {
     }
 
+    /** Preserve selection order; a rejected file stops the batch without losing earlier inserts. */
+    public static void upload(@NonNull Context context, @NonNull AppContainer container,
+            java.util.List<Uri> uris, @NonNull Sink sink) {
+        final int generation = container.getSessionCoordinator().currentRequestContext().getGeneration();
+        final var owner = container.getSessionStore().snapshot();
+        java.util.Iterator<Uri> remaining = new java.util.ArrayList<>(uris).iterator();
+        Sink sequential = new Sink() {
+            @Override
+            public void onUploadStarted() {
+                sink.onUploadStarted();
+            }
+
+            @Override
+            public void onUploaded(String markup) {
+                var current = container.getSessionStore().snapshot();
+                if (generation != container.getSessionCoordinator().currentRequestContext().getGeneration()
+                        || !java.util.Objects.equals(owner == null ? null : owner.getUsername(),
+                                current == null ? null : current.getUsername())) {
+                    sink.onUploadFailed(new java.io.IOException("登录状态已改变，请重新选择附件"));
+                    return;
+                }
+                sink.onUploaded(markup);
+                if (remaining.hasNext()) upload(context, container, remaining.next(), this);
+            }
+
+            @Override
+            public void onUploadFailed(Throwable error) {
+                sink.onUploadFailed(error);
+            }
+        };
+        if (remaining.hasNext()) upload(context, container, remaining.next(), sequential);
+    }
+
     /**
      * Uploads [uri] for [container]'s session and reports the result to [sink]. A URI whose bytes
      * cannot be read fails at once, before any request, so a missing file never reaches the site.

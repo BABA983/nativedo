@@ -72,6 +72,9 @@ internal class FakeDiscourseSite {
     /** The body of the last write the site received on [path], form-encoded as it was sent. */
     fun requestBodyFor(path: String): String? = requestBodies[path.trimStart('/')]
 
+    /** Lossless body for media-upload checks; UTF-8 decoding cannot preserve an AAC container. */
+    fun requestBytesFor(path: String): ByteArray? = requestBytes[path.trimStart('/')]
+
     /**
      * Every body the path was written with, in the order they arrived. A screen that reports its
      * state as it changes writes more than once, and the last write is not the whole story.
@@ -206,6 +209,7 @@ internal class FakeDiscourseSite {
                     requests += request.method.orEmpty() + " " + request.path.orEmpty()
                     requestClocks += Triple(request.method.orEmpty(), path, android.os.SystemClock.elapsedRealtime())
                     if (request.method != "GET" && request.method != "HEAD") {
+                        requestBytes[path] = request.body.clone().readByteArray()
                         request.body.readUtf8().let { body ->
                             requestBodies[path] = body
                             requestBodyLog += path to body
@@ -337,6 +341,7 @@ internal class FakeDiscourseSite {
     private val requests = mutableListOf<String>()
     private val requestClocks = mutableListOf<Triple<String, String, Long>>()
     private val requestBodies = mutableMapOf<String, String>()
+    private val requestBytes = mutableMapOf<String, ByteArray>()
     private val requestBodyLog = mutableListOf<Pair<String, String>>()
     private val csrfHeaders = mutableMapOf<String, String>()
     private val requestedPaths = mutableListOf<String>()

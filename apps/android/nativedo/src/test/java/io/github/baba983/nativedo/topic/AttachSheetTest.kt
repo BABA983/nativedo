@@ -1,14 +1,16 @@
 package io.github.baba983.nativedo.topic
 
 import android.app.Activity
+import android.app.AppOpsManager
+import android.app.Dialog
+import android.content.DialogInterface
 import android.content.Intent
-import android.graphics.Rect
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.net.Uri
-import android.os.SystemClock
-import android.view.MotionEvent
+import android.os.Environment
 import android.view.View
 import android.view.ViewGroup
-import android.widget.ScrollView
 import android.widget.TextView
 import io.github.baba983.nativedo.app.NativeDo
 import io.github.baba983.nativedo.harness.FakeDiscourseSite
@@ -36,27 +38,41 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import org.robolectric.shadows.ShadowDialog
+import org.robolectric.shadows.ShadowEnvironment
 import org.telegram.messenger.ApplicationLoader
+import org.telegram.messenger.MediaController
+import org.telegram.ui.ActionBar.AlertDialog
 import org.telegram.ui.Components.ChatActivityEnterView
+import org.telegram.ui.Components.ChatAttachAlert
+import org.telegram.ui.Components.ChatAttachAlertDocumentLayout
+import org.telegram.ui.Components.ChatAttachAlertPhotoLayout
 import org.telegram.ui.Components.EditTextBoldCursor
 import org.telegram.ui.Components.RecyclerListView
-import org.telegram.ui.Components.Switch
+import org.telegram.ui.iv.RichEditorToolbar
+import java.io.File
+import java.io.FileOutputStream
 
 /**
- * The Telegram-shaped attachment sheet, end to end.
+ * The attachment sheet, end to end, on the screens that open it.
  *
- * <p>The failures this pins: a paperclip that drops the reader straight into a bare file picker
- * with no way to reach the rich editor or a poll; a poll written as a Telegram poll message instead
- * of the site's own raw; a sheet that expands onto a blank area because every tab leaves it; and an
- * upload that loses the reader's draft when the site refuses it. Every case drives the shipped flow
- * - the composer's own paperclip or the reply strip, the sheet's own tab list, the sheet's inline
- * poll form, the site's own upload endpoint - and the inline-poll cases end at the field the host
- * writes the raw into, so they pin the host's own [DiscourseAttachSheet.PollSink] wiring rather than
- * a stand-in for it. The drag is a dispatched touch on the sheet's own container, never a private
- * height setter.</p>
+ * <p>Every case drives the shipped flow: the composer's own paperclip (or, once the field has text,
+ * the screen's own attach strip) opens the sheet, its own tab list picks a pane, its own gallery
+ * action, poll form and editor toolbar do the rest, and the site's own upload endpoint receives the
+ * file. Nothing here constructs a [DiscourseAttachSheet] directly or calls one of its callbacks by
+ * hand - the "sheet" a case sees is the one the fragment itself showed.</p>
+ *
+ * <p>The failures this pins, kept from the case's first draft: a paperclip that drops the reader
+ * into a bare picker instead of the Telegram-shaped sheet; a poll written as a Telegram poll message
+ * instead of the site's own `[poll]` raw; a gallery/files selection that never reaches this client's
+ * upload path (and so never lands in the field); an upload that loses the reader's draft when the
+ * site refuses it; and a sheet whose tabs hand off and leave an empty panel behind. The assertions
+ * end at the seams the screens consume - the field's text, the picker the screen asked for, the
+ * request the site received - so they pin the host wiring rather than a stand-in for it.</p>
  */
 @RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(
     application = ApplicationLoader::class,
     instrumentedPackages = ["org.telegram"],
@@ -88,241 +104,398 @@ internal class AttachSheetTest {
             post.put("post_number", 1)
         }
         NativeDo.setContainerFactory { context -> site.authenticatedContainer(context) }
+        // The gallery pane's selection is a process-wide map; a case must not inherit the last one's.
+        clearGallerySelection()
     }
 
     @After
     fun tearDown() {
-        NativeDo.setContainerFactory { context -> site.authenticatedContainer(context) }
+        // The sheet is this case's own window: close it before the activity it hangs off goes away,
+        // so the next case starts from no dialog and no fragment whose dialog is still attached.
+        runCatching {
+            (ShadowDialog.getLatestDialog() as? android.app.Dialog)?.takeIf { it.isShowing }?.dismiss()
+        }
+        runCatching { harness.visibleFragment()?.onPause() }
+        clearGallerySelection()
         site.stop()
     }
 
+    /**
+     * The paperclip opens the site's own sheet, not a bare file picker, and the sheet offers the
+     * four actions the site can carry. This is the case that says the reader can still reach a poll
+     * and the editor at all. The default pane (the site's own gallery) is captured for inspection.
+     */
     @Test
-    fun thePaperclipOpensTheSheetNotABarePicker() {
-        openTopic()
-        val composer = composer() ?: throw AssertionError("the screen has no composer")
+    fun thePaperclipOpensUpstreamsOwnSheetNotABarePicker() {
+        val composer = openTopicWithComposer()
         composer.getAttachButton().performClick()
         harness.idle()
 
-        val started = shadowOf(harness.activity).nextStartedActivityForResult
-        assertTrue(
+        assertNull(
             "the paperclip must not drop the reader straight into a picker",
-            started == null || started.intent.action != Intent.ACTION_OPEN_DOCUMENT,
+            shadowOf(harness.activity).nextStartedActivityForResult,
         )
-        val sheet = sheet() ?: throw AssertionError("the paperclip opened no sheet")
-        println("sheet: tabs = " + tabList(sheet).adapter?.itemCount)
-        assertEquals("the four actions the site can carry", 4, tabList(sheet).adapter?.itemCount)
+        val sheet = latestSheet()
+        assertEquals("the sheet offers the site's own four actions", 4, tabCount(sheet))
+
+        // The sheet opens on the gallery pane: the state a reader sees first, before any pick. Run
+        // the open animation to its end so the capture is the settled sheet, not a frame of it.
+        harness.idleClock(SETTLE_MS)
+        captureSheet(sheet, "attach-sheet-default")
         harness.assertNoTelegramSideEffects()
     }
 
+    /**
+     * The gallery pane's Done, through the sheet's own action button: the photos the reader selected
+     * become local URIs for the screen's own upload path and land in the reply field as the site's
+     * markdown - never a Telegram media object.
+     */
     @Test
-    fun galleryAsksForImagesAndTheSitesMarkdownLandsInTheField() {
+    fun theGalleryDoneHandsTheSelectionToTheUploadPath() {
         site.serveJson("uploads.json", harness.fixture("upload-response.json"))
         val composer = openTopicWithComposer()
-        openSheet(composer)
-        chooseTab(GALLERY_POSITION)
+        val sheet = openSheetFromPaperclip()
+        sheet.selectAction(DiscourseAttachSheet.Action.GALLERY)
+        harness.idle()
+        captureSheet(sheet, "attach-sheet-gallery")
 
-        pickFile("screenshot.png", transparentPng(), expectedType = "image/*")
+        // An edited/cropped photo must upload its edited bytes, not silently fall back to the
+        // original. Only the editor's output exists, so choosing the original cannot pass this flow.
+        selectGalleryPhoto(File(harness.activity.cacheDir, "unavailable-original.png").absolutePath)
+        (ChatAttachAlertPhotoLayout.selectedPhotos[GALLERY_PHOTO_ID] as MediaController.PhotoEntry)
+            .imagePath = writeCachePng("capture.png").absolutePath
+        sheetWriteButton(sheet).performClick()
+        harness.idle()
 
         harness.await("the field to hold the uploaded image") {
             !composer.getFieldText().isNullOrEmpty()
         }
         assertEquals(
-            "the field gets the site's own markdown",
+            "the gallery's Done uploads the site's own markdown into the field",
             "![screenshot.png|1080x720](upload://9d5a2f6f0a1b2c3d4e5f60718293a4b5c6d7e8f9.png)\n",
-            composer.fieldText.toString(),
+            composer.getFieldText()?.toString(),
         )
         harness.assertNoTelegramSideEffects()
     }
 
+    /** A selection must not continue uploading, or insert its late answer, for a different reader. */
     @Test
-    fun theFileTabTakesAnythingTheProviderCanOpen() {
+    fun anAccountChangeDuringAGalleryBatchStopsTheRemainingUploads() {
         val composer = openTopicWithComposer()
-        openSheet(composer)
-        chooseTab(FILES_POSITION)
-
-        val requested = shadowOf(harness.activity).nextStartedActivityForResult
-            ?: throw AssertionError("the file tab opened no picker")
-        assertEquals("the file action takes any file", "*/*", requested.intent.type)
-        harness.assertNoTelegramSideEffects()
-    }
-
-    @Test
-    fun cancellingTheSheetKeepsTheDraft() {
-        val composer = openTopicWithComposer()
-        composer.setFieldText("一段还没写完的回复")
-        harness.idle()
-
-        // The reply strip is the entry once the field has text; it opens the same sheet.
-        val strip = attachStrip() ?: throw AssertionError("the screen has no attach strip")
-        strip.performClick()
-        harness.idle()
-        val sheet = sheet() ?: throw AssertionError("the strip opened no sheet")
-        sheet.dismiss()
-        harness.idle()
-
-        assertEquals("cancelling the sheet leaves the field alone", "一段还没写完的回复", composer.fieldText.toString())
-        assertTrue("and uploads nothing", site.requestPaths.none { it == "uploads.json" })
-        harness.assertNoTelegramSideEffects()
-    }
-
-    @Test
-    fun aRejectedUploadKeepsTheDraftAndSaysSo() {
+        val container = NativeDo.container(harness.context)
         site.serveResponse("uploads.json") {
-            okhttp3.mockwebserver.MockResponse().setResponseCode(422)
+            container.sessionStore.save(
+                io.github.baba983.nativedo.core.session.SessionSnapshot(
+                    "other-reader", "Other", "", System.currentTimeMillis(),
+                ),
+            )
+            okhttp3.mockwebserver.MockResponse().setResponseCode(200)
                 .setHeader("Content-Type", "application/json")
-                .setBody(harness.fixture("error-422-post.json"))
+                .setBody(harness.fixture("upload-response.json"))
         }
-        val composer = openTopicWithComposer()
-        composer.setFieldText("保留我写的内容")
-        harness.idle()
-        val strip = attachStrip() ?: throw AssertionError("the screen has no attach strip")
-        strip.performClick()
-        harness.idle()
-        chooseTab(FILES_POSITION)
-        pickFile("broken.png", transparentPng())
+        val sheet = openSheetFromPaperclip()
+        selectGalleryPhoto(writeCachePng("first.png").absolutePath)
+        ChatAttachAlertPhotoLayout.selectedPhotos[9] = MediaController.PhotoEntry(
+            0, 9, 0L, writeCachePng("second.png").absolutePath, 0, false, 0, 0, 0L,
+        )
+        ChatAttachAlertPhotoLayout.selectedPhotosOrder.add(9)
+        sheetWriteButton(sheet).performClick()
 
-        harness.await("the site to refuse the upload") { site.requestPaths.contains("uploads.json") }
-        harness.await("the reader to be told") { shownText().any { it.contains("回复失败") } }
-        println("upload: reader told " + shownText().filter { it.contains("回复失败") })
+        harness.await("the stopped batch to report its failure") {
+            shownText().any { it.contains("回复失败") }
+        }
+        assertEquals("the next selected file is never sent for the new reader", 1,
+            site.requestPaths.count { it == "uploads.json" })
+        assertTrue("the old upload cannot enter the new reader's field", composer.getFieldText().isNullOrEmpty())
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * The gallery pane's own top bar is the reader's way out of an expanded gallery. It carries a
+     * back action, the bottom tab capsule gives way to it while it is up (the pane hides the
+     * capsule), and backing out closes the whole sheet to the composer - the draft the reader had
+     * written is untouched, and the pane's untouched selection is not uploaded.
+     *
+     * <p>The gallery is the sheet's default pane, so the captures are the two heights the reader
+     * sees: the half-height opening (its own drag handle at the top, the bottom tab capsule still
+     * showing) and the pane raised under its own ActionBar (the tab capsule gone).</p>
+     */
+    @Test
+    fun theGallerysTopBarBackClosesTheSheetToTheComposerWithoutTouchingTheDraft() {
+        openTopic()
+        val composer = composer() ?: throw AssertionError("the screen has no composer")
+        composer.setFieldText("这段草稿不该被相册动")
+        harness.idle()
+
+        val sheet = openSheetFromStrip()
+        captureSheet(sheet, "attachment-navigation/gallery-half-height")
         assertEquals(
-            "a refused upload does not touch the draft",
-            "保留我写的内容",
-            composer.fieldText.toString(),
+            "the bottom tab capsule shows while the gallery sits at half height",
+            View.VISIBLE,
+            tabCapsule(sheet).visibility,
+        )
+
+        // The pane's own scroll-to-top is the expand the reader sees; the alert raises its bar.
+        sheet.selectAction(DiscourseAttachSheet.Action.GALLERY)
+        harness.idle()
+        harness.idleClock(SETTLE_MS)
+        captureSheet(sheet, "attachment-navigation/gallery-expanded")
+        assertEquals(
+            "the gallery pane uses the alert's own top bar",
+            View.VISIBLE,
+            sheet.actionBar.visibility,
+        )
+        assertEquals(
+            "the bottom tab capsule gives way to the gallery's top bar",
+            View.INVISIBLE,
+            tabCapsule(sheet).visibility,
+        )
+
+        val back = sheet.actionBar.getBackButton()
+            ?: throw AssertionError("the alert's top bar has no back action")
+        back.performClick()
+        harness.idle()
+
+        assertTrue(
+            "the gallery's back closes the sheet all the way to the composer",
+            sheet.isDismissed(),
+        )
+        assertTrue("the screen underneath is still the topic", harness.visibleFragment() is TopicFragment)
+        assertEquals(
+            "backing out of the gallery leaves the draft alone",
+            "这段草稿不该被相册动",
+            composer.getFieldText()?.toString(),
         )
         harness.assertNoTelegramSideEffects()
     }
 
+    /**
+     * The files tab opens the site's own document browser, and its system-file entry is Android's
+     * SAF picker - exactly the picker the screen already answers for an image. The pick is uploaded
+     * and its markdown lands in the field.
+     *
+     * <p>The pane offers that entry only off the device's own storage state: its root list carries a
+     * storage row while external storage is mounted, and its click handler hands the reader to SAF
+     * only while the app has no all-files access. Robolectric defaults to the opposite of both (its
+     * app-ops shadow answers `MODE_ALLOWED`, and the storage state starts `MEDIA_REMOVED`), so the
+     * case sets the device's own state the way a real one is - that is the environment, not the
+     * assertion.</p>
+     */
     @Test
-    fun aLocalUriUploadsWithoutAnyPicker() {
+    fun theFilesTabOpensTheDocumentPaneAndItsSystemEntryHandsOffToTheSafPicker() {
         site.serveJson("uploads.json", harness.fixture("upload-response.json"))
         val composer = openTopicWithComposer()
-        val fragment = harness.visibleFragment() as TopicFragment
-        val uri = Uri.parse("content://io.github.baba983.nativedo.test/recorded.m4a")
-        shadowOf(harness.activity.contentResolver).registerInputStream(uri, "recorded".toByteArray().inputStream())
+        mountExternalStorageWithoutAllFilesAccess()
+        val sheet = openSheetFromPaperclip()
+        sheet.selectAction(DiscourseAttachSheet.Action.FILES)
+        harness.idle()
+        harness.idleClock(SETTLE_MS)
+        captureSheet(sheet, "attach-sheet-files")
 
-        // The seam a recorder drives: no Activity result, no picker, just the URI.
-        fragment.attachMediaUri(uri)
+        // The pane's own system-file row, the way a reader reaches Android's picker.
+        val list = documentList(documentPane(sheet))
+        list.clickItem(null, storageRowPosition(list))
+        harness.idle()
+
+        val requested = shadowOf(harness.activity).nextStartedActivityForResult
+            ?: throw AssertionError("the system-file entry opened no picker")
+        assertEquals(Intent.ACTION_OPEN_DOCUMENT, requested.intent.action)
+        assertEquals("the file action takes any file the provider can open", "*/*", requested.intent.type)
+        answerPicker(requested.intent, "screenshot.png", transparentPng())
 
         harness.await("the field to hold the uploaded file") {
             !composer.getFieldText().isNullOrEmpty()
         }
-        assertNull("no picker was opened", shadowOf(harness.activity).nextStartedActivityForResult)
-        assertTrue("the upload went to the site", site.requestPaths.contains("uploads.json"))
+        assertEquals(
+            "the picked file reaches the field as the site's own markdown",
+            "![screenshot.png|1080x720](upload://9d5a2f6f0a1b2c3d4e5f60718293a4b5c6d7e8f9.png)\n",
+            composer.getFieldText()?.toString(),
+        )
         harness.assertNoTelegramSideEffects()
     }
 
-    // --------------------------------------------------------------- the inline poll
-
     /**
-     * The shipped paperclip, the inline poll. The sheet opens compact (the tab row, the poll
-     * highlighted), and tapping Poll grows the sheet onto the form - no second popup. This is where
-     * the compact and inline-poll captures live.
+     * The files pane walks up one directory before the sheet closes. A reader who opened a folder
+     * expects the sheet's back action to return to the parent listing, not to drop the whole sheet;
+     * only at the root does back close it to the composer. The pane's own title is the observable
+     * that says which directory the reader is in.
+     *
+     * <p>The reader's real list drives it: the pane's root carries the app's external "Telegram"
+     * folder - the one real directory upstream always offers there - so the click and the two back
+     * presses are the shipped flow. The captures are the reader's two file-pane heights: the root at
+     * half height, and the same root raised under the pane's own top bar.</p>
      */
     @Test
-    fun thePollTabKeepsItsFormInTheSheetInsteadOfAPopup() {
+    fun theFilesBackGoesUpOneDirectoryBeforeClosingTheSheetAtTheRoot() {
         val composer = openTopicWithComposer()
-        val sheet = openShippedSheet(composer)
-        assertFalse("the sheet opens compact", sheet.isExpanded)
-        assertFalse(
-            "and the form is clipped behind the tab row, not floating in its own window",
-            pollScroller(sheet).height > 0,
-        )
-        renderSheet(sheet, "attach-sheet-compact")
-        // The compact sheet is exactly the handle and the tab row; the row must sit wholly inside
-        // the sheet, or the reader sees the actions with their captions cut off at the sheet edge.
-        assertCaptionsFullyVisible(sheet)
-
-        tabList(sheet).clickItem(null, POLL_POSITION)
+        mountExternalStorageWithAnAppFolder()
+        val sheet = openSheetFromPaperclip()
+        sheet.selectAction(DiscourseAttachSheet.Action.FILES)
         harness.idle()
-        layoutDialog(sheet)
+        harness.idleClock(SETTLE_MS)
 
-        assertTrue("tapping Poll grows the sheet", sheet.isExpanded)
-        assertTrue("onto the form, above the tab row", pollScroller(sheet).height > 0)
-        assertTrue("with the question field in it", pollFields(sheet).isNotEmpty())
+        val list = documentList(documentPane(sheet))
+        captureSheet(sheet, "attachment-navigation/files-half-height")
+        assertEquals(
+            "the bottom tab capsule shows while the files pane sits at half height",
+            View.VISIBLE,
+            tabCapsule(sheet).visibility,
+        )
+
+        // The reader's own scroll raises the file pane's top bar; the tab capsule gives way to it.
+        list.scrollBy(0, harness.height)
+        harness.idle()
+        layoutSheet(sheet)
+        harness.idleClock(SETTLE_MS)
+        captureSheet(sheet, "attachment-navigation/files-expanded")
+        assertEquals(
+            "the files pane uses the alert's own top bar once raised",
+            View.VISIBLE,
+            sheet.actionBar.visibility,
+        )
+        assertEquals(
+            "the bottom tab capsule gives way to the files pane's top bar",
+            View.INVISIBLE,
+            tabCapsule(sheet).visibility,
+        )
+
+        val rootTitle = sheet.actionBar.title?.toString()
+        list.clickItem(null, documentRowByTitle(list, "Telegram"))
+        harness.idle()
+        assertEquals(
+            "entering the folder makes the pane's own title the folder",
+            "Telegram",
+            sheet.actionBar.title?.toString(),
+        )
+        assertTrue("entering a folder keeps the sheet open", sheet.isShowing)
+
+        sheet.actionBar.getBackButton().performClick()
+        harness.idle()
+        assertTrue("back inside a folder keeps the sheet open", sheet.isShowing)
+        assertEquals(
+            "back inside a folder returns to the root listing",
+            rootTitle,
+            sheet.actionBar.title?.toString(),
+        )
+
+        sheet.actionBar.getBackButton().performClick()
+        harness.idle()
+        assertTrue("back at the root closes the sheet to the composer", sheet.isDismissed())
+        assertTrue("the screen underneath is still the topic", harness.visibleFragment() is TopicFragment)
+        assertTrue("closing the files pane writes nothing to the field", composer.getFieldText().isNullOrEmpty())
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * The article tab is seeded from what the composer already holds, and its own Apply writes the
+     * site's markdown back into the field - the [DiscourseRichText] bridge, not a Telegram article.
+     */
+    @Test
+    fun theArticleTabSeedsFromTheComposerAndApplyWritesBackIntoTheField() {
+        openTopic()
+        val composer = composer() ?: throw AssertionError("the screen has no composer")
+        composer.setFieldText("a **bold** reply")
+        harness.idle()
+
+        val sheet = openSheetFromStrip()
+        sheet.selectAction(DiscourseAttachSheet.Action.RICH_EDITOR)
+        harness.idle()
+        harness.idleClock(SETTLE_MS)
+        captureSheet(sheet, "attach-sheet-article")
+
+        val toolbar = viewsUnder(sheet.window!!.decorView).filterIsInstance<RichEditorToolbar>().firstOrNull()
+            ?: throw AssertionError("the article tab opened no editor toolbar")
+        // Formula blocks have no Discourse round-trip: exposing the action would lose authored math.
+        val formulaLabel = org.telegram.messenger.LocaleController.getString(
+            org.telegram.messenger.R.string.AccDescrIVFormula,
+        )
         assertTrue(
-            "and the sheet is still the latest dialog - the poll never became a second popup",
+            "the article toolbar must not offer a formula the site cannot preserve",
+            viewsUnder(toolbar).none { it.isShown && it.contentDescription == formulaLabel },
+        )
+        // The pane's own Apply (its toolbar's send action), not a callback called from the test.
+        toolbar.getSendButton().performClick()
+        harness.idle()
+
+        assertTrue(
+            "Apply hands the article's markdown back to the composer's field",
+            composer.getFieldText()?.toString().orEmpty().contains("**bold**"),
+        )
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * The poll tab keeps the site's own poll raw: the form is filled in place and its Create
+     * pressed, and the reply field receives the site's `[poll]` markdown - never a Telegram poll
+     * message, and never a second popup.
+     */
+    @Test
+    fun thePollTabKeepsItsFormInlineAndWritesTheSitesOwnRawIntoTheField() {
+        val composer = openTopicWithComposer()
+        val sheet = openShippedSheet()
+        captureSheet(sheet, "attach-sheet-poll")
+
+        assertTrue(
+            "the poll form stays inside the sheet, not a second window",
             ShadowDialog.getLatestDialog() === sheet,
         )
-        renderSheet(sheet, "attach-sheet-poll")
-        assertCaptionsFullyVisible(sheet)
-        harness.assertNoTelegramSideEffects()
-    }
-
-    /**
-     * The same paperclip, end to end: the sheet's own inline poll form is filled and its Create
-     * pressed, and what the reply field receives is the site's own poll raw. This is the host's
-     * [DiscourseAttachSheet.PollSink] wiring, not a captured stand-in for it.
-     */
-    @Test
-    fun theInlinePollWritesTheSitesOwnRawIntoTheReplyField() {
-        val composer = openTopicWithComposer()
-        val sheet = openShippedSheet(composer)
-        expandByTab(sheet)
-
-        val fields = pollFields(sheet)
+        val pane = pollPane(sheet)
+        val fields = viewsUnder(pane).filterIsInstance<EditTextBoldCursor>()
         assertEquals("a question field and at least two option fields", 3, fields.size)
         fields[0].setText("周末怎么过")
         fields[1].setText("宅家")
         fields[2].setText("出门")
-        createButton(sheet).performClick()
+        createButton(pane).performClick()
         harness.idle()
 
-        val field = composer.fieldText.toString()
-        println("poll: field = $field")
-        assertTrue(
-            "the site's own poll opening tag, never a Telegram poll message",
-            field.startsWith("[poll type=regular results=always chartType=bar]\n"),
-        )
-        assertTrue("the question is the poll's title heading", field.contains("# 周末怎么过"))
-        assertTrue("each option is a bullet", field.contains("* 宅家") && field.contains("* 出门"))
-        assertTrue("and the poll closes", field.contains("[/poll]"))
         assertEquals(
-            "the site's raw, exactly, on the composer's own line",
+            "the site's own poll raw lands in the reply field - never a Telegram poll message",
             "$POLL_RAW\n",
-            field,
+            composer.getFieldText()?.toString(),
         )
         harness.assertNoTelegramSideEffects()
     }
 
+    /** The pane's multiple-answers setting is the site's own poll type, not a Telegram field. */
     @Test
     fun thePollSettingsChangeTheRawTheFormWrites() {
         val composer = openTopicWithComposer()
-        val sheet = openShippedSheet(composer)
-        expandByTab(sheet)
-
-        val fields = pollFields(sheet)
+        val sheet = openShippedSheet()
+        val pane = pollPane(sheet)
+        val fields = viewsUnder(pane).filterIsInstance<EditTextBoldCursor>()
         fields[0].setText("多选")
         fields[1].setText("甲")
         fields[2].setText("乙")
-        val multiple = viewsUnder(sheet.window!!.decorView).filterIsInstance<Switch>().firstOrNull()
-            ?: throw AssertionError("the form has no settings switch")
-        multiple.setChecked(true, false)
-        createButton(sheet).performClick()
+        val multiple = viewsUnder(pane).filterIsInstance<org.telegram.ui.Cells.TextCheckCell>().firstOrNull()
+            ?: throw AssertionError("the poll form has no multiple-answers row")
+        multiple.performClick()
+        createButton(pane).performClick()
         harness.idle()
 
         assertEquals(
             "the multiple-answers setting is the site's own poll type",
             "[poll type=multiple results=always chartType=bar]\n# 多选\n* 甲\n* 乙\n[/poll]\n",
-            composer.fieldText.toString(),
+            composer.getFieldText()?.toString(),
         )
         harness.assertNoTelegramSideEffects()
     }
 
+    /** A poll without its question or its two options is refused in place, and writes nothing. */
     @Test
     fun thePollFormNamesTheMissingQuestionAndTheMissingOptionsSeparately() {
         val composer = openTopicWithComposer()
-        val sheet = openShippedSheet(composer)
-        expandByTab(sheet)
-        val fields = pollFields(sheet)
+        val sheet = openShippedSheet()
+        val pane = pollPane(sheet)
+        val fields = viewsUnder(pane).filterIsInstance<EditTextBoldCursor>()
 
         // A question but only one option: the option rule fails and nothing is written.
         fields[0].setText("只有标题")
         fields[1].setText("唯一选项")
-        createButton(sheet).performClick()
+        createButton(pane).performClick()
         harness.idle()
         assertTrue(
             "the reader is told a poll needs two options",
-            texts(sheet.window!!.decorView).any { it.contains("至少需要两个选项") },
+            texts(pane).any { it.contains("至少需要两个选项") },
         )
         assertTrue("nothing reached the field", composer.getFieldText().isNullOrEmpty())
         assertTrue("and the sheet stays for the reader", sheet.isShowing)
@@ -330,22 +503,101 @@ internal class AttachSheetTest {
         // Two options but no question: the question rule fails, separately.
         fields[0].setText("")
         fields[2].setText("第二个")
-        createButton(sheet).performClick()
+        createButton(pane).performClick()
         harness.idle()
         assertTrue(
             "the reader is told a poll needs a question",
-            texts(sheet.window!!.decorView).any { it.contains("需要一个标题") },
+            texts(pane).any { it.contains("需要一个标题") },
         )
         assertTrue("still nothing reached the field", composer.getFieldText().isNullOrEmpty())
         harness.assertNoTelegramSideEffects()
     }
 
+    /** Cancelling the sheet - the reply strip's own exit - leaves the composer exactly as it was. */
+    @Test
+    fun cancellingTheSheetKeepsTheDraft() {
+        openTopic()
+        val composer = composer() ?: throw AssertionError("the screen has no composer")
+        composer.setFieldText("一段还没写完的回复")
+        harness.idle()
+
+        val sheet = openSheetFromStrip()
+        sheet.dismiss()
+        harness.idle()
+
+        assertEquals(
+            "cancelling the sheet leaves the field alone",
+            "一段还没写完的回复",
+            composer.getFieldText()?.toString(),
+        )
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * A file the site refuses: the reader is told, and the draft they had written is untouched - the
+     * failure the original case pinned.
+     */
+    @Test
+    fun aRefusedUploadKeepsTheDraftAndSaysSo() {
+        site.serveResponse("uploads.json") {
+            okhttp3.mockwebserver.MockResponse().setResponseCode(422)
+                .setHeader("Content-Type", "application/json")
+                .setBody(harness.fixture("error-422-post.json"))
+        }
+        openTopic()
+        val composer = composer() ?: throw AssertionError("the screen has no composer")
+        composer.setFieldText("保留我写的内容")
+        harness.idle()
+
+        val sheet = openSheetFromStrip()
+        selectGalleryPhoto(writeCachePng("broken.png").absolutePath)
+        sheetWriteButton(sheet).performClick()
+        harness.idle()
+
+        harness.await("the site to refuse the upload") { site.requestPaths.contains("uploads.json") }
+        harness.await("the reader to be told") { shownText().any { it.contains("回复失败") } }
+        assertEquals(
+            "a refused upload does not touch the draft",
+            "保留我写的内容",
+            composer.getFieldText()?.toString(),
+        )
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * A URI the screen is handed directly - the seam a recorder drives - uploads without any picker
+     * and lands in the field. The picker is one way in, not the only one.
+     */
+    @Test
+    fun aLocalUriUploadsWithoutAnyPicker() {
+        site.serveJson("uploads.json", harness.fixture("upload-response.json"))
+        val composer = openTopicWithComposer()
+        val fragment = harness.visibleFragment() as TopicFragment
+        val uri = Uri.parse("content://io.github.baba983.nativedo.test/recorded.png")
+        shadowOf(harness.activity.contentResolver)
+            .registerInputStream(uri, transparentPng().inputStream())
+
+        fragment.attachMediaUri(uri)
+
+        harness.await("the field to hold the uploaded file") {
+            !composer.getFieldText().isNullOrEmpty()
+        }
+        assertNull("no picker was opened", shadowOf(harness.activity).nextStartedActivityForResult)
+        assertTrue("the upload went to the site", site.requestPaths.contains("uploads.json"))
+        assertTrue(
+            "and the field carries the site's own handle",
+            composer.getFieldText()?.toString().orEmpty().contains("upload://"),
+        )
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /** A poll abandoned before Create writes nothing at all - the field is left exactly as it was. */
     @Test
     fun cancellingTheInlinePollWritesNothing() {
         val composer = openTopicWithComposer()
-        val sheet = openShippedSheet(composer)
-        expandByTab(sheet)
-        val fields = pollFields(sheet)
+        val sheet = openShippedSheet()
+        val pane = pollPane(sheet)
+        val fields = viewsUnder(pane).filterIsInstance<EditTextBoldCursor>()
         fields[0].setText("半途而废")
         fields[1].setText("一")
         fields[2].setText("二")
@@ -358,36 +610,220 @@ internal class AttachSheetTest {
     }
 
     /**
-     * The sheet's own drag: a finger dispatched on its container, up onto the form and back down
-     * onto the compact row. It is a real touch stream, not a private height setter. The expanded
-     * capture lives here.
+     * The poll pane rides the alert's own top bar: the bar the pane claims carries its title and a
+     * back action, exactly like the gallery's. A pane that answers `needsActionBar() == 0` leaves
+     * the reader no way back out of the poll pane, which is the defect this pins.
      */
     @Test
-    fun theSheetExpandsByDraggingToFullHeightOntoItsContent() {
-        val composer = openTopicWithComposer()
-        val sheet = openShippedSheet(composer)
-        val compactHeight = sheet.sheetContainer.measuredHeight
-        assertFalse("it opens compact", sheet.isExpanded)
-        assertFalse("with its content clipped", pollScroller(sheet).height > 0)
+    fun thePollPaneClaimsTheSheetsTopBarWithABackAction() {
+        openTopicWithComposer()
+        val sheet = openPollPane()
 
-        // A finger starting on the compact row and travelling to the top of the screen.
-        dragSheet(sheet, fromY = harness.height - 100f, toY = 100f)
-        assertTrue("a drag up expands the sheet", sheet.isExpanded)
-        layoutDialog(sheet)
-        println("sheet: compact=$compactHeight expanded=" + sheet.isExpanded + " height=" + sheet.sheetContainer.measuredHeight)
-        assertTrue(
-            "and the sheet is taller than its compact row",
-            sheet.sheetContainer.measuredHeight > compactHeight,
+        assertEquals(
+            "the poll pane uses the alert's own top bar",
+            View.VISIBLE,
+            sheet.actionBar.visibility,
         )
-        assertTrue("and the expanded area is the poll form, not a blank panel", pollScroller(sheet).height > 0)
-        renderSheet(sheet, "attach-sheet-expanded")
-
-        dragSheet(sheet, fromY = 100f, toY = harness.height - 100f)
-        assertFalse("a drag back down settles it compact", sheet.isExpanded)
+        val back = sheet.actionBar.getBackButton()
+            ?: throw AssertionError("the alert's top bar has no back action")
+        assertEquals("the bar draws its back action", View.VISIBLE, back.visibility)
+        assertTrue(
+            "the back action is named for the reader",
+            !back.contentDescription.isNullOrEmpty(),
+        )
         harness.assertNoTelegramSideEffects()
     }
 
-    // ------------------------------------------------------------------ helpers
+    /**
+     * The pane opens at half height with its top bar out of the way and its bottom tab capsule
+     * showing, and scrolling the pane's own list up brings the bar in while the capsule gives way to
+     * it - the half-height/full-height transition the reader saw. A capsule left overlapping the
+     * pane's form, or a bar that never arrives, is the defect this pins.
+     */
+    @Test
+    fun thePollPaneKeepsItsTopBarHiddenUntilTheReaderScrollsItUp() {
+        openTopicWithComposer()
+        val sheet = openPollPane()
+        layoutSheet(sheet)
+
+        assertEquals(
+            "the top bar stays out of the way while the pane sits at half height",
+            0f,
+            sheet.actionBar.alpha,
+            0.01f,
+        )
+        assertEquals(
+            "the bottom tab capsule shows while the poll pane sits at half height",
+            View.VISIBLE,
+            tabCapsule(sheet).visibility,
+        )
+        captureSheet(sheet, "attachment-navigation/poll-half-height")
+
+        // The reader drags the pane's own list up: the opening padding scrolls away and the pane
+        // comes up to full height under the bar.
+        val list = pollList(pollPane(sheet))
+        list.scrollBy(0, harness.height)
+        harness.idle()
+        layoutSheet(sheet)
+        harness.idleClock(SETTLE_MS)
+
+        assertEquals(
+            "scrolling the pane's own list up brings the top bar and its back action",
+            1f,
+            sheet.actionBar.alpha,
+            0.01f,
+        )
+        assertEquals(
+            "the bottom tab capsule gives way to the poll pane's top bar",
+            View.INVISIBLE,
+            tabCapsule(sheet).visibility,
+        )
+        captureSheet(sheet, "attachment-navigation/poll-expanded")
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * The top bar's back action closes the whole sheet, back to the composer underneath - not an
+     * in-place return to the gallery pane. Nothing is written while the poll stays unbuilt.
+     */
+    @Test
+    fun leavingThePollPaneByBackClosesTheWholeSheet() {
+        openTopic()
+        val composer = composer() ?: throw AssertionError("the screen has no composer")
+        val sheet = openPollPane()
+
+        pollList(pollPane(sheet)).scrollBy(0, harness.height)
+        layoutSheet(sheet)
+        harness.idleClock(SETTLE_MS)
+        sheet.actionBar.getBackButton().performClick()
+        harness.idle()
+
+        assertTrue(
+            "back closes the sheet all the way to the composer, not just the pane",
+            sheet.isDismissed(),
+        )
+        assertTrue(
+            "the screen underneath is still the topic",
+            harness.visibleFragment() is TopicFragment,
+        )
+        assertTrue("nothing was written to the composer's field", composer.getFieldText().isNullOrEmpty())
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * A poll that was started but never created is not dropped silently: back asks first, and only
+     * the confirmation's own discard action closes the sheet. The composer keeps its field either
+     * way.
+     */
+    @Test
+    fun anAbandonedPollDraftAsksBeforeClosingTheSheet() {
+        openTopic()
+        val composer = composer() ?: throw AssertionError("the screen has no composer")
+        val sheet = openPollPane()
+        viewsUnder(pollPane(sheet)).filterIsInstance<EditTextBoldCursor>()[0].setText("还没写完的投票")
+        harness.idle()
+
+        pollList(pollPane(sheet)).scrollBy(0, harness.height)
+        layoutSheet(sheet)
+        harness.idleClock(SETTLE_MS)
+        sheet.actionBar.getBackButton().performClick()
+        harness.idle()
+
+        val confirm = ShadowDialog.getLatestDialog()
+        assertTrue(
+            "back with a typed poll asks before discarding it",
+            confirm is AlertDialog,
+        )
+        assertTrue("the sheet waits for the reader's answer", !sheet.isDismissed())
+        captureDialog(confirm as Dialog, "attachment-navigation/poll-discard")
+
+        (confirm as AlertDialog).getButton(DialogInterface.BUTTON_NEGATIVE).performClick()
+        harness.idle()
+        assertFalse("cancelling the discard keeps the sheet open", sheet.isDismissed())
+        assertEquals(
+            "cancelling keeps the poll question",
+            "还没写完的投票",
+            viewsUnder(pollPane(sheet)).filterIsInstance<EditTextBoldCursor>()[0].text.toString(),
+        )
+        sheet.actionBar.getBackButton().performClick()
+        harness.idle()
+        (ShadowDialog.getLatestDialog() as AlertDialog)
+            .getButton(DialogInterface.BUTTON_POSITIVE).performClick()
+        harness.idle()
+
+        assertTrue("confirming discards the sheet", sheet.isDismissed())
+        assertTrue(
+            "the composer's field never received the abandoned poll",
+            composer.getFieldText().isNullOrEmpty(),
+        )
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * The pane's own list is backed by the alert's recycler, so switching tabs must not reset the
+     * form or close the sheet: what the reader typed in the poll stays put when they look at the
+     * gallery and return, and the sheet is still the one the reader opened.
+     */
+    @Test
+    fun thePollFormKeepsItsDraftAcrossTabs() {
+        openTopicWithComposer()
+        val sheet = openPollPane()
+        viewsUnder(pollPane(sheet)).filterIsInstance<EditTextBoldCursor>()[0].setText("保留的问题")
+        harness.idle()
+
+        sheet.selectAction(DiscourseAttachSheet.Action.GALLERY)
+        harness.idle()
+        harness.idleClock(SETTLE_MS)
+        assertTrue("leaving the poll tab does not close the sheet", sheet.isShowing)
+        sheet.selectAction(DiscourseAttachSheet.Action.POLL)
+        harness.idle()
+        harness.idleClock(SETTLE_MS)
+        assertTrue("returning to the poll tab keeps the sheet open", sheet.isShowing)
+        layoutSheet(sheet)
+
+        assertTrue(
+            "the poll form keeps what the reader typed when they visit another tab",
+            viewsUnder(pollPane(sheet)).filterIsInstance<EditTextBoldCursor>()
+                .any { it.text?.toString() == "保留的问题" },
+        )
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * The new-topic screen's paperclip opens the same sheet a reply does, over the same backends:
+     * its poll tab writes the site's own raw into the body field. The second host the shared sheet
+     * feeds.
+     */
+    @Test
+    fun theNewTopicPaperclipOpensTheSameSheet() {
+        harness.bootApp()
+        harness.await("the topic list to load") { rowCount() == 2 }
+        harness.present(NewTopicFragment.create())
+        harness.await("the new-topic composer") { composer() != null }
+        val composer = composer() ?: throw AssertionError("the new-topic screen has no composer")
+
+        val sheet = openSheetFromPaperclip()
+        sheet.selectAction(DiscourseAttachSheet.Action.POLL)
+        harness.idle()
+        harness.idleClock(SETTLE_MS)
+        layoutSheet(sheet)
+        val pane = pollPane(sheet)
+        val fields = viewsUnder(pane).filterIsInstance<EditTextBoldCursor>()
+        fields[0].setText("新帖投票")
+        fields[1].setText("甲")
+        fields[2].setText("乙")
+        createButton(pane).performClick()
+        harness.idle()
+
+        assertEquals(
+            "the same sheet's poll writes the site's raw into the new topic's body",
+            "[poll type=regular results=always chartType=bar]\n# 新帖投票\n* 甲\n* 乙\n[/poll]\n",
+            composer.getFieldText()?.toString(),
+        )
+        harness.assertNoTelegramSideEffects()
+    }
+
+    // ------------------------------------------------------------------ the sheet, opened
 
     private fun openTopic() {
         harness.bootApp()
@@ -401,134 +837,271 @@ internal class AttachSheetTest {
         return composer() ?: throw AssertionError("the screen has no composer")
     }
 
-    private fun openSheet(composer: ChatActivityEnterView) {
+    /** The sheet as the empty-field composer opens it: the paperclip. */
+    private fun openSheetFromPaperclip(): DiscourseAttachSheet {
+        val composer = composer() ?: throw AssertionError("the screen has no composer")
         composer.getAttachButton().performClick()
         harness.idle()
-        if (sheet() == null) {
-            throw AssertionError("the paperclip opened no sheet")
-        }
+        harness.idleClock(SETTLE_MS)
+        return latestSheet()
     }
 
     /**
-     * The sheet as the app itself opens it: the composer's own paperclip, the host's own poll sink.
-     * This is the shipped wiring - no directly-constructed stand-in for it.
+     * The sheet once the field has text. Upstream's own paperclip is gone then, and this screen's
+     * attach strip is the only entry; it opens the same sheet.
      */
-    private fun openShippedSheet(composer: ChatActivityEnterView): DiscourseAttachSheet {
-        composer.getAttachButton().performClick()
+    private fun openSheetFromStrip(): DiscourseAttachSheet {
+        harness.layoutApp()
+        val strip = attachStrip() ?: throw AssertionError("the screen has no attach strip")
+        strip.performClick()
         harness.idle()
-        // The sheet opens with upstream's own animation; run the simulated clock to its end so a
-        // render captures the settled sheet rather than a frame of the open animation.
-        harness.idleClock(400)
-        val sheet = sheet() ?: throw AssertionError("the paperclip opened no sheet")
-        layoutDialog(sheet)
+        harness.idleClock(SETTLE_MS)
+        return latestSheet()
+    }
+
+    /**
+     * The sheet, and its poll pane selected and laid out - the state the poll cases start from.
+     * The pane's form lives in the alert's own recycler, so it has a form to read only once the
+     * sheet's own window has been through a layout pass.
+     */
+    private fun openShippedSheet(): DiscourseAttachSheet = openPollPane()
+
+    private fun openPollPane(): DiscourseAttachSheet {
+        val sheet = openSheetFromPaperclip()
+        sheet.selectAction(DiscourseAttachSheet.Action.POLL)
+        harness.idle()
+        harness.idleClock(SETTLE_MS)
+        layoutSheet(sheet)
         return sheet
     }
 
-    /** Expands the sheet the way its own tab does: a tap on the Poll tab. */
-    private fun expandByTab(sheet: DiscourseAttachSheet) {
-        tabList(sheet).clickItem(null, POLL_POSITION)
-        harness.idle()
-        layoutDialog(sheet)
+    private fun latestSheet(): DiscourseAttachSheet {
+        val dialog = ShadowDialog.getLatestDialog()
+        return dialog as? DiscourseAttachSheet
+            ?: throw AssertionError("the paperclip opened no sheet (latest dialog: ${dialog?.javaClass?.name})")
     }
 
-    /** The attachment sheet, as the latest dialog. */
-    private fun sheet(): DiscourseAttachSheet? =
-        (ShadowDialog.getLatestDialog() as? DiscourseAttachSheet)
+    // ------------------------------------------------------------------ the sheet's panes
 
-    private fun tabList(sheet: DiscourseAttachSheet): RecyclerListView =
-        viewsUnder(sheet.window!!.decorView).filterIsInstance<RecyclerListView>().firstOrNull()
-            ?: throw AssertionError("the sheet has no tab list")
+    /** The tab list's own item count, read off the alert's own adapter. */
+    private fun tabCount(sheet: DiscourseAttachSheet): Int {
+        val field = ChatAttachAlert::class.java.getDeclaredField("buttonsRecyclerView")
+            .apply { isAccessible = true }
+        val list = field.get(sheet) as RecyclerListView
+        return list.adapter?.itemCount ?: 0
+    }
 
     /**
-     * The tab row and each of its captions must be wholly inside the sheet. The row is the last
-     * thing in the sheet's column, so a content height that does not fit it clips the row - and the
-     * captions at its foot - against the sheet edge. A full global visible rect is what "the reader
-     * can read the action" means, so it is asserted directly rather than inferred from a number.
+     * The sheet's own bottom tab capsule (the Gallery/File/Article/Poll strip). The alert hides it
+     * when a pane's own top bar comes up and the pane answers `shouldHideBottomButtons()`, so its
+     * visibility is the observable for the capsule's show/hide.
      */
-    private fun assertCaptionsFullyVisible(sheet: DiscourseAttachSheet) {
-        val row = tabList(sheet)
-        val rowBounds = Rect()
-        assertTrue("the tab row is on screen", row.getGlobalVisibleRect(rowBounds))
-        assertEquals("the tab row is not clipped horizontally", row.width, rowBounds.width())
-        assertEquals("the tab row is not clipped vertically", row.height, rowBounds.height())
-
-        val captions = viewsUnder(sheet.window!!.decorView)
-            .filterIsInstance<TextView>()
-            .filter { it.text?.toString().orEmpty() in TAB_LABELS }
-        assertEquals("a caption for each action", TAB_LABELS.size, captions.size)
-        val bounds = Rect()
-        for (caption in captions) {
-            val label = caption.text.toString()
-            assertTrue("the $label caption is on screen", caption.getGlobalVisibleRect(bounds))
-            assertEquals("the $label caption is not clipped horizontally", caption.width, bounds.width())
-            assertEquals("the $label caption is not clipped vertically", caption.height, bounds.height())
-        }
+    private fun tabCapsule(sheet: DiscourseAttachSheet): View {
+        val field = ChatAttachAlert::class.java.getDeclaredField("buttonsRecyclerViewWrapper")
+            .apply { isAccessible = true }
+        return field.get(sheet) as View
     }
 
-    /** The inline poll's scrolling body; its height is whether the form is on screen. */
-    private fun pollScroller(sheet: DiscourseAttachSheet): ScrollView =
-        viewsUnder(sheet.window!!.decorView).filterIsInstance<ScrollView>().firstOrNull()
-            ?: throw AssertionError("the sheet has no poll form")
+    private fun pollPane(sheet: DiscourseAttachSheet): DiscoursePollLayout =
+        viewsUnder(sheet.window!!.decorView).filterIsInstance<DiscoursePollLayout>().firstOrNull()
+            ?: throw AssertionError("the poll tab opened no poll pane")
 
-    private fun pollFields(sheet: DiscourseAttachSheet): List<EditTextBoldCursor> =
-        viewsUnder(sheet.window!!.decorView).filterIsInstance<EditTextBoldCursor>()
+    /** The poll pane's own list - the recycler the reader scrolls. */
+    private fun pollList(pane: View): RecyclerListView =
+        viewsUnder(pane).filterIsInstance<RecyclerListView>().firstOrNull()
+            ?: throw AssertionError("the poll pane has no list")
+
+    private fun documentPane(sheet: DiscourseAttachSheet): ChatAttachAlertDocumentLayout =
+        viewsUnder(sheet.window!!.decorView).filterIsInstance<ChatAttachAlertDocumentLayout>().firstOrNull()
+            ?: throw AssertionError("the files tab opened no document pane")
+
+    /** The document pane's own file list - the recycler the reader scrolls. */
+    private fun documentList(pane: ChatAttachAlertDocumentLayout): RecyclerListView {
+        val field = ChatAttachAlertDocumentLayout::class.java.getDeclaredField("listView")
+            .apply { isAccessible = true }
+        return field.get(pane) as RecyclerListView
+    }
 
     /** The poll form's own Create action, by the label it draws. */
-    private fun createButton(sheet: DiscourseAttachSheet): View =
-        viewsUnder(sheet.window!!.decorView)
-            .filterIsInstance<TextView>()
-            .firstOrNull { it.text?.toString() == "创建" }
-            ?: throw AssertionError("the poll form has no Create button")
+    private fun createButton(pane: View): View =
+        viewsUnder(pane).filterIsInstance<TextView>().firstOrNull { it.text?.toString() == "创建" }
+            ?: throw AssertionError("the poll form has no Create action")
 
-    /** Fires a tab the way the shipped list does, through its own item-click callback. */
-    private fun chooseTab(position: Int) {
-        val sheet = sheet() ?: throw AssertionError("no sheet to choose from")
-        tabList(sheet).clickItem(null, position)
-        harness.idle()
+    /** The sheet's own action (done/send) button - the gallery pane's Done. */
+    private fun sheetWriteButton(sheet: DiscourseAttachSheet): View =
+        viewsUnder(sheet.window!!.decorView).filterIsInstance<ChatActivityEnterView.SendButton>()
+            .firstOrNull()
+            ?: throw AssertionError("the sheet has no action button")
+
+    /**
+     * The document pane's system-file row, found by the icon its own click handler matches - the
+     * row that hands the reader to Android's SAF picker. The pane's adapter is upstream's own.
+     */
+    private fun storageRowPosition(list: RecyclerListView): Int {
+        val adapter = list.adapter ?: throw AssertionError("the file pane has no adapter")
+        for (position in 0 until adapter.itemCount) {
+            val item = adapterItem(adapter, position) ?: continue
+            val icon = intField(item, "icon")
+            if (icon == org.telegram.messenger.R.drawable.files_storage ||
+                icon == org.telegram.messenger.R.drawable.files_internal
+            ) {
+                return position
+            }
+        }
+        throw AssertionError("the file pane offers no system-file entry")
     }
 
-    /** Answers the picker the attach sheet opened, the way the system would. */
-    private fun pickFile(name: String, bytes: ByteArray, expectedType: String? = null): Uri {
-        val activity = harness.activity
-        val requested = shadowOf(activity).nextStartedActivityForResult
-            ?: throw AssertionError("the sheet's action opened no picker")
-        assertEquals(
-            "the picker opens a document",
-            Intent.ACTION_OPEN_DOCUMENT,
-            requested.intent.action,
-        )
-        if (expectedType != null) {
-            assertEquals("the picker asks for $expectedType", expectedType, requested.intent.type)
+    /**
+     * The document pane's row for [title], found by the label the pane's own adapter holds. The
+     * adapter is upstream's own private list, so the lookup goes through the row object it returns.
+     */
+    private fun documentRowByTitle(list: RecyclerListView, title: String): Int {
+        val adapter = list.adapter ?: throw AssertionError("the file pane has no adapter")
+        for (position in 0 until adapter.itemCount) {
+            val item = adapterItem(adapter, position) ?: continue
+            if (stringField(item, "title") == title) return position
         }
+        throw AssertionError("the file pane offers no $title row")
+    }
+
+    private fun adapterItem(adapter: Any, position: Int): Any? {
+        val method = adapter.javaClass.getMethod("getItem", Integer.TYPE)
+        method.isAccessible = true
+        return method.invoke(adapter, position)
+    }
+
+    private fun intField(target: Any, name: String): Int {
+        val field = target.javaClass.getField(name).apply { isAccessible = true }
+        return field.getInt(target)
+    }
+
+    private fun stringField(target: Any, name: String): String? {
+        val field = target.javaClass.getField(name).apply { isAccessible = true }
+        return field.get(target) as? String
+    }
+
+    /**
+     * The device state the document pane's system-file entry needs: external storage mounted (so the
+     * pane's root list carries its storage row at all), and no all-files access (so the app-op the
+     * row is gated on answers the way it does for an app without `MANAGE_EXTERNAL_STORAGE`).
+     */
+    private fun mountExternalStorageWithoutAllFilesAccess() {
+        ShadowEnvironment.setExternalStorageState(Environment.MEDIA_MOUNTED)
+        ShadowEnvironment.addExternalDir(Environment.getExternalStorageDirectory().absolutePath)
+        val appOps = harness.context.getSystemService(AppOpsManager::class.java)
+        shadowOf(appOps).setMode(
+            "android:manage_external_storage",
+            harness.context.applicationInfo.uid,
+            harness.context.packageName,
+            AppOpsManager.MODE_ERRORED,
+        )
+    }
+
+    /**
+     * Mounts external storage and creates the app's own external "Telegram" folder - the one real
+     * directory upstream's file pane always offers at its root. The folder is what lets a case walk
+     * into a directory and back out, without depending on the storage row's app-op, which only
+     * chooses between navigating and the SAF hand-off.
+     */
+    private fun mountExternalStorageWithAnAppFolder() {
+        ShadowEnvironment.setExternalStorageState(Environment.MEDIA_MOUNTED)
+        ShadowEnvironment.addExternalDir(Environment.getExternalStorageDirectory().absolutePath)
+        val base = harness.context.getExternalFilesDir(null)
+            ?: throw AssertionError("external storage gave the app no files directory")
+        File(base, "Telegram").mkdirs()
+    }
+
+    // ------------------------------------------------------------------ the reader's interaction
+
+    /**
+     * The gallery pane's selection, as the pane itself keeps it: one decoded photo, keyed by its
+     * image id and ordered. This is the same map the pane's grid writes when a reader checks a cell.
+     */
+    private fun selectGalleryPhoto(path: String) {
+        val entry = MediaController.PhotoEntry(0, GALLERY_PHOTO_ID, 0L, path, 0, false, 0, 0, 0L)
+        clearGallerySelection()
+        ChatAttachAlertPhotoLayout.selectedPhotos[GALLERY_PHOTO_ID] = entry
+        ChatAttachAlertPhotoLayout.selectedPhotosOrder.add(GALLERY_PHOTO_ID)
+    }
+
+    private fun clearGallerySelection() {
+        ChatAttachAlertPhotoLayout.selectedPhotos.clear()
+        ChatAttachAlertPhotoLayout.selectedPhotosOrder.clear()
+    }
+
+    /** Answers the picker the screen opened, the way the system would. */
+    private fun answerPicker(intent: Intent, name: String, bytes: ByteArray): Uri {
+        val activity = harness.activity
         val uri = Uri.parse("content://io.github.baba983.nativedo.test/$name")
         shadowOf(activity.contentResolver).registerInputStream(uri, bytes.inputStream())
-        shadowOf(activity).receiveResult(requested.intent, Activity.RESULT_OK, Intent().setData(uri))
+        shadowOf(activity).receiveResult(intent, Activity.RESULT_OK, Intent().setData(uri))
         harness.idle()
         return uri
     }
 
-    /** A drag on the sheet's own container, the way a finger reaches it. */
-    private fun dragSheet(sheet: DiscourseAttachSheet, fromY: Float, toY: Float) {
-        val container = sheet.container
-        val start = SystemClock.uptimeMillis()
-        container.dispatchTouchEvent(MotionEvent.obtain(start, start, MotionEvent.ACTION_DOWN, 200f, fromY, 0))
-        harness.idle(40)
-        val steps = 4
-        for (step in 1..steps) {
-            val y = fromY + (toY - fromY) * step / steps
-            container.dispatchTouchEvent(
-                MotionEvent.obtain(start, start + step * 16L, MotionEvent.ACTION_MOVE, 200f, y, 0),
-            )
-            harness.idle(40)
-        }
-        container.dispatchTouchEvent(
-            MotionEvent.obtain(start, start + (steps + 1) * 16L, MotionEvent.ACTION_UP, 200f, toY, 0),
-        )
-        harness.idle()
+    private fun writeCachePng(name: String): File {
+        val file = File(File(harness.context.cacheDir, "attach-sheet"), name)
+        file.parentFile?.mkdirs()
+        file.writeBytes(transparentPng())
+        return file
     }
 
-    /** Measures and lays out the sheet's window, the way the window manager composites it. */
-    private fun layoutDialog(sheet: DiscourseAttachSheet) {
+    /** A 1x1 PNG: the uploader sends the file's bytes, and any real image would do. */
+    private fun transparentPng(): ByteArray = android.util.Base64.decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==",
+        android.util.Base64.DEFAULT,
+    )
+
+    // ------------------------------------------------------------------ capture
+
+    /**
+     * Draws the sheet's real window and writes it under `.amp/in/artifacts/nativedo/`.
+     *
+     * <p>[UpstreamUiHarness.renderApp] draws `android.R.id.content`, which is the activity's own
+     * hierarchy; a dialog (the sheet is one) lives in its own window and is not under it, so a
+     * renderApp capture would miss the sheet entirely. Drawing the sheet's own decor is the same
+     * real window the window manager composites, chrome and all - nothing is drawn by hand.</p>
+     */
+    private fun captureSheet(sheet: DiscourseAttachSheet, name: String) {
+        layoutSheet(sheet)
+        captureDecor(sheet.window!!.decorView, name)
+    }
+
+    /** Draws a dialog's own window the same way, for the states that live in a second window. */
+    private fun captureDialog(dialog: Dialog, name: String) {
+        val decor = dialog.window!!.decorView
+        repeat(2) {
+            // A dialog's window is not full screen: measure it to its own natural size, or the
+            // card inside it is stretched away from its buttons.
+            decor.measure(
+                View.MeasureSpec.makeMeasureSpec(harness.width, View.MeasureSpec.AT_MOST),
+                View.MeasureSpec.makeMeasureSpec(harness.height, View.MeasureSpec.AT_MOST),
+            )
+            decor.layout(0, 0, decor.measuredWidth, decor.measuredHeight)
+            harness.idle(120)
+        }
+        captureDecor(decor, name, decor.measuredWidth, decor.measuredHeight)
+    }
+
+    private fun captureDecor(decor: View, name: String, width: Int = harness.width, height: Int = harness.height) {
+        val bitmap = Bitmap.createBitmap(width.coerceAtLeast(1), height.coerceAtLeast(1), Bitmap.Config.ARGB_8888)
+        try {
+            decor.draw(Canvas(bitmap))
+            val out = File(artifactsDir(), "$name.png")
+            out.parentFile?.mkdirs()
+            FileOutputStream(out).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            println("attach sheet capture: $out (${out.length()} bytes)")
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    /**
+     * Lays the sheet's own window out the way the window manager does before a capture or a scroll.
+     * Two passes: the pane's list measures its rows, binds its form, and only then reports real
+     * geometry, so the second pass is the settled one.
+     */
+    private fun layoutSheet(sheet: DiscourseAttachSheet) {
         val decor = sheet.window!!.decorView
         repeat(2) {
             decor.measure(
@@ -536,37 +1109,24 @@ internal class AttachSheetTest {
                 View.MeasureSpec.makeMeasureSpec(harness.height, View.MeasureSpec.EXACTLY),
             )
             decor.layout(0, 0, harness.width, harness.height)
-            harness.idle(60)
+            harness.idle(120)
         }
     }
 
-    private fun renderSheet(sheet: DiscourseAttachSheet, name: String) {
-        layoutDialog(sheet)
-        val decor = sheet.window!!.decorView
-        val bitmap = android.graphics.Bitmap.createBitmap(
-            harness.width, harness.height, android.graphics.Bitmap.Config.ARGB_8888,
-        )
-        try {
-            decor.draw(android.graphics.Canvas(bitmap))
-            val out = repoFile(".amp/in/artifacts/nativedo/$name.png")
-            out.parentFile?.mkdirs()
-            java.io.FileOutputStream(out).use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
-            println("sheet render: $out")
-        } finally {
-            bitmap.recycle()
-        }
-    }
+    private fun artifactsDir(): File = repoFile(".amp/in/artifacts/nativedo")
 
-    private fun repoFile(relative: String): java.io.File {
-        var dir: java.io.File? = java.io.File(System.getProperty("user.dir").orEmpty()).absoluteFile
+    private fun repoFile(relative: String): File {
+        var dir: File? = File(System.getProperty("user.dir").orEmpty()).absoluteFile
         while (dir != null) {
-            if (java.io.File(dir, "fixtures/discourse").isDirectory) {
-                return java.io.File(dir, relative)
+            if (File(dir, "fixtures/discourse").isDirectory) {
+                return File(dir, relative)
             }
             dir = dir.parentFile
         }
-        error("cannot locate the repo root")
+        error("cannot locate the repo root from ${System.getProperty("user.dir")}")
     }
+
+    // ------------------------------------------------------------------ the screen's views
 
     /** Our own attach strip, by the label it shows while it is idle. */
     private fun attachStrip(): View? {
@@ -620,29 +1180,21 @@ internal class AttachSheetTest {
         fun walk(view: View) {
             found += view
             if (view is ViewGroup) {
-                for (index in 0 until view.childCount) {
-                    walk(view.getChildAt(index))
-                }
+                for (index in 0 until view.childCount) walk(view.getChildAt(index))
             }
         }
         walk(root)
         return found
     }
 
-    /** A 1x1 PNG: the uploader sends the file's bytes, and any real image would do. */
-    private fun transparentPng(): ByteArray = android.util.Base64.decode(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==",
-        android.util.Base64.DEFAULT,
-    )
-
     private companion object {
         const val TOPIC_ID = 809L
-        const val GALLERY_POSITION = 0
-        const val FILES_POSITION = 1
-        const val POLL_POSITION = 3
 
-        /** The four action captions the sheet's tab row draws, in its own order. */
-        val TAB_LABELS = listOf("图库", "文件", "富文本", "投票")
+        /** The gallery pane's own photo key, matching the single photo the capture case selects. */
+        const val GALLERY_PHOTO_ID = 1
+
+        /** How long the sheet's open and pane transitions are given to settle before a capture. */
+        const val SETTLE_MS = 400L
 
         /** The site's own poll raw for the question and two options the reply-field case fills in. */
         const val POLL_RAW =

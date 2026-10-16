@@ -634,10 +634,14 @@ public class TopicFragment extends BaseFragment
      * refuses, leaves the field exactly as it was and reports the failure.
      */
     public void attachMediaUri(android.net.Uri uri) {
-        if (getParentActivity() == null || container == null || uri == null || uploadingAttachment) {
+        if (uri != null) attachMediaUris(java.util.Collections.singletonList(uri));
+    }
+
+    private void attachMediaUris(java.util.List<android.net.Uri> uris) {
+        if (getParentActivity() == null || container == null || uploadingAttachment) {
             return;
         }
-        DiscourseAttachmentUpload.upload(getParentActivity(), container, uri,
+        DiscourseAttachmentUpload.upload(getParentActivity(), container, uris,
                 new DiscourseAttachmentUpload.Sink() {
                     @Override
                     public void onUploadStarted() {
@@ -786,6 +790,31 @@ public class TopicFragment extends BaseFragment
                     }
                 }
                 return super.dispatchTouchEvent(ev);
+            }
+
+            @Override
+            public void onViewAdded(View child) {
+                super.onViewAdded(child);
+                if (composer != null && child == composer.controlsView && glassHost != null) {
+                    composer.controlsView.setBlurredBackgroundFactory(glassHost.getFactory());
+                }
+            }
+
+            @Override
+            protected void onLayout(boolean changed, int l, int t, int r, int b) {
+                super.onLayout(changed, l, t, r, b);
+                if (composer == null) return;
+                // ChatActivityFragmentView: recording overlays share the input island's inset.
+                int inset = inputInsets == null ? 0 : inputInsets.getCurrentMaxBottomInset();
+                for (int i = 0; i < getChildCount(); i++) {
+                    View child = getChildAt(i);
+                    if (composer.isRecordCircleOrControlsView(child)) {
+                        child.offsetTopAndBottom(-inset - AndroidUtilities.dp(7));
+                        child.offsetLeftAndRight(-AndroidUtilities.dp(3));
+                    } else if (child == composer.recordedAudioPanel) {
+                        child.offsetTopAndBottom(-inset - AndroidUtilities.dp(9));
+                    }
+                }
             }
 
             // ChatActivityFragmentView (17652-17660): the bar floats over the posts, so the
@@ -1271,8 +1300,26 @@ public class TopicFragment extends BaseFragment
         if (getParentActivity() == null || uploadingAttachment || container == null) {
             return;
         }
-        attachSheet = new DiscourseAttachSheet(getParentActivity(), resourceProvider,
-                this::onAttachAction, this::insertPollRaw);
+        CharSequence raw = composer == null ? null : composer.getFieldText();
+        attachSheet = new DiscourseAttachSheet(getParentActivity(), this, resourceProvider,
+                new DiscourseAttachSheet.Listener() {
+                    @Override
+                    public void onAttachAction(DiscourseAttachSheet.Action action) {
+                        TopicFragment.this.onAttachAction(action);
+                    }
+
+                    @Override
+                    public void onAttachUris(java.util.List<android.net.Uri> uris) {
+                        attachMediaUris(uris);
+                    }
+
+                    @Override
+                    public void onRichText(String applied) {
+                        if (composer != null) composer.setFieldText(applied);
+                        saveDraft();
+                    }
+                }, this::insertPollRaw, raw == null ? "" : raw.toString());
+        attachSheet.init();
         showDialog(attachSheet);
     }
 
@@ -1319,26 +1366,13 @@ public class TopicFragment extends BaseFragment
         saveDraft();
     }
 
-    /**
-     * Opens upstream's own rich editor ({@code org.telegram.ui.iv.RichEditor}) on what is already
-     * in the field.
-     *
-     * <p>It is the real editor fragment - its block list, its toolbar, its formatting - not a copy.
-     * The editor needs a {@code ChatActivity} only for Telegram's own send and draft paths, and the
-     * repo's {@link NativeDoHooks} seam replaces exactly those two, so it is built with none and
-     * its content comes back here as the markdown the site stores.</p>
-     */
+    /** Opens the sheet's upstream article pane on the field's current Markdown. */
     private void openRichEditor() {
         if (getParentActivity() == null || composer == null) {
             return;
         }
-        CharSequence current = composer.getFieldText();
-        presentFragment(new DiscourseRichEditor(current == null ? "" : current.toString(), raw -> {
-            if (composer != null) {
-                composer.setFieldText(raw);
-            }
-            saveDraft();
-        }));
+        openAttachmentSheet();
+        if (attachSheet != null) attachSheet.openArticle();
     }
 
     /**
@@ -2257,6 +2291,9 @@ public class TopicFragment extends BaseFragment
             return;
         }
         float factor = pageDownVisible.getFloatValue();
+        if (composer != null && (composer.isRecordingAudioVideo() || composer.hasAudioToSend())) {
+            factor = 0f;
+        }
         threadPageDown.setVisibility(factor > 0f ? View.VISIBLE : View.GONE);
         threadPageDown.setAlpha(factor);
         threadPageDown.setScaleX(org.telegram.messenger.AndroidUtilities.lerp(0.7f, 1f, factor));
@@ -3054,6 +3091,7 @@ public class TopicFragment extends BaseFragment
         if (composerTools != null) {
             composerTools.onResume();
         }
+        if (attachSheet != null) attachSheet.onResume();
     }
 
     /**
@@ -3088,8 +3126,14 @@ public class TopicFragment extends BaseFragment
     }
 
     @Override
+    public boolean dismissDialogOnPause(android.app.Dialog dialog) {
+        return dialog != attachSheet && super.dismissDialogOnPause(dialog);
+    }
+
+    @Override
     public void onPause() {
         super.onPause();
+        if (attachSheet != null) attachSheet.onPause();
         // The reader is leaving: what is in the field is written down before anything else (a
         // process death after this loses only the uncommitted keystroke, the same as Telegram).
         saveDraft();
@@ -3106,6 +3150,7 @@ public class TopicFragment extends BaseFragment
     @Override
     public void onRequestPermissionsResultFragment(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResultFragment(requestCode, permissions, grantResults);
+        if (attachSheet != null) attachSheet.onRequestPermissionsResultFragment(requestCode, permissions, grantResults);
         if (composerTools != null) {
             composerTools.onPermissionResult(requestCode);
         }
@@ -5717,6 +5762,11 @@ public class TopicFragment extends BaseFragment
         @Override
         public void onWindowSizeChanged(int size) {
             updateComposerActions();
+        }
+
+        @Override
+        public void onAudioVideoInterfaceUpdated() {
+            applyPageDownTransform();
         }
 
         /** Attachments in a reply go to the site first: what the field gets is the markdown its own composer would write. */

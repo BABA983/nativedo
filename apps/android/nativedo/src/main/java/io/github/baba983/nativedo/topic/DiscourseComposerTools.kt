@@ -117,7 +117,6 @@ class DiscourseComposerTools @JvmOverloads constructor(
             panel.layoutParams = params
         }
         updateEmojiIcon()
-        voice?.onComposerGeometryChanged()
     }
 
     /** Whether this screen's composer offers its own microphone (a recording host is bound). */

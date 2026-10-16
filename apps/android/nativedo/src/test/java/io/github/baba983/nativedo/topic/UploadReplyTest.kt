@@ -1,8 +1,10 @@
 package io.github.baba983.nativedo.topic
 
 import android.app.Activity
+import android.app.AppOpsManager
 import android.content.Intent
 import android.net.Uri
+import android.os.Environment
 import android.view.View
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
@@ -31,9 +33,11 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowEnvironment
 import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.ApplicationLoader
 import org.telegram.ui.Components.ChatActivityEnterView
+import org.telegram.ui.Components.ChatAttachAlertDocumentLayout
 import org.telegram.ui.Components.RecyclerListView
 
 /**
@@ -159,21 +163,36 @@ internal class UploadReplyTest {
         composer.getAttachButton().performClick()
         harness.idle()
         // The paperclip opens the attachment sheet; the file action is what reaches the picker.
-        chooseSheetAction(FILES_POSITION)
+        openSystemFilePicker()
         harness.idle()
         return composer
     }
 
-    /**
-     * The attachment sheet, as the latest dialog, and one of its tabs fired the way the shipped
-     * list fires it (its own item-click callback, not a bare view click).
-     */
-    private fun chooseSheetAction(position: Int) {
-        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+    /** The files tab now stays inline; its storage row is the explicit handoff to Android SAF. */
+    private fun openSystemFilePicker() {
+        ShadowEnvironment.setExternalStorageState(Environment.MEDIA_MOUNTED)
+        ShadowEnvironment.addExternalDir(Environment.getExternalStorageDirectory().absolutePath)
+        shadowOf(harness.context.getSystemService(AppOpsManager::class.java)).setMode(
+            "android:manage_external_storage", harness.context.applicationInfo.uid,
+            harness.context.packageName, AppOpsManager.MODE_ERRORED,
+        )
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog() as? DiscourseAttachSheet
             ?: throw AssertionError("the paperclip opened no sheet")
-        val list = viewsUnder(dialog.window!!.decorView).filterIsInstance<RecyclerListView>().firstOrNull()
-            ?: throw AssertionError("the sheet has no tab list")
-        list.clickItem(null, position)
+        dialog.selectAction(DiscourseAttachSheet.Action.FILES)
+        harness.idleClock(500)
+        val pane = viewsUnder(dialog.window!!.decorView).filterIsInstance<ChatAttachAlertDocumentLayout>().first()
+        val list = ChatAttachAlertDocumentLayout::class.java.getDeclaredField("listView")
+            .apply { isAccessible = true }.get(pane) as RecyclerListView
+        val adapter = list.adapter!!
+        val getItem = adapter.javaClass.getMethod("getItem", Integer.TYPE).apply { isAccessible = true }
+        val storagePosition = (0 until adapter.itemCount).first { position ->
+            val item = getItem.invoke(adapter, position) ?: return@first false
+            val icon = item.javaClass.getField("icon").apply { isAccessible = true }.getInt(item)
+            icon == org.telegram.messenger.R.drawable.files_storage ||
+                icon == org.telegram.messenger.R.drawable.files_internal
+        }
+        list.clickItem(null, storagePosition)
+        harness.idleClock(500)
     }
 
     private fun viewsUnder(root: android.view.View): List<android.view.View> {
@@ -213,7 +232,7 @@ internal class UploadReplyTest {
 
         strip.performClick()
         harness.idle()
-        chooseSheetAction(FILES_POSITION)
+        openSystemFilePicker()
         harness.idle()
         pickFile("second.png", transparentPng())
         harness.await("the second upload to land in the field") {
@@ -344,7 +363,5 @@ internal class UploadReplyTest {
 
     private companion object {
         const val TOPIC_ID = 809L
-        /** The file tab of the attachment sheet, by the order its list shows them. */
-        const val FILES_POSITION = 1
     }
 }

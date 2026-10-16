@@ -189,6 +189,7 @@ import me.vkryl.android.animator.FactorAnimator;
 import me.vkryl.android.animator.ListAnimator;
 import me.vkryl.android.animator.ReplaceAnimator;
 import me.vkryl.core.BitwiseUtils;
+import io.github.baba983.nativedo.hooks.NativeDoHooks;
 
 public class ChatAttachAlert extends BottomSheet implements NotificationCenter.NotificationCenterDelegate, BottomSheet.BottomSheetDelegateInterface, FactorAnimator.Target {
 
@@ -2786,6 +2787,10 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                     if (!documentsEnabled && checkCanRemoveRestrictionsByBoosts()) {
                         return;
                     }
+                    if (!NativeDoHooks.attachSheetNeedsStoragePermission(this)) { // NativeDo: the site's files pane reaches the device files and the SAF picker, needing no media grant
+                        openDocumentsLayout(true);
+                        return;
+                    }
                     if (Build.VERSION.SDK_INT >= 33) {
                         if (activity.checkSelfPermission(Manifest.permission.READ_MEDIA_IMAGES) != PackageManager.PERMISSION_GRANTED ||
                                 activity.checkSelfPermission(Manifest.permission.READ_MEDIA_VIDEO) != PackageManager.PERMISSION_GRANTED) {
@@ -4539,10 +4544,12 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
         } else if (layout == richLayout) {
             newId = LAYOUT_TYPE_RICH;
         }
+        newId = NativeDoHooks.attachSheetLayoutId(this, layout, newId); // NativeDo: the site's poll pane keeps the poll id
         showLayout(layout, newId);
     }
 
     private void showPollLayout(boolean animated, Boolean quiz) {
+        if (NativeDoHooks.showAttachPoll(this, animated, quiz)) return; // NativeDo: the site's own poll pane, not Telegram's
         if (pollLayout == null) {
             layouts[1] = pollLayout = new ChatAttachAlertPollLayout(this, getContext(), false, resourcesProvider, quiz);
             pollLayout.setDelegate((poll, caption, media, params, notify, scheduleDate, payStars) ->
@@ -5021,7 +5028,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
             documentLayout.setMaxSelectedFiles(currentChat != null && !ChatObject.hasAdminRights(currentChat) && currentChat.slowmode_enabled || editingMessageObject != null ? 1 : -1);
         } else {
             documentLayout.setMaxSelectedFiles(maxSelectedPhotos);
-            documentLayout.setCanSelectOnlyImageFiles(!isSoundPicker && !allowEnterCaption);
+            NativeDoHooks.setAttachDocumentImageFilter(this, documentLayout, !isSoundPicker && !allowEnterCaption); // NativeDo: hosted documents accept any file type
         }
         documentLayout.isSoundPicker = isSoundPicker;
         if (show) {
@@ -6575,7 +6582,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                     } else if (position == documentButton) {
                         attachButton.setTextAndIcon(4, getString(R.string.ChatDocument), GlassTabView.TabAnimation.FILES);
                         attachButton.setTag(4);
-                        err = !checkPhotoAndDocumentsPermission(mContext);
+                        err = NativeDoHooks.attachDocumentPermissionWarning(ChatAttachAlert.this, !checkPhotoAndDocumentsPermission(mContext)); // NativeDo: SAF needs no media grant
                     } else if (position == locationButton) {
                         attachButton.setTextAndIcon(6, getString(R.string.ChatLocation), GlassTabView.TabAnimation.LOCATION);
                         attachButton.setTag(6);
@@ -6610,7 +6617,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                     } else if (position == richButton) {
                         attachButton.setTextAndIcon(LAYOUT_TYPE_RICH, getString(R.string.AttachArticle), GlassTabView.TabAnimation.ARTICLE);
                         attachButton.setTag(LAYOUT_TYPE_RICH);
-                        needPremium = !MessagesController.getInstance(currentAccount).storyEntitiesAllowed();
+                        needPremium = NativeDoHooks.attachSheetRichTabPremium(ChatAttachAlert.this, !MessagesController.getInstance(currentAccount).storyEntitiesAllowed()); // NativeDo: the site's article tab is never premium-locked
                     }
                     attachButton.glassTabView.setCounter(err ? "!" : null, err, false);
                     attachButton.glassTabView.setPremiumBadge(needPremium && !UserConfig.getInstance(currentAccount).isPremium());
@@ -6693,6 +6700,9 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
             } else if (!(baseFragment instanceof ChatActivity)) {
                 galleryButton = buttonsCount++;
                 documentButton = buttonsCount++;
+                richButton = NativeDoHooks.attachSheetRichTab(ChatAttachAlert.this, buttonsCount); // NativeDo: the site's article tab
+                pollButton = NativeDoHooks.attachSheetPollTab(ChatAttachAlert.this, richButton); // NativeDo: the site's poll tab
+                buttonsCount = NativeDoHooks.attachSheetTabCount(ChatAttachAlert.this, buttonsCount); // NativeDo: count the two site tabs
                 if (allowEnterCaption) {
                     musicButton = buttonsCount++;
                 }

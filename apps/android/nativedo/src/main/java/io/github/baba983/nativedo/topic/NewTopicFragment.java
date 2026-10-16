@@ -144,7 +144,33 @@ public class NewTopicFragment extends BaseFragment {
         actionBar.createMenu().addItem(1, org.telegram.messenger.R.drawable.msg_edit)
                 .setContentDescription("富文本");
 
-        contentView = new SizeNotifierFrameLayout(context);
+        contentView = new SizeNotifierFrameLayout(context) {
+            @Override
+            public void onViewAdded(View child) {
+                super.onViewAdded(child);
+                if (composer != null && child == composer.controlsView && glassHost != null) {
+                    composer.controlsView.setBlurredBackgroundFactory(glassHost.getFactory());
+                }
+            }
+
+            @Override
+            protected void onLayout(boolean changed, int l, int t, int r, int b) {
+                super.onLayout(changed, l, t, r, b);
+                if (composer == null) return;
+                // ChatActivityFragmentView: recording overlays share the input island's inset.
+                int inset = inputInsets == null ? 0 : inputInsets.getCurrentMaxBottomInset();
+                for (int i = 0; i < getChildCount(); i++) {
+                    View child = getChildAt(i);
+                    if (composer.isRecordCircleOrControlsView(child)) {
+                        child.offsetTopAndBottom(-inset - AndroidUtilities.dp(7));
+                        child.offsetLeftAndRight(-AndroidUtilities.dp(3));
+                    } else if (child == composer.recordedAudioPanel) {
+                        child.offsetTopAndBottom(-inset - AndroidUtilities.dp(9));
+                    }
+                }
+            }
+        };
+        contentView.setClipChildren(false);
         contentView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
 
         LinearLayout form = new LinearLayout(context);
@@ -393,8 +419,26 @@ public class NewTopicFragment extends BaseFragment {
         if (getParentActivity() == null || uploadingAttachment || container == null) {
             return;
         }
-        attachSheet = new DiscourseAttachSheet(getParentActivity(), resourceProvider,
-                this::onAttachAction, this::insertPollRaw);
+        CharSequence raw = composer == null ? null : composer.getFieldText();
+        attachSheet = new DiscourseAttachSheet(getParentActivity(), this, resourceProvider,
+                new DiscourseAttachSheet.Listener() {
+                    @Override
+                    public void onAttachAction(DiscourseAttachSheet.Action action) {
+                        NewTopicFragment.this.onAttachAction(action);
+                    }
+
+                    @Override
+                    public void onAttachUris(java.util.List<android.net.Uri> uris) {
+                        attachMediaUris(uris);
+                    }
+
+                    @Override
+                    public void onRichText(String applied) {
+                        if (composer != null) composer.setFieldText(applied);
+                        saveDraft();
+                    }
+                }, this::insertPollRaw, raw == null ? "" : raw.toString());
+        attachSheet.init();
         showDialog(attachSheet);
     }
 
@@ -432,13 +476,8 @@ public class NewTopicFragment extends BaseFragment {
         if (getParentActivity() == null || composer == null) {
             return;
         }
-        CharSequence raw = composer.getFieldText();
-        presentFragment(new DiscourseRichEditor(raw == null ? "" : raw.toString(), applied -> {
-            if (composer != null) {
-                composer.setFieldText(applied);
-            }
-            saveDraft();
-        }));
+        openAttachmentSheet();
+        if (attachSheet != null) attachSheet.openArticle();
     }
 
     /**
@@ -472,10 +511,14 @@ public class NewTopicFragment extends BaseFragment {
      * leaves the form exactly as the reader typed it and reports the site's or the reader's error.
      */
     public void attachMediaUri(android.net.Uri uri) {
-        if (getParentActivity() == null || container == null || uri == null || uploadingAttachment) {
+        if (uri != null) attachMediaUris(java.util.Collections.singletonList(uri));
+    }
+
+    private void attachMediaUris(java.util.List<android.net.Uri> uris) {
+        if (getParentActivity() == null || container == null || uploadingAttachment) {
             return;
         }
-        DiscourseAttachmentUpload.upload(getParentActivity(), container, uri,
+        DiscourseAttachmentUpload.upload(getParentActivity(), container, uris,
                 new DiscourseAttachmentUpload.Sink() {
                     @Override
                     public void onUploadStarted() {
@@ -679,10 +722,16 @@ public class NewTopicFragment extends BaseFragment {
         container.getTopicReplyDraftStore().saveNewTopic(draftKey(), new NewTopicDraft("", null, ""));
     }
 
+    @Override
+    public boolean dismissDialogOnPause(android.app.Dialog dialog) {
+        return dialog != attachSheet && super.dismissDialogOnPause(dialog);
+    }
+
     /** The reader is leaving: the form is written down and the composer told, as a chat screen does. */
     @Override
     public void onPause() {
         super.onPause();
+        if (attachSheet != null) attachSheet.onPause();
         saveDraft();
         if (composerTools != null) {
             composerTools.onPause();
@@ -696,6 +745,7 @@ public class NewTopicFragment extends BaseFragment {
     @Override
     public void onRequestPermissionsResultFragment(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResultFragment(requestCode, permissions, grantResults);
+        if (attachSheet != null) attachSheet.onRequestPermissionsResultFragment(requestCode, permissions, grantResults);
         if (composerTools != null) {
             composerTools.onPermissionResult(requestCode);
         }
@@ -704,6 +754,7 @@ public class NewTopicFragment extends BaseFragment {
     @Override
     public void onResume() {
         super.onResume();
+        if (attachSheet != null) attachSheet.onResume();
         if (composer != null) {
             composer.onResume();
         }
