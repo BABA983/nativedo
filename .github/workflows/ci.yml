@@ -328,7 +328,7 @@ jobs:
         run: ./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:testDebugUnitTest --quiet
 
       - name: arm64 assemble
-        run: ./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:assembleDebug -Pandroid.injected.build.abi=arm64-v8a --quiet
+        run: ./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:assembleDebug -Pandroid.injected.build.abi=arm64-v8a -Pandroid.injected.testOnly=false --quiet
 
       # On failure keep what a human needs to diagnose it without re-running the
       # ~15 minute job: the JUnit XML, the test report, and the APK/logs if the

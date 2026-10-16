@@ -64,6 +64,11 @@ android {
             jniDebuggable true
             ndk.debugSymbolLevel = 'FULL'
         }
+        preview {
+            initWith debug
+            applicationIdSuffix '.preview'
+            matchingFallbacks = ['debug']
+        }
     }
 
     compileOptions {

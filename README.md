@@ -28,13 +28,30 @@ Use JDK 17, Android SDK platform/build-tools 36, NDK `27.2.12479018` and CMake
 # Materialize native dependency trees at the subtree's pinned gitlinks.
 ./scripts/telegram-deps.sh
 
-# Build the active arm64 APK.
-./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:assembleDebug -Pandroid.injected.build.abi=arm64-v8a --quiet
+# Build the active arm64 APK for installation through the phone's package installer.
+# An injected ABI otherwise makes AGP mark the APK as test-only (install error -15).
+./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:assembleDebug -Pandroid.injected.build.abi=arm64-v8a -Pandroid.injected.testOnly=false --quiet
 ```
 
 Alternatively open `apps/android/telegram` in Android Studio and run `nativedo`.
 No separate Telegram clone or copied prebuilt `.so` is needed for this build.
 The subtree import is the pin; dependency and hook tools resolve it from Git history.
+
+For a side-by-side device trial, use the `preview` build instead of replacing an
+existing installation signed on another machine:
+
+```sh
+./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:assemblePreview -Pandroid.injected.build.abi=arm64-v8a -Pandroid.injected.testOnly=false --quiet
+```
+
+It appears as **NativeDo 测试版**, with application ID
+`io.github.baba983.nativedo.preview` and separate login, drafts and storage.
+The normal `debug` application's ID is unchanged. Preview inherits debug build
+settings and uses the debug Telegram library, but does not include `src/debug`'s
+developer menu or glass-probe activity. Neither build has a shared signing key
+configured: to update the same package across Mac, orb and CI without uninstalling,
+all builders must use the same securely backed-up keystore (the original Mac key
+for existing installations). Do not commit private keys or passwords to Git.
 
 Orb setup and the active CI job override upstream's 8 GB Gradle heap with 3 GB,
 2 workers, no project parallelism and in-process Kotlin compilation. This is a
