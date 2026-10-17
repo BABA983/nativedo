@@ -716,7 +716,10 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
         } else if (item.id == ROW_BOOKMARKS) {
             presentFragment(new BookmarksFragment());
         } else if (item.id == ROW_MESSAGES) {
-            presentFragment(new io.github.baba983.nativedo.messages.PrivateMessagesFragment());
+            // The old 私信 screen is a page of the message center now, so the entry opens the center
+            // on that page (the center carries 通知/私信/聊天 under one bar).
+            presentFragment(io.github.baba983.nativedo.messagecenter.MessageCenterFragment.create(
+                    io.github.baba983.nativedo.messagecenter.MessageCenterFragment.PAGE_MESSAGES));
         } else if (item.id == ROW_VERIFY) {
             openSessionWebView(true);
         } else if (item.id == ROW_SIGN_IN) {

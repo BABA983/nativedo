@@ -4,12 +4,14 @@ import android.content.Context;
 import android.os.Bundle;
 import android.os.Parcelable;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 
 import androidx.annotation.NonNull;
+import androidx.core.view.ViewCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -32,6 +34,7 @@ import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.Components.ScrollSlidingTextTabStrip;
 import org.telegram.ui.Components.ViewPagerFixed;
+import org.telegram.ui.DialogsActivity;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -45,6 +48,7 @@ import io.github.baba983.nativedo.core.di.AppContainer;
 import io.github.baba983.nativedo.core.model.TopicSummary;
 import io.github.baba983.nativedo.core.session.AppSessionState;
 import io.github.baba983.nativedo.feature.messages.data.PrivateMessageBox;
+import io.github.baba983.nativedo.messagecenter.MessageCenterChild;
 import io.github.baba983.nativedo.sessionui.SessionUi;
 import io.github.baba983.nativedo.sessionui.SessionUiAction;
 import io.github.baba983.nativedo.sessionui.SessionUiState;
@@ -79,8 +83,16 @@ import io.github.baba983.nativedo.topic.TopicFragment;
  * box survives onto another and switching back destroys nothing. The strip's colours come from the
  * theme keys, so the day/night switch recolours it in place. The public channels live behind their
  * own screen and are offered from the overflow menu.</p>
+ *
+ * <p>When the message center opens this screen it passes {@code messageCenter=true}: the center
+ * owns the title bar and already carries the chats as a page of its own, so this page draws no bar
+ * (and keeps its bar out of the host, or it would sit as an empty band), shows no box strip - only
+ * the center's own menu, reached through {@link #showMessageCenterOptions(View)}, chooses a box -
+ * and offers no public-channels entry, so the center never shows two rows of tabs. The boxes' lists,
+ * scroll and reads are the same either way. The standalone 私信 entry still opens the screen with
+ * its own bar, strip and channels entry.</p>
  */
-public class PrivateMessagesFragment extends BaseFragment {
+public class PrivateMessagesFragment extends BaseFragment implements MessageCenterChild {
 
     private static final int TYPE_MESSAGE = 0;
     private static final int TYPE_NOTE = 1;
@@ -163,6 +175,18 @@ public class PrivateMessagesFragment extends BaseFragment {
 
     private int navigationBarHeight;
 
+    /**
+     * Whether the message center is hosting this screen. The center owns the title bar and offers
+     * the box choice from its own menu, so an embedded page draws no bar of its own (and keeps its
+     * bar out of the host, or it would sit as an empty band above the list) and no box strip - only
+     * the standalone 私信 entry does, which is why the center never shows two rows of tabs.
+     */
+    private boolean embedded;
+    /** Whether a main-tab strip sits under this screen, which the list and the button must clear. */
+    private boolean hasMainTabs;
+    private int additionNavigationBarHeight;
+    private int additionFloatingButtonOffset;
+
     public PrivateMessagesFragment(Bundle args) {
         super(args);
     }
@@ -179,33 +203,55 @@ public class PrivateMessagesFragment extends BaseFragment {
     @Override
     protected View createView(Context context) {
         viewContext = context;
-        actionBar.setTitle("私信");
-        actionBar.setSubtitle(boxLabel(BOXES[currentTab]));
-        actionBar.setBackButtonImage(org.telegram.messenger.R.drawable.ic_ab_back);
-        actionBar.setAllowOverlayTitle(true);
-        actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
-            @Override
-            public void onItemClick(int id) {
-                if (id == -1) {
-                    finishFragment();
+        // Which way this screen was opened: the message center embeds it as one page under the
+        // center's own title bar (its menu switches boxes and it already carries the chat page), so
+        // the page draws no bar of its own, keeps its bar out of the host, and shows no strip - only
+        // the standalone 私信 entry, whose own bar and strip would otherwise stack a second row of
+        // tabs under the center's.
+        embedded = arguments != null && arguments.getBoolean("messageCenter", false);
+        hasMainTabs = arguments != null && arguments.getBoolean("hasMainTabs", false);
+        additionNavigationBarHeight = hasMainTabs
+                ? AndroidUtilities.dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS) : 0;
+        additionFloatingButtonOffset = hasMainTabs
+                ? AndroidUtilities.dp(DialogsActivity.MAIN_TABS_HEIGHT + DialogsActivity.MAIN_TABS_MARGIN)
+                : 0;
+
+        if (embedded) {
+            // The center's bar is the screen's bar. Keeping this one out of the container is what
+            // stops the host adding it: an added bar would sit above the list as an empty band.
+            actionBar.setAddToContainer(false);
+        } else {
+            actionBar.setTitle("私信");
+            actionBar.setSubtitle(boxLabel(BOXES[currentTab]));
+            actionBar.setBackButtonImage(org.telegram.messenger.R.drawable.ic_ab_back);
+            actionBar.setAllowOverlayTitle(true);
+            actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
+                @Override
+                public void onItemClick(int id) {
+                    if (id == -1) {
+                        finishFragment();
+                    }
                 }
-            }
-        });
-        // The one bar action left is the overflow, where the public channels live. Starting a
-        // message is the floating compose button now, the way DialogsActivity starts a chat.
-        optionsItem = actionBar.createMenu().addItem(
-                OPTIONS_ITEM, org.telegram.messenger.R.drawable.ic_ab_other);
-        optionsItem.setContentDescription("更多");
-        optionsItem.setOnClickListener(v -> showItemOptions());
+            });
+            // The one bar action left is the overflow, where the public channels live. Starting a
+            // message is the floating compose button now, the way DialogsActivity starts a chat.
+            optionsItem = actionBar.createMenu().addItem(
+                    OPTIONS_ITEM, org.telegram.messenger.R.drawable.ic_ab_other);
+            optionsItem.setContentDescription("更多");
+            optionsItem.setOnClickListener(v -> showItemOptions());
+        }
 
         // The box strip under the bar, over the pager: the same component the profile's media pages
-        // place under their bar. A tap moves the indicator and slides the pager onto that box.
-        tabsView = new ScrollSlidingTextTabStrip(context, resourceProvider);
-        // The strip's own tap animation and the pager's slide use the same clock, so they settle
-        // together (ProfileSharedMediaView does the same with its 320 ms).
-        tabsView.animationDuration = 320;
-        tabsView.setDelegate(new BoxTabsDelegate());
-        buildTabs();
+        // place under their bar. A tap moves the indicator and slides the pager onto that box. The
+        // embedded page has no strip: the center's own menu is where its boxes are chosen.
+        if (!embedded) {
+            tabsView = new ScrollSlidingTextTabStrip(context, resourceProvider);
+            // The strip's own tap animation and the pager's slide use the same clock, so they settle
+            // together (ProfileSharedMediaView does the same with its 320 ms).
+            tabsView.animationDuration = 320;
+            tabsView.setDelegate(new BoxTabsDelegate());
+            buildTabs();
+        }
 
         // The pages: upstream's ViewPagerFixed, the profile's media pager. A tap calls its
         // scrollToPosition; a finger swipe is its own touch path. Its strip-following hooks are the
@@ -214,6 +260,22 @@ public class PrivateMessagesFragment extends BaseFragment {
             @Override
             protected long getManualScrollDuration() {
                 return 320;
+            }
+
+            @Override
+            protected boolean canScroll(MotionEvent e) {
+                // Embedded boxes change from the menu; drags belong to the message categories.
+                return !embedded;
+            }
+
+            @Override
+            protected boolean canScrollBackward(MotionEvent e) {
+                return !embedded;
+            }
+
+            @Override
+            public boolean canScrollHorizontally(int direction) {
+                return !embedded && super.canScrollHorizontally(direction);
             }
 
             @Override
@@ -266,8 +328,10 @@ public class PrivateMessagesFragment extends BaseFragment {
 
         LinearLayout column = new LinearLayout(context);
         column.setOrientation(LinearLayout.VERTICAL);
-        column.addView(tabsView, LayoutHelper.createLinear(
-                LayoutHelper.MATCH_PARENT, TAB_STRIP_HEIGHT_DP));
+        if (tabsView != null) {
+            column.addView(tabsView, LayoutHelper.createLinear(
+                    LayoutHelper.MATCH_PARENT, TAB_STRIP_HEIGHT_DP));
+        }
         column.addView(pager, LayoutHelper.createLinear(
                 LayoutHelper.MATCH_PARENT, 0, 1f));
 
@@ -286,6 +350,12 @@ public class PrivateMessagesFragment extends BaseFragment {
         fragmentView = frame;
         updateColors();
         checkUi_listPadding();
+        if (embedded) {
+            // The page is one page of the center's host, as the notifications page is a page of the
+            // tab host: the host does not hand a page its window insets, so the page takes its own
+            // (NotificationsFragment wires the very same listener for the same reason).
+            ViewCompat.setOnApplyWindowInsetsListener(fragmentView, this::onInsetsInternal);
+        }
         container = NativeDo.container(getParentActivity());
         // The session is read before the list: an account with no usable session gets the explicit
         // state row (and the read is not even sent).
@@ -451,13 +521,41 @@ public class PrivateMessagesFragment extends BaseFragment {
         ensureLoaded(pages[currentTab]);
     }
 
-    /** The overflow menu: which box is shown (checked) and the public channels screen. */
+    /** The standalone overflow: which box is shown (checked) and the public channels screen. */
     private void showItemOptions() {
         if (optionsItem == null) {
             return;
         }
-        PrivateMessageBox box = BOXES[currentTab];
         ItemOptions io = ItemOptions.makeOptions(this, optionsItem);
+        buildBoxMenu(io, true);
+        io.show();
+        // Upstream raises its own menu by this constant; the popup otherwise hangs lower than the
+        // icon it belongs to (DialogsActivity's own options menu).
+        io.setTranslationY(-AndroidUtilities.dp(64));
+    }
+
+    /**
+     * The message center's own bar menu, hung from the view its title bar hands over. The boxes are
+     * the same three entries the standalone overflow offers, so the center keeps the way to reach
+     * 收件箱/已发送/未读 and marks the box on screen - but the center already carries the chats (the
+     * public channels) as a page of its own, so that entry is not repeated here.
+     */
+    @Override
+    public void showMessageCenterOptions(View anchor) {
+        if (anchor == null) {
+            return;
+        }
+        ItemOptions io = ItemOptions.makeOptions(this, anchor);
+        buildBoxMenu(io, false);
+        io.show();
+    }
+
+    /**
+     * The box choice both menus offer: the three entries, the box on screen checked, and - for the
+     * standalone screen only - the public channels screen.
+     */
+    private void buildBoxMenu(ItemOptions io, boolean includeChannels) {
+        PrivateMessageBox box = BOXES[currentTab];
         io.setColors(getThemedColor(Theme.key_actionBarDefaultTitle), getThemedColor(Theme.key_actionBarDefaultTitle));
         io.setDimAlpha(0x08);
         // The boxes ride the strip, but the menu keeps the same choice and marks the one shown, so
@@ -471,13 +569,11 @@ public class PrivateMessagesFragment extends BaseFragment {
         io.addChecked(box == PrivateMessageBox.Unread,
                 org.telegram.messenger.R.drawable.settings_sounds, boxLabel(PrivateMessageBox.Unread),
                 () -> selectBox(PrivateMessageBox.Unread));
-        io.addGap();
-        io.add(org.telegram.messenger.R.drawable.msg_channel, "公共频道",
-                () -> presentFragment(new PublicChannelsFragment()));
-        io.show();
-        // Upstream raises its own menu by this constant; the popup otherwise hangs lower than the
-        // icon it belongs to (DialogsActivity's own options menu).
-        io.setTranslationY(-AndroidUtilities.dp(64));
+        if (includeChannels) {
+            io.addGap();
+            io.add(org.telegram.messenger.R.drawable.msg_channel, "公共频道",
+                    () -> presentFragment(new PublicChannelsFragment()));
+        }
     }
 
     /**
@@ -742,6 +838,30 @@ public class PrivateMessagesFragment extends BaseFragment {
         return username == null || username.isEmpty() ? null : username;
     }
 
+    /**
+     * The row's own line under the title. The site's excerpt when it has one, and otherwise a plain
+     * description of the private message built only from the two participants the list actually
+     * names. The description follows the author - the person the row's picture is drawn from - so
+     * the line and the face are one identity, and it never pairs the last poster with the reply
+     * count ("baba · 0"), which reads as a reply that never happened. Nothing is fetched for it.
+     */
+    private String rowSummary(TopicSummary topic) {
+        String excerpt = topic.getExcerpt();
+        if (excerpt != null && !excerpt.trim().isEmpty()) {
+            return excerpt;
+        }
+        String author = topic.getAuthorUsername();
+        if (author == null || author.isEmpty()) {
+            return "私信";
+        }
+        String me = sessionUsername();
+        if (me != null && me.equalsIgnoreCase(author)) {
+            // The list names only the reader: a message the reader started, said as much and no more.
+            return "你发起的私信";
+        }
+        return "与 " + author + " 的私信";
+    }
+
     private TLRPC.User author(TopicSummary topic) {
         return DiscourseRows.topicAuthor(topic, container.getBaseUrl());
     }
@@ -785,24 +905,25 @@ public class PrivateMessagesFragment extends BaseFragment {
 
     /**
      * The list's own padding, and the compose button's lift. The button's default layout pins it
-     * 14dp above the frame's bottom, so the navigation inset is what its translation has to clear;
-     * the list reserves the button's room plus the inset under its last row, so a row can always be
-     * scrolled clear of the button and the system gesture area. Every box's list keeps the room, so
-     * a swipe onto a box that has not been laid out yet still lands with its last row clear.
+     * 14dp above the frame's bottom, so the navigation inset is what its translation has to clear
+     * (plus the main-tab strip's room when this page sits over one); the list reserves the button's
+     * room plus that inset under its last row, so a row can always be scrolled clear of the button
+     * and the system gesture area. Every box's list keeps the room, so a swipe onto a box that has
+     * not been laid out yet still lands with its last row clear.
      */
     private void checkUi_listPadding() {
         for (BoxPage page : pages) {
             applyListPadding(page);
         }
         if (composeButton != null) {
-            composeButton.setTranslationY(-navigationBarHeight);
+            composeButton.setTranslationY(-navigationBarHeight - additionFloatingButtonOffset);
         }
     }
 
     private void applyListPadding(BoxPage page) {
         if (page != null && page.listView != null) {
             page.listView.setPadding(0, AndroidUtilities.dp(4), 0,
-                    AndroidUtilities.dp(4) + navigationBarHeight
+                    AndroidUtilities.dp(4) + navigationBarHeight + additionNavigationBarHeight
                             + AndroidUtilities.dp(FAB_LIST_CLEARANCE_DP));
         }
     }
@@ -999,9 +1120,16 @@ public class PrivateMessagesFragment extends BaseFragment {
             }
             TopicSummary topic = page.items.get(position);
             DialogCell cell = (DialogCell) holder.itemView;
-            // All boxes carry the site's own unread count, including replies to a PM we started.
-            cell.setDialog(DiscourseRows.topicRow(topic, false));
+            // The title is the row's name (topicRow keeps it) and its line is the site's own excerpt
+            // when it has one, or a plain description of the private message when it does not -
+            // never the "last poster · reply count" pairing, which reads as a reply that never
+            // happened. The unread badge stays the site's own count (replies to a PM we started are
+            // unread too). Only fields the list already carries are used: nothing is read for a row.
+            DialogCell.CustomDialog row = DiscourseRows.topicRow(topic, false);
+            row.message = rowSummary(topic);
+            cell.setDialog(row);
             // `setDialog` clears the row's avatar receiver, so the author's photo goes in after it.
+            // The description above names that same author, so the face and the line agree.
             TLRPC.User user = page.authors.get(position);
             ImageLocation avatar = DiscourseAvatars.INSTANCE.imageLocation(user);
             if (avatar != null) {

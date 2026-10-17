@@ -17,9 +17,11 @@ import org.telegram.messenger.FileLog;
 import org.telegram.messenger.ImageLocation;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.BaseFragment;
+import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.DialogCell;
 import org.telegram.ui.Cells.TextInfoPrivacyCell;
 import org.telegram.ui.Components.FlickerLoadingView;
+import org.telegram.ui.Components.ItemOptions;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.DialogsActivity;
@@ -35,6 +37,7 @@ import io.github.baba983.nativedo.core.model.NotificationItem;
 import io.github.baba983.nativedo.core.model.NotificationPage;
 import io.github.baba983.nativedo.core.session.AppSessionState;
 import io.github.baba983.nativedo.feature.notifications.data.NotificationRepository;
+import io.github.baba983.nativedo.messagecenter.MessageCenterChild;
 import io.github.baba983.nativedo.sessionui.SessionUi;
 import io.github.baba983.nativedo.sessionui.SessionUiAction;
 import io.github.baba983.nativedo.sessionui.SessionUiState;
@@ -50,8 +53,14 @@ import io.github.baba983.nativedo.topic.TopicFragment;
  * behind it. What <em>can</em> be reused is the row, and a notification is what a
  * {@link DialogCell} already draws - a title, a line under it and a date - so the site's fields go
  * in there and a tap opens the topic at the floor the notification is about.</p>
+ *
+ * <p>When the message center hosts this page it passes {@code messageCenter=true}: the center owns
+ * the single title bar, so this page draws no bar of its own and keeps it out of the host - its
+ * mark-all-read action is reached through {@link #showMessageCenterOptions(View)} from the center's
+ * menu instead. The list, the reads and the session handling are the same either way.</p>
  */
-public class NotificationsFragment extends BaseFragment implements NativeDoMainTabsActivity.TabPage {
+public class NotificationsFragment extends BaseFragment
+        implements NativeDoMainTabsActivity.TabPage, MessageCenterChild {
 
     private static final int TYPE_NOTIFICATION = 0;
     private static final int TYPE_NOTE = 1;
@@ -109,6 +118,8 @@ public class NotificationsFragment extends BaseFragment implements NativeDoMainT
 
     /** Whether the screen is a page of the tab host, which adds the strip's height to the insets. */
     private boolean hasMainTabs;
+    /** Whether the message center hosts this page: it owns the bar, this page draws none. */
+    private boolean messageCenter;
     private int additionNavigationBarHeight;
     private int navigationBarHeight;
 
@@ -118,10 +129,7 @@ public class NotificationsFragment extends BaseFragment implements NativeDoMainT
      * their views; see NativeDoActivity's theme handler).
      */
     private final org.telegram.messenger.NotificationCenter.NotificationCenterDelegate themeObserver =
-            (id, account, args) -> {
-                if (id != org.telegram.messenger.NotificationCenter.needSetDayNightTheme) {
-                    return;
-                }
+            (id, account, args) -> AndroidUtilities.runOnUIThread(() -> {
                 notifyRowsChanged();
                 if (progressView != null) {
                     // The shimmer reads the theme colours at draw time; a redraw is its recolour.
@@ -132,9 +140,10 @@ public class NotificationsFragment extends BaseFragment implements NativeDoMainT
                     actionBar.invalidate();
                 }
                 if (fragmentView != null) {
+                    fragmentView.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundWhite));
                     fragmentView.invalidate();
                 }
-            };
+            });
 
     /** The tab host builds its pages with the bundle that says a strip is under them. */
     public NotificationsFragment(Bundle args) {
@@ -148,18 +157,25 @@ public class NotificationsFragment extends BaseFragment implements NativeDoMainT
     @Override
     protected View createView(Context context) {
         hasMainTabs = arguments != null && arguments.getBoolean("hasMainTabs", false);
+        messageCenter = arguments != null && arguments.getBoolean("messageCenter", false);
         additionNavigationBarHeight = hasMainTabs ? AndroidUtilities.dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS) : 0;
 
-        actionBar.setTitle("通知");
-        // The page carries its own bar: inside the tab host the bar belongs to the page's screen,
-        // and the strip (a sibling of the pager) draws over the pages, never under them.
-        actionBar.setAddToContainer(false);
-        // The bar owns one action: mark the whole inbox read. It is the site's own mark-read route
-        // with no id, and the only place the reader clears everything at once.
-        org.telegram.ui.ActionBar.ActionBarMenuItem markAllReadItem = actionBar.createMenu().addItem(
-                MENU_ITEM_MARK_ALL_READ, org.telegram.messenger.R.drawable.msg_markread);
-        markAllReadItem.setContentDescription("全部已读");
-        markAllReadItem.setOnClickListener(v -> markAllRead());
+        if (!messageCenter) {
+            actionBar.setTitle("通知");
+            // The page carries its own bar: inside the tab host the bar belongs to the page's screen,
+            // and the strip (a sibling of the pager) draws over the pages, never under them.
+            actionBar.setAddToContainer(false);
+            // The bar owns one action: mark the whole inbox read. It is the site's own mark-read
+            // route with no id, and the only place the reader clears everything at once.
+            org.telegram.ui.ActionBar.ActionBarMenuItem markAllReadItem = actionBar.createMenu().addItem(
+                    MENU_ITEM_MARK_ALL_READ, org.telegram.messenger.R.drawable.msg_markread);
+            markAllReadItem.setContentDescription("全部已读");
+            markAllReadItem.setOnClickListener(v -> markAllRead());
+        } else {
+            // The message center's bar is the page's bar: keeping this one out of the host stops it
+            // sitting as an empty band above the list. Mark-all-read moves to the center's menu.
+            actionBar.setAddToContainer(false);
+        }
 
         listView = new RecyclerListView(context);
         listView.setLayoutManager(new LinearLayoutManager(context));
@@ -199,9 +215,11 @@ public class NotificationsFragment extends BaseFragment implements NativeDoMainT
         frame.addView(progressView, LayoutHelper.createFrame(
                 LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER));
         // The page's own action bar sits above the content; checkUi_contentTop() moves the content
-        // below it once it has been measured.
-        frame.addView(actionBar, LayoutHelper.createFrame(
-                LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP));
+        // below it once it has been measured. An embedded page has no bar of its own to sit under.
+        if (!messageCenter) {
+            frame.addView(actionBar, LayoutHelper.createFrame(
+                    LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP));
+        }
         fragmentView = frame;
         org.telegram.ui.Components.Bulletin.addDelegate(this, new org.telegram.ui.Components.Bulletin.Delegate() {
             @Override
@@ -210,11 +228,15 @@ public class NotificationsFragment extends BaseFragment implements NativeDoMainT
             }
         });
         ViewCompat.setOnApplyWindowInsetsListener(fragmentView, this::onInsetsInternal);
-        actionBar.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> checkUi_contentTop());
-        checkUi_contentTop();
+        if (!messageCenter) {
+            actionBar.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> checkUi_contentTop());
+            checkUi_contentTop();
+        }
         container = NativeDo.container(getParentActivity());
         org.telegram.messenger.NotificationCenter.getGlobalInstance().addObserver(
                 themeObserver, org.telegram.messenger.NotificationCenter.needSetDayNightTheme);
+        org.telegram.messenger.NotificationCenter.getGlobalInstance().addObserver(
+                themeObserver, org.telegram.messenger.NotificationCenter.didSetNewTheme);
         // The session is read before the list: an account with no usable session gets the explicit
         // state (and the read is not even sent), and a tab opened before a login catches up the
         // moment the session lands.
@@ -243,6 +265,8 @@ public class NotificationsFragment extends BaseFragment implements NativeDoMainT
     public void onFragmentDestroy() {
         org.telegram.messenger.NotificationCenter.getGlobalInstance().removeObserver(
                 themeObserver, org.telegram.messenger.NotificationCenter.needSetDayNightTheme);
+        org.telegram.messenger.NotificationCenter.getGlobalInstance().removeObserver(
+                themeObserver, org.telegram.messenger.NotificationCenter.didSetNewTheme);
         stopSessionObservation();
         loadEpoch++;
         super.onFragmentDestroy();
@@ -511,6 +535,23 @@ public class NotificationsFragment extends BaseFragment implements NativeDoMainT
             showMarkReadFailure(null);
             return kotlin.Unit.INSTANCE;
         });
+    }
+
+    /**
+     * The message center's own bar menu, hung from the view its title bar hands over: the one action
+     * this page keeps - mark the whole inbox read - reached from the center since the page draws no
+     * bar of its own.
+     */
+    @Override
+    public void showMessageCenterOptions(View anchor) {
+        if (anchor == null || getParentActivity() == null) {
+            return;
+        }
+        ItemOptions io = ItemOptions.makeOptions(this, anchor);
+        io.setColors(getThemedColor(Theme.key_actionBarDefaultTitle), getThemedColor(Theme.key_actionBarDefaultTitle));
+        io.setDimAlpha(0x08);
+        io.add(org.telegram.messenger.R.drawable.msg_markread, "全部已读", () -> markAllRead());
+        io.show();
     }
 
     /**

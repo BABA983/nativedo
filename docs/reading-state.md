@@ -208,6 +208,35 @@ stay visibly offline/read-only until a complete live replacement, not merely a
 retry start or a live chunk appended to cached content. Scope and limits are in
 the [offline-read contract](../contracts/discourse/endpoints.md#native-offline-reads).
 
+## Message center navigation
+
+The second main tab is **消息**, with **通知 / 私信 / 聊天** capsule tabs.
+The [center](../apps/android/nativedo/src/main/java/io/github/baba983/nativedo/messagecenter/MessageCenterFragment.java)
+hosts the existing screens with Telegram's `ViewPagerActivity`, keeping their lifecycle,
+session checks and requests rather than building another combined feed. Its
+`ScrollSlidingTextTabStrip` uses the profile's capsule and glass configuration.
+Horizontal drags switch message categories, while the bottom main tabs remain
+reachable by tap. This avoids two pagers competing for the same gesture.
+
+One title bar owns the current page's actions: mark all notifications read,
+choose the private-message inbox/sent/unread box, or refresh public channels.
+Private-message boxes retain independent lists and scroll positions but do not add
+a second row of tabs. Settings' private-message shortcut opens the same center on
+私信. Pushed screens cover the main tab bar; hosted lists and the compose button
+reserve its space only when the center is itself a main tab.
+
+Private messages remain private topics, with their subject and the site's excerpt
+when available. Without an excerpt, the list describes the known author rather
+than showing a reply count as a message preview. It does not fetch each topic to
+manufacture previews. Public Chat remains a separate protocol and opens the existing
+native channel screen; this navigation change does not change chat transport.
+
+The bottom badge still means server-owned unread **notifications**, not a sum of
+notifications, private topics and channel messages. Combining those counts would
+double-count related events and give busy channels disproportionate weight.
+The host flow checks page switches, menu actions and push/back navigation; real
+device blur, animation pacing and gesture arbitration still require device acceptance.
+
 ## Accepted writes and live updates
 
 The site owns permissions and authoritative content/counts. A successful mutation

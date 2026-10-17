@@ -1,5 +1,6 @@
 package io.github.baba983.nativedo.messages
 
+import android.os.Bundle
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
@@ -8,6 +9,7 @@ import io.github.baba983.nativedo.app.NativeDo
 import io.github.baba983.nativedo.feature.messages.data.PrivateMessageBox
 import io.github.baba983.nativedo.harness.FakeDiscourseSite
 import io.github.baba983.nativedo.harness.UpstreamUiHarness
+import io.github.baba983.nativedo.harness.clickMenuItem
 import io.github.baba983.nativedo.harness.contentListOf
 import io.github.baba983.nativedo.harness.latestItemOptionsMenu
 import io.github.baba983.nativedo.harness.menuItemLabels
@@ -24,6 +26,9 @@ import io.github.baba983.nativedo.harness.shadows.ShadowSQLitePreparedStatement
 import io.github.baba983.nativedo.harness.shadows.ShadowUtilities
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -51,6 +56,13 @@ import java.util.concurrent.atomic.AtomicInteger
  * rows standing (the tab under the indicator must be the box on screen); the compose button not
  * clearing the system navigation inset; and a read that did not arrive drawn as a silently empty
  * list instead of saying so and offering to read again.</p>
+ *
+ * <p>Embedded in the message center ({@code messageCenter=true}) the failures are different: a
+ * second row of tabs (a strip of its own under the center's), a bar left addable to the host (an
+ * empty band above the list), a center with no way to reach 已发送/未读, a duplicated public-channels
+ * entry, and a page that lets the main-tab strip trap its last row or its compose button. And a row
+ * that shows a replier count ("last poster · 0") instead of the site's excerpt, or names a person
+ * the row's picture does not draw.</p>
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(
@@ -115,7 +127,18 @@ internal class PrivateMessagesTest {
         // Tapping a row opens the topic that private message lives in.
         val list = contentListOf(harness.activity) ?: throw AssertionError("no list")
         harness.layoutApp()
-        val first = list.getChildAt(0) ?: throw AssertionError("the list drew no rows")
+        val first = list.getChildAt(0) as DialogCell
+        // The row is information, not just a title: the site's title is its name and its own excerpt
+        // is the line under it.
+        assertEquals(
+            "the row's name is the site's own title",
+            "关于构建脚本的私信",
+            first.nameLayout?.text?.toString(),
+        )
+        assertTrue(
+            "and its line is the site's own excerpt",
+            rowLine(first).contains("我把自己的构建脚本发给你看看"),
+        )
         list.clickItem(first, positionOf(first))
         harness.await("the topic the message is in") {
             site.requestPaths.contains("t/$INBOX_TOPIC_ID.json")
@@ -473,6 +496,129 @@ internal class PrivateMessagesTest {
         harness.assertNoTelegramSideEffects()
     }
 
+    /**
+     * The message center hosts this screen as a page under its own title bar ({@code
+     * messageCenter=true}). The page must not stack a second row of tabs under the center's, and it
+     * must not leave a bar the host would add as an empty band above the list; the default box is
+     * the inbox and its rows load either way.
+     */
+    @Test
+    fun anEmbeddedPageDrawsNoTabRowAndKeepsItsBarOutOfTheHost() {
+        site.serveJsonFor("topics/private-messages/baba.json") { path ->
+            if (path.contains("page=1")) EMPTY_PAGE else harness.fixture("private-messages.json")
+        }
+
+        harness.bootApp()
+        harness.await("the topic list to load") { listRowCount() == 2 }
+        harness.present(PrivateMessagesFragment(messageCenterArgs()))
+        harness.await("the inbox rows") { listRowCount() == 2 }
+        harness.layoutApp()
+
+        val fragment = fragment()
+        assertNull("the embedded page adds no second tab row", fragment.tabsView())
+        assertNull(
+            "and no box strip is anywhere under the page",
+            findView(fragment.fragmentView, ScrollSlidingTextTabStrip::class.java),
+        )
+        // The host adds a page's bar only while it says it may; this one says it may not, so no
+        // empty band is drawn above the list.
+        assertFalse(
+            "the page keeps its bar out of the host",
+            fragment.getActionBar().shouldAddToContainer(),
+        )
+        assertNull(
+            "and the bar is not part of the page's own view either",
+            findView(fragment.fragmentView, org.telegram.ui.ActionBar.ActionBar::class.java),
+        )
+        assertEquals("the embedded page opens on the inbox", PrivateMessageBox.Inbox, fragment.currentBox())
+        assertNotNull("the compose button stays", fragment.composeButton())
+        harness.renderApp("pm-telegram-center")
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * The center's own menu is where its boxes are chosen, since the page has no strip. It keeps
+     * 收件箱/已发送/未读 and switches the box (reading that box's route), but not the public channels:
+     * the center already carries the chats as a page of its own, so that entry would be a duplicate.
+     */
+    @Test
+    fun theCenterMenuSwitchesBoxesAndOffersNoChannels() {
+        site.serveJsonFor("topics/private-messages/baba.json") { path ->
+            if (path.contains("page=1")) EMPTY_PAGE else harness.fixture("private-messages.json")
+        }
+        site.serveJson("topics/private-messages-sent/baba.json", harness.fixture("private-messages-sent.json"))
+
+        harness.bootApp()
+        harness.await("the topic list to load") { listRowCount() == 2 }
+        val center = io.github.baba983.nativedo.messagecenter.MessageCenterFragment.create(
+            io.github.baba983.nativedo.messagecenter.MessageCenterFragment.PAGE_MESSAGES,
+        )
+        harness.present(center)
+        harness.await("the inbox rows") { listRowCount() == 2 }
+        harness.layoutApp()
+
+        val fragment = fragment()
+        // Use the actual title action: a root-view scrim would recursively draw its own popup.
+        views(center.actionBar).first { it.contentDescription == "更多" }.performClick()
+        harness.layoutApp()
+        val labels = menuItemLabels(latestItemOptionsMenu(harness.activity))
+        assertTrue(
+            "the center's menu offers the three boxes",
+            labels.containsAll(listOf("收件箱", "已发送", "未读")),
+        )
+        assertFalse(
+            "and not the public channels, which the center carries itself",
+            labels.contains("公共频道"),
+        )
+        harness.renderComposite(".amp/in/artifacts/nativedo/pm-telegram-center-menu.png")
+
+        clickMenuItem(latestItemOptionsMenu(harness.activity), "已发送")
+        // The choice slides the page pair under the pager's own clock; let it settle before reading.
+        harness.idle()
+        harness.idleClock(400)
+        harness.await("the sent box's own route and rows") {
+            site.requestPaths.contains("topics/private-messages-sent/baba.json") && listRowCount() == 1
+        }
+        harness.layoutApp()
+        assertEquals("the menu's choice is the box on screen", PrivateMessageBox.Sent, fragment.currentBox())
+        assertNull("and the page still shows no strip", fragment.tabsView())
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * A private-message row is information, not a replier count. The title stays its name; under it
+     * is the site's own excerpt when it has one (pinned in the inbox test above), and otherwise a
+     * description of the message that names the author the row's picture is drawn from - never the
+     * site's {@code last_poster_username} paired with the reply count, which reads as a reply that
+     * never happened, and never a name whose face the row does not draw.
+     */
+    @Test
+    fun aPrivateMessageRowDescribesTheMessageInsteadOfAReplierCount() {
+        site.serveJson("topics/private-messages/baba.json", NO_EXCERPT_PAGE)
+
+        harness.bootApp()
+        harness.await("the topic list to load") { listRowCount() == 2 }
+        harness.present(PrivateMessagesFragment.create())
+        harness.await("the inbox rows") { listRowCount() == 2 }
+        harness.layoutApp()
+
+        val list = fragment().listView() ?: throw AssertionError("no list")
+        val first = list.getChildAt(0) as DialogCell
+        val second = list.getChildAt(1) as DialogCell
+
+        // The other party started this one, so the row names them - and its last poster is the
+        // reader, whose name and reply count must not be shown as if they had replied.
+        assertEquals("the title is still the row's name", "关于部署的私信", first.nameLayout?.text?.toString())
+        assertEquals("a message the other party started names them", "与 alice 的私信", rowLine(first))
+        assertFalse("not the last poster the list happens to carry", rowLine(first).contains("baba"))
+
+        // The reader started this one: say that much, never a replier count for the other party.
+        assertEquals("a message the reader started says so", "你发起的私信", rowLine(second))
+        assertFalse("and is not a replier count", rowLine(second).contains(" · "))
+        harness.renderApp("pm-telegram-center-rows")
+        harness.assertNoTelegramSideEffects()
+    }
+
     // ------------------------------------------------------------------ helpers
 
     private fun fragment(): PrivateMessagesFragment =
@@ -568,6 +714,13 @@ internal class PrivateMessagesTest {
         throw NoSuchFieldException(name)
     }
 
+    /** The one line the row draws under its title, read from the cell's own message layout. */
+    private fun rowLine(cell: View): String =
+        field<android.text.Layout?>(cell, "messageLayout")?.text?.toString().orEmpty()
+
+    /** The bundle the message center passes when it hosts this page. */
+    private fun messageCenterArgs(): Bundle = Bundle().apply { putBoolean("messageCenter", true) }
+
     private fun listRowCount(): Int = contentListOf(harness.activity)?.adapter?.itemCount ?: 0
 
     private fun views(view: View?): List<View> = when (view) {
@@ -610,5 +763,40 @@ internal class PrivateMessagesTest {
 
         /** A page the site has nothing more on: no rows and no `more_topics_url`. */
         const val EMPTY_PAGE = """{"topic_list":{"more_topics_url":null,"topics":[]}}"""
+
+        /**
+         * Two inbox messages the site has no excerpt for: one a counterpart started (its last poster
+         * is the reader) and one the reader started (its last poster is the counterpart). Neither
+         * row may read as `last poster · reply count`.
+         */
+        val NO_EXCERPT_PAGE = """
+            {
+              "users": [
+                {"id": 7, "username": "baba", "avatar_template": "/user_avatar/linux.do/baba/{size}/1.png"},
+                {"id": 8, "username": "alice", "avatar_template": "/user_avatar/linux.do/alice/{size}/2.png"}
+              ],
+              "topic_list": {
+                "more_topics_url": null,
+                "topics": [
+                  {
+                    "id": 5201, "title": "关于部署的私信", "slug": "pm-deploy",
+                    "posts_count": 2, "reply_count": 1, "views": 1, "like_count": 0,
+                    "last_posted_at": "2026-10-01T00:00:00.000Z", "last_poster_username": "baba",
+                    "category_id": null, "tags": [], "excerpt": "",
+                    "notification_level": 2, "unread_posts": 0, "unseen": false,
+                    "posters": [{"description": "Original Poster", "user_id": 8}]
+                  },
+                  {
+                    "id": 5202, "title": "我来问你个事", "slug": "pm-ask",
+                    "posts_count": 2, "reply_count": 1, "views": 1, "like_count": 0,
+                    "last_posted_at": "2026-10-01T01:00:00.000Z", "last_poster_username": "alice",
+                    "category_id": null, "tags": [], "excerpt": "",
+                    "notification_level": 2, "unread_posts": 0, "unseen": false,
+                    "posters": [{"description": "Original Poster", "user_id": 7}]
+                  }
+                ]
+              }
+            }
+        """.trimIndent()
     }
 }

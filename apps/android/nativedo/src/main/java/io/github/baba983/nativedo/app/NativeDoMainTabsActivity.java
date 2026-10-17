@@ -49,7 +49,7 @@ import io.github.baba983.nativedo.core.messagebus.MessageBusHandle;
 import io.github.baba983.nativedo.core.messagebus.MessageBusSession;
 import io.github.baba983.nativedo.core.session.AppSessionState;
 import io.github.baba983.nativedo.core.session.SessionSnapshot;
-import io.github.baba983.nativedo.notifications.NotificationsFragment;
+import io.github.baba983.nativedo.messagecenter.MessageCenterFragment;
 import io.github.baba983.nativedo.settings.SettingsFragment;
 import io.github.baba983.nativedo.sessionui.SessionUi;
 import io.github.baba983.nativedo.topic.DiscourseAvatars;
@@ -192,9 +192,12 @@ public class NativeDoMainTabsActivity extends ViewPagerActivity {
         tabs = new GlassTabView[TABS_COUNT];
         tabs[POSITION_TOPICS] = GlassTabView.createMainTab(context, resourceProvider, GlassTabView.TabAnimation.CHATS, org.telegram.messenger.R.string.MainTabsChats);
         tabs[POSITION_NOTIFICATIONS] = GlassTabView.createMainTab(context, resourceProvider, GlassTabView.TabAnimation.REPLIES, org.telegram.messenger.R.string.MainTabsContacts);
+        // The second entry is the message center now, holding 通知/私信/聊天 under it - not the
+        // notifications screen alone - so it is labelled 消息 instead of Telegram's own "Contacts".
+        tabs[POSITION_NOTIFICATIONS].setText("消息");
         tabs[POSITION_SETTINGS] = GlassTabView.createMainTab(context, resourceProvider, GlassTabView.TabAnimation.SETTINGS, org.telegram.messenger.R.string.Settings);
         tabs[POSITION_PROFILE] = createProfileTab(context);
-        final String[] descriptions = {"话题", "通知", "设置", "我的"};
+        final String[] descriptions = {"话题", "消息", "设置", "我的"};
         for (int index = 0; index < tabs.length; index++) {
             final GlassTabView view = tabs[index];
             final int position = index;
@@ -336,7 +339,9 @@ public class NativeDoMainTabsActivity extends ViewPagerActivity {
     @Override
     protected BaseFragment createBaseFragmentAt(int position) {
         if (position == POSITION_NOTIFICATIONS) {
-            return new NotificationsFragment(mainTabsArgs());
+            // The message center: one title bar and one capsule strip over the notifications,
+            // private-messages and chats pages (each the existing screen, embedded).
+            return MessageCenterFragment.forMainTabs();
         } else if (position == POSITION_SETTINGS) {
             return new SettingsFragment(mainTabsArgs());
         } else if (position == POSITION_PROFILE) {
