@@ -41,6 +41,7 @@ import org.telegram.messenger.ApplicationLoader
 import org.telegram.messenger.NotificationCenter
 import org.telegram.ui.ActionBar.Theme
 import org.telegram.ui.Cells.DialogCell
+import org.telegram.ui.Components.RecyclerListView
 import org.telegram.ui.Components.ScrollSlidingTextTabStrip
 import org.telegram.ui.Components.ViewPagerFixed
 import java.util.concurrent.CountDownLatch
@@ -473,6 +474,353 @@ internal class PrivateMessagesTest {
     }
 
     /**
+     * A long inbox ends at the main-tab strip, not above a reserved band.
+     *
+     * <p>The failures this pins, read from the shipped screen and its drawn rows: the page reserves
+     * the main-tab strip's room *and* the compose button's room under its last row, so the reserved
+     * band is their sum - 140dp where the strip alone needs 76dp - and scrolling to the end leaves
+     * the last message a third of that band above the tabs, with the floating button stranded in
+     * the opaque window-coloured gap between them. And the opposite mistreatment: dropping the
+     * strip's own room as well, which would trap the last row
+     * under the glass tabs. The page's row must be reachable *at* the strip, and the reservation
+     * must still be the strip's, plus the navigation inset, with nothing left over.</p>
+     */
+    @Test
+    fun aLongInboxEndsAtTheMainTabStripInsteadOfAboveAReservedBand() {
+        site.serveJsonFor("topics/private-messages/baba.json") { path ->
+            if (path.contains("page=1")) EMPTY_PAGE else manyMessages(40)
+        }
+
+        harness.bootApp()
+        harness.await("the topic list to load") { listRowCount() == 2 }
+        val tabs = harness.activity.findViewById<ViewGroup>(android.R.id.content).let(::mainTabsOf)
+            ?: throw AssertionError("no main tabs")
+        tapMainTab(tabs, 1)
+        harness.await("the message center") { harness.visibleFragmentName() == "MessageCenterFragment" }
+        harness.layoutApp()
+        val center = harness.visibleFragment() as io.github.baba983.nativedo.messagecenter.MessageCenterFragment
+        val strip = findView(center.fragmentView, ScrollSlidingTextTabStrip::class.java)
+            ?: throw AssertionError("no capsule strip")
+        tapTab(strip, "私信")
+        harness.await("the inbox rows") {
+            harness.layoutApp()
+            (center.currentVisibleFragment as? PrivateMessagesFragment)
+                ?.listView()?.adapter?.itemCount == 40
+        }
+        harness.layoutApp()
+        val page = center.currentVisibleFragment as PrivateMessagesFragment
+        val list = page.listView() ?: throw AssertionError("no list")
+
+        // The reserved room under the last row is the main-tab strip's own band: the same number
+        // the center's other pages keep, and not that band plus the compose button's room.
+        assertEquals(
+            "the inbox reserves the main-tab band, not the band and the button",
+            dp(4) + dp(org.telegram.ui.DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS),
+            list.paddingBottom,
+        )
+
+        repeat(6) { list.scrollBy(0, 100000); harness.layoutApp() }
+        harness.idleClock(100)
+        harness.layoutApp()
+        val last = (0 until list.childCount).mapNotNull { list.getChildAt(it) }
+            .maxByOrNull { list.getChildAdapterPosition(it) } ?: throw AssertionError("no rows")
+        val lastPosition = IntArray(2).also { last.getLocationOnScreen(it) }
+        val tabsPosition = IntArray(2).also { tabs.getLocationOnScreen(it) }
+        val gap = tabsPosition[1] - (lastPosition[1] + last.height)
+        assertTrue(
+            "the last row comes down to the tabs instead of stopping above a blank band (gap $gap px)",
+            gap <= dp(8),
+        )
+        assertTrue("and does not slide under them (gap $gap px)", gap >= 0)
+        harness.drawApp()
+        harness.renderApp("pm-telegram-long-list-end")
+
+        // The navigation inset is reserved *on top of* that band, the way the center's other pages
+        // take it - and the page still does not add a second, button-sized band for it.
+        page.onInsets(0, 0, 0, 37)
+        assertEquals(
+            "the inset is reserved on top of the band, once",
+            dp(4) + 37 + dp(org.telegram.ui.DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS),
+            list.paddingBottom,
+        )
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /** Directly below the main tabs is where a hosted page's own band starts. */
+    private fun dp(value: Int): Int = org.telegram.messenger.AndroidUtilities.dp(value.toFloat())
+
+    /** The main-tab strip's own view, wherever it sits under [root]. */
+    private fun mainTabsOf(root: View): org.telegram.ui.MainTabsLayout? =
+        findView(root, org.telegram.ui.MainTabsLayout::class.java)
+
+    /** Taps the real upstream main tab through the strip's touch dispatch, the way a finger does. */
+    private fun tapMainTab(tabs: org.telegram.ui.MainTabsLayout, index: Int) {
+        harness.idle()
+        val tab = tabs.getChildAt(index)
+        val x = tab.x + tab.width / 2f
+        val y = tab.y + tab.height / 2f
+        val now = android.os.SystemClock.uptimeMillis()
+        tabs.dispatchTouchEvent(MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, x, y, 0))
+        tabs.dispatchTouchEvent(MotionEvent.obtain(now, now, MotionEvent.ACTION_UP, x, y, 0))
+        harness.idle()
+    }
+
+    /** A topic_list page of [count] private messages, each a plain inbox row. */
+    private fun manyMessages(count: Int): String {
+        val topics = (0 until count).joinToString(",") { index ->
+            """{"id": ${6000 + index}, "title": "第 $index 条私信", "slug": "pm-$index",
+               "posts_count": 2, "reply_count": 1, "views": 1, "like_count": 0,
+               "last_posted_at": "2026-10-01T00:00:00.000Z", "last_poster_username": "alice",
+               "category_id": null, "tags": [], "excerpt": "第 $index 条私信的内容",
+               "notification_level": 2, "unread_posts": 0, "unseen": false,
+               "posters": [{"description": "Original Poster", "user_id": 8}]}"""
+        }
+        return """{"users": [{"id": 7, "username": "baba"}, {"id": 8, "username": "alice"}],
+                   "topic_list": {"more_topics_url": null, "topics": [$topics]}}"""
+    }
+
+    /**
+     * The same page without a main-tab strip under it keeps the compose button's own room: the
+     * band change above must not take away the reservation the button needs when it is the only
+     * thing under the last row.
+     */
+    @Test
+    fun anInboxWithoutAMainTabStripKeepsTheComposeButtonsOwnRoom() {
+        site.serveJsonFor("topics/private-messages/baba.json") { path ->
+            if (path.contains("page=1")) EMPTY_PAGE else manyMessages(40)
+        }
+        harness.bootApp()
+        harness.await("the topic list to load") { listRowCount() == 2 }
+        harness.present(PrivateMessagesFragment(messageCenterArgs()))
+        harness.await("the inbox rows") {
+            (harness.visibleFragment() as? PrivateMessagesFragment)?.listView()?.adapter?.itemCount == 40
+        }
+        harness.layoutApp()
+        val page = fragment()
+        assertTrue(
+            "a page without a main-tab strip still keeps the compose button's room",
+            page.listView()!!.paddingBottom >= dp(62),
+        )
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * The center's capsule and the main tabs are overlays, not a frame: the inbox is a page under
+     * both, so a row can pass behind either of them, while the first and last rows still come to
+     * rest clear of them.
+     *
+     * <p>The failures this pins, read from the shipped screen rather than from the padding
+     * constants: the page's list starts at the capsule's bottom, so no row can ever be drawn under
+     * the capsule and the band above the first row is list-coloured dead space; and the list clips
+     * at its own padding, so rows stop dead at the tab strip's band instead of passing behind it.
+     * A list that half-shows the row above the first and below the last - the shapes the retained
+     * capture has, under the capsule and under the tabs - cannot be produced by either fault.</p>
+     */
+    @Test
+    fun theInboxScrollsBehindTheCapsuleAndTheMainTabs() {
+        site.serveJsonFor("topics/private-messages/baba.json") { path ->
+            if (path.contains("page=1")) EMPTY_PAGE else manyMessages(40)
+        }
+
+        harness.bootApp()
+        harness.await("the topic list to load") { listRowCount() == 2 }
+        val tabs = harness.activity.findViewById<ViewGroup>(android.R.id.content).let(::mainTabsOf)
+            ?: throw AssertionError("no main tabs")
+        tapMainTab(tabs, 1)
+        harness.await("the message center") { harness.visibleFragmentName() == "MessageCenterFragment" }
+        harness.layoutApp()
+        val center = harness.visibleFragment() as io.github.baba983.nativedo.messagecenter.MessageCenterFragment
+        val strip = findView(center.fragmentView, ScrollSlidingTextTabStrip::class.java)
+            ?: throw AssertionError("no capsule strip")
+        tapTab(strip, "私信")
+        harness.await("the inbox rows") {
+            harness.layoutApp()
+            (center.currentVisibleFragment as? PrivateMessagesFragment)
+                ?.listView()?.adapter?.itemCount == 40
+        }
+        // Let the center's slide settle before measuring the page it landed on.
+        harness.idle()
+        harness.idleClock(400)
+        harness.layoutApp()
+        val page = center.currentVisibleFragment as PrivateMessagesFragment
+        val list = page.listView() ?: throw AssertionError("no list")
+
+        // The capsule is an overlay: the page starts at its top, never below its bottom, or no row
+        // could be drawn behind it.
+        val listAt = IntArray(2).also(list::getLocationOnScreen)
+        val stripAt = IntArray(2).also(strip::getLocationOnScreen)
+        val capsuleBottom = stripAt[1] + strip.height
+        assertTrue(
+            "the inbox starts above the capsule so its rows can pass behind it " +
+                "(list top ${listAt[1]}, capsule top ${stripAt[1]})",
+            listAt[1] <= stripAt[1] + 1,
+        )
+        assertFalse(
+            "and the list lets rows draw through its own padding instead of cutting them there",
+            list.clipToPadding,
+        )
+        assertTrue(
+            "the capsule's band is kept above the first row (padding top ${list.paddingTop})",
+            listAt[1] + list.paddingTop >= capsuleBottom,
+        )
+        val firstRow = topRowOf(list)
+        assertTrue(
+            "the first row begins just below the capsule (row top ${firstRow.top + listAt[1]}, " +
+                "capsule bottom $capsuleBottom)",
+            firstRow.top + listAt[1] >= capsuleBottom - 1 &&
+                firstRow.top + listAt[1] <= capsuleBottom + dp(16),
+        )
+
+        // Half-way down the list: one row is partly behind the capsule and another partly behind
+        // the tab strip. These are laid-out rows in the padding bands - the region a clipping list
+        // would leave empty - not padding numbers.
+        repeat(2) { list.scrollBy(0, dp(130)); harness.layoutApp() }
+        harness.idleClock(100)
+        harness.layoutApp()
+        assertTrue(
+            "a visible row straddles the capsule band's lower edge",
+            (0 until list.childCount).map(list::getChildAt).any {
+                it.top < list.paddingTop && it.bottom > list.paddingTop
+            },
+        )
+        var bottomRow = bottomRowOf(list)
+        if (bottomRow.bottom == list.height - list.paddingBottom) {
+            // The rows happened to land exactly on the band's edge; a few more dp put one inside
+            // it (the band is 76dp and a row is 72dp, so this cannot need a second nudge).
+            list.scrollBy(0, dp(8))
+            harness.layoutApp()
+            bottomRow = bottomRowOf(list)
+        }
+        assertTrue(
+            "and another lies inside the tab strip's band (row bottom ${bottomRow.bottom}, " +
+                "list ${list.height} with ${list.paddingBottom} reserved)",
+            bottomRow.bottom > list.height - list.paddingBottom && bottomRow.top < list.height,
+        )
+        harness.drawApp()
+        harness.renderApp("pm-telegram-scroll-under")
+
+        // The end is still reachable: the last row comes to rest at the reserved band, which is
+        // the tab strip's own, not a blank band above it.
+        repeat(6) { list.scrollBy(0, dp(100000)); harness.layoutApp() }
+        harness.idleClock(100)
+        harness.layoutApp()
+        val last = bottomRowOf(list)
+        val resting = list.height - list.paddingBottom
+        assertTrue(
+            "the last row comes to rest at the reserved band (bottom ${last.bottom}, band $resting)",
+            Math.abs(last.bottom - resting) <= 1,
+        )
+        val lastAt = IntArray(2).also(last::getLocationOnScreen)
+        val tabsAt = IntArray(2).also(tabs::getLocationOnScreen)
+        val gap = tabsAt[1] - (lastAt[1] + last.height)
+        assertTrue("the last row is reachable above the tabs (gap $gap px)", gap >= 0)
+        assertTrue("and no blank band is left between them (gap $gap px)", gap <= dp(8))
+        harness.drawApp()
+        harness.renderApp("pm-telegram-scroll-under-end")
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * The center measures its bar and capsule once and may hand that band over before the page has
+     * any views. The page stores it and pads from it when each box's list is built; a box switched
+     * to later keeps it, and a second measurement replaces it rather than adding to it.
+     *
+     * <p>The failures this pins: an inset dropped because the page had no list yet (the first rows
+     * then start under the capsule); an inset applied only to the box that happened to be built
+     * first, so a box switch lands its first row under the capsule; and an inset that accumulates
+     * on every callback, walking the list further down the screen.</p>
+     */
+    @Test
+    fun theCentersTopInsetArrivesBeforeTheViewsAndEveryBoxKeepsIt() {
+        site.serveJsonFor("topics/private-messages/baba.json") { path ->
+            if (path.contains("page=1")) EMPTY_PAGE else manyMessages(40)
+        }
+        site.serveJson("topics/private-messages-sent/baba.json", harness.fixture("private-messages-sent.json"))
+
+        harness.bootApp()
+        harness.await("the topic list to load") { listRowCount() == 2 }
+        // The band arrives first: the host has measured its bar and capsule and the page is built
+        // after it, which is the order the center's own layout listener produces.
+        val inset = dp(120)
+        val page = PrivateMessagesFragment(messageCenterArgs(hasMainTabs = true))
+        page.setMessageCenterTopInset(inset)
+        harness.present(page)
+        harness.await("the inbox rows") { page.listView()?.adapter?.itemCount == 40 }
+        harness.layoutApp()
+        assertEquals(
+            "the capsule band is kept above the first row, over the page's own 4dp",
+            dp(4) + inset,
+            page.listView()!!.paddingTop,
+        )
+
+        // A box switched to after the band arrived keeps the same room.
+        page.pager()!!.scrollToPosition(1)
+        harness.idle()
+        harness.idleClock(500)
+        harness.await("the sent box") { page.currentBox() == PrivateMessageBox.Sent }
+        harness.layoutApp()
+        assertEquals(
+            "the box switched to keeps the band",
+            dp(4) + inset,
+            page.listView()!!.paddingTop,
+        )
+
+        // The main-tab strip's band is the bottom reservation - not that band plus the compose
+        // button's clearance - and the navigation inset is added to it once.
+        assertEquals(
+            "the bottom reservation is the tab band, not the band plus the button",
+            dp(4) + dp(org.telegram.ui.DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS),
+            page.listView()!!.paddingBottom,
+        )
+        page.onInsets(0, 0, 0, 37)
+        assertEquals(
+            "the navigation inset is added to the band once",
+            dp(4) + 37 + dp(org.telegram.ui.DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS),
+            page.listView()!!.paddingBottom,
+        )
+
+        // A later measurement replaces the stored band instead of adding to it.
+        page.setMessageCenterTopInset(inset + dp(10))
+        assertEquals(
+            "the second measurement replaces the first",
+            dp(4) + inset + dp(10),
+            page.listView()!!.paddingTop,
+        )
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * Without a host, the page has no capsule over it: its own bar and strip sit above the list, so
+     * the list keeps its own 4dp at the top and the compose button's clearance at the bottom. The
+     * failure this pins: giving the standalone page the center's band as well, which pushes its
+     * first row a capsule's height down the screen.
+     */
+    @Test
+    fun aStandaloneInboxKeepsItsOwnBands() {
+        site.serveJsonFor("topics/private-messages/baba.json") { path ->
+            if (path.contains("page=1")) EMPTY_PAGE else manyMessages(40)
+        }
+
+        harness.bootApp()
+        harness.await("the topic list to load") { listRowCount() == 2 }
+        harness.present(PrivateMessagesFragment.create())
+        harness.await("the inbox rows") { listRowCount() == 40 }
+        harness.layoutApp()
+        val page = fragment()
+        val list = page.listView() ?: throw AssertionError("no list")
+
+        assertEquals("the standalone list has no capsule band above its rows", dp(4), list.paddingTop)
+        page.onInsets(0, 0, 0, 37)
+        assertEquals(
+            "and reserves exactly the compose button's clearance below its last row",
+            dp(4) + 37 + dp(64),
+            list.paddingBottom,
+        )
+        assertFalse("with its rows allowed to draw through that padding", list.clipToPadding)
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
      * The overflow keeps the box choice and adds the public channels screen. The entry is the only
      * thing this screen knows about it: the screen itself is the channels worker's.
      */
@@ -719,7 +1067,20 @@ internal class PrivateMessagesTest {
         field<android.text.Layout?>(cell, "messageLayout")?.text?.toString().orEmpty()
 
     /** The bundle the message center passes when it hosts this page. */
-    private fun messageCenterArgs(): Bundle = Bundle().apply { putBoolean("messageCenter", true) }
+    private fun messageCenterArgs(hasMainTabs: Boolean = false): Bundle = Bundle().apply {
+        putBoolean("messageCenter", true)
+        putBoolean("hasMainTabs", hasMainTabs)
+    }
+
+    /** The row whose own bounds reach highest in [list]: the one scrolling out under the top band. */
+    private fun topRowOf(list: RecyclerListView): View =
+        (0 until list.childCount).map { list.getChildAt(it) }.minByOrNull { it.top }
+            ?: throw AssertionError("the list drew no rows")
+
+    /** The row whose own bounds reach lowest in [list]: the one scrolling in under the bottom band. */
+    private fun bottomRowOf(list: RecyclerListView): View =
+        (0 until list.childCount).map { list.getChildAt(it) }.maxByOrNull { it.bottom }
+            ?: throw AssertionError("the list drew no rows")
 
     private fun listRowCount(): Int = contentListOf(harness.activity)?.adapter?.itemCount ?: 0
 

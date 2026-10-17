@@ -225,6 +225,29 @@ a second row of tabs. Settings' private-message shortcut opens the same center o
 私信. Pushed screens cover the main tab bar; hosted lists and the compose button
 reserve its space only when the center is itself a main tab.
 
+The capsule's closed inset is part of the strip before it is first measured (the
+order upstream builds the profile's capsule with), so its row of tabs, its clipping
+path and the tap highlight share that inset and a row whose tabs already fit has no
+scroll range to move under them. A page over the main-tab strip reserves that
+strip's band under its last row; where no strip hosts it, the compose button's own
+clearance is the reservation. The two are alternatives, not a sum: the page's band
+and the button's clearance both end near the same place, and adding them leaves an
+empty window-coloured band between the last row and the tabs.
+
+The capsule is a fixed surface the pages scroll behind, not a strip they start
+below. The center's pager begins at the action bar's bottom, so a page's content
+reaches up into the capsule's band, and the band itself is transparent - only the
+glass capsule is a surface, and the blur behind it is the page's own content (the
+same arrangement as the profile's capsule). Each hosted page takes the strip's
+height through `MessageCenterChild.setMessageCenterTopInset` (handed over in
+upstream's page factory, and again once the strip is measured); its list adds that
+inset to its top padding and keeps `setClipToPadding(false)`. The first row
+therefore starts below the capsule, while later rows scroll through the band under
+it. The inset is the page's own: dropping it leaves the first row hidden behind the
+capsule, and keeping the old pager margin instead puts the list's clipping edge
+below the band, where no row can pass the capsule at all. The bottom reservation is
+unaffected.
+
 Private messages remain private topics, with their subject and the site's excerpt
 when available. Without an excerpt, the list describes the known author rather
 than showing a reply count as a message preview. It does not fetch each topic to
@@ -234,8 +257,12 @@ native channel screen; this navigation change does not change chat transport.
 The bottom badge still means server-owned unread **notifications**, not a sum of
 notifications, private topics and channel messages. Combining those counts would
 double-count related events and give busy channels disproportionate weight.
-The host flow checks page switches, menu actions and push/back navigation; real
-device blur, animation pacing and gesture arbitration still require device acceptance.
+The host flow checks page switches, menu actions and push/back navigation, plus
+the scroll-under geometry of all three pages: the pager beginning at the bar's
+bottom, a transparent band, each page's list starting at the band's edge with the
+capsule's height in its top padding, the first row below the capsule, and rows
+drawn through the band after a scroll. Real device blur, animation pacing and
+gesture arbitration still require device acceptance.
 
 ## Accepted writes and live updates
 

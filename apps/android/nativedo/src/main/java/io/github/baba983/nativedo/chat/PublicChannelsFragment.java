@@ -30,11 +30,14 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import io.github.baba983.nativedo.R;
 import io.github.baba983.nativedo.app.NativeDo;
 import io.github.baba983.nativedo.auth.LoginWebViewFragment;
 import io.github.baba983.nativedo.core.di.AppContainer;
 import io.github.baba983.nativedo.core.model.ChatChannel;
 import io.github.baba983.nativedo.core.session.AppSessionState;
+import io.github.baba983.nativedo.feature.chat.data.ChatChannelsMalformedException;
+import io.github.baba983.nativedo.feature.chat.data.ChatChannelsUnavailableException;
 import io.github.baba983.nativedo.messagecenter.MessageCenterChild;
 import io.github.baba983.nativedo.sessionui.SessionUi;
 import io.github.baba983.nativedo.sessionui.SessionUiAction;
@@ -53,8 +56,12 @@ import io.github.baba983.nativedo.topic.DiscourseAvatars;
  * <p>When the message center hosts this page it passes {@code messageCenter=true}: the center owns
  * the single title bar, so this page draws no bar of its own and keeps it out of the host - its
  * refresh action is reached through {@link #showMessageCenterOptions(View)} from the center's menu
- * instead. With {@code hasMainTabs=true} the list reserves the main-tab strip's room under its last
- * row. The list, the reads and the session handling are the same either way.</p>
+ * instead. The center's capsule strip is drawn over the page, so the page also takes the strip's
+ * height as its list's top padding ({@link #setMessageCenterTopInset(int)}): the first row starts
+ * below the capsule and the rows after it scroll behind it. With {@code hasMainTabs=true} the list
+ * reserves the main-tab strip's room under its last row, which keeps that row reachable while the
+ * rows above it pass behind the tabs. The list, the reads and the session handling are the same
+ * either way.</p>
  */
 public class PublicChannelsFragment extends BaseFragment implements MessageCenterChild {
 
@@ -84,11 +91,24 @@ public class PublicChannelsFragment extends BaseFragment implements MessageCente
     private boolean reachedTheEnd;
 
     private SessionUiState stateUi;
+    /**
+     * The channel list's own failure, when it is one the session layer has no meaning for: the site
+     * has no chat API, or the answer was not channel data. Zero when the row belongs to the session
+     * state instead.
+     */
+    private int failureMessageRes;
     private AppSessionState lastSessionState;
     private int loadEpoch;
     private kotlinx.coroutines.Job sessionObserver;
 
     private int navigationBarHeight;
+    /**
+     * The room the message center's own title bar and capsule strip take at the top of the window,
+     * in pixels, as the center measures them. The page sits under that band, so the list keeps it
+     * above its first row while rows scrolled past draw behind the capsule. Zero while nothing
+     * hosts this page, which is why the standalone screen keeps its own geometry.
+     */
+    private int messageCenterTopInset;
     /** Whether the message center hosts this page: it owns the bar, this page draws none. */
     private boolean messageCenter;
     /** Whether a main-tab strip sits under this page, whose room the list must clear. */
@@ -156,9 +176,14 @@ public class PublicChannelsFragment extends BaseFragment implements MessageCente
         listView.setEmptyView(progressView);
         listView.setAnimateEmptyView(true, RecyclerListView.EMPTY_VIEW_ANIMATION_TYPE_ALPHA);
         listView.setVerticalScrollBarEnabled(false);
+        // The list reaches the bottom of the window and its rows scroll behind the main-tab strip
+        // and the message center's capsule; the last row stays reachable above the strip, and the
+        // first below the capsule, through the padding. A list that clipped at its padding would
+        // cut every row at the band's edge instead.
+        listView.setClipToPadding(false);
         checkUi_listPadding();
         listView.setOnItemClickListener((view, position) -> {
-            if (stateUi != null) {
+            if (showsFailureRow()) {
                 onStateAction();
             } else if (position >= 0 && position < channels.size()) {
                 open(channels.get(position));
@@ -236,6 +261,7 @@ public class PublicChannelsFragment extends BaseFragment implements MessageCente
             }
         } else {
             stateUi = SessionUi.stateFor(state);
+            failureMessageRes = 0;
             loading = false;
             notifyRowsChanged();
         }
@@ -249,21 +275,38 @@ public class PublicChannelsFragment extends BaseFragment implements MessageCente
         loading = false;
         offset = 0;
         reachedTheEnd = false;
+        failureMessageRes = 0;
+    }
+
+    /** Whether the list is showing a state row instead of channels: a session state or a load failure. */
+    private boolean showsFailureRow() {
+        return stateUi != null || failureMessageRes != 0;
     }
 
     private void onStateAction() {
-        if (stateUi == null) {
+        if (stateUi != null) {
+            SessionUiAction action = SessionUi.action(stateUi);
+            if (action == SessionUiAction.Retry) {
+                retryAfterFailure();
+                return;
+            }
+            openRecovery(action == SessionUiAction.OpenVerification);
             return;
         }
-        SessionUiAction action = SessionUi.action(stateUi);
-        if (action == SessionUiAction.Retry) {
-            stateUi = null;
-            resetForReload();
-            notifyRowsChanged();
-            loadPage();
-            return;
+        if (failureMessageRes != 0) {
+            retryAfterFailure();
         }
-        openRecovery(action == SessionUiAction.OpenVerification);
+    }
+
+    /**
+     * Reads the list again from the first page after a failure. The failed page left nothing behind,
+     * so the next read starts from the start rather than merging into a half-read list.
+     */
+    private void retryAfterFailure() {
+        stateUi = null;
+        resetForReload();
+        notifyRowsChanged();
+        loadPage();
     }
 
     private void openRecovery(boolean verification) {
@@ -327,6 +370,7 @@ public class PublicChannelsFragment extends BaseFragment implements MessageCente
             }
             loading = false;
             stateUi = null;
+            failureMessageRes = 0;
             offset = asked + CHANNELS_PAGE;
             int added = 0;
             for (ChatChannel channel : loaded.getChannels()) {
@@ -336,9 +380,10 @@ public class PublicChannelsFragment extends BaseFragment implements MessageCente
                     added++;
                 }
             }
-            // The site's own `load_more_url` is what says another page follows; a page that brought
-            // nothing new ends the list too, so a site that repeats a page cannot loop.
-            reachedTheEnd = loaded.getLoadMoreUrl() == null || added == 0;
+            // The site sends its own `load_more_url` cursor on every page, so the end of the list is
+            // a page that brought nothing new; a site that omits the cursor ends it just the same,
+            // and one that repeats a page cannot loop.
+            reachedTheEnd = added == 0 || loaded.getLoadMoreUrl() == null;
             empty = channels.isEmpty();
             notifyRowsChanged();
             fetchAvatars();
@@ -348,9 +393,19 @@ public class PublicChannelsFragment extends BaseFragment implements MessageCente
                 return kotlin.Unit.INSTANCE;
             }
             loading = false;
-            FileLog.e("chat channels failed", error);
+            // Decoder exceptions can include response excerpts; log only the failure category.
+            FileLog.e("chat channels failed: " + error.getClass().getSimpleName());
             if (channels.isEmpty()) {
-                stateUi = SessionUi.stateForLoadFailure(error);
+                // A site without the chat API, or an answer that is not channel data, is not a
+                // session state: naming it keeps the reader - and a later report - from reading a
+                // generic outage into what the site actually answered.
+                if (error instanceof ChatChannelsUnavailableException) {
+                    failureMessageRes = R.string.chat_channels_unavailable;
+                } else if (error instanceof ChatChannelsMalformedException) {
+                    failureMessageRes = R.string.chat_channels_malformed;
+                } else {
+                    stateUi = SessionUi.stateForLoadFailure(error);
+                }
             }
             notifyRowsChanged();
             return kotlin.Unit.INSTANCE;
@@ -432,9 +487,28 @@ public class PublicChannelsFragment extends BaseFragment implements MessageCente
         checkUi_listPadding();
     }
 
+    /**
+     * The message center's title bar and capsule, in pixels: the band its pages sit under.
+     *
+     * <p>The value can arrive before this page has views - the host measures its bar and strip once
+     * and hands the number over, which may happen before the page is built - so it is stored and
+     * applied whenever the list is padded, rather than only to the list that exists at the call. It
+     * replaces the previous measurement instead of adding to it, so a bar that changes height moves
+     * the band rather than stacking a second one.</p>
+     */
+    @Override
+    public void setMessageCenterTopInset(int inset) {
+        int next = Math.max(0, inset);
+        if (next == messageCenterTopInset) {
+            return;
+        }
+        messageCenterTopInset = next;
+        checkUi_listPadding();
+    }
+
     private void checkUi_listPadding() {
         if (listView != null) {
-            listView.setPadding(0, AndroidUtilities.dp(4), 0,
+            listView.setPadding(0, AndroidUtilities.dp(4) + messageCenterTopInset, 0,
                     AndroidUtilities.dp(4) + navigationBarHeight + additionNavigationBarHeight);
         }
     }
@@ -466,7 +540,7 @@ public class PublicChannelsFragment extends BaseFragment implements MessageCente
         return channels.size();
     }
 
-    /** The state row's own value, or null while the list shows content. */
+    /** The state row's own value, or null while the list shows content or a chat-list failure row. */
     SessionUiState stateForTest() {
         return stateUi;
     }
@@ -504,9 +578,11 @@ public class PublicChannelsFragment extends BaseFragment implements MessageCente
         @Override
         public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
             if (holder.itemView instanceof TextInfoPrivacyCell) {
-                String text = stateUi != null
-                        ? SessionUi.text(holder.itemView.getContext(), stateUi).toString()
-                        : "还没有公开频道";
+                String text = failureMessageRes != 0
+                        ? holder.itemView.getContext().getString(failureMessageRes)
+                        : stateUi != null
+                                ? SessionUi.text(holder.itemView.getContext(), stateUi).toString()
+                                : "还没有公开频道";
                 ((TextInfoPrivacyCell) holder.itemView).setText(text);
                 return;
             }
@@ -525,7 +601,7 @@ public class PublicChannelsFragment extends BaseFragment implements MessageCente
 
         @Override
         public int getItemViewType(int position) {
-            if (stateUi != null) {
+            if (showsFailureRow()) {
                 return TYPE_STATE;
             }
             return empty ? TYPE_NOTE : TYPE_CHANNEL;
@@ -533,7 +609,7 @@ public class PublicChannelsFragment extends BaseFragment implements MessageCente
 
         @Override
         public int getItemCount() {
-            if (stateUi != null) {
+            if (showsFailureRow()) {
                 return 1;
             }
             return empty ? 1 : channels.size();
@@ -541,6 +617,10 @@ public class PublicChannelsFragment extends BaseFragment implements MessageCente
 
         @Override
         public boolean isEnabled(RecyclerView.ViewHolder holder) {
+            if (failureMessageRes != 0) {
+                // Both channel-list failures are read again by tapping; neither opens a WebView.
+                return true;
+            }
             if (stateUi != null) {
                 return SessionUi.hasAction(stateUi);
             }

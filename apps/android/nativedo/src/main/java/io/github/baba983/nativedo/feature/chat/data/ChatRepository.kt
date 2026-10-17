@@ -21,9 +21,18 @@ import java.io.File
 class ChatRepository(
     private val client: DiscourseApiClient,
 ) {
-    /** One page of public channels from [offset]; the answer's `loadMoreUrl` says another follows. */
+    /**
+     * One page of public channels from [offset]. The site sends a `loadMoreUrl` cursor on every
+     * page, so the end of the list is a page with no new channel, not a missing cursor.
+     *
+     * <p>A failure keeps the session layer's own meaning (a challenge, a lost session, a refusal, a
+     * rate limit, an outage) and additionally separates the two the reader can act on differently:
+     * [ChatChannelsUnavailableException] when the site has no chat channel API at all, and
+     * [ChatChannelsMalformedException] when the answer was not channel data.</p>
+     */
     suspend fun channels(offset: Int, limit: Int = 25): Result<ChatChannelPage> =
         runCatching { client.fetchChatChannels(offset = offset, limit = limit) }
+            .recoverCatching { error -> throw error.classifiedChatChannelFailure() }
 
     /** One channel, with the reader's membership and the live-update seeds. */
     suspend fun channel(channelId: Long): Result<ChatChannel> =

@@ -57,7 +57,10 @@ import io.github.baba983.nativedo.topic.TopicFragment;
  * <p>When the message center hosts this page it passes {@code messageCenter=true}: the center owns
  * the single title bar, so this page draws no bar of its own and keeps it out of the host - its
  * mark-all-read action is reached through {@link #showMessageCenterOptions(View)} from the center's
- * menu instead. The list, the reads and the session handling are the same either way.</p>
+ * menu instead. The center's capsule strip is drawn over the page, so the page also takes the
+ * strip's height as its list's top padding ({@link #setMessageCenterTopInset(int)}): the first row
+ * starts below the capsule and the rows after it scroll behind it. The list, the reads and the
+ * session handling are the same either way.</p>
  */
 public class NotificationsFragment extends BaseFragment
         implements NativeDoMainTabsActivity.TabPage, MessageCenterChild {
@@ -120,6 +123,12 @@ public class NotificationsFragment extends BaseFragment
     private boolean hasMainTabs;
     /** Whether the message center hosts this page: it owns the bar, this page draws none. */
     private boolean messageCenter;
+    /**
+     * The center's strip height in pixels: the room this page keeps above its first row, so the
+     * list begins below the capsule and its later rows scroll under it. Zero when the page is not
+     * a center page, which is the same padding as before.
+     */
+    private int messageCenterTopInset;
     private int additionNavigationBarHeight;
     private int navigationBarHeight;
 
@@ -392,9 +401,26 @@ public class NotificationsFragment extends BaseFragment
 
     private void checkUi_listPadding() {
         if (listView != null) {
-            listView.setPadding(0, AndroidUtilities.dp(4), 0,
+            // The center's strip is drawn over the page, so the list keeps its height above the
+            // first row: the rows begin below the capsule and the rest scroll behind it.
+            listView.setPadding(0, AndroidUtilities.dp(4) + messageCenterTopInset, 0,
                     AndroidUtilities.dp(4) + navigationBarHeight + additionNavigationBarHeight);
         }
+    }
+
+    /**
+     * The center hands its strip's height over: the page begins under the strip, so its first row
+     * keeps that room while later rows scroll behind the capsule (the list already clips off its
+     * padding). The center may call this before the views exist; the next view takes the field.
+     */
+    @Override
+    public void setMessageCenterTopInset(int inset) {
+        int next = Math.max(0, inset);
+        if (next == messageCenterTopInset) {
+            return;
+        }
+        messageCenterTopInset = next;
+        checkUi_listPadding();
     }
 
     /** Keeps the page's content below its own action bar, including after a status bar change. */

@@ -70,10 +70,14 @@ class SessionCookieInterceptor(private val cookieJar: SharedCookieJar) : Interce
             // a lost newer `_t` would leave the jar on the older one.
             cookieJar.flush()
         }
-        val route = when (url.encodedPath) {
-            "/session/current.json" -> "session"
-            "/session/csrf" -> "csrf"
-            "/", "/latest", "/latest.json" -> "feed"
+        val path = url.encodedPath
+        val route = when {
+            path == "/session/current.json" -> "session"
+            path == "/session/csrf" -> "csrf"
+            path == "/" || path == "/latest" || path == "/latest.json" -> "feed"
+            // The chat plugin's own routes: their status is what says whether a chat screen's
+            // failure was a refusal, an absent API or an outage. The path itself is never logged.
+            path.startsWith("/chat/") -> "chat"
             else -> "other"
         }
         val operation = when (url.encodedPath) {
