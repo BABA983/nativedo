@@ -1,5 +1,6 @@
 package io.github.baba983.nativedo.settings;
 
+import android.app.Activity;
 import android.content.ClipData;
 import android.content.Context;
 import android.content.Intent;
@@ -13,15 +14,26 @@ import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalAdapter;
 import org.telegram.ui.Components.UniversalFragment;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
+import java.util.Locale;
 
 import io.github.baba983.nativedo.core.session.SessionDiagnostics;
 
 /** Explicit consent and sharing of the client's bounded, allowlisted session evidence. */
 public class DiagnosticsFragment extends UniversalFragment {
-    private static final int RECORD = 1, EXPORT = 2, CLEAR = 3;
+    private static final int RECORD = 1, EXPORT = 2, CLEAR = 3, SAVE = 4;
+    /** The system's document creator; what it answers is written by [onActivityResultFragment]. */
+    private static final int SAVE_REQUEST = 4701;
     private boolean busy;
     private boolean destroyed;
+    /** The export awaiting a destination, kept only between the export callback and the picker. */
+    private File pendingSave;
 
     @Override
     protected CharSequence getTitle() {
@@ -41,8 +53,9 @@ public class DiagnosticsFragment extends UniversalFragment {
         items.add(UItem.asRippleCheck(RECORD, "记录会话诊断")
                 .setChecked(SessionDiagnostics.isEnabled(getContext())));
         items.add(UItem.asShadow("默认关闭。仅记录会话事件、状态码、Cookie 是否存在及轮换标记，不记录 Cookie 值、账号、网址、正文或草稿。最多保留两份各 256 KiB 的日志，选择会在重启后保留。"));
-        items.add(UItem.asButton(EXPORT, busy ? "正在处理…" : "导出诊断日志"));
-        items.add(UItem.asShadow("导出包含应用版本与 Android 版本的 ZIP，由你选择分享给谁，不会自动上传。登录失效后仍可导出。关闭记录不会删除已有日志。"));
+        items.add(UItem.asButton(EXPORT, busy ? "正在处理…" : "分享诊断日志"));
+        items.add(UItem.asButton(SAVE, busy ? "正在处理…" : "保存诊断日志到文件"));
+        items.add(UItem.asShadow("导出的是包含应用版本与 Android 版本的 ZIP：分享交给系统分享面板，保存则由你在系统文件选择器里挑位置（例如下载目录），两条路都不会自动上传。登录失效后仍可导出。关闭记录不会删除已有日志。"));
         items.add(UItem.asButton(CLEAR, "清除诊断日志").red());
     }
 
@@ -85,6 +98,31 @@ public class DiagnosticsFragment extends UniversalFragment {
                     notice("分享失败", "无法打开系统分享，请稍后重试。");
                 }
             });
+        } else if (item.id == SAVE) {
+            busy = true;
+            listView.adapter.update(true);
+            final Context context = getContext().getApplicationContext();
+            SessionDiagnostics.export(context, file -> {
+                busy = false;
+                if (destroyed || getParentActivity() == null) return;
+                listView.adapter.update(true);
+                if (file == null) {
+                    notice("导出失败", "无法创建诊断日志，请稍后重试。");
+                    return;
+                }
+                pendingSave = file;
+                String stamp = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(new Date());
+                Intent create = new Intent(Intent.ACTION_CREATE_DOCUMENT)
+                        .addCategory(Intent.CATEGORY_OPENABLE)
+                        .setType("application/zip")
+                        .putExtra(Intent.EXTRA_TITLE, "session-diagnostics-" + stamp + ".zip");
+                try {
+                    startActivityForResult(create, SAVE_REQUEST);
+                } catch (Exception ignored) {
+                    pendingSave = null;
+                    notice("保存失败", "无法打开系统文件选择器，请稍后重试。");
+                }
+            });
         } else if (item.id == CLEAR) {
             showDialog(new AlertDialog.Builder(getParentActivity())
                     .setTitle("清除诊断日志")
@@ -106,6 +144,34 @@ public class DiagnosticsFragment extends UniversalFragment {
     private void notice(String title, String message) {
         showDialog(new AlertDialog.Builder(getParentActivity()).setTitle(title).setMessage(message)
                 .setPositiveButton("好", null).create());
+    }
+
+    /**
+     * The document creator's answer: copy the exported ZIP to the place the reader picked. A
+     * cancelled picker and a failed write both leave the cached export alone, so the next attempt
+     * (or a share) still has it.
+     */
+    @Override
+    public void onActivityResultFragment(int requestCode, int resultCode, Intent data) {
+        if (requestCode != SAVE_REQUEST) return;
+        File source = pendingSave;
+        pendingSave = null;
+        if (resultCode != Activity.RESULT_OK || data == null || data.getData() == null || source == null) {
+            return;
+        }
+        if (destroyed || getContext() == null || getParentActivity() == null) return;
+        try (InputStream in = new FileInputStream(source);
+             OutputStream out = getContext().getContentResolver().openOutputStream(data.getData())) {
+            if (out == null) throw new java.io.IOException("no output stream for the picked document");
+            byte[] buffer = new byte[64 * 1024];
+            int read;
+            while ((read = in.read(buffer)) > 0) {
+                out.write(buffer, 0, read);
+            }
+            notice("已保存", "诊断日志已写入你选择的位置，可以回到浏览器上传它。");
+        } catch (Exception ignored) {
+            notice("保存失败", "无法写入所选位置，请换一个位置重试。");
+        }
     }
 
     @Override
