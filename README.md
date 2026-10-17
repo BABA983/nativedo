@@ -28,29 +28,42 @@ Use JDK 17, Android SDK platform/build-tools 36, NDK `27.2.12479018` and CMake
 # Materialize native dependency trees at the subtree's pinned gitlinks.
 ./scripts/telegram-deps.sh
 
-# Build the active arm64 APK for installation through the phone's package installer.
+# Build the daily arm64 APK for installation through the phone's package installer.
 # An injected ABI otherwise makes AGP mark the APK as test-only (install error -15).
-./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:assembleDebug -Pandroid.injected.build.abi=arm64-v8a -Pandroid.injected.testOnly=false --quiet
+./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:assembleDailyDebug -Pandroid.injected.build.abi=arm64-v8a -Pandroid.injected.testOnly=false --quiet
 ```
 
-Alternatively open `apps/android/telegram` in Android Studio and run `nativedo`.
+Alternatively open `apps/android/telegram` in Android Studio and run `nativedo` (`dailyDebug`).
 No separate Telegram clone or copied prebuilt `.so` is needed for this build.
 The subtree import is the pin; dependency and hook tools resolve it from Git history.
 
-For a side-by-side device trial, use the `preview` build instead of replacing an
-existing installation signed on another machine:
+A variant is a channel (flavor) × a build type:
+
+| Variant | Package | Label | What it is |
+| :-- | :-- | :-- | :-- |
+| `dailyDebug` | `io.github.baba983.nativedo` | NativeDo | The device build: `src/debug`'s developer menu, glass probe, debug Telegram library |
+| `dailyRelease` | same | NativeDo | The distributable build: no dev tools, not `debuggable` |
+| `previewDebug` | `io.github.baba983.nativedo.preview` | NativeDo 测试版 | `dailyDebug` under a separate package: own login, drafts and storage |
+| `previewRelease` | same as `previewDebug` | NativeDo 测试版 | `dailyRelease` under that separate package |
+
+The channel decides only the package (and with it the label and the install slot next to a
+signed-in app); the build type decides the dev tools, `debuggable` and which Telegram library the
+build links. The old `preview` build type is therefore two variants now: `previewRelease` when
+the trial build should look like what users get, `previewDebug` when it needs the dev tools.
+
+`preview` builds the same code as `daily`; it exists so a build can be compared next to a
+signed-in install instead of replacing it:
 
 ```sh
-./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:assemblePreview -Pandroid.injected.build.abi=arm64-v8a -Pandroid.injected.testOnly=false --quiet
+./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:assemblePreviewDebug -Pandroid.injected.build.abi=arm64-v8a -Pandroid.injected.testOnly=false --quiet
 ```
 
-It appears as **NativeDo 测试版**, with application ID
-`io.github.baba983.nativedo.preview` and separate login, drafts and storage.
-The normal `debug` application's ID is unchanged. Preview inherits debug build
-settings and uses the debug Telegram library, but does not include `src/debug`'s
-developer menu or glass-probe activity.
+Non-release APKs carry their commit in `versionName` (`0.1.0-debug-<sha>`,
+`0.1.0-preview-debug-<sha>`). `versionCode` stays `1` on purpose: hand-installed builds must
+replace each other in either direction, and a bumped code would make installing an older build
+fail as a downgrade.
 
-Both variants sign with the shared key when one is configured, which is what lets an
+Every variant signs with the shared key when one is configured, which is what lets an
 APK from any builder replace the same package in place instead of failing with
 `INSTALL_FAILED_UPDATE_INCOMPATIBLE` (-7). The key is never committed: write
 `apps/android/nativedo/keystore.properties` (gitignored)
@@ -93,7 +106,7 @@ are explained in [testing](docs/testing.md).
 
 ```sh
 # Active app: production UI/network wiring against the fake site on the host JVM.
-./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:testDebugUnitTest --quiet
+./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:testDailyDebugUnitTest --quiet
 # Narrow a run by appending --tests '<fully-qualified test class>'.
 
 # Upstream hook boundary and dependency tooling.

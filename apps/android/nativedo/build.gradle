@@ -56,9 +56,26 @@ def sharedSigningKeyPassword = sharedSigningProps.getProperty('keyPassword') ?: 
 
 if (sharedSigningFile == null) {
     logger.warn('nativedo: no shared signing key configured (keystore.properties or NATIVEDO_* ' +
-        'environment): this build is signed with the per-machine debug key, so its APK cannot be ' +
-        'installed over one built elsewhere - INSTALL_FAILED_UPDATE_INCOMPATIBLE (-7).')
+        'environment): debug builds fall back to the per-machine debug key and release builds stay ' +
+        'unsigned, so either APK fails to replace an install made on another machine - ' +
+        'INSTALL_FAILED_UPDATE_INCOMPATIBLE (-7).')
 }
+
+// Build identity for the variants that are handed out by hand: the commit the APK came from, so
+// two sideloaded builds can be told apart on the device. A source export without Git falls back to
+// no suffix instead of failing the build.
+def gitSha = {
+    try {
+        def process = new ProcessBuilder('git', 'rev-parse', '--short', 'HEAD')
+            .directory(rootDir)
+            .redirectErrorStream(true)
+            .start()
+        def text = process.inputStream.text.trim()
+        return process.waitFor() == 0 && text ? text : null
+    } catch (Exception ignored) {
+        return null
+    }
+}()
 
 android {
     namespace 'io.github.baba983.nativedo'
@@ -107,10 +124,31 @@ android {
         jniLibs { useLegacyPackaging = true }
     }
 
+    lint {
+        // Upstream's app module sets the same. `lintVitalRelease` cannot load `:TMessagesProj`'s
+        // class hierarchy and reports the manifest's `LaunchActivity` as not an Activity; run
+        // `:nativedo:lint` deliberately instead of gating the release build on that false positive.
+        checkReleaseBuilds false
+    }
+
+    // Channels are a flavor dimension; build types say only how a variant is produced. `daily` is
+    // the package the app is used from, `preview` the side-by-side trial build (own package, own
+    // login and storage, own label from `src/preview/AndroidManifest.xml`).
+    flavorDimensions += 'channel'
+
+    productFlavors {
+        daily {
+            dimension 'channel'
+        }
+        preview {
+            dimension 'channel'
+            applicationIdSuffix '.preview'
+            versionNameSuffix '-preview'
+        }
+    }
+
     buildTypes {
         debug {
-            // `preview` inherits this too, so the two variants stay update-compatible with builds
-            // from other machines.
             if (sharedSigningFile != null) {
                 signingConfig signingConfigs.shared
             }
@@ -118,11 +156,19 @@ android {
             // unstripped libtmessages.49.so in the APK instead of moving the symbols out.
             jniDebuggable true
             ndk.debugSymbolLevel = 'FULL'
+            // Which commit is on the phone: hand-installed builds are compared by hand.
+            versionNameSuffix gitSha ? "-debug-${gitSha}" : '-debug'
         }
-        preview {
-            initWith debug
-            applicationIdSuffix '.preview'
-            matchingFallbacks = ['debug']
+        release {
+            // The same key as debug on purpose: the signature is what lets the daily package move
+            // between a debug and a release APK in place. Without a key the APK is unsigned and
+            // cannot be installed at all.
+            if (sharedSigningFile != null) {
+                signingConfig signingConfigs.shared
+            }
+            // R8 stays off: this module compiles the vendored Telegram tree, whose reflection (JNI
+            // callbacks, tgnet) needs keep rules and a device pass before shrinking is safe.
+            minifyEnabled false
         }
     }
 
