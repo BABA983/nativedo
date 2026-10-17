@@ -1,5 +1,7 @@
 package io.github.baba983.nativedo.messagecenter
 
+import android.graphics.RectF
+import android.graphics.drawable.ColorDrawable
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
@@ -25,6 +27,7 @@ import io.github.baba983.nativedo.harness.shadows.ShadowSQLitePreparedStatement
 import io.github.baba983.nativedo.harness.shadows.ShadowUtilities
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -32,11 +35,14 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.ApplicationLoader
 import org.telegram.ui.ActionBar.ActionBar
 import org.telegram.ui.ActionBar.SimpleTextView
 import org.telegram.ui.Components.AnimatedTextView
+import org.telegram.ui.Components.RecyclerListView
 import org.telegram.ui.Components.ScrollSlidingTextTabStrip
+import org.telegram.ui.Components.ViewPagerFixed
 import org.telegram.ui.MainTabsLayout
 
 /**
@@ -132,6 +138,232 @@ internal class MessageCenterTest {
         } finally {
             org.telegram.ui.ActionBar.Theme.applyTheme(original, false, false)
             org.telegram.ui.DialogsActivity.switchingTheme = false
+        }
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * The capsule must keep the row it controls inside itself on every one of its three states.
+     *
+     * <p>The failures this pins, measured on the drawn strip rather than on the theme or the page:
+     * a strip that is laid out before its closed-capsule inset exists, so the tab row starts at the
+     * strip's own edge while the capsule's clip - and the tap highlight - start six dp inside it:
+     * the selected label then sits flush to the capsule's left and off-centre in its highlight. And
+     * a wrap-content strip whose tabs already fit can still be scrolled by that inset, so choosing
+     * 聊天 shifts the whole row twelve dp left: 通知's label is cut at the capsule's left edge and
+     * 聊天's highlight runs past its right one, and the shift stays while that page is chosen. Both
+     * are visible in the light capsule and clearer in the dark one.</p>
+     */
+    @Test
+    fun theCapsuleKeepsEveryTabsLabelAndHighlightInsideItselfOnAllThreePages() {
+        serveNotifications()
+        servePrivateMessages()
+        site.serveJson("chat/api/channels.json", harness.fixture("chat-channels.json"))
+
+        val shell = harness.bootApp()
+        harness.await("the topic list to load") { harness.visibleFragmentName() == "TopicListFragment" }
+        tapMainTab(findTabs(shell.findViewById(android.R.id.content))!!, 1)
+        harness.await("the message center") { harness.visibleFragmentName() == "MessageCenterFragment" }
+        harness.layoutApp()
+        val center = messageCenter()
+        val strip = stripOf(center)
+
+        // The row of tabs sits inside the strip's own closed-capsule padding, which is what gives
+        // the highlight and the clip the same six dp to stand on. A strip measured before that
+        // padding existed has its row at the strip's edge, and a scroll range as wide as the
+        // padding - which is what let a later tap scroll it.
+        assertEquals(
+            "the tab row is laid out inside the strip's own inset",
+            strip.paddingLeft,
+            strip.tabsContainer.left,
+        )
+        assertEquals(
+            "and the capsule has no room to scroll a row that fits",
+            strip.tabsContainer.measuredWidth + strip.paddingLeft + strip.paddingRight,
+            strip.measuredWidth,
+        )
+
+        for (page in 0 until 3) {
+            tapStripTab(center, page)
+            assertCapsuleHoldsEveryTab(strip, page)
+            capture(LIGHT_CAPTURES[page])
+        }
+
+        // The two states the device showed wrong, in the dark capsule where the cut edge and the
+        // off-centre highlight are clearest: 通知 chosen (its label sat flush at the left) and 聊天
+        // chosen (the row the scroll moved out from under the capsule).
+        val original = org.telegram.ui.ActionBar.Theme.getCurrentTheme()
+        try {
+            tapStripTab(center, 0)
+            ensureDarkTheme()
+            assertCapsuleHoldsEveryTab(strip, 0)
+            capture("message-center-capsule-notifications-dark")
+            tapStripTab(center, 2)
+            ensureDarkTheme()
+            assertCapsuleHoldsEveryTab(strip, 2)
+            capture("message-center-capsule-chats-dark")
+        } finally {
+            org.telegram.ui.ActionBar.Theme.applyTheme(original, false, false)
+            org.telegram.ui.DialogsActivity.switchingTheme = false
+        }
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /** Settle the host's animated theme switch before capturing either dark page. */
+    private fun ensureDarkTheme() {
+        harness.idleClock(1000)
+        org.telegram.ui.ActionBar.Theme.applyTheme(
+            org.telegram.ui.ActionBar.Theme.getTheme("Dark Blue"), false, false,
+        )
+        org.telegram.messenger.NotificationCenter.getGlobalInstance().postNotificationName(
+            org.telegram.messenger.NotificationCenter.didSetNewTheme, true,
+        )
+        assertTrue(org.telegram.ui.ActionBar.Theme.isCurrentThemeDark())
+    }
+
+    /**
+     * The capsule holds the row on [page]: nothing is scrolled, every tab's own bounds are inside
+     * the capsule's clip, and the selected tab's highlight is centred on the label it marks.
+     */
+    private fun assertCapsuleHoldsEveryTab(strip: ScrollSlidingTextTabStrip, page: Int) {
+        // The highlight's own bounds are written during the strip's draw pass, so read them after
+        // one: a stale highlight would say the previous page was still marked.
+        harness.layoutApp()
+        harness.drawApp()
+        val capsule = RectF().also { strip.clipPath.computeBounds(it, true) }
+        val tabs = strip.tabsContainer
+        assertEquals("page $page does not scroll a capsule whose tabs fit", 0, strip.scrollX)
+
+        for (index in 0 until tabs.childCount) {
+            val tab = tabs.getChildAt(index)
+            val left = tabs.left + tab.left - strip.scrollX
+            val right = left + tab.width
+            assertTrue(
+                "page $page: tab $index starts inside the capsule (${left} vs ${capsule.left})",
+                left >= capsule.left - 0.5f,
+            )
+            assertTrue(
+                "page $page: tab $index ends inside the capsule (${right} vs ${capsule.right})",
+                right <= capsule.right + 0.5f,
+            )
+        }
+
+        val selected = tabs.getChildAt(page)
+        val highlight = strip.selectorDrawable.bounds
+        assertTrue(
+            "page $page: the highlight clears the capsule's left edge",
+            highlight.left > capsule.left,
+        )
+        assertTrue(
+            "page $page: the highlight clears the capsule's right edge",
+            highlight.right < capsule.right,
+        )
+        val labelCentre = tabs.left + selected.left + selected.width / 2f
+        assertEquals(
+            "page $page: the highlight is centred on its own label",
+            labelCentre,
+            highlight.exactCenterX(),
+            1.5f,
+        )
+    }
+
+    /**
+     * The capsule is a fixed surface over the pages, not a band the pages start below.
+     *
+     * <p>The failures this pins, measured on the shipped screen and each page's own list: a pager
+     * laid out under the strip, so no row can ever be drawn in the capsule's band, and the first
+     * row starting beneath an opaque strip; and the opposite - moving the pages up without the
+     * pages knowing, so a long list's first row starts hidden behind the capsule. Each page must
+     * begin where the bar ends (its list starts at the band's top edge), reserve the capsule's own
+     * height above its first row while still drawing into that padding
+     * ({@code clipToPadding=false}), and then let rows pass through the band as it scrolls. The
+     * band around the glass capsule carries no surface of its own, so what shows there is the page.</p>
+     */
+    @Test
+    fun thePagesScrollUnderTheFixedTopCapsuleInsteadOfBelowAnOpaqueBand() {
+        site.serveJson("notifications.json", manyNotifications(30))
+        site.serveJsonFor("topics/private-messages/baba.json") { path ->
+            if (path.contains("page=1")) EMPTY_PAGE else manyPrivateMessages(30)
+        }
+        site.serveJson("chat/api/channels.json", manyChannels(30))
+
+        val shell = harness.bootApp()
+        harness.await("the topic list to load") { harness.visibleFragmentName() == "TopicListFragment" }
+        tapMainTab(findTabs(shell.findViewById(android.R.id.content))!!, 1)
+        harness.await("the message center") { harness.visibleFragmentName() == "MessageCenterFragment" }
+        // The header's own layout pass is what moves the pager under the bar (the margins are
+        // applied from the bar's layout listener), so read the geometry after a second pass.
+        harness.layoutApp()
+        harness.layoutApp()
+        val center = messageCenter()
+        val band = stripOf(center).parent as View
+        val pager = views(center.fragmentView).filterIsInstance<ViewPagerFixed>().single()
+        val actionBar = views(center.fragmentView).filterIsInstance<ActionBar>().single()
+
+        // The page area begins where the bar ends, so it includes the band the capsule floats in.
+        // The failure: the pager laid out below the band, which no row can be drawn under.
+        assertEquals(
+            "the pages start under the capsule's band, not below it",
+            actionBar.bottom, pager.top,
+        )
+        assertEquals("the band sits over the pages, at the bar's edge", actionBar.bottom, band.top)
+        assertEquals(
+            "and the pages fill the window under the band",
+            center.fragmentView.height - actionBar.bottom, pager.height,
+        )
+        assertTrue("the band draws no surface of its own", isTransparent(band.background))
+        val bandTop = locationOf(band)[1]
+        val bandBottom = bandTop + band.height
+
+        for (page in 0 until 3) {
+            val name = PAGE_NAMES[page]
+            tapStripTab(center, page)
+            // The current page's own list, not a row list the switch has already detached: the
+            // previous page's view leaves the pager with its rows still in its adapter.
+            harness.await("the $name rows") {
+                harness.layoutApp()
+                (listIn(center.currentVisibleFragment?.fragmentView)?.adapter?.itemCount ?: 0) >= 20
+            }
+            harness.layoutApp()
+            val list = listIn(center.currentVisibleFragment?.fragmentView)
+                ?: throw AssertionError("$name has no list")
+            assertFalse("$name draws its rows into its top padding", list.clipToPadding)
+            assertTrue(
+                "$name reserves the capsule's height above its first row " +
+                    "(${list.paddingTop} vs ${band.height})",
+                list.paddingTop >= band.height,
+            )
+            assertEquals("$name's list begins at the band's edge", bandTop, locationOf(list)[1])
+            val firstRow = list.getChildAt(0) ?: throw AssertionError("$name drew no rows")
+            assertTrue(
+                "$name's first row starts below the capsule " +
+                    "(${locationOf(firstRow)[1]} vs $bandBottom)",
+                locationOf(firstRow)[1] >= bandBottom - 1,
+            )
+            capture("message-center-scroll-$name-top")
+
+            // A long row continues through the band: the capsule is fixed over the page, so
+            // scrolling moves rows under it instead of stopping the list at the band's edge.
+            list.scrollBy(0, dp(100))
+            harness.layoutApp()
+            harness.drawApp()
+            assertEquals("the capsule stays put while $name scrolls", bandTop, locationOf(band)[1])
+            val rows = (0 until list.childCount).mapNotNull { list.getChildAt(it) }
+            val underCapsule = rows.filter { row ->
+                val top = locationOf(row)[1]
+                top < bandBottom && top + row.height > bandTop
+            }
+            assertTrue("$name draws rows under the capsule, not below its band", underCapsule.isNotEmpty())
+            assertTrue(
+                "$name's rows run on above the band's top edge instead of being cut there",
+                underCapsule.any { locationOf(it)[1] < bandTop },
+            )
+            capture("message-center-scroll-$name-middle")
+
+            repeat(3) { list.scrollBy(0, 100000); harness.layoutApp() }
+            harness.idleClock(100)
+            harness.layoutApp()
+            capture("message-center-scroll-$name-bottom")
         }
         harness.assertNoTelegramSideEffects()
     }
@@ -359,6 +591,80 @@ internal class MessageCenterTest {
     private fun stripOf(center: MessageCenterFragment): ScrollSlidingTextTabStrip =
         views(center.fragmentView).filterIsInstance<ScrollSlidingTextTabStrip>().single()
 
+    /** Where [view] sits on the screen, so a fixed surface and a scrolling row are comparable. */
+    private fun locationOf(view: View): IntArray = IntArray(2).also(view::getLocationOnScreen)
+
+    /** A drawable that paints nothing: no background, or a fully transparent colour. */
+    private fun isTransparent(background: android.graphics.drawable.Drawable?): Boolean =
+        background == null ||
+            (background is ColorDrawable && background.color ushr 24 == 0)
+
+    /** The row list inside [root]: a page's own list, wherever the page nests it. */
+    private fun listIn(root: View?): RecyclerListView? {
+        if (root == null) return null
+        if (root is RecyclerListView && root.isShown) return root
+        if (root is ViewGroup) {
+            for (index in 0 until root.childCount) {
+                listIn(root.getChildAt(index))?.let { return it }
+            }
+        }
+        return null
+    }
+
+    private fun dp(value: Int): Int = AndroidUtilities.dp(value.toFloat())
+
+    /** A notifications page of [count] rows: enough for rows to pass the fixed capsule. */
+    private fun manyNotifications(count: Int): String {
+        val rows = (0 until count).joinToString(",") { index ->
+            """{"id": ${4100 + index}, "user_id": 7, "notification_type": 2,
+               "read": false, "high_priority": false,
+               "created_at": "2026-10-0${1 + index % 9}T09:20:00.000Z",
+               "post_number": ${index + 1}, "topic_id": ${4000 + index},
+               "slug": "notification-$index", "fancy_title": "第 $index 条通知",
+               "data": {"topic_title": "第 $index 条通知", "display_username": "searcher",
+                        "display_name": "Searcher", "original_username": "searcher",
+                        "original_post_id": ${88000 + index}, "original_post_type": 1,
+                        "revision_number": null, "reply_to_post_number": null},
+               "acting_user_name": "Searcher",
+               "acting_user_avatar_template": "/user_avatar/linux.do/searcher/{size}/3.png"}"""
+        }
+        return """{"notifications": [$rows], "total_rows_notifications": $count,
+                   "seen_notification_id": 0, "load_more_notifications": null}"""
+    }
+
+    /** A topic_list page of [count] private messages, like the inbox fixture's rows. */
+    private fun manyPrivateMessages(count: Int): String {
+        val topics = (0 until count).joinToString(",") { index ->
+            """{"id": ${6000 + index}, "title": "第 $index 条私信", "slug": "pm-$index",
+               "posts_count": 2, "reply_count": 1, "views": 1, "like_count": 0,
+               "last_posted_at": "2026-10-01T00:00:00.000Z", "last_poster_username": "alice",
+               "category_id": null, "tags": [], "excerpt": "第 $index 条私信的内容",
+               "notification_level": 2, "unread_posts": 0, "unseen": false,
+               "posters": [{"description": "Original Poster", "user_id": 8}]}"""
+        }
+        return """{"users": [{"id": 7, "username": "baba"}, {"id": 8, "username": "alice"}],
+                   "topic_list": {"more_topics_url": null, "topics": [$topics]}}"""
+    }
+
+    /** A channels page of [count] public channels, like the channels fixture's rows. */
+    private fun manyChannels(count: Int): String {
+        val channels = (0 until count).joinToString(",") { index ->
+            """{"id": ${71 + index}, "title": "频道 $index", "slug": "channel-$index",
+               "description": "第 $index 个频道", "status": "open",
+               "memberships_count": ${10 + index},
+               "last_message": {"id": ${9000 + index}, "message": "第 $index 条消息",
+                                "cooked": "<p>第 $index 条消息</p>",
+                                "created_at": "2026-10-02T09:02:00.000Z",
+                                "chat_channel_id": ${71 + index},
+                                "user": {"id": 8, "username": "alice", "name": "Alice",
+                                         "avatar_template": "/user_avatar/linux.do/alice/{size}/2.png"}},
+               "meta": {"can_join_chat_channel": true,
+                        "message_bus_last_ids": {"channel_message_bus_last_id": ${4100 + index},
+                                                 "new_messages": ${4200 + index}}}}"""
+        }
+        return """{"channels": [$channels], "meta": {"load_more_url": null}}"""
+    }
+
     private fun openOptions(center: MessageCenterFragment) {
         views(center.actionBar).first { it.contentDescription == "更多" }.performClick()
     }
@@ -481,6 +787,14 @@ internal class MessageCenterTest {
     }
 
     private companion object {
+        /** The three capsule states, named for the page each one shows. */
+        val LIGHT_CAPTURES = arrayOf(
+            "message-center-capsule-notifications",
+            "message-center-capsule-messages",
+            "message-center-capsule-chats",
+        )
+        /** The three pages, named for the scroll-under captures. */
+        val PAGE_NAMES = arrayOf("notifications", "messages", "channels")
         const val TOPIC_ID = 1L
         const val CHANNEL_ID = 71L
         const val EMPTY_PAGE = """{"topic_list":{"more_topics_url":null,"topics":[]}}"""

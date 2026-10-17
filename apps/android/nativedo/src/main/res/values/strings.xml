@@ -73,6 +73,8 @@
     <string name="session_state_challenge">站点要求完成验证\n点一下打开验证页</string>
     <string name="session_state_retry">网络错误\n点一下重试</string>
     <string name="session_state_forbidden">站点拒绝了这次请求\n点一下重试</string>
+    <string name="chat_channels_unavailable">站点没有提供聊天频道\n可能未启用聊天插件，点一下重试</string>
+    <string name="chat_channels_malformed">站点的聊天频道数据无法识别\n点一下重试</string>
     <!--
       Upstream's appearance page is Telegram's "Chat Settings": its title and its rows talk about a
       chat list, chat backgrounds and messages. This client has topics and posts, so the words are

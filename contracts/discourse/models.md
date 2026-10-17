@@ -66,8 +66,10 @@ logs programmatic positioning and layout movement without post content or accoun
   `username`, optional `name`, `avatarTemplate`.
 - `ChatMembership` - the reader's own membership: `following` and `lastReadMessageId` (absent, not
   zero, when the site names none).
-- `ChatChannelPage` - a page of `ChatChannel`s plus the envelope's own `loadMoreUrl`; its presence is
-  what says another page follows, exactly like a topic feed's `more_topics_url`.
+- `ChatChannelPage` - a page of `ChatChannel`s plus the envelope's own `loadMoreUrl`. The site sends
+  that cursor on every page (it is the next `offset`, not an end-of-list flag), so the list ends on a
+  page that brings no channel it has not already drawn - exactly like a topic feed, whose
+  `more_topics_url` is optional.
 - `ChatMessage` - one conversation message from `GET /chat/api/channels/{id}/messages.json`: `id`, raw
   `message`, the site's rendered `cooked` HTML (the client never cooks the raw markdown itself),
   `createdAt`, `channelId`, the author as `ChatUser`, and `inReplyTo` (a `ChatReplyTarget`) when the

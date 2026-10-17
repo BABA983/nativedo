@@ -88,9 +88,12 @@ import io.github.baba983.nativedo.topic.TopicFragment;
  * owns the title bar and already carries the chats as a page of its own, so this page draws no bar
  * (and keeps its bar out of the host, or it would sit as an empty band), shows no box strip - only
  * the center's own menu, reached through {@link #showMessageCenterOptions(View)}, chooses a box -
- * and offers no public-channels entry, so the center never shows two rows of tabs. The boxes' lists,
- * scroll and reads are the same either way. The standalone 私信 entry still opens the screen with
- * its own bar, strip and channels entry.</p>
+ * and offers no public-channels entry, so the center never shows two rows of tabs. The center's
+ * capsule is drawn over the page, so the page also takes the strip's height as its lists' top
+ * padding ({@link #setMessageCenterTopInset(int)}): each box starts below the capsule and its rows
+ * scroll behind it, while the last row stays clear of the main-tab strip through the bottom
+ * padding. The boxes' lists, scroll and reads are the same either way. The standalone 私信 entry
+ * still opens the screen with its own bar, strip and channels entry.</p>
  */
 public class PrivateMessagesFragment extends BaseFragment implements MessageCenterChild {
 
@@ -110,7 +113,10 @@ public class PrivateMessagesFragment extends BaseFragment implements MessageCent
     private static final int TAB_STRIP_HEIGHT_DP = 48;
     /**
      * The room the list keeps below its last row for the compose button: the button's own 48dp
-     * plus its 14dp bottom margin, rounded up, so a row can always be scrolled clear of it.
+     * plus its 14dp bottom margin, rounded up, so a row can always be scrolled clear of it. It is
+     * one of two reservations, not an addition: a page hosted over the main-tab strip already
+     * keeps that strip's band (72dp), which reaches further down than the button, so there the band
+     * is the room and the button floats over the list's last rows as it does on the topic list.
      */
     private static final int FAB_LIST_CLEARANCE_DP = 64;
 
@@ -174,6 +180,13 @@ public class PrivateMessagesFragment extends BaseFragment implements MessageCent
             };
 
     private int navigationBarHeight;
+    /**
+     * The room the message center's own title bar and capsule strip take at the top of the window,
+     * in pixels, as the center measures them. The page sits under that band, so each box's list
+     * keeps it above its first row while rows scrolled past draw behind the capsule. Zero while
+     * nothing hosts this page, which is why the standalone screen keeps its own geometry.
+     */
+    private int messageCenterTopInset;
 
     /**
      * Whether the message center is hosting this screen. The center owns the title bar and offers
@@ -715,6 +728,11 @@ public class PrivateMessagesFragment extends BaseFragment implements MessageCent
         list.setEmptyView(progress);
         list.setAnimateEmptyView(true, RecyclerListView.EMPTY_VIEW_ANIMATION_TYPE_ALPHA);
         list.setVerticalScrollBarEnabled(false);
+        // The list reaches the bottom of the window and its rows scroll behind the main-tab strip
+        // and the message center's capsule; the last row stays reachable above the strip, and the
+        // first below the capsule, through the padding. A list that clipped at its padding would
+        // cut every row at the band's edge instead.
+        list.setClipToPadding(false);
         list.setOnItemClickListener((view, position) -> {
             if (page.stateUi != null) {
                 onStateAction(page);
@@ -904,12 +922,36 @@ public class PrivateMessagesFragment extends BaseFragment implements MessageCent
     }
 
     /**
+     * The message center's title bar and capsule, in pixels: the band its pages sit under.
+     *
+     * <p>The value can arrive before this page has views - the host measures its bar and strip once
+     * and hands the number over, which may happen before the page is built - so it is stored and
+     * applied whenever a list is padded, rather than only to the list that exists at the call. It
+     * replaces the previous measurement instead of adding to it, so a bar that changes height moves
+     * the band rather than stacking a second one.</p>
+     */
+    @Override
+    public void setMessageCenterTopInset(int inset) {
+        int next = Math.max(0, inset);
+        if (next == messageCenterTopInset) {
+            return;
+        }
+        messageCenterTopInset = next;
+        checkUi_listPadding();
+    }
+
+    /**
      * The list's own padding, and the compose button's lift. The button's default layout pins it
      * 14dp above the frame's bottom, so the navigation inset is what its translation has to clear
-     * (plus the main-tab strip's room when this page sits over one); the list reserves the button's
-     * room plus that inset under its last row, so a row can always be scrolled clear of the button
-     * and the system gesture area. Every box's list keeps the room, so a swipe onto a box that has
-     * not been laid out yet still lands with its last row clear.
+     * (plus the main-tab strip's room when this page sits over one); the list reserves the room
+     * under its last row that the page actually has something in: the main-tab strip's band when it
+     * hosts this page, or the compose button's own clearance when the button is the only thing
+     * down there. Whichever reaches further, not both - the sum is a blank band below the last row
+     * with the floating button stranded in the middle of it. Above the first row the list keeps the
+     * message center's bar and capsule when it hosts this page, so the box starts under them while
+     * rows scrolled past draw behind them (the list does not clip to its padding). Every box's list
+     * keeps both rooms, so a swipe onto a box that has not been laid out yet still lands with its
+     * first row clear of the capsule and its last row clear of what is below it.
      */
     private void checkUi_listPadding() {
         for (BoxPage page : pages) {
@@ -922,9 +964,10 @@ public class PrivateMessagesFragment extends BaseFragment implements MessageCent
 
     private void applyListPadding(BoxPage page) {
         if (page != null && page.listView != null) {
-            page.listView.setPadding(0, AndroidUtilities.dp(4), 0,
-                    AndroidUtilities.dp(4) + navigationBarHeight + additionNavigationBarHeight
-                            + AndroidUtilities.dp(FAB_LIST_CLEARANCE_DP));
+            page.listView.setPadding(0, AndroidUtilities.dp(4) + messageCenterTopInset, 0,
+                    AndroidUtilities.dp(4) + navigationBarHeight
+                            + Math.max(additionNavigationBarHeight,
+                                    AndroidUtilities.dp(FAB_LIST_CLEARANCE_DP)));
         }
     }
 

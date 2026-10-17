@@ -137,8 +137,9 @@ Source (pinned to discourse main at the time of writing):
 
 - `GET /chat/api/channels.json?limit=25&offset=N` - the public channels the reader can see, in the
   site's own order (`LOWER(chat_channels.name)`), one page at a time. The envelope is
-  `{channels:[...], meta:{load_more_url}}`; `load_more_url` is the site's own next-page URL with
-  `offset` advanced by `limit` (its presence is what says another page follows). Each channel
+  `{channels:[...], meta:{load_more_url}}`; the site appends `load_more_url` with `offset` advanced
+  by `limit` on **every** page, so its presence is not an end-of-list signal - the end is a page
+  that carries no channel the client has not drawn. Each channel
   carries `id`, `title`, `slug`, optional `description`, `status` (`open` / `read_only` / `closed`
   / `archived`), `memberships_count` (the site's own `user_count`), the last message under
   `last_message` (its `id`, `message`, `cooked`, `created_at` and `user`, from
@@ -148,6 +149,24 @@ Source (pinned to discourse main at the time of writing):
   not anonymous). Direct-message channels are excluded by the fetcher
   (`Chat::ChannelFetcher.secured_public_channels`, `include_archives: true`). Fixture at
   `fixtures/discourse/chat-channels.json`.
+
+  Failure semantics for this route (what `Chat::Api::ChannelsController#index` and
+  `Chat::BaseController` answer, and what the client shows):
+
+  - anonymous, or a session the site does not accept - `403`
+    with `error_type: "not_logged_in"`;
+    the client treats it as the session layer's own answer, not as chat's;
+  - the route is absent (chat plugin off, public-channel API not mounted) - `404`; the client names
+    this "站点没有提供聊天频道" and reads again on tap, without opening the login WebView;
+  - the reader may not see chat - `403` with an `invalid_access`/permission body; the client shows
+    its refusal state with a retry, and the session stays;
+  - an answer that is not the envelope above (an HTML page from a proxy, a different JSON shape) -
+    the client names the malformed answer rather than a network outage;
+  - a challenge page, a 429 and a transport failure stay the session/transport states they already
+    were (verification, rate limit, retry). The session boundary recognizes a challenge through
+    `cf-mitigated: challenge` or the challenge HTML on a 403/429/503; a challenge page served with
+    `200` is not detected there today and reads as the malformed-answer state, not as a logout.
+
 - `GET /chat/api/channels/{id}.json` - one channel, the same serializer, answered as `{channel:{...}}`
   with the reader's own `current_user_membership` and `meta`; `channels#show` first runs
   `guardian.ensure_can_join_chat_channel!`, so a channel the reader may not see is a 403/404 rather

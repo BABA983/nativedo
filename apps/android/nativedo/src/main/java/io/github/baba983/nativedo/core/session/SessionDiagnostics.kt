@@ -62,7 +62,7 @@ internal object SessionDiagnostics {
         setsToken: Boolean, deletesToken: Boolean) {
         // These strings are closed categories, not a future route for logging a URL/body by mistake.
         val safeEvidence = evidence.takeIf { it in SessionResponseEvidenceNames } ?: "Other"
-        val safeRoute = route.takeIf { it in setOf("session", "csrf", "feed", "other") } ?: "other"
+        val safeRoute = route.takeIf { it in setOf("session", "csrf", "feed", "chat", "other") } ?: "other"
         val safeOperation = operation.takeIf { it in setOf("posts", "timings", "other") } ?: "other"
         append("event=native_response revision=$revision status=$status accepted=$accepted " +
             "evidence=$safeEvidence route=$safeRoute operation=$safeOperation hasToken=$hasToken hasForumSession=$hasForumSession " +
