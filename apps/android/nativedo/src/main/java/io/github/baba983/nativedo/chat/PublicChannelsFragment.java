@@ -23,6 +23,7 @@ import org.telegram.ui.Cells.TextInfoPrivacyCell;
 import org.telegram.ui.Components.FlickerLoadingView;
 import org.telegram.ui.Components.ItemOptions;
 import org.telegram.ui.Components.RecyclerListView;
+import org.telegram.ui.DialogsActivity;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -34,6 +35,7 @@ import io.github.baba983.nativedo.auth.LoginWebViewFragment;
 import io.github.baba983.nativedo.core.di.AppContainer;
 import io.github.baba983.nativedo.core.model.ChatChannel;
 import io.github.baba983.nativedo.core.session.AppSessionState;
+import io.github.baba983.nativedo.messagecenter.MessageCenterChild;
 import io.github.baba983.nativedo.sessionui.SessionUi;
 import io.github.baba983.nativedo.sessionui.SessionUiAction;
 import io.github.baba983.nativedo.sessionui.SessionUiState;
@@ -47,8 +49,14 @@ import io.github.baba983.nativedo.topic.DiscourseAvatars;
  * The row is the same {@code DialogCell} a topic list draws, the shimmer is DialogsActivity's own,
  * and a channel that did not arrive is its own explicit state rather than a blank list. Tapping a
  * channel opens {@link ChatChannelFragment}, which is where joining, reading and writing happen.</p>
+ *
+ * <p>When the message center hosts this page it passes {@code messageCenter=true}: the center owns
+ * the single title bar, so this page draws no bar of its own and keeps it out of the host - its
+ * refresh action is reached through {@link #showMessageCenterOptions(View)} from the center's menu
+ * instead. With {@code hasMainTabs=true} the list reserves the main-tab strip's room under its last
+ * row. The list, the reads and the session handling are the same either way.</p>
  */
-public class PublicChannelsFragment extends BaseFragment {
+public class PublicChannelsFragment extends BaseFragment implements MessageCenterChild {
 
     private static final int TYPE_CHANNEL = 0;
     private static final int TYPE_NOTE = 1;
@@ -81,6 +89,11 @@ public class PublicChannelsFragment extends BaseFragment {
     private kotlinx.coroutines.Job sessionObserver;
 
     private int navigationBarHeight;
+    /** Whether the message center hosts this page: it owns the bar, this page draws none. */
+    private boolean messageCenter;
+    /** Whether a main-tab strip sits under this page, whose room the list must clear. */
+    private boolean hasMainTabs;
+    private int additionNavigationBarHeight;
     private final NotificationCenter.NotificationCenterDelegate themeObserver =
             (id, account, args) -> AndroidUtilities.runOnUIThread(this::updateColors);
 
@@ -106,22 +119,33 @@ public class PublicChannelsFragment extends BaseFragment {
 
     @Override
     protected View createView(Context context) {
-        actionBar.setTitle("聊天");
-        actionBar.setSubtitle("公开频道");
-        actionBar.setBackButtonImage(org.telegram.messenger.R.drawable.ic_ab_back);
-        actionBar.setAllowOverlayTitle(true);
-        actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
-            @Override
-            public void onItemClick(int id) {
-                if (id == -1) {
-                    finishFragment();
+        messageCenter = arguments != null && arguments.getBoolean("messageCenter", false);
+        hasMainTabs = arguments != null && arguments.getBoolean("hasMainTabs", false);
+        additionNavigationBarHeight = hasMainTabs
+                ? AndroidUtilities.dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS) : 0;
+
+        if (!messageCenter) {
+            actionBar.setTitle("聊天");
+            actionBar.setSubtitle("公开频道");
+            actionBar.setBackButtonImage(org.telegram.messenger.R.drawable.ic_ab_back);
+            actionBar.setAllowOverlayTitle(true);
+            actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
+                @Override
+                public void onItemClick(int id) {
+                    if (id == -1) {
+                        finishFragment();
+                    }
                 }
-            }
-        });
-        optionsItem = actionBar.createMenu().addItem(
-                REFRESH_ITEM, org.telegram.messenger.R.drawable.msg_retry);
-        optionsItem.setContentDescription("刷新");
-        optionsItem.setOnClickListener(v -> refresh());
+            });
+            optionsItem = actionBar.createMenu().addItem(
+                    REFRESH_ITEM, org.telegram.messenger.R.drawable.msg_retry);
+            optionsItem.setContentDescription("刷新");
+            optionsItem.setOnClickListener(v -> refresh());
+        } else {
+            // The message center's bar is the page's bar: keeping this one out of the host stops it
+            // sitting as an empty band above the list. Refresh moves to the center's menu.
+            actionBar.setAddToContainer(false);
+        }
 
         listView = new RecyclerListView(context);
         listView.setLayoutManager(new LinearLayoutManager(context));
@@ -148,6 +172,10 @@ public class PublicChannelsFragment extends BaseFragment {
         });
 
         fragmentView = listView;
+        // The list takes its own window insets: presented on its own the shell wires this for the
+        // fragment, but hosted as a page of the message center it is this listener that hands it its
+        // insets (NotificationsFragment wires the very same one for the same reason).
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(fragmentView, this::onInsetsInternal);
         updateColors();
         container = NativeDo.container(getParentActivity());
         stateUi = null;
@@ -407,8 +435,25 @@ public class PublicChannelsFragment extends BaseFragment {
     private void checkUi_listPadding() {
         if (listView != null) {
             listView.setPadding(0, AndroidUtilities.dp(4), 0,
-                    AndroidUtilities.dp(4) + navigationBarHeight);
+                    AndroidUtilities.dp(4) + navigationBarHeight + additionNavigationBarHeight);
         }
+    }
+
+    /**
+     * The message center's own bar menu, hung from the view its title bar hands over: the one action
+     * this page keeps - read the channels again - reached from the center since the page draws no
+     * bar of its own.
+     */
+    @Override
+    public void showMessageCenterOptions(View anchor) {
+        if (anchor == null || getParentActivity() == null) {
+            return;
+        }
+        ItemOptions io = ItemOptions.makeOptions(this, anchor);
+        io.setColors(getThemedColor(Theme.key_actionBarDefaultTitle), getThemedColor(Theme.key_actionBarDefaultTitle));
+        io.setDimAlpha(0x08);
+        io.add(org.telegram.messenger.R.drawable.msg_retry, "刷新", () -> refresh());
+        io.show();
     }
 
     /** The list, for a screen test. */

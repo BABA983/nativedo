@@ -249,7 +249,7 @@ internal class HomeTabsTest {
             (rootLocation[1] + root.height - (tabsLocation[1] + tabs.height)).toLong(),
         )
         tapTab(tabs, 1)
-        harness.await("notifications") { currentFragmentName() == "NotificationsFragment" }
+        harness.await("the message center") { currentFragmentName() == "MessageCenterFragment" }
         assertTrue("selection follows the navigation", (tabs.getChildAt(1) as GlassTabView).isTabSelected)
 
         shell.present(io.github.baba983.nativedo.topic.TopicFragment.forTopic(1L, "A topic"))
@@ -276,10 +276,10 @@ internal class HomeTabsTest {
             (position[1] + composer.height).toLong(),
         )
         shell.onBackPressed()
-        harness.await("return to notifications") { fragmentStackSize(shell) == 1 }
+        harness.await("return to the message center") { fragmentStackSize(shell) == 1 }
         harness.layoutApp()
-        assertEquals("the tab host is back on the notifications page",
-            "NotificationsFragment", currentFragmentName())
+        assertEquals("the tab host is back on the message-center page",
+            "MessageCenterFragment", currentFragmentName())
         harness.renderApp("main-tabs-insets")
         harness.assertNoTelegramSideEffects()
     }
