@@ -61,7 +61,12 @@ logs programmatic positioning and layout movement without post content or accoun
   `canPost` is `isJoined && isOpen`, and `canJoin` comes from `meta.can_join_chat_channel` - the site
   alone decides whether this reader may join, so the client never guesses it from the status.
 - `ChatLastMessage` - the channel's own preview: `id`, raw `message`, `cooked`, `createdAt` and the
-  author as `ChatUser`. It is what the channel row draws; it is not a loaded message.
+  author as `ChatUser`. It is what the channel row draws; it is not a loaded message. Discourse's
+  [NullMessage](https://github.com/discourse/discourse/blob/630b787ebdedf7a2357b336ced427d3af60c98c2/plugins/chat/app/models/chat/null_message.rb)
+  represents an empty channel as a `last_message` object whose `id`, `message` and `cooked` are
+  explicitly null, not just a missing object. The wire DTO accepts these nulls and maps an object
+  without a message ID to no preview (`lastMessage = null`); it must not reject the entire channel
+  page or invent a message ID. Fixture: `fixtures/discourse/chat-channels-empty-message.json`.
 - `ChatUser` - a chat participant as `MessageUserSerializer` / `BasicUserSerializer` writes one: `id`,
   `username`, optional `name`, `avatarTemplate`.
 - `ChatMembership` - the reader's own membership: `following` and `lastReadMessageId` (absent, not

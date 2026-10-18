@@ -124,6 +124,28 @@ internal class PublicChannelsTest {
         harness.assertNoTelegramSideEffects()
     }
 
+    // Discourse's NullMessage has explicit null fields inside a non-null last_message object.
+    // One empty channel must not prevent its populated neighbour from loading.
+    @Test
+    fun anEmptyChannelsNullMessageDoesNotRejectTheWholePage() {
+        site.serveJson("chat/api/channels.json", harness.fixture("chat-channels-empty-message.json"))
+        harness.bootApp()
+        harness.await("the topic list") { harness.visibleFragmentName() == "TopicListFragment" }
+        harness.present(PublicChannelsFragment.create())
+        harness.await("both empty and populated channels") { listRowCount() == 2 }
+        harness.layoutApp()
+        val list = contentListOf(harness.activity)!!
+        val empty = list.getChildAt(0) as DialogCell
+        val populated = list.getChildAt(1) as DialogCell
+        assertEquals("新频道", empty.nameLayout.text.toString())
+        assertEquals("已有消息", populated.nameLayout.text.toString())
+        val preview = DialogCell::class.java.getDeclaredField("messageLayout").apply { isAccessible = true }
+            .get(populated) as android.text.StaticLayout
+        assertEquals("保留正常预览", preview.text.toString())
+        harness.renderApp("chat-channels-null-message")
+        harness.assertNoTelegramSideEffects()
+    }
+
     @Test
     fun theListSwitchesToNightInPlace() {
         site.serveJson("chat/api/channels.json", harness.fixture("chat-channels.json"))

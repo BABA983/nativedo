@@ -1,0 +1,28 @@
+{
+  "channels": [
+    {
+      "id": 73,
+      "title": "新频道",
+      "description": "还没有人发言",
+      "last_message": {
+        "id": null,
+        "message": null,
+        "cooked": null,
+        "created_at": "2026-10-02T09:02:00Z",
+        "excerpt": null,
+        "chat_channel_id": null,
+        "streaming": false
+      }
+    },
+    {
+      "id": 74,
+      "title": "已有消息",
+      "last_message": {
+        "id": 9010,
+        "message": "保留正常预览",
+        "cooked": "<p>保留正常预览</p>",
+        "created_at": "2026-10-02T08:00:00Z"
+      }
+    }
+  ]
+}
