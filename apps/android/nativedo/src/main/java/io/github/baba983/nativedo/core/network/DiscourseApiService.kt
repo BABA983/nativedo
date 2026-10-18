@@ -2231,9 +2231,10 @@ data class ChatMessageBusLastIdsDto(
 
 @Serializable
 data class ChatLastMessageDto(
-    val id: Long = 0,
-    val message: String = "",
-    val cooked: String = "",
+    // Empty channels serialize Chat::NullMessage, an object with explicit null fields.
+    val id: Long? = null,
+    val message: String? = null,
+    val cooked: String? = null,
     @SerialName("created_at")
     val createdAt: String = "",
     @SerialName("chat_channel_id")
@@ -2342,13 +2343,16 @@ private fun ChatChannelDto.toModel(): ChatChannel = ChatChannel(
     newMessagesBusLastId = meta?.messageBusLastIds?.newMessages,
 )
 
-private fun ChatLastMessageDto.toModel(): ChatLastMessage = ChatLastMessage(
-    id = id,
-    message = message,
-    cooked = cooked,
-    createdAt = createdAt,
-    user = user?.toModel(),
-)
+private fun ChatLastMessageDto.toModel(): ChatLastMessage? {
+    val messageId = id ?: return null
+    return ChatLastMessage(
+        id = messageId,
+        message = message.orEmpty(),
+        cooked = cooked.orEmpty(),
+        createdAt = createdAt,
+        user = user?.toModel(),
+    )
+}
 
 internal fun ChatMembershipDto.toModel(): ChatMembership = ChatMembership(
     following = following,
