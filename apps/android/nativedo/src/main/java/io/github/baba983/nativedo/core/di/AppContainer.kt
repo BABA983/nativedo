@@ -36,6 +36,7 @@ import io.github.baba983.nativedo.core.storage.SharedPreferencesEmojiCatalogStor
 import io.github.baba983.nativedo.core.storage.SharedPreferencesSessionStorePersistence
 import io.github.baba983.nativedo.core.storage.SharedPreferencesSvgSpriteStorePersistence
 import io.github.baba983.nativedo.core.storage.SvgSpriteStore
+import io.github.baba983.nativedo.core.web.BrowserClearanceRefresher
 import io.github.baba983.nativedo.core.web.DiscourseSvgSpriteLoader
 import io.github.baba983.nativedo.feature.bookmarks.data.BookmarkRepository
 import io.github.baba983.nativedo.feature.chat.data.ChatDraftStore
@@ -88,6 +89,15 @@ class AppContainer(
      * through Chromium.
      */
     val cookieJar: SharedCookieJar = SharedCookieJar(baseUrl)
+    val browserClearanceRefresher: BrowserClearanceRefresher? =
+        appContext?.let { context ->
+            BrowserClearanceRefresher(
+                appContext = context,
+                baseUrl = baseUrl,
+                userAgent = this.userAgent,
+                cookieJar = cookieJar,
+            )
+        }
     val sessionStore: SessionStore =
         sessionPreferences
             ?.let { preferences ->
@@ -329,6 +339,9 @@ class AppContainer(
             onLoginRequired = sessionCoordinator::requestLogin,
             hasAuthenticatedCookies = cookieJar::hasAuthenticatedCookies,
         )
+        discourseApiClient.setChallengeRecovery {
+            browserClearanceRefresher?.refresh() ?: false
+        }
         // The reader a cached read belongs to: the persisted authenticated identity, never the
         // anonymous session. No identity means no cache fill and no fallback.
         discourseApiClient.setReadCache(

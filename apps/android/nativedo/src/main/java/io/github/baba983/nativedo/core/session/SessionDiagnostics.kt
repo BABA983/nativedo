@@ -24,7 +24,8 @@ internal object SessionDiagnostics {
     private var enabled = false
     private var generation = 0L
     private val events = setOf("app_started", "diagnostics_enabled", "webview_login_unreadable",
-        "login_committed", "auth_cookie_missing", "legacy_cookie_migration", "fenced_read_returned") +
+        "login_committed", "auth_cookie_missing", "legacy_cookie_migration", "fenced_read_returned",
+        "clearance_refresh_started", "clearance_refresh_succeeded", "clearance_refresh_failed") +
         SessionExpiredReason.values().map { "expired_${it.name}" }
 
     @JvmStatic

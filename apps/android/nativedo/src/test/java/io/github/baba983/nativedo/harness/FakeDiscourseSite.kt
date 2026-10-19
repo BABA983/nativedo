@@ -296,6 +296,10 @@ internal class FakeDiscourseSite {
         applicationScope: kotlinx.coroutines.CoroutineScope? = null,
     ): AppContainer {
         val container = AppContainer(context, baseUrl, null, applicationScope)
+        // The harness drives the visible recovery WebView. A hidden WebView
+        // cannot load pages here, and the fake site answers the replay, so the
+        // silent clearance refresh would replace the flow under test.
+        container.discourseApiClient.setChallengeRecovery { false }
         seedSharedJarCookie("_t=session-token; Path=/; HttpOnly")
         seedSharedJarCookie("_forum_session=forum-session; Path=/; HttpOnly")
         seedSharedJarCookie("cf_clearance=clearance; Path=/")

@@ -11,4 +11,9 @@ import java.io.IOException
  */
 class SessionRecoveryRequiredException(
     cause: Throwable? = null,
+    /**
+     * True only when the response itself is a Cloudflare challenge. A malformed
+     * or unreadable body is recovery-worthy too, but replaying it cannot help.
+     */
+    val challenge: Boolean = false,
 ) : IOException("登录状态暂时无法验证，请在登录页面完成网站验证后重试", cause)

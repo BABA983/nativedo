@@ -73,6 +73,13 @@ class SharedCookieJar(
     fun authToken(url: HttpUrl = siteUrl): String? =
         cookieValue(requestCookieHeader(url), TOKEN_COOKIE)?.takeIf(String::isNotBlank)
 
+    /** A non-blank named cookie currently presented for [url], or null. */
+    fun currentCookieValue(name: String, url: HttpUrl = siteUrl): String? =
+        cookieValue(requestCookieHeader(url), name)?.takeIf(String::isNotBlank)
+
+    fun cfClearance(url: HttpUrl = siteUrl): String? =
+        currentCookieValue(CF_CLEARANCE_COOKIE, url)
+
     @JvmOverloads
     fun hasAuthenticatedCookies(url: HttpUrl = siteUrl): Boolean = authToken(url) != null
 

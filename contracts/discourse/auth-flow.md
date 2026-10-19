@@ -70,6 +70,11 @@ writes. Do not send a write probe or replay a reply on opening or completion.
 Topic read recovery may retry the failed read and re-arm its existing timing
 reporter only after explicit completion. A reply still requires a new user send.
 
+Before showing the visible recovery state for a challenged native read, the
+client may load the homepage once in a hidden same-origin WebView so Cloudflare
+can mint a fresh `cf_clearance`, then replay that `GET`/`HEAD` once. A write is
+never replayed automatically; it still requires a new user send.
+
 ## Native Requests
 
 1. Each exchange reads the request's cookies from the shared jar and applies

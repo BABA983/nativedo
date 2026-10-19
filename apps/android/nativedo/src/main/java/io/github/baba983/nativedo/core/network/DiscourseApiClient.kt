@@ -99,6 +99,17 @@ class DiscourseApiClient(
     private var readCacheScope: () -> ReadCacheScope? = { null }
 
     /**
+     * Last-resort repair for a Cloudflare challenge: mint a fresh
+     * `cf_clearance` through a WebView (the only stack Cloudflare trusts) and
+     * report whether the shared jar now has a value to retry with.
+     */
+    private var challengeRecovery: (suspend () -> Boolean)? = null
+
+    fun setChallengeRecovery(recovery: suspend () -> Boolean) {
+        challengeRecovery = recovery
+    }
+
+    /**
      * Injects the session boundary this client reports to: every request
      * resolves its [SessionRequestContext] up front, and a proven logout is
      * reported back with the generation that started the request so a stale
@@ -1090,6 +1101,7 @@ class DiscourseApiClient(
      */
     internal suspend fun <T> runWithSessionBoundary(
         requiresAuthentication: Boolean = false,
+        retriedAfterChallenge: Boolean = false,
         block: suspend () -> T,
     ): T {
         val requestContext = sessionContextProvider()
@@ -1110,6 +1122,17 @@ class DiscourseApiClient(
             throw error
         } catch (error: SessionLoggedOutException) {
             handleLoggedOutResponse(requestContext, requiresAuthentication, error)
+        } catch (error: SessionRecoveryRequiredException) {
+            // The bootstrap parser detects a challenge in a 200 HTML body; the
+            // request was a GET, so one replay after a fresh clearance is safe.
+            if (error.challenge && retryAfterChallenge(error, retriedAfterChallenge)) {
+                return runWithSessionBoundary(
+                    requiresAuthentication = requiresAuthentication,
+                    retriedAfterChallenge = true,
+                    block = block,
+                )
+            }
+            throw error
         } catch (error: HttpException) {
             // ResponseBody is one-shot. Read it once so a JSON logout check
             // cannot consume the Cloudflare challenge evidence that follows.
@@ -1117,7 +1140,16 @@ class DiscourseApiClient(
             val evidence = SessionResponseEvidence.classify(error.code(),
                 error.response()?.headers() ?: okhttp3.Headers.Builder().build(), errorBody)
             when (evidence) {
-                SessionResponseEvidence.Challenge -> throw SessionRecoveryRequiredException(cause = error)
+                SessionResponseEvidence.Challenge -> {
+                    if (retryAfterChallenge(error, retriedAfterChallenge)) {
+                        return runWithSessionBoundary(
+                            requiresAuthentication = requiresAuthentication,
+                            retriedAfterChallenge = true,
+                            block = block,
+                        )
+                    }
+                    throw SessionRecoveryRequiredException(cause = error, challenge = true)
+                }
                 SessionResponseEvidence.LoggedOut -> handleLoggedOutResponse(requestContext, requiresAuthentication, error)
                 SessionResponseEvidence.Csrf -> throw DiscourseRefusalException(403, "请求验证已过期，请重试；无需重新登录", error)
                 SessionResponseEvidence.Forbidden -> throw DiscourseRefusalException(403, "请求被拒绝（403），尚不能确认是权限限制还是站点验证", error)
@@ -1125,6 +1157,27 @@ class DiscourseApiClient(
                 SessionResponseEvidence.Other -> throw error
             }
         }
+    }
+
+    /**
+     * A challenge is answered by asking the WebView for a fresh clearance and,
+     * only for a safe method, replaying the request once. Writes are never
+     * replayed automatically: a 403 on POST may have been consumed by the
+     * server, so the caller decides when to send it again.
+     */
+    private suspend fun retryAfterChallenge(
+        error: Throwable,
+        alreadyRetried: Boolean,
+    ): Boolean {
+        if (alreadyRetried) return false
+        val refreshed = challengeRecovery?.invoke() ?: false
+        if (!refreshed) return false
+        val method = (error as? HttpException)
+            ?.response()?.raw()?.request?.method
+            ?.uppercase()
+        // No method means the failure came from the bootstrap HTML parser,
+        // which only runs for GET.
+        return method == null || method == "GET" || method == "HEAD"
     }
 
     private suspend fun handleLoggedOutResponse(
@@ -1175,7 +1228,7 @@ data class CurrentUserPresence(
 object BootstrapHtmlParser {
     fun parse(html: String): ParsedBootstrap {
         if (looksLikeCloudflareChallenge(html.lowercase(Locale.US))) {
-            throw SessionRecoveryRequiredException()
+            throw SessionRecoveryRequiredException(challenge = true)
         }
         val document = Jsoup.parse(html)
         val username = document.selectFirst("meta[name=current-username]")
