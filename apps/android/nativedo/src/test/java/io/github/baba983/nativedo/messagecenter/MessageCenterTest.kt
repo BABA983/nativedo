@@ -25,6 +25,7 @@ import io.github.baba983.nativedo.harness.shadows.ShadowSQLiteCursor
 import io.github.baba983.nativedo.harness.shadows.ShadowSQLiteDatabase
 import io.github.baba983.nativedo.harness.shadows.ShadowSQLitePreparedStatement
 import io.github.baba983.nativedo.harness.shadows.ShadowUtilities
+import okhttp3.mockwebserver.MockResponse
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -40,10 +41,13 @@ import org.telegram.messenger.ApplicationLoader
 import org.telegram.ui.ActionBar.ActionBar
 import org.telegram.ui.ActionBar.SimpleTextView
 import org.telegram.ui.Components.AnimatedTextView
+import org.telegram.ui.Components.FlickerLoadingView
 import org.telegram.ui.Components.RecyclerListView
 import org.telegram.ui.Components.ScrollSlidingTextTabStrip
 import org.telegram.ui.Components.ViewPagerFixed
 import org.telegram.ui.MainTabsLayout
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * The message center: the second main tab, one title bar and one capsule tab strip over 通知/私信/聊天.
@@ -497,6 +501,58 @@ internal class MessageCenterTest {
         }
         val body = site.requestBodyFor("notifications/mark-read.json").orEmpty()
         assertTrue("and it is the site's own all-read, with no id", !body.contains("id="))
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * The shimmer is the list's empty view, not a list row, so it does not inherit the list's top
+     * padding. The failure: while the first page is loading the skeleton starts at the page top
+     * and draws under the center's capsule strip, even though the list's first row starts below
+     * it. Pin both content starts together and keep the loading frame as evidence.
+     */
+    @Test
+    fun theNotificationLoadingSkeletonStartsBelowTheCapsuleStrip() {
+        // Hold the first page open so the shimmer is still the visible state while we read it.
+        val release = CountDownLatch(1)
+        site.serveResponse("notifications.json") {
+            release.await(5, TimeUnit.SECONDS)
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(harness.fixture("notifications.json"))
+        }
+
+        val shell = harness.bootApp()
+        harness.await("the topic list to load") { harness.visibleFragmentName() == "TopicListFragment" }
+        tapMainTab(findTabs(shell.findViewById(android.R.id.content))!!, 1)
+        harness.await("the message center") { harness.visibleFragmentName() == "MessageCenterFragment" }
+        val center = messageCenter()
+        harness.await("the notifications page") {
+            center.currentVisibleFragment?.javaClass?.simpleName == "NotificationsFragment"
+        }
+        harness.layoutApp()
+
+        val page = center.currentVisibleFragment as? io.github.baba983.nativedo.notifications.NotificationsFragment
+            ?: throw AssertionError("the notifications page is not on top")
+        val strip = stripOf(center)
+        val list = views(page.fragmentView).filterIsInstance<RecyclerListView>().single()
+        val shimmer = views(page.fragmentView).filterIsInstance<FlickerLoadingView>().single()
+        assertEquals("the skeleton is up while the first page is in flight", View.VISIBLE, shimmer.visibility)
+        // FlickerLoadingView keeps its content offset in its own field, not View's padding.
+        val shimmerTop = FlickerLoadingView::class.java
+            .getDeclaredField("paddingTop")
+            .apply { isAccessible = true }
+            .getInt(shimmer)
+        assertEquals(
+            "the skeleton starts at the same line as the first list row",
+            list.paddingTop,
+            shimmerTop,
+        )
+        assertTrue("and that line is below the capsule strip", shimmerTop >= strip.height)
+        capture("message-center-notifications-loading")
+
+        release.countDown()
+        harness.await("the first page to land") { listRowCount() == 4 }
         harness.assertNoTelegramSideEffects()
     }
 

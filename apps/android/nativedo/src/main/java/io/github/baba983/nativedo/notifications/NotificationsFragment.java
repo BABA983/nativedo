@@ -406,6 +406,21 @@ public class NotificationsFragment extends BaseFragment
             listView.setPadding(0, AndroidUtilities.dp(4) + messageCenterTopInset, 0,
                     AndroidUtilities.dp(4) + navigationBarHeight + additionNavigationBarHeight);
         }
+        updateProgressTop();
+    }
+
+    /**
+     * The shimmer is the list's empty view, not a list row: it does not inherit the list's top
+     * padding. Give it the same content start the first row gets, so a loading notification page
+     * begins below the message center's capsule strip (and below the page's own bar when it has
+     * one) instead of drawing underneath it.
+     */
+    private void updateProgressTop() {
+        if (progressView == null) {
+            return;
+        }
+        int barTop = messageCenter || actionBar == null ? 0 : actionBar.getMeasuredHeight();
+        progressView.setPaddingTop(barTop + AndroidUtilities.dp(4) + messageCenterTopInset);
     }
 
     /**
@@ -427,6 +442,7 @@ public class NotificationsFragment extends BaseFragment
     private void checkUi_contentTop() {
         final int top = actionBar != null ? actionBar.getMeasuredHeight() : 0;
         if (top <= 0 || listView == null) {
+            updateProgressTop();
             return;
         }
         FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) listView.getLayoutParams();
@@ -436,9 +452,7 @@ public class NotificationsFragment extends BaseFragment
         }
         // The shimmer's own rows start below the bar too, the way DialogsActivity keeps its
         // progress view under its top panel (2093-2095).
-        if (progressView != null) {
-            progressView.setPaddingTop(top);
-        }
+        updateProgressTop();
     }
 
     /** A second tap on the reader's tab: the list goes back to its top. */
