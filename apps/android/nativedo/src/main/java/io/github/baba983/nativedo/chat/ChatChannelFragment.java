@@ -7,6 +7,7 @@ import android.animation.ObjectAnimator;
 import android.content.Context;
 import android.graphics.Paint;
 import android.os.Bundle;
+import android.text.style.CharacterStyle;
 import android.text.style.URLSpan;
 import android.view.Gravity;
 import android.view.View;
@@ -27,7 +28,9 @@ import org.telegram.messenger.ImageLocation;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.RichMessageLayout;
+import org.telegram.messenger.browser.Browser;
 import org.telegram.tgnet.TLRPC;
+import org.telegram.tgnet.tl.TL_iv;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
@@ -60,9 +63,13 @@ import io.github.baba983.nativedo.core.model.ChatMessagePage;
 import io.github.baba983.nativedo.core.media.VoiceRecording;
 import io.github.baba983.nativedo.core.media.VoiceRecordingFeedback;
 import io.github.baba983.nativedo.core.session.AppSessionState;
+import io.github.baba983.nativedo.core.web.DiscourseLinks;
+import io.github.baba983.nativedo.core.web.DiscourseTopicLink;
+import io.github.baba983.nativedo.profile.ProfileFragment;
 import io.github.baba983.nativedo.sessionui.SessionUi;
 import io.github.baba983.nativedo.sessionui.SessionUiAction;
 import io.github.baba983.nativedo.sessionui.SessionUiState;
+import io.github.baba983.nativedo.topic.ArticlePhotoViewer;
 import io.github.baba983.nativedo.topic.DiscourseAvatars;
 import io.github.baba983.nativedo.topic.DiscourseComposerDelegate;
 import io.github.baba983.nativedo.topic.DiscourseComposerTools;
@@ -71,9 +78,12 @@ import io.github.baba983.nativedo.topic.ComposerVoicePanel;
 import io.github.baba983.nativedo.topic.DiscourseImageBridge;
 import io.github.baba983.nativedo.topic.DiscourseLoader;
 import io.github.baba983.nativedo.topic.DiscourseRows;
+import io.github.baba983.nativedo.topic.PostAttachment;
 import io.github.baba983.nativedo.topic.PostImage;
 import io.github.baba983.nativedo.topic.PostListView;
+import io.github.baba983.nativedo.topic.PostVideo;
 import io.github.baba983.nativedo.topic.PreparedPostBody;
+import io.github.baba983.nativedo.topic.TopicFragment;
 
 /**
  * One public linux.do chat channel: its conversation, drawn the way a chat draws one.
@@ -1189,6 +1199,74 @@ public class ChatChannelFragment extends BaseFragment {
                 return kotlin.Unit.INSTANCE;
             });
         }
+        // A file a message links to is fetched with the message, the way a topic fetches one: the
+        // block draws the name and the size, and the tap on it opens the file - neither of which a
+        // block can do while the bytes are only an address on the site.
+        List<PostAttachment> attachments = body.getAttachments();
+        if (attachments != null && !attachments.isEmpty()) {
+            DiscourseLoader.INSTANCE.cacheAttachments(container, attachments, () -> {
+                refreshAttachmentRows(attachments);
+                return kotlin.Unit.INSTANCE;
+            });
+        }
+        // A clip's cover travels with the message; the clip itself is fetched when it is played.
+        List<PostVideo> videos = body.getVideos();
+        if (videos != null && !videos.isEmpty()) {
+            DiscourseLoader.INSTANCE.cacheVideoCovers(container, videos, () -> {
+                refreshVideoCoverRows(videos);
+                return kotlin.Unit.INSTANCE;
+            });
+        }
+    }
+
+    /**
+     * Hands the rows that link one of [attachments] the size of what has arrived, and binds them
+     * again: a document block reads its file when it is built, so a file fetched after the row was
+     * drawn has to reach the message the block belongs to.
+     */
+    private void refreshAttachmentRows(List<PostAttachment> attachments) {
+        if (isFinished || listView == null) {
+            return;
+        }
+        for (int index = 0; index < bodies.size(); index++) {
+            PreparedPostBody body = bodies.get(index);
+            if (body == null || !containsAny(body.getAttachments(), attachments)) {
+                continue;
+            }
+            DiscourseImageBridge.INSTANCE.applyAttachmentFiles(
+                    bubbles.get(index).messageOwner, body.getAttachments());
+            invalidateRow(messageRowOffset() + index);
+        }
+    }
+
+    /**
+     * Binds again the rows whose clip a cover has arrived for: the block draws the poster frame from
+     * the document's own thumbnail, which it reads when it is attached, not on every draw.
+     */
+    private void refreshVideoCoverRows(List<PostVideo> videos) {
+        if (isFinished || listView == null) {
+            return;
+        }
+        for (int index = 0; index < bodies.size(); index++) {
+            PreparedPostBody body = bodies.get(index);
+            if (body == null || !containsAny(body.getVideos(), videos)) {
+                continue;
+            }
+            invalidateRow(messageRowOffset() + index);
+        }
+    }
+
+    /** Whether [values] names any of [of]; prepared bodies are plain data holders. */
+    private static <T> boolean containsAny(List<T> values, List<T> of) {
+        if (values == null || values.isEmpty() || of == null) {
+            return false;
+        }
+        for (T value : values) {
+            if (of.contains(value)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -2327,7 +2405,14 @@ public class ChatChannelFragment extends BaseFragment {
         return !ua.isEmpty() && ua.equals(ub);
     }
 
-    /** Upstream's own callbacks; nothing here invents a path Telegram's cells do not own. */
+    /**
+     * Upstream's own callbacks; nothing here invents a path Telegram's cells do not own.
+     *
+     * <p>Every action belongs to the screen: a tap on a picture opens this client's viewer, a link
+     * the site owns leaves for the app's own screens and anything else for the host's browser, and a
+     * received voice message's own audio link is played here. A clip this screen fetched may only
+     * open something while this screen is still the one in front of the reader.</p>
+     */
     private class CellDelegate implements ChatMessageCell.ChatMessageCellDelegate {
         @Override
         public void forceUpdate(ChatMessageCell cell, boolean anchorScroll) {
@@ -2342,20 +2427,107 @@ public class ChatChannelFragment extends BaseFragment {
         }
 
         /**
-         * A press on a link in a message. A voice message's own audio link is this screen's to act
-         * on: the clip is fetched with the session and played locally, rather than left inert or
-         * handed to a browser. Every other link keeps the default handling.
+         * Upstream gates every touch a message receives on this. Its own chat answers true whenever
+         * no action mode or report screen is up, and this screen never has either - a picture, an
+         * ordinary link and a onebox are all reached through the cell's own touch handling, so a
+         * screen that left the default (false) drew media nobody could press.
          */
         @Override
-        public void didPressUrl(ChatMessageCell cell, android.text.style.CharacterStyle url, boolean longPress) {
-            if (longPress) {
+        public boolean canPerformActions() {
+            return !isFinished;
+        }
+
+        /**
+         * A tap on a picture or a clip in a message; the cell routes rich media through this one.
+         *
+         * <p>A clip is not fetched with the message, so the tap is what fetches it: the block draws
+         * its own loading state while the fetch runs, and upstream's viewer opens on the file once
+         * it is here. A clip this client will not fetch, or one the site will not hand over, goes to
+         * the device's own player, which streams it from the site's address.</p>
+         */
+        @Override
+        public boolean openArticlePhoto(ChatMessageCell cell, TL_iv.PageBlock block) {
+            if (isFinished || container == null || block == null) {
+                return false;
+            }
+            MessageObject message = cell.getMessageObject();
+            PostVideo video = ArticlePhotoViewer.videoOf(block);
+            if (video == null) {
+                return ArticlePhotoViewer.open(ChatChannelFragment.this, message, block, listView);
+            }
+            final int epoch = loadEpoch;
+            DiscourseLoader.INSTANCE.fetchVideo(
+                    container,
+                    video,
+                    () -> {
+                        if (canOpenFetchedMedia(epoch)) {
+                            ArticlePhotoViewer.open(ChatChannelFragment.this, message, block, listView);
+                        }
+                        return kotlin.Unit.INSTANCE;
+                    },
+                    () -> {
+                        if (canOpenFetchedMedia(epoch)) {
+                            ArticlePhotoViewer.stream(ChatChannelFragment.this, block);
+                        }
+                        return kotlin.Unit.INSTANCE;
+                    });
+            return true;
+        }
+
+        /**
+         * A press on a link in a message. A voice message's own audio link is this screen's to act
+         * on: the clip is fetched with the session and played locally, rather than left inert or
+         * handed to a browser. A link to this site's own topic or profile opens the app's own
+         * screen; every other link opens in the host's browser, which is the signed-in page.
+         */
+        @Override
+        public void didPressUrl(ChatMessageCell cell, CharacterStyle url, boolean longPress) {
+            if (longPress || isFinished || container == null || !(url instanceof URLSpan)) {
                 return;
             }
-            String href = url instanceof URLSpan ? ((URLSpan) url).getURL() : null;
-            if (href != null) {
-                playReceivedAudio(href);
+            String target = ((URLSpan) url).getURL();
+            if (target == null || target.isEmpty()) {
+                return;
             }
+            if (playReceivedAudio(target)) {
+                return;
+            }
+            DiscourseTopicLink topicLink = DiscourseLinks.topicLink(target, container.getBaseUrl());
+            if (topicLink != null && topicLink.getTopicId() > 0) {
+                Integer floor = topicLink.getFloor() > 0 ? topicLink.getFloor() : null;
+                presentFragment(TopicFragment.forFloor(topicLink.getTopicId(), null, floor));
+                return;
+            }
+            String username = DiscourseLinks.profileUsername(target, container.getBaseUrl());
+            if (username != null) {
+                presentFragment(ProfileFragment.forUser(username, username));
+                return;
+            }
+            Browser.openUrl(getParentActivity(), target);
         }
+
+        /**
+         * A tap on a link preview's card. The site's own oneboxes stay rich text in the bubble and
+         * their links arrive as {@link #didPressUrl}; this is the counterpart for a message that
+         * carries a web page of its own, and it must not fall through to Telegram's browser path.
+         */
+        @Override
+        public void didPressWebPage(ChatMessageCell cell, TLRPC.WebPage webpage, String url, boolean safe) {
+            if (isFinished || url == null || url.isEmpty()) {
+                return;
+            }
+            Browser.openUrl(getParentActivity(), url);
+        }
+    }
+
+    /**
+     * Whether a fetch this screen started may still put something on the reader's screen: the screen
+     * exists, the session it started under is the same one, and it is still the screen in front. A
+     * clip that lands after the reader opened another channel opens neither the viewer nor the
+     * device's player.
+     */
+    private boolean canOpenFetchedMedia(int epoch) {
+        return !isFinished && !isPaused() && container != null && epoch == loadEpoch && isLastFragment();
     }
 
     private class SendDelegate extends DiscourseComposerDelegate {
