@@ -200,10 +200,13 @@ Source (pinned to discourse main at the time of writing):
   the cooked message**, so a client reads the accepted id back with the messages route rather than
   drawing the write itself; a readback that fails keeps the accepted id rather than replaying the
   write. Fixture at `fixtures/discourse/chat-message-sent.json`.
-- Chat audio first uses the same `POST /uploads.json` multipart route as forum uploads, but with
-  `upload_type=chat-composer`, `synchronous=true` and no `channel_id`. The resulting upload ID is
-  referenced by `upload_ids[]` above. The server enforces upload ownership, audio extensions and
-  `chat_allow_uploads`; a successful local recording does not prove the site will accept it.
+- Chat uploads - a recording or a picked file - first use the same `POST /uploads.json` multipart
+  route as forum uploads, but with `upload_type=chat-composer`, `synchronous=true` and no
+  `channel_id`. The `file` part carries the reader's own display name, not the cache copy's name.
+  The resulting upload ID is referenced by `upload_ids[]` above; an upload alone sends nothing, and
+  the site checks ownership again on the message write. The server enforces upload ownership,
+  extensions and `chat_allow_uploads`; a successful local upload or recording does not prove the
+  site will accept it.
   A received message carries `uploads[]` metadata alongside its cooked `<audio>`; fixture at
   `fixtures/discourse/chat-messages-audio.json`. Forum audio instead inserts
   `![name|audio](upload://...)` into post raw, using `upload_type=composer`; `.m4a` is audio,
@@ -211,11 +214,68 @@ Source (pinned to discourse main at the time of writing):
 - `PUT /chat/api/channels/{id}/read.json` - advances the reader's own last-read position; the form
   field is `message_id` and it answers `{success:"OK"}`. Requires `X-CSRF-Token`. Fixture at
   `fixtures/discourse/chat-read.json`.
+- Typing presence is Discourse's core presence backend, not a chat route: `GET /presence/get` and
+  `POST /presence/update` (`config/routes.rb`, `app/controllers/presence_controller.rb`,
+  `lib/presence_channel.rb`). `GET /presence/get?channels[]=/chat-reply/{id}` takes a required
+  array of full channel names (at most 50) and answers an object keyed by each name: either a
+  `PresenceChannelStateSerializer` state - `count`, `last_message_id` (the message-bus position a
+  subscriber starts from) and `users` (`BasicUserSerializer` entries) - or `null`, which is the
+  site's answer both for a channel this reader may not view and for a name it does not know. A
+  `count_only` channel omits `users` entirely, so its count is not a list.
+  `POST /presence/update` is the write: `client_id` (an opaque per-client random id, the web
+  client's are 32 hex characters), `present_channels[]`, `leave_channels[]` and `X-CSRF-Token`; it
+  requires a session, answers `{name: true|false}` for the present channels it looked at (`false` =
+  this reader may not enter that channel, and an absent name is not a verdict) and `{}` for a
+  leave, and limits one reader to 20 requests per 10 s. Presence expires after
+  `PresenceChannel::DEFAULT_TIMEOUT` (60 s), so a client that stays present must re-announce
+  (the web client's interval is 30 s, throttled to one update per second); a leave only ever
+  removes presence, so it is safe even when the session moved on.
+  Presence deltas ride the message bus at `/presence/chat-reply/{id}` (the chat plugin registers
+  the `chat-reply` prefix; its `Chat::PRESENCE_REGEXP` also accepts a `/chat-reply/{id}/thread/{id}`
+  form this client does not use): `{entering_users:[...], leaving_user_ids:[...]}`, or
+  `{count_delta:n}` for a `count_only` channel. Message ids on a channel are contiguous; a skipped
+  id means the client cannot know who entered or left in between, so the site's own client re-reads
+  `/presence/get` instead of guessing. The reader's own visibility switch is
+  `current_user.user_option.hide_presence` in `GET /session/current.json` (the session's own
+  `user_option` object, not a profile read); the site's chat composer announces only when it is
+  explicitly `false`, and a missing option is not permission. Neither request carries the
+  composer's text, and these routes are separate from the chat plugin's `/chat/online` presence
+  channel.
 
 Foreground live updates ride the app's existing message-bus poller, subscribed at
 `/chat/{id}` and `/chat/{id}/new-messages`, seeded from the channel's own
-`channel_message_bus_last_id` and `new_messages`. The plugin publishes on `/chat/{id}` a
+`channel_message_bus_last_id` and `new_messages`. Typing presence is the separate
+`/presence/chat-reply/{id}` subscription above. The plugin publishes on `/chat/{id}` a
 `{type:"sent"|"edit"|"processed"|"refresh"|"delete"..., chat_message:{...}}` event (a deletion carries
 `deleted_id`), and on `/chat/{id}/new-messages` a `{type:"channel", message:{...}}` event. This is
 foreground long-polling only, exactly like the rest of the message bus: no OS-level push is claimed,
 and a readback or explicit refresh remains the fallback.
+
+## Site GIFs (composer)
+
+Discourse core's GIF picker is a **server-side proxy** to Klipy: the provider key is the site
+setting `klipy_api_key`, both routes run `requires_login`, and neither request nor response hands
+the key to the client (`app/controllers/gifs_controller.rb`, `config/routes.rb` - `get
+"gifs/categories" => "gifs"`, `get "gifs/search" => "gifs"`). A `.json` suffix is the format the
+client asks for.
+
+- `GET /gifs/categories.json` - the provider's featured categories, proxied verbatim:
+  `{tags:[{name, searchterm, image}]}`. A category is a search term plus a banner image, not an
+  insertable GIF, and `image` is a site path/URL to resolve against the base URL. Fixture at
+  `fixtures/discourse/gif-categories.json`.
+- `GET /gifs/search.json?q={query}&pos={cursor}` - one page of provider results. `pos` defaults to
+  `"0"` (the first page), `q` is required and capped at 100 characters, and the site asks the
+  provider for 24 results with its own country, locale, content-filter and file-detail settings.
+  The body is the provider's own shape, not a Discourse serializer:
+  `{results:[{title, media_formats:{webp:{url,dims:[w,h]}, gif:{...}, ...}}], next}`. `dims` is
+  the pair the site's own insertion puts in the Markdown label; a result with no usable format is
+  skipped rather than drawn blank, and `next` is read defensively (a string cursor, or `pos`/`next`
+  inside an object) because a provider may answer a numeric or object value; `"0"` or a blank
+  value ends paging. Fixture at `fixtures/discourse/gif-search.json`.
+- Failures: `404` when `enable_gifs` is off (`ensure_gifs_enabled` raises `NotFound`), `403` when
+  the site has no provider key (a bare `head :forbidden`, which is indistinguishable from a
+  permission refusal at this layer), `429` from the route's own 20-requests-per-10-s limiter, and
+  `502` when the provider cannot be reached. Both reads are ordinary GETs on the site's own
+  origin: they carry the session and need no CSRF token. The media URLs inside a result point at
+  the provider's CDN: they are public links, not site routes, and a client must not send the
+  reader's cookies to them.

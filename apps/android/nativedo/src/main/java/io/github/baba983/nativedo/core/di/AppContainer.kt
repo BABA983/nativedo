@@ -10,6 +10,8 @@ import io.github.baba983.nativedo.auth.device.HttpDeviceAuthApi
 import io.github.baba983.nativedo.core.messagebus.MessageBusSession
 import io.github.baba983.nativedo.core.network.DiscourseApiClient
 import io.github.baba983.nativedo.core.network.DiscourseApiService
+import io.github.baba983.nativedo.core.network.DiscourseGifClient
+import io.github.baba983.nativedo.core.network.DiscourseGifService
 import io.github.baba983.nativedo.core.network.ImageRequestHeadersInterceptor
 import io.github.baba983.nativedo.core.network.NetworkJson
 import io.github.baba983.nativedo.core.network.ReadCacheScope
@@ -162,6 +164,17 @@ class AppContainer(
             .addInterceptor(ImageRequestHeadersInterceptor(baseUrl = baseUrl, userAgent = this.userAgent))
             .build()
 
+    /**
+     * The client provider GIF thumbnails are loaded with: the image headers (UA, Accept) but no
+     * cookie interceptor. A GIF URL points at the provider's CDN, which is not the site; the reader's
+     * `_t`/`_forum_session` must never travel there just because a picker drew a preview.
+     */
+    val gifImageOkHttpClient: OkHttpClient =
+        OkHttpClient
+            .Builder()
+            .addInterceptor(ImageRequestHeadersInterceptor(baseUrl = baseUrl, userAgent = this.userAgent))
+            .build()
+
     private val retrofit: Retrofit =
         Retrofit
             .Builder()
@@ -171,6 +184,9 @@ class AppContainer(
             .build()
 
     private val apiService: DiscourseApiService = retrofit.create(DiscourseApiService::class.java)
+
+    /** The GIF proxy's own Retrofit view over the same session-aware transport. */
+    private val gifService: DiscourseGifService = retrofit.create(DiscourseGifService::class.java)
 
     val discourseApiClient: DiscourseApiClient =
         DiscourseApiClient(
@@ -264,6 +280,17 @@ class AppContainer(
             sessionCoordinator = sessionCoordinator,
             cookieJar = cookieJar,
             baseUrl = baseUrl,
+        )
+
+    /**
+     * The site-backed GIF reads. They run on [DiscourseApiClient]'s session boundary over the same
+     * transport; the client itself only owns the GIF routes and their provider mapping. Provider
+     * thumbnails use [gifImageOkHttpClient], which carries no cookies.
+     */
+    val discourseGifClient: DiscourseGifClient =
+        DiscourseGifClient(
+            service = gifService,
+            apiClient = discourseApiClient,
         )
 
     /**

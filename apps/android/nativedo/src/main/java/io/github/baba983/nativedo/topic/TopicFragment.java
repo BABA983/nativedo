@@ -637,6 +637,21 @@ public class TopicFragment extends BaseFragment
         if (uri != null) attachMediaUris(java.util.Collections.singletonList(uri));
     }
 
+    /**
+     * The same path for a URI the reader's keyboard committed or pasted. The upload owner copies
+     * the URI into the app's cache before it returns, so the IME's read grant -
+     * {@code releasePermission}, a no-op for a paste - is released once those bytes are ours. A
+     * screen that can no longer take the file (closed, or already uploading) releases it without
+     * inserting anything, so the grant never outlives its commit.
+     */
+    public void attachMediaUri(android.net.Uri uri, Runnable releasePermission) {
+        try {
+            attachMediaUri(uri);
+        } finally {
+            if (releasePermission != null) releasePermission.run();
+        }
+    }
+
     private void attachMediaUris(java.util.List<android.net.Uri> uris) {
         if (getParentActivity() == null || container == null || uploadingAttachment) {
             return;
@@ -5695,6 +5710,12 @@ public class TopicFragment extends BaseFragment
         @Override
         public void didPressAttachButton() {
             openAttachmentSheet();
+        }
+
+        /** A keyboard's GIF/sticker commit or a pasted image is an attachment, never a Telegram photo. */
+        @Override
+        public void onComposerMediaInput(android.net.Uri uri, Runnable releasePermission) {
+            attachMediaUri(uri, releasePermission);
         }
     }
 

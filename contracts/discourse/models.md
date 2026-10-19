@@ -92,3 +92,13 @@ logs programmatic positioning and layout movement without post content or accoun
 - `ChatDraft` / `ChatDraftKey` / `ChatDraftStore` - a channel's half-written message (the text and the
   message it was answering), keyed by site + account + channel. A draft never follows the reader to
   another account and two channels never share a field.
+- `ChatPresenceState` / `ChatPresenceDelta` - one presence channel's state and one bus delta, both
+  keyed by the full presence name (`/chat-reply/{channelId}` here). A channel the site answers
+  `null` (not viewable, or unknown) has no state at all - not an empty one - and its count is
+  therefore unknown too. Within a state, `users` is null rather than empty for a `countOnly`
+  channel that never reveals identities; `count` stays the site's own number, and `lastMessageId`
+  is the bus position a subscriber starts from. A delta carries `enteringUsers` and
+  `leavingUserIds`, or only `countDelta` for a `countOnly` channel; a payload with none of those -
+  including one that fails to decode - is "resynchronise from a fresh state", never an empty
+  change. Presence has no identity of its own in storage: a binding is one screen, channel and
+  reader, and a session or bus change retires it rather than migrating an announcement.

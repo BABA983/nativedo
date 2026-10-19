@@ -5391,6 +5391,9 @@ public class ChatActivityEnterView extends FrameLayout implements
                             return false;
                         }
                     }
+                    if (NativeDoHooks.commitComposerMediaInput(ChatActivityEnterView.this.delegate, inputContentInfo, flags)) {
+                        return true;
+                    }
                     if (inputContentInfo.getDescription().hasMimeType("image/gif") || SendMessagesHelper.shouldSendWebPAsSticker(null, inputContentInfo.getContentUri())) {
                         if (isInScheduleMode()) {
                             AlertsCreator.createScheduleDatePickerDialog(parentActivity, parentFragment.getDialogId(), (notify, scheduleDate, scheduleRepeatPeriod) -> send(inputContentInfo, notify, scheduleDate, scheduleRepeatPeriod), resourcesProvider);
@@ -5540,6 +5543,9 @@ public class ChatActivityEnterView extends FrameLayout implements
                 ClipData clipData = clipboard.getPrimaryClip();
                 if (clipData != null) {
                     if (clipData.getItemCount() == 1 && clipData.getDescription().hasMimeType("image/*") && !isEditingBusinessLink()) {
+                        if (NativeDoHooks.commitComposerClipboardImage(ChatActivityEnterView.this.delegate, clipData.getItemAt(0).getUri())) {
+                            return true;
+                        }
                         editPhoto(clipData.getItemAt(0).getUri(), clipData.getDescription().getMimeType(0));
                     }
                 }

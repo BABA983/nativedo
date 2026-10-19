@@ -18,9 +18,15 @@ import io.github.baba983.nativedo.hooks.NativeDoHooks;
  * in, and it forwards to the one recording host its screen bound. No process-wide table is involved,
  * and a screen that never bound a host (or a real Telegram composer, whose delegate is not this
  * class) forwards to nothing and keeps upstream's own gesture.</p>
+ *
+ * <p>Media the reader's keyboard or clipboard commits reaches the same kind of instance seam (see
+ * {@link NativeDoHooks.ComposerMediaInputHost}): a screen with an upload path overrides
+ * {@link #onComposerMediaInput}, and the base answers by releasing the read grant without
+ * attaching anything, so no commit can fall into Telegram's send or photo-edit path.</p>
  */
 public abstract class DiscourseComposerDelegate
-        implements ChatActivityEnterView.ChatActivityEnterViewDelegate, NativeDoHooks.ComposerRecordHost {
+        implements ChatActivityEnterView.ChatActivityEnterViewDelegate, NativeDoHooks.ComposerRecordHost,
+        NativeDoHooks.ComposerMediaInputHost {
 
     /** The recording host bound to the owning screen, or null when none is bound. */
     private NativeDoHooks.ComposerRecordHost recordHost;
@@ -89,6 +95,18 @@ public abstract class DiscourseComposerDelegate
     @Override
     public void onComposerVoiceTrim(long start, long end, Runnable done) {
         if (recordHost != null) recordHost.onComposerVoiceTrim(start, end, done);
+    }
+
+    /**
+     * Media committed by the keyboard or pasted from the clipboard. A screen that attaches files
+     * overrides this and hands the URI to its upload path; this base is the safe answer for every
+     * other screen (and for a closed one): the read grant is released and nothing is attached.
+     */
+    @Override
+    public void onComposerMediaInput(android.net.Uri uri, Runnable releasePermission) {
+        if (releasePermission != null) {
+            releasePermission.run();
+        }
     }
 
     @Override

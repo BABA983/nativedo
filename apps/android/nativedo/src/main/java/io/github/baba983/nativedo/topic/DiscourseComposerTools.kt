@@ -54,6 +54,7 @@ class DiscourseComposerTools @JvmOverloads constructor(
         }
     }
     private val picker = DiscourseEmojiPicker(composer.context, container, fragment.resourceProvider)
+    private val gifPicker = DiscourseGifPicker(composer.context, container, fragment.resourceProvider)
     internal val mentions = DiscourseMentions.install(
         composer, inputViews, fragment, fragment.resourceProvider, container.baseUrl, topicId,
         TopicMentionRepository(container.discourseApiClient), scope, container.imageOkHttpClient,
@@ -66,11 +67,32 @@ class DiscourseComposerTools @JvmOverloads constructor(
         picker.setInsertionTarget(composer.editField)
         picker.setInsetsController(inputInsets)
         picker.setOnDismissListener { updateEmojiIcon() }
+        picker.setOnGifRequested {
+            picker.dismiss()
+            mentions.dismiss()
+            composer.hidePopup(false)
+            gifPicker.show()
+            updateEmojiIcon()
+        }
+        gifPicker.setInsertionTarget(composer.editField)
+        gifPicker.setInsetsController(inputInsets)
+        gifPicker.setOnDismissListener { updateEmojiIcon() }
+        gifPicker.setOnBackToEmoji {
+            gifPicker.dismiss()
+            picker.show()
+            updateEmojiIcon()
+        }
+        gifPicker.setOnGifSelected { _ ->
+            composer.setFieldFocused()
+            AndroidUtilities.showKeyboard(composer.editField)
+        }
         inputViews.inAppKeyboardBubbleContainer.addView(picker, LayoutHelper.createFrameMatchParent())
+        inputViews.inAppKeyboardBubbleContainer.addView(gifPicker, LayoutHelper.createFrameMatchParent())
         composer.emojiButton.contentDescription = "站点表情"
         composer.emojiButton.setOnClickListener {
-            if (picker.isOpen()) {
+            if (picker.isOpen() || gifPicker.isOpen()) {
                 picker.dismiss()
+                gifPicker.dismiss()
                 composer.setFieldFocused()
                 AndroidUtilities.showKeyboard(composer.editField)
             } else {
@@ -82,7 +104,10 @@ class DiscourseComposerTools @JvmOverloads constructor(
         }
         // The field has no upstream OnTouchListener. Preserve its own touch handling and IME open.
         composer.editField!!.setOnTouchListener { _, event ->
-            if (event.actionMasked == MotionEvent.ACTION_DOWN && picker.isOpen()) picker.dismiss()
+            if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                if (picker.isOpen()) picker.dismiss()
+                if (gifPicker.isOpen()) gifPicker.dismiss()
+            }
             false
         }
     }
@@ -131,6 +156,10 @@ class DiscourseComposerTools @JvmOverloads constructor(
             if (invoked) mentions.dismiss()
             return true
         }
+        if (gifPicker.isOpen()) {
+            if (invoked) gifPicker.dismiss()
+            return true
+        }
         if (picker.isOpen()) {
             if (invoked) picker.dismiss()
             return true
@@ -144,18 +173,20 @@ class DiscourseComposerTools @JvmOverloads constructor(
         voice?.onPause()
         mentions.onPause()
         if (picker.isOpen()) picker.dismiss()
+        if (gifPicker.isOpen()) gifPicker.dismiss()
     }
 
     fun onDestroy() {
         voice?.onDestroy()
         mentions.onDestroy()
         picker.destroy()
+        gifPicker.destroy()
         scope.cancel()
     }
 
     private fun updateEmojiIcon() {
         (composer.emojiButton as ChatActivityEnterViewAnimatedIconView).setState(
-            if (picker.isOpen()) ChatActivityEnterViewAnimatedIconView.State.KEYBOARD
+            if (picker.isOpen() || gifPicker.isOpen()) ChatActivityEnterViewAnimatedIconView.State.KEYBOARD
             else ChatActivityEnterViewAnimatedIconView.State.SMILE, true,
         )
     }

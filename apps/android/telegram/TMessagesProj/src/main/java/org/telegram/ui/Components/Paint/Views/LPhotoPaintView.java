@@ -1311,6 +1311,7 @@ public class LPhotoPaintView extends SizeNotifierFrameLayoutPhoto implements IPh
     }
 
     private void openStickersView() {
+        if (io.github.baba983.nativedo.hooks.NativeDoHooks.blockHostedPaintStickerSearch(this)) return; // NativeDo: a hosted sheet's editor has no Telegram sticker search
         final int wasSelectedIndex = tabsSelectedIndex;
         switchTab(1);
         postDelayed(() -> {
@@ -3455,7 +3456,7 @@ public class LPhotoPaintView extends SizeNotifierFrameLayoutPhoto implements IPh
         if (emojiView != null) {
             return;
         }
-        emojiView = new EmojiView(null, true, false, false, getContext(), false, null, null, true, resourcesProvider, false);
+        emojiView = io.github.baba983.nativedo.hooks.NativeDoHooks.createPaintEmojiView(this, getContext(), resourcesProvider); // NativeDo: a hosted sheet's editor does not load Telegram's animated emoji packs
         emojiView.allowEmojisForNonPremium(true);
         emojiView.setVisibility(GONE);
         if (AndroidUtilities.isTablet()) {
@@ -3609,6 +3610,7 @@ public class LPhotoPaintView extends SizeNotifierFrameLayoutPhoto implements IPh
     protected void onAttachedToWindow() {
         destroyed = false;
         super.onAttachedToWindow();
+        io.github.baba983.nativedo.hooks.NativeDoHooks.configureHostedPaintEditor(this, stickerTab); // NativeDo: a hosted sheet's editor has no Telegram sticker tab
         NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.customTypefacesLoaded);
     }
 

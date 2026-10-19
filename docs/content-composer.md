@@ -97,9 +97,10 @@ row, a rejected Discourse write retains the text in the field, so the host also
 restores the target/edit panel and its cancel action. Cancel-edit and cancel-reply
 have distinct accessibility labels. Offline-suppressed edits follow the same rule.
 
-Public Discourse Chat sends text, reply targets and recorded-audio uploads.
-Its upload/message path is distinct from forum attachment insertion; sharing the
-upstream input component does not grant Chat the forum's rich editor or poll form.
+Public Discourse Chat sends text, reply targets, recorded-audio uploads and picked
+files. Its upload/message path is distinct from forum attachment insertion;
+sharing the upstream input component does not grant Chat the forum's rich editor or
+poll form.
 Channel/session permissions gate the whole input host, not its mic/send children:
 upstream owns their visibility transitions, including while a channel is loading.
 
@@ -126,9 +127,42 @@ clearing the search restores the selected category. The bottom bar holds search
 and backspace: backspace removes a whole `:name:` shortcode at the caret before
 deleting a single character, and holding it repeats. The panel rides the
 existing inset lifecycle rather than standing up a second keyboard host, and it
-offers no sticker, GIF, premium or skin-tone controls the site catalog does not
-have. Host tests cover scrolling, search restoration, shortcode deletion/repeat
-and the inset requests; real IME, GPU and gesture pacing still needs a device.
+offers no sticker, premium or skin-tone controls the site catalog does not have.
+Its `GIF` control opens the sibling site GIF panel rather than a Telegram
+sticker/GIF tab. Host tests cover scrolling, search restoration, shortcode
+deletion/repeat and the inset requests; real IME, GPU and gesture pacing still
+needs a device.
+
+### Site GIF picker
+
+The emoji panel's `GIF` control switches the same in-app keyboard bubble to
+[DiscourseGifPicker](../apps/android/nativedo/src/main/java/io/github/baba983/nativedo/topic/DiscourseGifPicker.kt),
+not to a fifth emoji tab or to Telegram's sticker sets. The panel is built from
+upstream input components (a `RecyclerListView` with a `GridLayoutManager`, a
+`SearchField` and an `EmptyTextProgressView`), but its data is the site's own GIF
+proxy. Opening reads `GET /gifs/categories.json`; a category tile is a search term
+with the provider's banner, not an insertable GIF, so tapping one starts that
+search. A query of two characters or more reads `GET /gifs/search.json?q=&pos=`
+after a short debounce, and scrolling to the end asks the provider's `next`
+cursor for the following page. A result's format follows the site's own choice:
+webp first, then gif, then any format that carries a URL. Selecting a result
+inserts `![title|WxH](url)` at the caret - replacing the selection, escaping the
+title for the Markdown label and dropping the size when the provider gave no
+usable dimensions - then closes the panel and returns focus to the field. It
+never sends the post and never writes HTML. The panel rides the same in-app
+keyboard inset life cycle as the emoji panel and expands for its search field
+while the IME is up.
+
+Capability belongs to the site, not to the panel: GIFs switched off or the
+feature absent is the site's own `404`, which the panel names instead of drawing a
+pretend empty wall; a `403` (no provider key, or a permission) and a rate limit
+stay retryable, and a session answer goes to the existing verification or login
+states. Provider thumbnails are fetched through a client that carries the image
+headers but no cookie interceptor, so a CDN request cannot forward the reader's
+session; the provider key stays on the server and no Telegram sticker or GIF RPC
+is involved. Category and result reads are fenced by session and panel
+generation, so a late answer cannot paint a closed panel or another reader's grid,
+and a tile's decoded bitmap is cached per result and released with the panel.
 
 ### Drafts
 
@@ -137,6 +171,87 @@ keys keep unrelated compositions separate. A failed send retains the draft; an
 accepted write clears the submitted draft. An account switch must not transfer an
 open field to the new reader. The [reading/state design](reading-state.md) owns
 session fences, recovery and accepted-write readback rules.
+
+### IME and clipboard media
+
+Upstream's composer hands the app media the reader's keyboard commits
+(`InputConnection.commitContent`, the path a keyboard uses to insert a GIF or
+sticker) and an image pasted from the clipboard. On Telegram those become a
+Telegram document or photo; here they reach the screen through the composer's own
+delegate: `NativeDoHooks.ComposerMediaInputHost`, implemented by the shared
+`DiscourseComposerDelegate`. A real Telegram composer's delegate does not
+implement it and keeps upstream's branch; the base `DiscourseComposerDelegate`
+answers by releasing the keyboard's read grant without attaching anything, so a
+hosted screen with no upload path can neither leak the grant nor reach Telegram's
+send or photo-edit path.
+
+The receiving screen copies the URI into its own cache before returning the
+grant, and the copy is what the upload reads. Reply, new-topic and private-message
+composers insert it through their existing attachment upload path - the same
+`upload_type=composer` Markdown insertion a gallery pick uses, not a Telegram
+media object. A chat channel stages it for its next message (below). The grant is
+released exactly once: after the copy exists, after the copy fails, or when the
+screen can no longer take the file.
+
+### Channel attachments
+
+A chat channel takes files, not an article or a poll, so its paperclip is the
+system document picker (`ACTION_OPEN_DOCUMENT`) rather than the forum attachment
+sheet. The picker's answer and keyboard/paste media go through one staging step in
+[ChatLoader](../apps/android/nativedo/src/main/java/io/github/baba983/nativedo/chat/ChatLoader.kt):
+the URI is copied once into the app's private cache, the temporary read grant is
+released, and the copy is the only file the upload reads. At most four files are
+staged for one message; a fifth is refused with an explanation. Staging is fenced
+to the session generation and owner that started the copy, so a copy that lands
+after an account switch is deleted rather than attached.
+
+Staging is not sending. Each staged file is uploaded on its own as
+`upload_type=chat-composer` so the message write can reference it, but no message
+exists until the composer's own Send. Send uploads whatever the site has not
+accepted yet, waits for each id, then writes the text, the reply target and
+`upload_ids[]`; a message may be empty when files are its content, which is also
+why the field offers its Send button for a staged file. A refused message write
+keeps the text and the staged files, and an id the site already accepted is reused
+instead of uploading the same bytes twice; an accepted write spends every copy
+before the readback, so a failed readback cannot leave them staged for a second
+send. The band above the field
+([ComposerAttachmentStrip](../apps/android/nativedo/src/main/java/io/github/baba983/nativedo/chat/ComposerAttachmentStrip.kt))
+is a host preview - one chip per file with its name, its size or upload
+progress/failure and its remove action - not upstream's attach alert, and it has
+no gallery, article or poll pane.
+
+A staged file is screen state, never a persisted draft: removing a chip deletes
+its copy, an account change or screen destroy discards the whole staging, and an
+upload id alone sends nothing. A take and a staged file are different writes, so
+the composer refuses to start or send either one while the other is pending.
+
+### Chat typing presence
+
+[ChatTypingController](../apps/android/nativedo/src/main/java/io/github/baba983/nativedo/chat/ChatTypingController.kt)
+binds one screen, channel and reader to Discourse's core presence backend, not to
+a chat endpoint. Reading others is `GET /presence/get?channels[]=/chat-reply/{id}`,
+seeded into the `/presence/chat-reply/{id}` message-bus channel; announcing is
+`POST /presence/update` with a random per-binding client id. A skipped bus message
+id, or a payload it cannot decode, re-reads the snapshot instead of guessing who
+entered or left; a `null` channel state (the site will not show it to this reader)
+draws nothing; and the visible list excludes the reader by bound username, by the
+session's own username and by user id, because the site's own list includes them.
+Timings follow the site: a present client re-announces inside the server's 60 s
+presence expiry, updates are throttled, a failed update backs off, and a failed
+leave is retried a few times before that expiry is the backstop.
+
+Announcing is deliberately conservative. It happens only while the composer holds
+non-whitespace text and the channel still accepts posts, only after
+`current_user.user_option.hide_presence` read `false`, and only while the bound
+message-bus client is the running one. An
+unanswered or failed privacy read, a `true` value, a different signed-in account
+and a session/bus change all mean "read but do not announce"; none of them may
+inherit a previous announcement. Typing stops being announced five seconds after
+the last input even if the text stays in the box - which leaves the draft itself
+untouched - and leaving the screen sends a leave. The action bar shows the other
+typers in place of the channel's status label: one name, or the first name and the
+total. Neither request carries the composer's text, and nothing here broadcasts
+the reader globally through `/chat/online`.
 
 ### Attachment sheet and recorded audio
 
@@ -206,15 +321,23 @@ than the cache copy's timestamp prefix; the site's returned filename still owns 
 Edited stills use the editor's output filename because the URI does not carry the
 original name alongside it.
 
-The local gallery's upstream mode supports still-image crop/rotate/mirror and uploads
-the resulting `PhotoEntry.imagePath`, leaving the source file intact. Paint/filter
-controls are hidden in that mode; post images remain read-only. Video edits are not
-transcoded by this host: a selection containing a trimmed, cropped, painted, filtered
-or muted video is refused before any file is uploaded, with an explanation and the
-selection/draft intact. Unedited videos upload as their original bytes. A quality-only
-compression preference does not trigger conversion; original encoding is retained.
-Host tests exercise file handoff and refusal, not real crop encoding, gallery grants,
-hardware video playback or live-site upload acceptance.
+The local gallery's upstream mode supports still-image crop/rotate/mirror and, in
+the hosted sheet only, upstream's own paint and filter editors; every edit uploads
+the resulting `PhotoEntry.imagePath`, leaving the source file intact. The two
+tools are shown only for the hosted sheet's local gallery still: videos, GIF
+animations, live photos and the document browser keep upstream's hidden state, and
+a real Telegram alert is untouched. A hosted paint editor is bound to the alert
+that opened it, so Telegram's sticker tab, its sticker/GIF search and its
+account-backed photo widget stay out of reach, and its text emoji panel is built
+without the animated-emoji packs; draw, text and the local editor itself are
+unchanged. Post images remain read-only. Video edits are still not transcoded by
+this host: a selection containing a trimmed, cropped, painted, filtered or muted
+video is refused before any file is uploaded, with an explanation and the
+selection/draft intact. Unedited videos upload as their original bytes. A
+quality-only compression preference does not trigger conversion; original encoding
+is retained.
+Host tests exercise file handoff and refusal, not real crop or paint encoding,
+editor export, gallery grants, hardware video playback or live-site upload acceptance.
 
 Not advertised because the site has no path for them: Telegram's location, contact,
 audio, sticker, emoji, quick-reply and to-do panes (so the tab set is only the four
@@ -255,7 +378,8 @@ not durable Telegram voice drafts. Backgrounding stops active capture and playba
 destroying the screen removes its private take.
 
 Chat retains its separate review/upload flow; it is not migrated to this editor.
-Chat uses `upload_type=chat-composer` then `upload_ids[]` on its message create.
+Chat uses `upload_type=chat-composer` then `upload_ids[]` on its message create,
+for a take and for a staged file alike.
 An explicit retry after a message-write failure reuses the accepted upload ID;
 accepted messages are read back, never silently resent. Received audio uses a
 labeled playable link with session-aware download, not Telegram voice bubbles.
@@ -267,9 +391,16 @@ wire round-trips), the poll form's raw, panel expansion, insertion, and record
 cancellation/permission/error paths. Real AAC fixtures verify sample ordering and
 crop boundaries; the voice host drives pause/resume and inspects the uploaded
 selected clip. Rendered states and accessibility bounds check the editor and IME
-inset hosting, not actual keyboard motion.
+inset hosting, not actual keyboard motion. Host-side coverage is scoped to the
+IME/paste intake seam, a chat file staged, uploaded and sent as `upload_ids[]`
+(including a refused write that keeps its accepted id), the staging discarded on
+an account change, the typing controller against a fake site and the real bus, and
+the GIF panel's category, search, paging and insert paths.
 Device-only, not provable by the host renderer: actual microphone encoding and
-playback, drag feel, IME transitions and the on-device gallery grid; animated
+playback, a real keyboard's `commitContent` and clipboard handoff, drag feel, IME
+transitions and the on-device gallery grid; animated
 attachment/delete icons need native Lottie, whose methods the renderer stubs.
-Site audio extensions and permissions can still reject a recording; linux.do acceptance is not established by a
+Site audio extensions and permissions can still reject a recording; the site's
+GIF setting and provider key decide whether the panel can answer; presence is only
+as visible as the site allows. linux.do acceptance is not established by a
 fake-site run. No live uploads or posts are part of host checks.

@@ -83,6 +83,22 @@ internal class ChatChannelTest {
     }
 
     @Test
+    fun theChannelHeaderShowsOtherReadersTypingAndRestoresItsStatusOnPause() {
+        serveJoinedChannel()
+        site.serveJson("chat/api/channels/71/messages.json", harness.fixture("chat-messages.json"))
+        site.serveJson("presence/get", """{"/chat-reply/71":{"users":[{"id":8,"username":"alice","name":"Alice","avatar_template":""}],"count":1,"last_message_id":0}}""")
+        val fragment = openChannel(71L, "站点反馈")
+        harness.await("typing in the channel header") {
+            fragment.actionBar.subtitle?.toString() == "alice 正在输入…"
+        }
+        harness.renderApp("chat-typing-header")
+        fragment.onPause()
+        harness.idleClock(100)
+        assertFalse(fragment.actionBar.subtitle?.toString().orEmpty().contains("正在输入"))
+        harness.assertNoTelegramSideEffects()
+    }
+
+    @Test
     fun theConversationShowsTheSitesMessagesAndAComposer() {
         serveJoinedChannel()
         site.serveJson("chat/api/channels/71/messages.json", harness.fixture("chat-messages.json"))

@@ -921,6 +921,77 @@ public final class NativeDoHooks {
         return composerRecordHost(delegate) == null ? fallback.get() : null;
     }
 
+    /**
+     * Media content the composer's own input path hands the app: an IME's {@code commitContent} (a
+     * keyboard's GIF or sticker insertion) or an image pasted from the clipboard.
+     *
+     * <p>Upstream sends a GIF document or a photo through {@code SendMessagesHelper}, and opens its
+     * own photo editor for anything else. Both are Telegram media services this host does not have.
+     * A delegate that implements this seam claims the content instead and attaches it to the post
+     * being written.</p>
+     *
+     * <p>Like the recording seam, the host is the composer's own
+     * {@code ChatActivityEnterViewDelegate} instance, not a process-wide table, so a real Telegram
+     * composer's delegate is not an instance and upstream's own branch runs unchanged.</p>
+     */
+    public interface ComposerMediaInputHost {
+        /**
+         * Attach the content at {@code uri} to the post being written. {@code releasePermission}
+         * releases the read grant the IME handed over (and does nothing for a clipboard paste); it
+         * must run exactly once, after the URI's bytes are this screen's own copy - and also when
+         * the content cannot be attached or the screen that would take it is gone.
+         */
+        void onComposerMediaInput(android.net.Uri uri, Runnable releasePermission);
+    }
+
+    /** A paste carries no IME grant; the host still receives one release, so it is a no-op. */
+    private static final Runnable NO_MEDIA_RELEASE = () -> {
+    };
+
+    /**
+     * An IME commit ({@code commitContent}): true when this client's composer owns the content, so
+     * upstream's Telegram send/photo-edit branch must not run.
+     *
+     * <p>A native delegate answers for the content even when it has no intake left (a closed
+     * screen, a channel without an upload path): the grant is released and nothing is sent. The
+     * content is handed over as the keyboard committed it - the screen's upload path, not this
+     * hook, decides what the site takes - so no commit can reach a Telegram service. A real
+     * Telegram delegate gets false and keeps upstream's behavior.</p>
+     */
+    public static boolean commitComposerMediaInput(
+            org.telegram.ui.Components.ChatActivityEnterView.ChatActivityEnterViewDelegate delegate,
+            androidx.core.view.inputmethod.InputContentInfoCompat content, int flags) {
+        if (!(delegate instanceof ComposerMediaInputHost) || content == null) {
+            return false;
+        }
+        Runnable release = NO_MEDIA_RELEASE;
+        if ((flags & android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) != 0) {
+            release = () -> {
+                try {
+                    content.releasePermission();
+                } catch (Exception ignored) {
+                }
+            };
+        }
+        ((ComposerMediaInputHost) delegate).onComposerMediaInput(content.getContentUri(), release);
+        return true;
+    }
+
+    /**
+     * An image pasted from the clipboard: the same seam, without the IME's grant. True means the
+     * native composer took it (and upstream's own photo editor must not open); false keeps
+     * upstream's editor for a real Telegram delegate.
+     */
+    public static boolean commitComposerClipboardImage(
+            org.telegram.ui.Components.ChatActivityEnterView.ChatActivityEnterViewDelegate delegate,
+            android.net.Uri uri) {
+        if (!(delegate instanceof ComposerMediaInputHost)) {
+            return false;
+        }
+        ((ComposerMediaInputHost) delegate).onComposerMediaInput(uri, NO_MEDIA_RELEASE);
+        return true;
+    }
+
     public interface AttachSheetHost {
         org.telegram.ui.Components.ChatAttachAlert.AttachAlertLayout attachSheetPollLayout(org.telegram.ui.Components.ChatAttachAlert alert);
         boolean attachSheetIsPollLayout(org.telegram.ui.Components.ChatAttachAlert.AttachAlertLayout layout);
@@ -929,6 +1000,160 @@ public final class NativeDoHooks {
         boolean onRichAttachApply(java.util.List<org.telegram.ui.iv.BlockRow> rows);
         boolean onRichAttachPersistDraft(java.util.List<org.telegram.ui.iv.BlockRow> rows);
         boolean canCloseRichAttachPane(java.util.List<org.telegram.ui.iv.BlockRow> rows, boolean showError);
+
+        /**
+         * Whether this sheet's gallery may offer the still-image editor's paint and filter tools.
+         *
+         * <p>The editor is upstream's own local one, so the question is not "is there an editor"
+         * but "can this sheet carry its result": the edited still is exported to the entry's
+         * {@code imagePath}, which is the file this client's URI upload sends. The sheet answers
+         * true only where it can keep the editor's own account-backed sticker/GIF search and
+         * photo picker out of reach; a real Telegram alert is not an {@code AttachSheetHost} and
+         * keeps upstream's hidden state.</p>
+         */
+        default boolean attachSheetHostedStillEdit() {
+            return false;
+        }
+    }
+
+    /**
+     * Whether a local gallery still picked in a hosted attachment sheet may offer paint and filter.
+     *
+     * <p>Upstream hides both for the gallery-only selection type ({@code 4}) the sheet opens its
+     * local photos with. This client can carry a still the reader paints or filters - the editor
+     * writes its result to {@link org.telegram.messenger.MediaController.MediaEditState#imagePath},
+     * which the sheet uploads - so the host capability shows the two tools again.</p>
+     *
+     * <p>The whole boundary is decided here, not at the call sites: the alert must be the hosted
+     * sheet itself (instance-bound, so every real Telegram alert and every other gallery host runs
+     * upstream's hidden state), the selection must be the sheet's local gallery type, and the entry
+     * must be a still photo. Videos, GIF animations (a {@code SearchImage}), live photos and the
+     * document picker stay excluded; their edit result is not a file this upload can send.</p>
+     */
+    public static boolean hostedStillEditAvailable(org.telegram.ui.Components.ChatAttachAlert alert,
+            int sendPhotoType, Object media, boolean documentsPicker) {
+        if (sendPhotoType != 4 || documentsPicker) {
+            return false;
+        }
+        AttachSheetHost host = attachSheetHost(alert);
+        if (host == null || !host.attachSheetHostedStillEdit()) {
+            return false;
+        }
+        if (!(media instanceof org.telegram.messenger.MediaController.PhotoEntry)) {
+            return false;
+        }
+        org.telegram.messenger.MediaController.PhotoEntry photo =
+                (org.telegram.messenger.MediaController.PhotoEntry) media;
+        if (photo.isVideo || photo.path == null) {
+            return false;
+        }
+        // A GIF picked from the device gallery is an animated image, not a still: the editor would
+        // export one frame. GIF search results are SearchImages and already fail the entry check.
+        if (photo.path.toLowerCase(java.util.Locale.ROOT).endsWith(".gif")) {
+            return false;
+        }
+        // A live photo carries a video alongside the still; the editor would export its frame,
+        // not the motion the reader picked.
+        return !photo.isLivePhoto();
+    }
+
+    /**
+     * Whether a paint editor created under {@code alert} belongs to a hosted attachment sheet.
+     *
+     * <p>Broader than {@link #hostedStillEditAvailable} on purpose: the hosted sheet can open
+     * upstream's editor for a video too, and every editor it opens must keep Telegram's
+     * sticker/GIF search and account-backed photo picker out, not only the stills this client
+     * newly allows. A real Telegram alert is not an {@code AttachSheetHost} and keeps upstream's
+     * full toolbar.</p>
+     */
+    public static boolean hostedAttachSheetEditor(org.telegram.ui.Components.ChatAttachAlert alert) {
+        AttachSheetHost host = attachSheetHost(alert);
+        return host != null && host.attachSheetHostedStillEdit();
+    }
+
+    /**
+     * The hosted paint editors, keyed by their own instance. A real Telegram editor has no entry,
+     * so every later question about its toolbar keeps upstream's answer. Weak on both sides: the
+     * key is the view the editor owns, and the value is a constant.
+     */
+    private static final java.util.Map<org.telegram.ui.Components.Paint.Views.LPhotoPaintView, Boolean> hostedPaintEditors =
+            java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
+
+    /**
+     * Binds {@code editor} to the hosted sheet that opened it. Called right after construction, so
+     * the editor's first attach can configure its Telegram controls before the reader sees them.
+     * A real Telegram alert leaves the editor unbound and untouched.
+     */
+    public static void bindHostedPaintEditor(
+            org.telegram.ui.Components.Paint.Views.LPhotoPaintView editor,
+            org.telegram.ui.Components.ChatAttachAlert alert) {
+        if (editor == null || !hostedAttachSheetEditor(alert)) {
+            return;
+        }
+        hostedPaintEditors.put(editor, Boolean.TRUE);
+    }
+
+    private static boolean hostedPaintEditor(org.telegram.ui.Components.Paint.Views.LPhotoPaintView editor) {
+        return editor != null && hostedPaintEditors.containsKey(editor);
+    }
+
+    /**
+     * The editor's own tabs are built before it is attached, so the hosted state is applied here,
+     * on its first attach: Telegram's sticker tab is hidden rather than left as an action the
+     * hosted sheet cannot use. Draw and text keep their slots.
+     */
+    public static void configureHostedPaintEditor(
+            org.telegram.ui.Components.Paint.Views.LPhotoPaintView editor, android.view.View stickerTab) {
+        if (stickerTab == null || !hostedPaintEditor(editor)) {
+            return;
+        }
+        stickerTab.setVisibility(android.view.View.GONE);
+        stickerTab.setEnabled(false);
+    }
+
+    /**
+     * True when the editor is the hosted sheet's: opening its stickers view would reach Telegram's
+     * account-backed sticker/GIF search and, through its photo widget, a fake {@code ChatActivity}
+     * over a Telegram media picker. The hosted editor refuses before either is built.
+     */
+    public static boolean blockHostedPaintStickerSearch(
+            org.telegram.ui.Components.Paint.Views.LPhotoPaintView editor) {
+        return hostedPaintEditor(editor);
+    }
+
+    /**
+     * The text tool's emoji panel, built with {@code needAnimatedEmoji} off for a hosted editor:
+     * that flag is what makes upstream's {@code EmojiView} load Telegram's animated emoji packs
+     * from the account. Plain emoji and the local text tool are unchanged for it.
+     */
+    public static org.telegram.ui.Components.EmojiView createPaintEmojiView(
+            org.telegram.ui.Components.Paint.Views.LPhotoPaintView editor,
+            android.content.Context context, org.telegram.ui.ActionBar.Theme.ResourcesProvider resourcesProvider) {
+        return new org.telegram.ui.Components.EmojiView(null, !hostedPaintEditor(editor), false, false,
+                context, false, null, null, true, resourcesProvider, false);
+    }
+
+    /**
+     * Upstream's own paint/filter visibility, after it ran: for a hosted still the two controls
+     * are shown, exactly as upstream shows them for a chat photo. Nothing is changed for any other
+     * alert, type or media - the upstream state (including its {@code GONE}) is left in place.
+     *
+     * <p>This is a post-pass rather than a rewritten upstream branch so the subtree import keeps
+     * its own logic and the host boundary stays in one place. It runs after both visibility
+     * passes that matter: the initial show ({@code onPhotoShow}) and every switch
+     * ({@code setIsAboutToSwitchToIndex}).</p>
+     */
+    public static void applyHostedStillEditVisibility(org.telegram.ui.Components.ChatAttachAlert alert,
+            int sendPhotoType, Object media, boolean documentsPicker,
+            android.view.View paintItem, android.view.View tuneItem) {
+        if (paintItem == null || tuneItem == null
+                || !hostedStillEditAvailable(alert, sendPhotoType, media, documentsPicker)) {
+            return;
+        }
+        paintItem.setTag(1);
+        tuneItem.setTag(1);
+        paintItem.setVisibility(android.view.View.VISIBLE);
+        tuneItem.setVisibility(android.view.View.VISIBLE);
     }
 
     private static AttachSheetHost attachSheetHost(org.telegram.ui.Components.ChatAttachAlert alert) {

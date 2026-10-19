@@ -1,0 +1,14 @@
+{
+  "tags": [
+    {
+      "name": "Trending",
+      "searchterm": "trending",
+      "image": "/gifs/category-trending.png"
+    },
+    {
+      "name": "Happy",
+      "searchterm": "happy",
+      "image": "/gifs/category-happy.png"
+    }
+  ]
+}

@@ -37,6 +37,8 @@ import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -381,6 +383,80 @@ class DiscourseApiClient(
         }
         return token
     }
+
+    /**
+     * The site's current state of the named presence channels (`GET /presence/get`), keyed by the
+     * full channel name. A value of null is the site's own answer that this reader may not view
+     * that channel (or that it does not exist); an absent key reads the same way. A read only: it
+     * carries the session but writes nothing.
+     */
+    suspend fun fetchPresence(channels: List<String>): Map<String, ChatPresenceState?> =
+        runWithSessionBoundary(requiresAuthentication = true) {
+            val payload = service.presenceGet(channels)
+            channels.associateWith { name ->
+                val state = payload[name]
+                if (state == null || state is JsonNull) {
+                    null
+                } else {
+                    NetworkJson.instance
+                        .decodeFromJsonElement<PresenceChannelStateDto>(state)
+                        .toModel()
+                }
+            }
+        }
+
+    /**
+     * Announces this client as present in [presentChannels] and absent from [leaveChannels]
+     * (`POST /presence/update`), naming channels by their full presence names. The request carries
+     * a per-client random id and channel names only - never the composer's text. The answer is the
+     * site's own per-channel verdict: only a `true` entry proves presence, a `false` one is the
+     * site refusing this reader (the channel is not theirs to enter). Requires the session's CSRF
+     * token.
+     */
+    suspend fun updatePresence(
+        clientId: String,
+        presentChannels: List<String> = emptyList(),
+        leaveChannels: List<String> = emptyList(),
+    ): Map<String, Boolean> = runWithSessionBoundary(requiresAuthentication = true) {
+        require(clientId.isNotBlank()) { "presence client id must not be blank" }
+        val csrfToken = chatCsrfToken()
+        val answer = service.presenceUpdate(
+            clientId = clientId,
+            presentChannels = presentChannels.ifEmpty { null },
+            leaveChannels = leaveChannels.ifEmpty { null },
+            csrfToken = csrfToken,
+        )
+        // The site answers `{name: true|false}` for the present channels it looked at and `{}` for
+        // a leave; an absent entry is not a verdict, and only `true` proves presence.
+        (presentChannels + leaveChannels).associateWith { name ->
+            (answer[name] as? JsonPrimitive)?.booleanOrNull == true
+        }
+    }
+
+    /**
+     * The signed-in reader's own identity and presence privacy, from the same `GET
+     * /session/current.json` the session layer verifies with (`CurrentUserSerializer`). Its
+     * `user_option.hide_presence` is the switch the site's own chat composer reads before entering
+     * a presence channel; it is null when the site did not answer it, and callers must treat an
+     * unanswered option as "do not announce" rather than as the site's default.
+     */
+    suspend fun fetchCurrentUserPresence(): CurrentUserPresence =
+        runWithSessionBoundary(requiresAuthentication = true) {
+            val currentUser = service.currentSession().currentUser
+            if (currentUser == JsonNull) throw SessionLoggedOutException()
+            val dto = try {
+                NetworkJson.instance.decodeFromJsonElement<CurrentUserDto>(currentUser)
+            } catch (error: SerializationException) {
+                throw SessionRecoveryRequiredException(cause = error)
+            }
+            val username = dto.username.takeIf { it.isNotBlank() }
+                ?: throw SessionRecoveryRequiredException()
+            CurrentUserPresence(
+                userId = dto.id,
+                username = username,
+                hidePresence = dto.userOption?.hidePresence,
+            )
+        }
 
     /**
      * Starts a private message: the same `POST /posts.json` route a new topic takes, with
@@ -997,7 +1073,22 @@ class DiscourseApiClient(
             error !is DiscourseRefusalException &&
             error !is SessionChangedException
 
-    private suspend fun <T> runWithSessionBoundary(
+    /**
+     * The generation of the session the next request would run under. A caller that keeps the
+     * answer past this client's own delivery - the GIF panel draws no session state of its own -
+     * compares it around a read to fence an answer whose session moved on mid-flight, the rule
+     * [cachedRead] applies to its own reads.
+     */
+    internal fun sessionGeneration(): Int = sessionContextProvider().generation
+
+    /**
+     * The app's one session boundary: resolve the context before the request, refuse an
+     * authenticated request whose cookies are gone, classify a refusal by the site's evidence, and
+     * report a proven logout against the generation that started the request. Internal because the
+     * GIF routes are read by their own small client ([DiscourseGifClient]) over this same boundary
+     * rather than through a second copy of these rules.
+     */
+    internal suspend fun <T> runWithSessionBoundary(
         requiresAuthentication: Boolean = false,
         block: suspend () -> T,
     ): T {
@@ -1067,6 +1158,18 @@ internal fun looksLikeCloudflareChallenge(bodyLowercased: String): Boolean =
 
 data class ParsedBootstrap(
     val currentUsername: String?,
+)
+
+/**
+ * The signed-in reader's presence identity and privacy, read from `GET /session/current.json`'s
+ * `current_user` (`CurrentUserSerializer`): the id and username the presence list must exclude as
+ * this reader, and `user_option.hide_presence`. A null [hidePresence] means the site did not answer
+ * the option; it is not the site's default and must not be read as permission to announce.
+ */
+data class CurrentUserPresence(
+    val userId: Long?,
+    val username: String,
+    val hidePresence: Boolean?,
 )
 
 object BootstrapHtmlParser {

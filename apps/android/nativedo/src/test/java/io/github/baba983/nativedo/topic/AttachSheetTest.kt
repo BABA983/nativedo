@@ -27,11 +27,13 @@ import io.github.baba983.nativedo.harness.shadows.ShadowSQLiteCursor
 import io.github.baba983.nativedo.harness.shadows.ShadowSQLiteDatabase
 import io.github.baba983.nativedo.harness.shadows.ShadowSQLitePreparedStatement
 import io.github.baba983.nativedo.harness.shadows.ShadowUtilities
+import io.github.baba983.nativedo.hooks.NativeDoHooks
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -51,7 +53,9 @@ import org.telegram.ui.Components.ChatAttachAlert
 import org.telegram.ui.Components.ChatAttachAlertDocumentLayout
 import org.telegram.ui.Components.ChatAttachAlertPhotoLayout
 import org.telegram.ui.Components.EditTextBoldCursor
+import org.telegram.ui.Components.Paint.Views.LPhotoPaintView
 import org.telegram.ui.Components.RecyclerListView
+import org.telegram.ui.PhotoViewer
 import org.telegram.ui.iv.RichEditorToolbar
 import java.io.File
 import java.io.FileOutputStream
@@ -112,6 +116,11 @@ internal class AttachSheetTest {
 
     @After
     fun tearDown() {
+        // The viewer is its own window, not this case's dialog; a case that failed before its
+        // finally must not leave it over the next sheet.
+        runCatching {
+            if (PhotoViewer.hasInstance()) PhotoViewer.getInstance().destroyPhotoViewer()
+        }
         // The sheet is this case's own window: close it before the activity it hangs off goes away,
         // so the next case starts from no dialog and no fragment whose dialog is still attached.
         runCatching {
@@ -955,6 +964,167 @@ internal class AttachSheetTest {
         harness.assertNoTelegramSideEffects()
     }
 
+    /**
+     * A hosted still offers the local paint and filter tools; every other kind of gallery media,
+     * every other selection type and every alert that is not this sheet keeps upstream's hidden
+     * state. This is the boundary the viewer's two visibility passes call, so a regression that
+     * widens it is caught before it can reach a Telegram-backed path.
+     */
+    @Test
+    fun theHostedSheetsStillOffersPaintAndFilterWhileEveryOtherMediaStaysHidden() {
+        openTopic()
+        val sheet = openSheetFromPaperclip()
+        val still = MediaController.PhotoEntry(
+            0, GALLERY_PHOTO_ID, 0L, writeCachePng("hosted-still.png").absolutePath,
+            0, false, 1080, 720, 0L,
+        )
+        val paint = View(harness.activity)
+        val tune = View(harness.activity)
+
+        fun upstreamHidden() {
+            paint.visibility = View.GONE
+            tune.visibility = View.GONE
+            paint.tag = null
+            tune.tag = null
+        }
+
+        fun assertHidden(why: String, type: Int, media: Any, documents: Boolean = false) {
+            upstreamHidden()
+            assertFalse(
+                "$why must not be offered to the hosted editor",
+                NativeDoHooks.hostedStillEditAvailable(sheet, type, media, documents),
+            )
+            NativeDoHooks.applyHostedStillEditVisibility(sheet, type, media, documents, paint, tune)
+            assertEquals("$why keep upstream's hidden paint", View.GONE, paint.visibility)
+            assertEquals("$why keep upstream's hidden filter", View.GONE, tune.visibility)
+            assertNull("$why get no upstream tag", paint.tag)
+        }
+
+        upstreamHidden()
+        NativeDoHooks.applyHostedStillEditVisibility(sheet, 4, still, false, paint, tune)
+        assertEquals("the hosted sheet's own still can be painted", View.VISIBLE, paint.visibility)
+        assertEquals("and filtered", View.VISIBLE, tune.visibility)
+        assertEquals("the editor reads upstream's own shown tag", 1, paint.tag)
+        assertEquals(1, tune.tag)
+
+        assertHidden(
+            "videos",
+            4,
+            MediaController.PhotoEntry(
+                0, 72, 0L, writeCacheVideo("hosted-clip.mp4").absolutePath,
+                6, true, 1280, 720, 2048L,
+            ),
+        )
+        assertHidden("GIF animations", 4, MediaController.PhotoEntry(
+            0, 73, 0L, writeCacheGif("hosted-animation.gif").absolutePath, 0, false, 320, 180, 0L,
+        ))
+        assertHidden("GIF search results", 4, MediaController.SearchImage())
+        assertHidden("a document-picker still", 4, still, documents = true)
+        assertHidden("the sheet's other selection types", 5, still)
+
+        // A gallery that is not this sheet is a real Telegram alert: not an instance of the host,
+        // so even the gallery-only type never reaches the local editor.
+        upstreamHidden()
+        NativeDoHooks.applyHostedStillEditVisibility(null, 4, still, false, paint, tune)
+        assertEquals("a real Telegram gallery keeps paint hidden", View.GONE, paint.visibility)
+        assertEquals("and filter hidden", View.GONE, tune.visibility)
+
+        assertTrue(
+            "every editor the hosted sheet opens gets the safe toolbar",
+            NativeDoHooks.hostedAttachSheetEditor(sheet),
+        )
+        assertFalse(
+            "a real Telegram alert's editor keeps upstream's full toolbar",
+            NativeDoHooks.hostedAttachSheetEditor(null),
+        )
+    }
+
+    /**
+     * The viewer's first open and every later switch ask the host boundary. A still picked in the
+     * hosted gallery shows both tools on open and on switching back, and an animated GIF keeps
+     * them hidden while it is the current item.
+     */
+    @Test
+    fun theHostedStillViewerOffersTheToolsOnFirstOpenAndOnEveryStillSwitch() {
+        openTopic()
+        val sheet = openSheetFromPaperclip()
+        val still = selectedStill(writeCachePng("viewer-still.png").absolutePath)
+        val gif = MediaController.PhotoEntry(
+            0, 74, 0L, writeCacheGif("viewer-animation.gif").absolutePath, 0, false, 320, 180, 0L,
+        )
+        val viewer = openHostedStillViewer(sheet, arrayListOf<Any>(still, gif))
+        try {
+            val paint = editorControl(viewer, "paintItem")
+            val tune = editorControl(viewer, "tuneItem")
+            assertEquals("the first still can be painted", View.VISIBLE, paint.visibility)
+            assertEquals("and filtered", View.VISIBLE, tune.visibility)
+            captureViewer("attachment-navigation/hosted-still-viewer")
+
+            switchImageIndex(viewer, 1)
+            assertEquals("an animated GIF keeps upstream's hidden paint", View.GONE, paint.visibility)
+            assertEquals("and filter", View.GONE, tune.visibility)
+            captureViewer("attachment-navigation/hosted-gif-viewer")
+
+            switchImageIndex(viewer, 0)
+            assertEquals("switching back to the still offers paint again", View.VISIBLE, paint.visibility)
+            assertEquals("and filter", View.VISIBLE, tune.visibility)
+        } finally {
+            closeViewer()
+        }
+    }
+
+    /**
+     * The hosted still editor reaches no Telegram sticker/GIF search or account-backed photo
+     * picker: its sticker tab is hidden and the tab's action refuses even if it is invoked, so no
+     * EmojiBottomSheet and no fake-ChatActivity photo picker is built. Cancelling the editor
+     * leaves the entry as it was, and the sheet's Done then uploads exactly the reader's original.
+     */
+    @Test
+    fun theHostedStillPaintToolbarHasNoTelegramStickerOrPhotoEntryPoint() {
+        site.serveJson("uploads.json", harness.fixture("upload-response.json"))
+        openTopic()
+        val sheet = openSheetFromPaperclip()
+        val original = writeCachePng("paint-still.png")
+        val still = selectedStill(original.absolutePath)
+        val viewer = openHostedStillViewer(sheet, arrayListOf<Any>(still))
+        try {
+            editorControl(viewer, "paintItem").performClick()
+            harness.await("the hosted paint editor") { field(viewer, "photoPaintView") != null }
+            harness.idleClock(SETTLE_MS)
+            val editor = field(viewer, "photoPaintView") as LPhotoPaintView
+
+            val stickerTab = field(editor, "stickerTab") as View
+            assertEquals("the gallery's Telegram sticker/GIF tab is hidden", View.GONE, stickerTab.visibility)
+            assertFalse("and is not an enabled action", stickerTab.isEnabled)
+            captureViewer("attachment-navigation/hosted-still-paint")
+
+            val dialog = ShadowDialog.getLatestDialog()
+            stickerTab.performClick()
+            harness.idleClock(SETTLE_MS)
+            assertSame(
+                "the hidden tab builds no EmojiBottomSheet and no Telegram photo picker",
+                dialog,
+                ShadowDialog.getLatestDialog(),
+            )
+            assertNull("and no emoji/sticker view was created", field(editor, "emojiView"))
+
+            editor.getCancelView().performClick()
+            harness.idleClock(SETTLE_MS)
+            assertNull("cancelling paint leaves the original file to upload", still.imagePath)
+            assertFalse("and records no paint", still.isPainted)
+        } finally {
+            closeViewer()
+        }
+
+        // The cancelled entry is exactly the file the reader picked: the sheet's own Done uploads
+        // it, byte for byte, and nothing the editor never wrote replaces it.
+        sheetWriteButton(sheet).performClick()
+        harness.await("the cancelled still to upload") { site.requestPaths.contains("uploads.json") }
+        val part = filePart(site.requestBytesFor("uploads.json")!!)
+        assertArrayEquals("the upload is the reader's original file", original.readBytes(), part.second)
+        harness.assertNoTelegramSideEffects()
+    }
+
     // ------------------------------------------------------------------ the sheet, opened
 
     private fun openTopic() {
@@ -1156,6 +1326,86 @@ internal class AttachSheetTest {
         ChatAttachAlertPhotoLayout.selectedPhotosOrder.add(GALLERY_PHOTO_ID)
     }
 
+    /** A selected still, as the sheet will upload it: the very entry the viewer edits. */
+    private fun selectedStill(path: String): MediaController.PhotoEntry {
+        selectGalleryPhoto(path)
+        return ChatAttachAlertPhotoLayout.selectedPhotos[GALLERY_PHOTO_ID] as MediaController.PhotoEntry
+    }
+
+    /**
+     * Opens the hosted gallery's viewer with the sheet's own provider and the gallery-only
+     * selection type its photo layout uses - the same call `ChatAttachAlertPhotoLayout` makes.
+     * The viewer decodes the local file on upstream's workers, so wait for the bitmap before a
+     * case enters an editor that needs its size.
+     */
+    private fun openHostedStillViewer(
+        sheet: DiscourseAttachSheet,
+        photos: ArrayList<Any>,
+    ): PhotoViewer {
+        val viewer = PhotoViewer.getInstance()
+        val fragment = sheet.baseFragment ?: harness.topFragment()
+            ?: throw AssertionError("the sheet has no host fragment")
+        viewer.setParentActivity(fragment)
+        viewer.setParentAlert(sheet)
+        viewer.setMaxSelectedPhotos(-1, true)
+        assertTrue(
+            "the hosted gallery opens its still in upstream's viewer",
+            viewer.openPhotoForSelect(photos, 0, 4, false, sheet.photoLayout.photoViewerProvider, null),
+        )
+        harness.await("the hosted still to decode") { viewer.centerImage.bitmap != null }
+        harness.idleClock(SETTLE_MS)
+        assertViewerShowsTheStill(viewer)
+        return viewer
+    }
+
+    /**
+     * The viewer's own decoded image is the reader's file: the pixels at its centre are the accent
+     * colour [stillPng] draws. A viewer showing a placeholder, a broken decode or nothing at all
+     * fails here, so the cases below are about a real still being edited, not a visibility flag.
+     */
+    private fun assertViewerShowsTheStill(viewer: PhotoViewer) {
+        val decoded = viewer.centerImage.bitmap
+            ?: throw AssertionError("the hosted still never decoded")
+        val pixel = decoded.getPixel(decoded.width / 2, decoded.height / 2)
+        val near = { actual: Int, expected: Int -> kotlin.math.abs(actual - expected) < 24 }
+        assertTrue(
+            "the viewer draws the picked still's own pixels (got #${Integer.toHexString(pixel)})",
+            near(android.graphics.Color.red(pixel), 0x3d) &&
+                near(android.graphics.Color.green(pixel), 0x7f) &&
+                near(android.graphics.Color.blue(pixel), 0xbf),
+        )
+    }
+
+    private fun closeViewer() {
+        runCatching { PhotoViewer.getInstance().closePhoto(true, false) }
+        harness.idleClock(SETTLE_MS)
+    }
+
+    /** One of the viewer's own edit controls; they are private, read by reflection in tests only. */
+    private fun editorControl(viewer: PhotoViewer, name: String): View = field(viewer, name) as View
+
+    /** Switches the viewer the way a page swipe does, through its own index setter. */
+    private fun switchImageIndex(viewer: PhotoViewer, index: Int) {
+        val method = PhotoViewer::class.java.getDeclaredMethod(
+            "setImageIndex",
+            Int::class.javaPrimitiveType,
+            Boolean::class.javaPrimitiveType,
+            Boolean::class.javaPrimitiveType,
+        )
+        method.isAccessible = true
+        method.invoke(viewer, index, false, false)
+        harness.idleClock(SETTLE_MS)
+    }
+
+    private fun field(target: Any, name: String): Any? {
+        var type: Class<*>? = target.javaClass
+        while (type != null) {
+            runCatching { return type.getDeclaredField(name).apply { isAccessible = true }.get(target) }
+            type = type.superclass
+        }
+        throw NoSuchFieldException(name)
+    }
+
     /**
      * One video in the same selection. [edit] is what the alert's own editor records when the
      * reader trims, crops or annotates it - the entry, never the file the entry points at, which is
@@ -1194,10 +1444,24 @@ internal class AttachSheetTest {
         return uri
     }
 
+    /** A still the reader picked, as a real image the gallery's viewer can decode. */
     private fun writeCachePng(name: String): File {
         val file = File(File(harness.context.cacheDir, "attach-sheet"), name)
         file.parentFile?.mkdirs()
-        file.writeBytes(transparentPng())
+        file.writeBytes(stillPng(320, 240))
+        return file
+    }
+
+    /**
+     * An animated GIF picked from the gallery: a real two-frame GIF, the bytes a picker hands over.
+     * The viewer draws the first frame (upstream treats a local photo entry as a still), and only
+     * the entry's own extension marks it as an animation, which is what the boundary keeps out of
+     * the editor.
+     */
+    private fun writeCacheGif(name: String): File {
+        val file = File(File(harness.context.cacheDir, "attach-sheet"), name)
+        file.parentFile?.mkdirs()
+        file.writeBytes(animatedGif())
         return file
     }
 
@@ -1227,9 +1491,36 @@ internal class AttachSheetTest {
         return name to bytes.copyOfRange(payloadAt, payloadEnd)
     }
 
-    /** A 1x1 PNG: the uploader sends the file's bytes, and any real image would do. */
+    /**
+     * A still image of [width]x[height], encoded by the platform's own PNG encoder. The gallery's
+     * viewer and paint editor decode this file on upstream's image workers, so the bytes have to be
+     * a decodable image - a hand-copied base64 blob that decodes to a bad IDAT chunk leaves
+     * `centerImage` empty forever and no editor can open.
+     */
+    private fun stillPng(width: Int, height: Int): ByteArray {
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        try {
+            bitmap.eraseColor(android.graphics.Color.rgb(0x3d, 0x7f, 0xbf))
+            val bytes = java.io.ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, bytes)
+            return bytes.toByteArray()
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    /** A 32x18 two-frame GIF: a real animated image, not a still with a `.gif` name. */
+    private fun animatedGif(): ByteArray = android.util.Base64.decode(
+        "R0lGODlhIAASAPAAAD1/vwAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQAAAAAACwAAAAAIAASAAACFoSPqcvtD6OctNqLs968+w+G4kiWUwEAIfkEAAAAAAAsAAAAACAAEgCAv389AAAAAhaEj6nL7Q+jnLTai7PevPsPhuJIllMBADs=",
+        android.util.Base64.DEFAULT,
+    )
+
+    /**
+     * A 1x1 transparent PNG, the file a picker answers with where the case only needs *a* file: the
+     * upload path sends the reader's bytes untouched, and this is still a real, decodable PNG.
+     */
     private fun transparentPng(): ByteArray = android.util.Base64.decode(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==",
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNgAAIAAAUAAen63NgAAAAASUVORK5CYII=",
         android.util.Base64.DEFAULT,
     )
 
@@ -1272,6 +1563,36 @@ internal class AttachSheetTest {
             out.parentFile?.mkdirs()
             FileOutputStream(out).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
             println("attach sheet capture: $out (${out.length()} bytes)")
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    /**
+     * Draws the viewer's own window - upstream's `windowView`, the full-screen view the window
+     * manager composites the photo and its tools into - over the screen it was opened from. The
+     * capture is therefore the reader's actual state (the decoded still, or the editor, under the
+     * tools the boundary shows or hides), not a visibility flag the case set.
+     */
+    private fun captureViewer(name: String) {
+        val window = field(PhotoViewer.getInstance(), "windowView") as View
+        window.measure(
+            View.MeasureSpec.makeMeasureSpec(harness.width, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(harness.height, View.MeasureSpec.EXACTLY),
+        )
+        window.layout(0, 0, harness.width, harness.height)
+        harness.idle()
+        harness.idleClock(120)
+
+        val bitmap = Bitmap.createBitmap(harness.width, harness.height, Bitmap.Config.ARGB_8888)
+        try {
+            bitmap.eraseColor(android.graphics.Color.WHITE)
+            harness.activity.findViewById<ViewGroup>(android.R.id.content)?.draw(Canvas(bitmap))
+            window.draw(Canvas(bitmap))
+            val out = File(artifactsDir(), "$name.png")
+            out.parentFile?.mkdirs()
+            FileOutputStream(out).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            println("hosted still capture: $out (${out.length()} bytes)")
         } finally {
             bitmap.recycle()
         }

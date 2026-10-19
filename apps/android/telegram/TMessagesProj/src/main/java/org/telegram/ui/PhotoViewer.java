@@ -12962,6 +12962,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                     }
                 }
             };
+            io.github.baba983.nativedo.hooks.NativeDoHooks.bindHostedPaintEditor(photoPaintView, parentAlert); // NativeDo: the hosted sheet's editor keeps Telegram's sticker/photo tools out
             photoPaintView.setBlurredBackgroundDrawableForTools(iBlur3FactoryFrostedLiquidGlass.create(photoPaintView.bottomLayout)
                 .setColorProvider(BlurredBackgroundProviderImpl.photoViewer(resourcesProvider)));
 
@@ -14364,6 +14365,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 paintItem.setVisibility(View.GONE);
                 tuneItem.setVisibility(View.GONE);
             }
+            io.github.baba983.nativedo.hooks.NativeDoHooks.applyHostedStillEditVisibility(parentAlert, sendPhotoType, obj, isDocumentsPicker, paintItem, tuneItem); // NativeDo: the hosted sheet's own still-image editor
             updateSelectedCount();
         } else {
             setImageIndex(index);
@@ -15041,6 +15043,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                         rotateItem.setVisibility(sendPhotoType != SELECT_TYPE_AVATAR ? View.GONE : View.VISIBLE);
                         mirrorItem.setVisibility(sendPhotoType != SELECT_TYPE_AVATAR ? View.GONE : View.VISIBLE);
                     }
+                    io.github.baba983.nativedo.hooks.NativeDoHooks.applyHostedStillEditVisibility(parentAlert, sendPhotoType, object, isDocumentsPicker, paintItem, tuneItem); // NativeDo: the hosted sheet's own still-image editor
                     if (animated) {
                         actionBar.beginDelayedTransition();
                     }

@@ -260,6 +260,20 @@ public class DiscourseAttachSheet extends ChatAttachAlert
         return layout != null && layout == pollLayout;
     }
 
+    /**
+     * The gallery's local still images may be painted or filtered before they are attached.
+     *
+     * <p>Only stills: {@link NativeDoHooks#hostedStillEditAvailable} keeps videos, GIF animations,
+     * live photos and the document picker out, because the only thing this sheet can upload is the
+     * entry's {@code imagePath}. Both editors are upstream's local ones; the paint editor is built
+     * with this capability so it hides Telegram's sticker/GIF search and its account-backed photo
+     * picker rather than offering tools whose result this sheet cannot carry.</p>
+     */
+    @Override
+    public boolean attachSheetHostedStillEdit() {
+        return true;
+    }
+
     /** The composer's markdown, as the HTML upstream's rich list seeds from. */
     @Override
     public String richAttachSeedHtml() {

@@ -26,13 +26,30 @@ maintain a second per-call-site ledger here.
 - The attachment sheet (`ChatAttachAlert`) and the composer's recording gesture are
   hosted the same way. A `DiscourseAttachSheet` subclass answers upstream's
   account-backed questions (tab set, poll pane, article pane, whether the files pane
-  needs a storage grant) while rendering stays upstream's; a record touch reaches only
+  needs a storage grant, whether a local gallery still may use upstream's paint and
+  filter editors) while rendering stays upstream's; a record touch reaches only
   a delegate that implements the recording seam, so a real Telegram composer keeps its
   own recorder and video note. Forum voice review also uses upstream's actual
   `RecordedAudioPlayerView` and controls. The fragment supplies `ChatActivity`'s
   overlay insets and glass factory; the instance-bound host supplies AAC capture,
   sample-table trim/join and Discourse upload, not Telegram's Opus/account services.
+  A hosted paint editor is bound to the alert that opened it: upstream's sticker tab
+  is hidden, its stickers view - and with it Telegram's sticker/GIF search and
+  account-backed photo picker - is never opened, and its text emoji panel is built
+  without the animated-emoji packs. Which stills may show paint and filter is one
+  host predicate (hosted sheet, local gallery still, not video, GIF animation, live
+  photo or the document browser), not a per-call-site decision; a real Telegram alert
+  keeps upstream's full toolbar.
   See [recorded audio](content-composer.md#attachment-sheet-and-recorded-audio).
+- Media the composer's own input path hands over - an IME's `commitContent` and an
+  image pasted from the clipboard - also belongs to the composer's delegate, not a
+  process-wide table. `NativeDoHooks.ComposerMediaInputHost` is claimed only by the
+  shared host delegate, so upstream's `SendMessagesHelper`/photo-editor branch still
+  runs for a real Telegram composer. The screen copies the URI before releasing the
+  keyboard's read grant; the forum composers insert into their existing upload path
+  and a chat channel stages the file for its next message. See
+  [IME and clipboard media](content-composer.md#ime-and-clipboard-media) and
+  [channel attachments](content-composer.md#channel-attachments).
 - Other hooks cover concrete host differences such as local media loading and
   in-app-browser preferences. They do not authorize redesigning upstream renderers.
 

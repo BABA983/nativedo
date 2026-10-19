@@ -69,6 +69,17 @@ class MessageBusSession(
     @Volatile
     private var client: MessageBusClient? = null
 
+    private val _runningClient = MutableStateFlow<MessageBusClient?>(null)
+
+    /**
+     * The running client as a flow: a signed-in foreground session publishes the one client it
+     * started, and a dropped session (sign-out, expiry) publishes null. A screen that attaches to
+     * the bus - chat presence, a chat channel's live updates - follows this instead of reading
+     * [runningClient] once, because the bootstrap may not have landed when the screen opens and a
+     * new reader always gets a new client.
+     */
+    val runningClientFlow: StateFlow<MessageBusClient?> = _runningClient.asStateFlow()
+
     /** The running client's id, or null while no session is running; diagnostics and tests. */
     val clientId: String?
         get() = client?.clientId
@@ -282,6 +293,7 @@ class MessageBusSession(
                 sharedSessionKey = bootstrap.sharedSessionKey,
             )
             client = bus
+            _runningClient.value = bus
             attachHolders(bus, bootstrap, counts, startedGeneration)
             MessageBusDiagnostics.event(
                 "session_started",
@@ -346,6 +358,7 @@ class MessageBusSession(
         // Last, so a caller that sees no client also sees the cleared state: this is what the
         // screens' observers read on a sign-out.
         client = null
+        _runningClient.value = null
         MessageBusDiagnostics.event("session_stopped")
     }
 

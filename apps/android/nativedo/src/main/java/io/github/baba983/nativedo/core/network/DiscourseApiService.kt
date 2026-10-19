@@ -571,6 +571,33 @@ interface DiscourseApiService {
         @Field("message_id") messageId: Long,
         @Header("X-CSRF-Token") csrfToken: String,
     ): ChatAckDto
+
+    /**
+     * `GET /presence/get?channels[]=/chat-reply/{id}`: the current state of each named presence
+     * channel, keyed by the full name. The body is the site's own object whose values are either a
+     * state or `null`; it is returned as JSON and decoded by the client so a `null` value (the
+     * site's answer for a channel this reader may not view) stays distinguishable from a state.
+     */
+    @GET("presence/get")
+    suspend fun presenceGet(
+        @Query("channels[]") channels: List<String>,
+    ): JsonObject
+
+    /**
+     * `POST /presence/update`: marks this client present in `present_channels[]` and absent in
+     * `leave_channels[]`, naming each channel by its full presence name. The form also carries the
+     * per-client random `client_id`; no message content is ever sent. The answer is the site's own
+     * per-channel verdict (`true` accepted, `false` not allowed), so only `true` proves presence.
+     * Requires `X-CSRF-Token`.
+     */
+    @FormUrlEncoded
+    @POST("presence/update")
+    suspend fun presenceUpdate(
+        @Field("client_id") clientId: String,
+        @Field("present_channels[]") presentChannels: List<String>?,
+        @Field("leave_channels[]") leaveChannels: List<String>?,
+        @Header("X-CSRF-Token") csrfToken: String,
+    ): JsonObject
 }
 
 @Serializable
@@ -1185,10 +1212,25 @@ data class CurrentSessionResponseDto(
 
 @Serializable
 data class CurrentUserDto(
+    val id: Long? = null,
     val username: String = "",
     val name: String = "",
     @SerialName("avatar_template")
     val avatarTemplate: String = "",
+    /**
+     * `current_user.user_option` from `CurrentUserSerializer`'s embedded `CurrentUserOptionSerializer`.
+     * Only the presence switch is mapped here; the preferences screen reads `GET /u/{username}.json`.
+     */
+    @SerialName("user_option")
+    val userOption: CurrentUserOptionDto? = null,
+)
+
+/** The part of `current_user.user_option` the presence backend reads. */
+@Serializable
+data class CurrentUserOptionDto(
+    /** Whether the reader asked not to appear in presence; null when the site omitted it. */
+    @SerialName("hide_presence")
+    val hidePresence: Boolean? = null,
 )
 
 internal fun CurrentUserDto.toSessionUserSummary(): SessionUserSummary? {
@@ -2255,6 +2297,42 @@ data class ChatMembershipResponseDto(
     val membership: ChatMembershipDto? = null,
 )
 
+/**
+ * One presence channel's state (`PresenceChannelStateSerializer`). `users` is absent for a
+ * `count_only` channel, so it is nullable rather than an empty list; the count is the site's own
+ * and remains meaningful without identities.
+ */
+@Serializable
+data class PresenceChannelStateDto(
+    val count: Int = 0,
+    @SerialName("last_message_id")
+    val lastMessageId: Long? = null,
+    val users: List<ChatUserDto>? = null,
+)
+
+/**
+ * One presence channel's state, from `GET /presence/get` (`PresenceChannelStateSerializer`): the
+ * site's count, the message-bus position a subscriber starts from, and the users when the channel
+ * publishes identities. [users] is null for a `count_only` channel - the site never reveals who is
+ * there - which is why the count is kept apart from the list.
+ */
+data class ChatPresenceState(
+    val users: List<ChatUser>? = null,
+    val count: Int = 0,
+    val lastMessageId: Long? = null,
+)
+
+/**
+ * One presence delta, from a `/presence/{name}` message-bus message. A normal channel publishes
+ * [enteringUsers] and [leavingUserIds]; a `count_only` channel publishes [countDelta] instead and
+ * no identities at all.
+ */
+data class ChatPresenceDelta(
+    val enteringUsers: List<ChatUser> = emptyList(),
+    val leavingUserIds: List<Long> = emptyList(),
+    val countDelta: Int? = null,
+)
+
 /** A chat participant, as `MessageUserSerializer` / `BasicUserSerializer` write one. */
 @Serializable
 data class ChatUserDto(
@@ -2359,7 +2437,13 @@ internal fun ChatMembershipDto.toModel(): ChatMembership = ChatMembership(
     lastReadMessageId = lastReadMessageId,
 )
 
-private fun ChatUserDto.toModel(): ChatUser = ChatUser(
+internal fun PresenceChannelStateDto.toModel(): ChatPresenceState = ChatPresenceState(
+    users = users?.map { user -> user.toModel() },
+    count = count,
+    lastMessageId = lastMessageId,
+)
+
+internal fun ChatUserDto.toModel(): ChatUser = ChatUser(
     id = id ?: 0L,
     username = username,
     name = name.orEmpty(),
@@ -2450,4 +2534,33 @@ fun decodeChatMessageBusEvent(element: JsonElement): ChatBusEvent? = runCatching
 fun decodeChatNewMessagesEvent(element: JsonElement): ChatBusEvent? = runCatching {
     val dto = NetworkJson.instance.decodeFromJsonElement(ChatMessageBusNewMessagesDto.serializer(), element)
     ChatBusEvent(type = dto.type, message = dto.message?.toModel())
+}.getOrNull()
+
+/**
+ * One `/presence/{name}` delta (`entering_users` / `leaving_user_ids`, or `count_delta` for a
+ * `count_only` channel). A payload that carries none of those shapes - or cannot be decoded - is
+ * null, which a subscriber treats as "resynchronise from `/presence/get`" exactly as the site's
+ * own client does; guessing at a changed protocol would silently drop presence changes.
+ */
+@Serializable
+internal data class ChatPresenceDeltaDto(
+    @SerialName("entering_users")
+    val enteringUsers: List<ChatUserDto> = emptyList(),
+    @SerialName("leaving_user_ids")
+    val leavingUserIds: List<Long> = emptyList(),
+    @SerialName("count_delta")
+    val countDelta: Int? = null,
+)
+
+fun decodeChatPresenceDelta(element: JsonElement): ChatPresenceDelta? = runCatching {
+    val dto = NetworkJson.instance.decodeFromJsonElement(ChatPresenceDeltaDto.serializer(), element)
+    if (dto.enteringUsers.isEmpty() && dto.leavingUserIds.isEmpty() && dto.countDelta == null) {
+        null
+    } else {
+        ChatPresenceDelta(
+            enteringUsers = dto.enteringUsers.map { user -> user.toModel() },
+            leavingUserIds = dto.leavingUserIds,
+            countDelta = dto.countDelta,
+        )
+    }
 }.getOrNull()

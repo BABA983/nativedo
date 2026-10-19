@@ -145,6 +145,7 @@ class DiscourseEmojiPicker @JvmOverloads constructor(
 
     private var insertionTarget: EditTextBoldCursor? = null
     private var onEmojiSelected: OnEmojiSelected? = null
+    private var onGifRequested: Runnable? = null
     private var onDismissListener: Runnable? = null
     private var insetsController: WindowInsetsInAppController? = null
 
@@ -295,6 +296,9 @@ class DiscourseEmojiPicker @JvmOverloads constructor(
             search.searchEditText.requestFocus()
             AndroidUtilities.showKeyboard(search.searchEditText)
         }
+        control(R.drawable.smiles_tab_gif, GIF_LABEL, Gravity.CENTER).setOnClickListener {
+            onGifRequested?.run()
+        }
         backspace = control(R.drawable.smiles_tab_clear, "退格", Gravity.RIGHT)
         backspace.setOnClickListener { deleteBackward() }
         backspace.setOnTouchListener { view, event ->
@@ -332,6 +336,15 @@ class DiscourseEmojiPicker @JvmOverloads constructor(
     /** Told every time the reader chooses an emoji, in addition to the field insertion. */
     fun setOnEmojiSelected(listener: OnEmojiSelected?) {
         onEmojiSelected = listener
+    }
+
+    /**
+     * Told when the reader chooses the GIF affordance. The owner switches to the sibling
+     * [DiscourseGifPicker]; this panel never fetches GIFs itself and never pretends the site offers
+     * them before that panel's own categories read has answered.
+     */
+    fun setOnGifRequested(listener: Runnable?) {
+        onGifRequested = listener
     }
 
     /** Called when the reader dismisses the panel (a tap outside, a back press). */
@@ -979,6 +992,7 @@ class DiscourseEmojiPicker @JvmOverloads constructor(
         /** The character a category tab's icon span replaces; it is never drawn. */
         const val TAB_ICON_PLACEHOLDER = "\u00a0"
         const val SEARCH_HINT = "搜索表情"
+        const val GIF_LABEL = "GIF"
         const val EMPTY_TEXT = "这个站点还没有表情"
         const val ERROR_TEXT = "表情加载失败，点击重试"
         const val NO_MATCH_TEXT = "没有匹配的表情"

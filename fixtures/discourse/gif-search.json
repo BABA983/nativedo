@@ -1,0 +1,40 @@
+{
+  "results": [
+    {
+      "title": "Dancing Cat",
+      "media_formats": {
+        "webp": {
+          "url": "/gifs/dancing-cat.webp",
+          "dims": [480, 270]
+        },
+        "gif": {
+          "url": "/gifs/dancing-cat.gif",
+          "dims": [480, 270]
+        }
+      }
+    },
+    {
+      "title": "Clapping",
+      "media_formats": {
+        "gif": {
+          "url": "/gifs/clapping.gif",
+          "dims": [320, 240]
+        }
+      }
+    },
+    {
+      "title": "No Preview",
+      "media_formats": {
+        "webp": {
+          "url": "/gifs/no-preview.webp",
+          "dims": [200, 150]
+        }
+      }
+    },
+    {
+      "title": "Unusable",
+      "media_formats": {}
+    }
+  ],
+  "next": ""
+}

@@ -1,11 +1,18 @@
 package io.github.baba983.nativedo.chat
 
+import android.content.Context
+import android.net.Uri
 import io.github.baba983.nativedo.core.di.AppContainer
+import io.github.baba983.nativedo.core.media.PickedMedia
+import io.github.baba983.nativedo.core.media.PickedMediaResolver
 import io.github.baba983.nativedo.core.model.ChatChannel
 import io.github.baba983.nativedo.core.model.ChatChannelPage
 import io.github.baba983.nativedo.core.model.ChatMembership
 import io.github.baba983.nativedo.core.model.ChatMessagePage
 import io.github.baba983.nativedo.core.model.UploadedFile
+import java.io.File
+import java.io.IOException
+import java.security.MessageDigest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -13,8 +20,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Request
 import org.telegram.messenger.FileLoader
-import java.io.File
-import java.security.MessageDigest
 
 /**
  * Bridges the chat data layer to the Java screens, the way
@@ -118,7 +123,30 @@ object ChatLoader {
      * Uploads one file for a chat message (`upload_type=chat-composer`) and reports the upload the
      * site accepted. An upload alone sends nothing: its id is what [send] references through
      * `upload_ids`, and the site checks ownership again on the message write.
+     *
+     * <p>[name] is the name the reader's picker reported; the private cache copy's own name would
+     * otherwise become the file's name on the site.</p>
      */
+    fun uploadAttachment(
+        container: AppContainer,
+        file: File,
+        name: String,
+        mimeType: String?,
+        onProgress: (Float) -> Unit,
+        onUploaded: (UploadedFile) -> Unit,
+        onFailed: (Throwable) -> Unit,
+    ) {
+        scope.launch {
+            container.chatRepository.upload(
+                file = file,
+                mimeType = mimeType,
+                onProgress = onProgress,
+                filename = name,
+            ).onSuccess(onUploaded).onFailure(onFailed)
+        }
+    }
+
+    /** The voice take's upload: the same `chat-composer` write, with the take's own file name. */
     fun uploadVoice(
         container: AppContainer,
         file: File,
@@ -127,10 +155,54 @@ object ChatLoader {
         onUploaded: (UploadedFile) -> Unit,
         onFailed: (Throwable) -> Unit,
     ) {
+        uploadAttachment(container, file, file.name, mimeType, onProgress, onUploaded, onFailed)
+    }
+
+    /**
+     * Copies a picker's [uri] into the app's private cache and reports the copy, so a composer can
+     * stage a file it owns a path to. [releasePermission] runs once the copy exists (or failed): the
+     * caller's temporary read grant is needed for exactly that long and is never retained.
+     *
+     * <p>The copy is also fenced to the session it started under. A pick that lands after an account
+     * switch deletes its copy and reports a failure instead of handing a stale file to the next
+     * reader's draft.</p>
+     */
+    fun stageAttachment(
+        container: AppContainer,
+        context: Context,
+        uri: Uri,
+        releasePermission: Runnable?,
+        onStaged: (PickedMedia) -> Unit,
+        onFailed: (Throwable) -> Unit,
+    ) {
+        // The copy needs an application context: the screen's own may be gone before it lands.
+        val appContext = context.applicationContext
+        val generation = container.sessionCoordinator.currentRequestContext().generation
+        val owner = container.sessionStore.snapshot()?.username
         scope.launch {
-            container.chatRepository.upload(file = file, mimeType = mimeType, onProgress = onProgress)
-                .onSuccess(onUploaded)
-                .onFailure(onFailed)
+            val picked = runCatching {
+                withContext(Dispatchers.IO) { PickedMediaResolver.resolve(appContext, uri) }
+            }.getOrElse { error ->
+                releasePermission?.run()
+                onFailed(error)
+                return@launch
+            }
+            // The copy is what makes the grant disposable: hand it back now, and not one moment
+            // earlier, because the provider's stream was still being read above.
+            releasePermission?.run()
+            if (picked == null) {
+                onFailed(IOException("无法读取所选文件"))
+                return@launch
+            }
+            val currentOwner = container.sessionStore.snapshot()?.username
+            if (generation != container.sessionCoordinator.currentRequestContext().generation ||
+                currentOwner != owner
+            ) {
+                picked.file.delete()
+                onFailed(IOException("登录状态已改变，请重新选择附件"))
+                return@launch
+            }
+            onStaged(picked)
         }
     }
 

@@ -4,8 +4,11 @@ import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.AnimatorSet;
 import android.animation.ObjectAnimator;
+import android.app.Activity;
 import android.content.Context;
+import android.content.Intent;
 import android.graphics.Paint;
+import android.net.Uri;
 import android.os.Bundle;
 import android.text.style.CharacterStyle;
 import android.text.style.URLSpan;
@@ -63,8 +66,13 @@ import io.github.baba983.nativedo.core.model.ChatMessagePage;
 import io.github.baba983.nativedo.core.media.VoiceRecording;
 import io.github.baba983.nativedo.core.media.VoiceRecordingFeedback;
 import io.github.baba983.nativedo.core.session.AppSessionState;
+import io.github.baba983.nativedo.core.session.SessionSnapshot;
 import io.github.baba983.nativedo.core.web.DiscourseLinks;
 import io.github.baba983.nativedo.core.web.DiscourseTopicLink;
+import io.github.baba983.nativedo.feature.chat.data.ChatAttachmentState;
+import io.github.baba983.nativedo.feature.chat.data.ChatAttachmentStaging;
+import io.github.baba983.nativedo.feature.chat.data.StagedChatAttachment;
+import io.github.baba983.nativedo.hooks.NativeDoHooks;
 import io.github.baba983.nativedo.profile.ProfileFragment;
 import io.github.baba983.nativedo.sessionui.SessionUi;
 import io.github.baba983.nativedo.sessionui.SessionUiAction;
@@ -112,6 +120,12 @@ public class ChatChannelFragment extends BaseFragment {
     private static final int TYPE_STATE = 2;
 
     private static final int LOAD_OLDER_THRESHOLD = 4;
+
+    /** The system picker's own request code; the chat screen never shares it with a topic. */
+    private static final int PICK_ATTACHMENT_REQUEST = 0x4e48;
+
+    /** A chat message carries a few files, not a gallery: the band stays readable and bounded. */
+    private static final int MAX_STAGED_ATTACHMENTS = 4;
 
     private long channelId;
     private String channelTitle;
@@ -168,6 +182,17 @@ public class ChatChannelFragment extends BaseFragment {
     private Long pendingUploadId;
     /** True while the take is on its way to the site (upload or send), so no second capture starts. */
     private boolean uploadingVoice;
+    private ChatTypingController typingController;
+    private String typingSubtitle = "";
+
+    /**
+     * The files the reader staged for the next message, in pick order, with the upload ids the site
+     * accepted for them. A pick stages; only the composer's Send writes, and the accepted ids are
+     * kept across a failed write so its retry never uploads the same file twice.
+     */
+    private final ChatAttachmentStaging stagedAttachments = new ChatAttachmentStaging();
+    /** The staged-file band over the composer; null until the screen is built. */
+    private ComposerAttachmentStrip attachmentStrip;
     /** The received audio clip currently playing through [voicePreview], or null. */
     private String playingAudioUrl;
     /**
@@ -375,6 +400,19 @@ public class ChatChannelFragment extends BaseFragment {
                 Gravity.BOTTOM, 0, 0, 0, 0));
         bindVoiceInput();
 
+        // The staged files sit on the same band the voice panel uses, above the field they will be
+        // sent with. A chip is a preview and its remove; the composer's own Send is the write.
+        attachmentStrip = new ComposerAttachmentStrip(context, resourceProvider);
+        attachmentStrip.setVisibility(View.GONE);
+        attachmentStrip.setOnRemove(id -> {
+            removeStagedAttachment(id);
+            return kotlin.Unit.INSTANCE;
+        });
+        contentView.addView(attachmentStrip, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT,
+                Gravity.BOTTOM, 0, 0, 0, 0));
+        refreshAttachments();
+
         // The floating round page-down affordance, upstream's own (the one a chat floats over its
         // composer): a message that arrives while the reader is in history lands here with its
         // count, and the tap goes to it.
@@ -472,7 +510,7 @@ public class ChatChannelFragment extends BaseFragment {
                     onRecordingFinished(recording);
                     return kotlin.Unit.INSTANCE;
                 },
-                () -> !uploadingVoice && !sending && !joining
+                () -> !uploadingVoice && !sending && !joining && stagedAttachments.isEmpty()
                         && lastSessionState instanceof AppSessionState.Authenticated);
         installVoicePanelActions();
     }
@@ -564,6 +602,34 @@ public class ChatChannelFragment extends BaseFragment {
             params.bottomMargin = bottom;
             voicePanel.setLayoutParams(params);
         }
+        positionAttachmentStrip();
+    }
+
+    /**
+     * The staged-file band sits on the composer's own band, and above the voice panel when that one
+     * is up. A file and a take never share a write, but the two views can still be on screen
+     * together for the moment a session change takes them down.
+     */
+    private void positionAttachmentStrip() {
+        if (attachmentStrip == null
+                || !(attachmentStrip.getLayoutParams() instanceof android.widget.FrameLayout.LayoutParams)) {
+            return;
+        }
+        android.widget.FrameLayout.LayoutParams params =
+                (android.widget.FrameLayout.LayoutParams) attachmentStrip.getLayoutParams();
+        boolean composerShown = inputViews != null && inputViews.getVisibility() == View.VISIBLE;
+        int bottom = (composerShown ? composerHeight : 0) + navigationBarHeight;
+        if (composerShown && inputViews.getHeight() > 0) {
+            bottom = Math.round(contentView.getHeight() - inputViews.getY() - inputViews.getInputBubbleTop());
+        }
+        if (voicePanel != null && voicePanel.getVisibility() == View.VISIBLE) {
+            int height = voicePanel.getHeight();
+            bottom += height > 0 ? height : AndroidUtilities.dp(56);
+        }
+        if (params.bottomMargin != bottom) {
+            params.bottomMargin = bottom;
+            attachmentStrip.setLayoutParams(params);
+        }
     }
 
     /** Wires the band's presses: play/pause the take, send it, discard it, retry a failed write. */
@@ -599,7 +665,8 @@ public class ChatChannelFragment extends BaseFragment {
      */
     private void sendPendingRecording() {
         if (container == null || pendingRecording == null || uploadingVoice || sending
-                || channel == null || !channel.getCanPost()) {
+                || channel == null || !channel.getCanPost() || !stagedAttachments.isEmpty()) {
+            // A staged file is its own message: the take waits rather than riding the same write.
             return;
         }
         final VoiceRecording recording = pendingRecording;
@@ -813,6 +880,7 @@ public class ChatChannelFragment extends BaseFragment {
         saveDraft();
         stopSessionObservation();
         closeLiveHolder();
+        stopTyping();
         clearFloatingDate();
         loadEpoch++;
         super.clearViews();
@@ -825,12 +893,17 @@ public class ChatChannelFragment extends BaseFragment {
         if (composerTools != null) composerTools.onResume();
         updateColors();
         startLiveUpdates();
+        if (typingController != null) typingController.resume();
+        else startTyping();
     }
 
     @Override
     public void onPause() {
         saveDraft();
         closeLiveHolder();
+        if (typingController != null) typingController.pause();
+        typingSubtitle = "";
+        updateTypingSubtitle();
         if (composerTools != null) composerTools.onPause();
         // A live capture or a playing take does not survive the screen going to the background: the
         // recorder is released and the playback stops. A finished take that has not been sent is
@@ -867,6 +940,7 @@ public class ChatChannelFragment extends BaseFragment {
 
     @Override
     public void onFragmentDestroy() {
+        stopTyping();
         NotificationCenter.getGlobalInstance().removeObserver(themeObserver, NotificationCenter.didSetNewTheme);
         NotificationCenter.getGlobalInstance().removeObserver(themeObserver, NotificationCenter.needSetDayNightTheme);
         // The screen is gone: a block that outlives it must not call back to start a fetch for a row
@@ -882,6 +956,9 @@ public class ChatChannelFragment extends BaseFragment {
         // The screen is gone: a live capture, a pending take and any playback go with it, and the
         // recording host releases only its own delegate binding.
         cancelVoice();
+        // The staged copies are this screen's private files; nothing else can send them.
+        attachmentStrip = null;
+        discardStagedAttachments();
         if (voiceInput != null) {
             voiceInput.onDestroy();
             voiceInput = null;
@@ -921,11 +998,14 @@ public class ChatChannelFragment extends BaseFragment {
     private void onSessionState(AppSessionState state) {
         boolean identityChanged = !SessionUi.identity(lastSessionState).equals(SessionUi.identity(state));
         if (identityChanged) {
+            stopTyping();
             saveDraft();
             // A capture, a pending take or a playback belongs to the account it started under: an
             // account switch cancels all of it rather than letting a stale take land in the new
-            // reader's draft.
+            // reader's draft. A staged file and its upload ids are the same kind of private state.
             cancelVoice();
+            discardStagedAttachments();
+            sending = false;
             draftOwner = null;
             if (composer != null) composer.setFieldText("");
             loadEpoch++;
@@ -942,6 +1022,7 @@ public class ChatChannelFragment extends BaseFragment {
                 loadChannel();
             }
         } else {
+            stopTyping();
             stateUi = SessionUi.stateFor(state);
             loading = false;
             clearFloatingDate();
@@ -952,6 +1033,7 @@ public class ChatChannelFragment extends BaseFragment {
 
     private void resetForReload() {
         channel = null;
+        sending = false;
         chatMessages.clear();
         bubbles.clear();
         bodies.clear();
@@ -999,9 +1081,42 @@ public class ChatChannelFragment extends BaseFragment {
             return;
         }
         actionBar.setTitle(channel.getTitle().isEmpty() ? "频道" : channel.getTitle());
-        actionBar.setSubtitle(statusLabel(channel));
+        updateTypingSubtitle();
+        startTyping();
         updateComposerVisibility();
         notifyRowsChanged();
+    }
+
+    private void startTyping() {
+        if (typingController != null || container == null || channel == null || isFinished || isPaused()) return;
+        SessionSnapshot owner = container.getSessionStore().snapshot();
+        if (owner == null || owner.getUsername().isEmpty()) return;
+        typingController = new ChatTypingController(container.getDiscourseApiClient(),
+                container.getMessageBusSession().getRunningClientFlow());
+        typingController.setUsersListener(typers -> {
+            if (isFinished || isPaused()) return;
+            typingSubtitle = typers.isEmpty() ? ""
+                    : typers.size() == 1 ? typers.get(0).getUsername() + " 正在输入…"
+                    : typers.get(0).getUsername() + " 等 " + typers.size() + " 人正在输入…";
+            updateTypingSubtitle();
+        });
+        typingController.start(channelId, owner.getUsername());
+    }
+
+    private void stopTyping() {
+        if (typingController != null) {
+            typingController.setUsersListener(null);
+            typingController.stop();
+            typingController = null;
+        }
+        typingSubtitle = "";
+        updateTypingSubtitle();
+    }
+
+    private void updateTypingSubtitle() {
+        if (actionBar != null && channel != null) {
+            actionBar.setSubtitle(typingSubtitle.isEmpty() ? statusLabel(channel) : typingSubtitle);
+        }
     }
 
     private void loadMessages(Long targetMessageId, String direction, boolean replace) {
@@ -1672,24 +1787,300 @@ public class ChatChannelFragment extends BaseFragment {
     }
 
     // ---------------------------------------------------------------------------------------------
+    // Attachments
+    // ---------------------------------------------------------------------------------------------
+
+    /**
+     * The paperclip's entry: the system's own content picker, because a chat channel takes files, not
+     * a forum article or a poll. What it answers is staged and uploaded by [attachMediaUri]; no
+     * message exists until the reader presses Send.
+     *
+     * <p>The picker's grant belongs to this Activity's lifetime, so nothing is kept beyond it:
+     * [attachMediaUri] copies the bytes into the app's own cache once, and the copy - never a
+     * provider stream that may go away - is what the upload reads.</p>
+     */
+    private void openAttachmentPicker() {
+        if (getParentActivity() == null || container == null || sending || uploadingVoice
+                || pendingRecording != null) {
+            return;
+        }
+        if (stagedAttachments.count() >= MAX_STAGED_ATTACHMENTS) {
+            showError("无法添加附件", new java.io.IOException(
+                    "一条消息最多带 " + MAX_STAGED_ATTACHMENTS + " 个附件"));
+            return;
+        }
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        startActivityForResult(intent, PICK_ATTACHMENT_REQUEST);
+    }
+
+    /** The picker's answer. A cancelled pick stages nothing and leaves the draft as it was. */
+    @Override
+    public void onActivityResultFragment(int requestCode, int resultCode, Intent data) {
+        if (requestCode != PICK_ATTACHMENT_REQUEST) {
+            super.onActivityResultFragment(requestCode, resultCode, data);
+            return;
+        }
+        if (resultCode != Activity.RESULT_OK || data == null || data.getData() == null) {
+            return;
+        }
+        attachMediaUri(data.getData(), null);
+    }
+
+    /**
+     * Stages one readable URI for the next message - the seam a keyboard, a recorder or the system
+     * picker drives without faking an Activity result.
+     *
+     * <p>[releasePermission] runs exactly once, after the copy it guards exists (or after the copy
+     * failed), so a caller can hand back a temporary read grant without the upload losing its
+     * source. It is never kept: no grant outlives this call's copy. The bytes go to the site as the
+     * `chat-composer` kind; the message they belong to is written only by the composer's Send.</p>
+     */
+    public void attachMediaUri(Uri uri, Runnable releasePermission) {
+        if (uri == null) {
+            release(releasePermission);
+            showError("无法添加附件", new java.io.IOException("无法读取所选文件"));
+            return;
+        }
+        if (getParentActivity() == null || container == null || isFinished) {
+            release(releasePermission);
+            return;
+        }
+        if (channel == null || !channel.getCanPost()) {
+            // The site's own answer decides whether this channel takes a message at all; a file
+            // staged for one that does not would be an upload nobody can reference.
+            release(releasePermission);
+            if (channel != null) {
+                showError("无法添加附件", new java.io.IOException("频道当前不可发言"));
+            }
+            return;
+        }
+        if (sending || uploadingVoice || pendingRecording != null) {
+            release(releasePermission);
+            showError("暂时无法添加附件", new java.io.IOException("请先发送或取消当前的语音消息"));
+            return;
+        }
+        if (stagedAttachments.count() >= MAX_STAGED_ATTACHMENTS) {
+            release(releasePermission);
+            showError("无法添加附件", new java.io.IOException(
+                    "一条消息最多带 " + MAX_STAGED_ATTACHMENTS + " 个附件"));
+            return;
+        }
+        final int epoch = loadEpoch;
+        ChatLoader.INSTANCE.stageAttachment(
+                container,
+                getParentActivity(),
+                uri,
+                releasePermission,
+                picked -> {
+                    if (epoch != loadEpoch || isFinished) {
+                        picked.getFile().delete();
+                        return kotlin.Unit.INSTANCE;
+                    }
+                    StagedChatAttachment staged = stagedAttachments.stage(
+                            picked.getFile(), picked.getName(), picked.getMimeType());
+                    refreshAttachments();
+                    uploadStagedAttachment(staged, epoch);
+                    return kotlin.Unit.INSTANCE;
+                },
+                error -> {
+                    if (epoch != loadEpoch) {
+                        return kotlin.Unit.INSTANCE;
+                    }
+                    showError("无法添加附件", error);
+                    return kotlin.Unit.INSTANCE;
+                });
+    }
+
+    private static void release(Runnable releasePermission) {
+        if (releasePermission != null) {
+            releasePermission.run();
+        }
+    }
+
+    /** Uploads one staged copy the reader has not sent yet; a failure stays on its chip. */
+    private void uploadStagedAttachment(final StagedChatAttachment item, final int epoch) {
+        uploadStagedAttachment(item, epoch, new UploadDone() {
+            @Override
+            public void onAccepted() {
+                // The chip's own state is the whole answer: the message still needs the reader.
+            }
+
+            @Override
+            public void onRefused(Throwable error) {
+                FileLog.e("chat attachment upload failed", error);
+            }
+        });
+    }
+
+    /** What a staged file's upload means to its caller: the pick only redraws, a send continues. */
+    private interface UploadDone {
+        void onAccepted();
+
+        void onRefused(Throwable error);
+    }
+
+    /**
+     * Uploads [item] and reports the site's answer. An upload the site already accepted is never
+     * repeated: the id on the staging is what a send retry references.
+     */
+    private void uploadStagedAttachment(final StagedChatAttachment item, final int epoch,
+            final UploadDone done) {
+        if (stagedAttachments.find(item.getId()) == null) {
+            return;
+        }
+        stagedAttachments.markUploading(item.getId());
+        refreshAttachments();
+        ChatLoader.INSTANCE.uploadAttachment(
+                container,
+                item.getFile(),
+                item.getName(),
+                item.getMimeType(),
+                progress -> {
+                    // The upload reports from its own thread; the band is touched on ours.
+                    AndroidUtilities.runOnUIThread(() -> {
+                        if (epoch != loadEpoch) {
+                            return;
+                        }
+                        stagedAttachments.markProgress(item.getId(), progress);
+                        if (attachmentStrip != null) {
+                            attachmentStrip.bind(stagedAttachments.items());
+                        }
+                    });
+                    return kotlin.Unit.INSTANCE;
+                },
+                uploaded -> {
+                    if (epoch != loadEpoch) {
+                        return kotlin.Unit.INSTANCE;
+                    }
+                    stagedAttachments.markAccepted(item.getId(), uploaded.getId());
+                    refreshAttachments();
+                    done.onAccepted();
+                    return kotlin.Unit.INSTANCE;
+                },
+                error -> {
+                    if (epoch != loadEpoch) {
+                        return kotlin.Unit.INSTANCE;
+                    }
+                    stagedAttachments.markRefused(item.getId());
+                    refreshAttachments();
+                    done.onRefused(error);
+                    return kotlin.Unit.INSTANCE;
+                });
+    }
+
+    /** Redraws the band from the staging and lets the composer offer its own Send for a file. */
+    private void refreshAttachments() {
+        if (attachmentStrip != null) {
+            attachmentStrip.bind(stagedAttachments.items());
+            attachmentStrip.setVisibility(stagedAttachments.isEmpty() ? View.GONE : View.VISIBLE);
+        }
+        applyListPadding();
+        updateComposerActions();
+    }
+
+    /** The band's remove: the copy goes with the chip, and no message references it. */
+    private void removeStagedAttachment(long id) {
+        if (sending) {
+            return;
+        }
+        StagedChatAttachment item = stagedAttachments.remove(id);
+        if (item != null) {
+            item.getFile().delete();
+        }
+        refreshAttachments();
+    }
+
+    /**
+     * Drops every staged file and its private copy. A session change, a screen destroy and every
+     * accepted write call this: a file staged for one reader's draft is never carried into another's
+     * or staged again behind a message the site already took.
+     */
+    private void discardStagedAttachments() {
+        for (StagedChatAttachment item : stagedAttachments.clear()) {
+            item.getFile().delete();
+        }
+        refreshAttachments();
+    }
+
+    // ---------------------------------------------------------------------------------------------
     // Sending
     // ---------------------------------------------------------------------------------------------
 
+    /**
+     * The composer's own Send: the one place a chat message is written. With staged files the write
+     * happens only after the site has accepted every one of them (`upload_ids[]`); a message may be
+     * blank when files are the content. A picked file is uploaded when it is staged, but never sent
+     * by that alone.
+     */
     private void send(CharSequence text) {
         if (container == null || sending || channel == null || !channel.getCanPost()) {
             return;
         }
         String message = text == null ? "" : text.toString().trim();
-        if (message.isEmpty()) {
+        boolean hasAttachments = !stagedAttachments.isEmpty();
+        if (message.isEmpty() && !hasAttachments) {
+            return;
+        }
+        if (uploadingVoice || pendingRecording != null) {
+            // A take and a file are two different writes; the reader finishes one first.
+            showError("暂时无法发送", new java.io.IOException("请先发送或取消当前的语音消息"));
             return;
         }
         sending = true;
         final int epoch = loadEpoch;
         final Long inReplyTo = replyTargetId;
         updateComposerVisibility();
+        if (!hasAttachments) {
+            writeMessage(message, epoch, inReplyTo);
+            return;
+        }
+        uploadStagedForSend(stagedAttachments.awaitingUpload(), 0, message, epoch, inReplyTo);
+    }
+
+    /**
+     * Uploads what a send still needs, one file at a time, then writes the message. An id already on
+     * the staging is reused, so a refused write's retry uploads nothing a second time.
+     */
+    private void uploadStagedForSend(final List<Long> ids, final int index, final String message,
+            final int epoch, final Long inReplyTo) {
+        if (epoch != loadEpoch) {
+            return;
+        }
+        if (index >= ids.size()) {
+            writeMessage(message, epoch, inReplyTo);
+            return;
+        }
+        StagedChatAttachment item = stagedAttachments.find(ids.get(index));
+        if (item == null || item.getUploadId() != null) {
+            uploadStagedForSend(ids, index + 1, message, epoch, inReplyTo);
+            return;
+        }
+        uploadStagedAttachment(item, epoch, new UploadDone() {
+            @Override
+            public void onAccepted() {
+                uploadStagedForSend(ids, index + 1, message, epoch, inReplyTo);
+            }
+
+            @Override
+            public void onRefused(Throwable error) {
+                sending = false;
+                updateComposerVisibility();
+                showError("附件上传失败", error);
+            }
+        });
+    }
+
+    /** Writes one message: the text, the reply target, and whatever uploads the staging accepted. */
+    private void writeMessage(final String message, final int epoch, final Long inReplyTo) {
+        final List<Long> uploadIds = stagedAttachments.uploadIds();
         ChatLoader.INSTANCE.send(container, channelId, message, inReplyTo, acceptedId -> {
             if (epoch != loadEpoch) return kotlin.Unit.INSTANCE;
             sending = false;
+            // The write is the site's now. The copies are spent before the readback, so a readback
+            // that fails cannot leave them staged for a second write.
+            discardStagedAttachments();
             if (composer != null) composer.setFieldText("");
             updateComposerVisibility();
             // Read the cooked result around the accepted id; a past cursor excludes its anchor.
@@ -1701,15 +2092,15 @@ public class ChatChannelFragment extends BaseFragment {
             if (epoch != loadEpoch) return kotlin.Unit.INSTANCE;
             sending = false;
             FileLog.e("chat send failed", error);
-            // A refused write keeps the text so it can be fixed and sent again - never replayed by
-            // the client itself.
+            // A refused write keeps the text and the staged files so it can be fixed and sent again
+            // - never replayed by the client itself, and the accepted uploads are not repeated.
             if (composer != null) {
                 composer.setFieldText(message);
             }
             updateComposerVisibility();
             showError("发送失败", error);
             return kotlin.Unit.INSTANCE;
-        });
+        }, uploadIds);
     }
 
     private void updateComposerVisibility() {
@@ -1728,6 +2119,9 @@ public class ChatChannelFragment extends BaseFragment {
         // Permission hides the whole input host in updateComposerVisibility. Do not hide the
         // upstream mic/send child while the channel is loading: checkSendButton relies on its
         // previous visibility to transition between the two controls once the channel arrives.
+        // A staged file is content on its own, so the field's own Send stands in for the mic even
+        // when the text is empty; that press is the only write.
+        composer.setForceShowSendButton(!stagedAttachments.isEmpty(), false);
         composer.checkSendButton(false);
         if (voicePanel != null) {
             positionVoicePanel();
@@ -2035,8 +2429,12 @@ public class ChatChannelFragment extends BaseFragment {
         }
         boolean composerShown = inputViews != null && inputViews.getVisibility() == View.VISIBLE;
         int bottom = composerShown ? composerHeight + AndroidUtilities.dp(8) : 0;
+        if (attachmentStrip != null && attachmentStrip.getVisibility() == View.VISIBLE) {
+            bottom += Math.max(attachmentStrip.getMeasuredHeight(), AndroidUtilities.dp(64));
+        }
         listView.setPadding(0, AndroidUtilities.dp(4), 0, bottom + navigationBarHeight + AndroidUtilities.dp(4));
         placePending();
+        positionAttachmentStrip();
     }
 
     private void updateColors() {
@@ -2060,6 +2458,9 @@ public class ChatChannelFragment extends BaseFragment {
         if (replyStrip != null) {
             replyStrip.setTextColor(getThemedColor(Theme.key_windowBackgroundWhiteBlackText));
             replyStrip.setBackgroundColor(getThemedColor(Theme.key_chat_messagePanelBackground));
+        }
+        if (attachmentStrip != null) {
+            attachmentStrip.updateColors();
         }
         if (floatingDateView != null) {
             // The capsule reads the shared service paints at draw time (ChatActionCell.drawBackground),
@@ -2184,6 +2585,42 @@ public class ChatChannelFragment extends BaseFragment {
 
     void sendForTest(CharSequence text) {
         send(text);
+    }
+
+    /** How many files are staged for the next message. */
+    int stagedAttachmentCountForTest() {
+        return stagedAttachments.count();
+    }
+
+    String stagedAttachmentNameForTest(int index) {
+        return index >= 0 && index < stagedAttachments.count()
+                ? stagedAttachments.items().get(index).getName() : null;
+    }
+
+    ChatAttachmentState stagedAttachmentStateForTest(int index) {
+        return index >= 0 && index < stagedAttachments.count()
+                ? stagedAttachments.items().get(index).getState() : null;
+    }
+
+    /** The private copy behind a staged chip, so a test can tell a kept file from a deleted one. */
+    java.io.File stagedAttachmentFileForTest(int index) {
+        return index >= 0 && index < stagedAttachments.count()
+                ? stagedAttachments.items().get(index).getFile() : null;
+    }
+
+    boolean isAttachmentStripShownForTest() {
+        return attachmentStrip != null && attachmentStrip.getVisibility() == View.VISIBLE;
+    }
+
+    ComposerAttachmentStrip attachmentStripForTest() {
+        return attachmentStrip;
+    }
+
+    /** The chip's own remove, for a host test that has no touch to dispatch. */
+    void removeStagedAttachmentForTest(int index) {
+        if (index >= 0 && index < stagedAttachments.count()) {
+            removeStagedAttachment(stagedAttachments.items().get(index).getId());
+        }
     }
 
     /** The same window read the action bar's refresh asks for. */
@@ -2541,11 +2978,36 @@ public class ChatChannelFragment extends BaseFragment {
         public void onTextChanged(CharSequence text, boolean bigChange, boolean fromDraft) {
             updateComposerActions();
             saveDraft();
+            if (!fromDraft && typingController != null) {
+                typingController.textChanged(channel != null && channel.getCanPost()
+                        && text != null && text.toString().trim().length() > 0);
+            }
         }
 
         @Override
         public void onWindowSizeChanged(int size) {
             updateComposerActions();
+        }
+
+        /**
+         * The composer's paperclip. A chat channel's attachments are their own message content, so
+         * the entry is the system's file picker - not the forum sheet, whose article, poll and rich
+         * editor actions post things a chat channel cannot take.
+         */
+        @Override
+        public void didPressAttachButton() {
+            openAttachmentPicker();
+        }
+
+        /**
+         * Media the keyboard or clipboard commits (see
+         * {@link NativeDoHooks.ComposerMediaInputHost}) is staged through the same path the picker
+         * uses. The base delegate would just release the grant; this screen copies the bytes first
+         * and hands the grant back, so a commit never falls into Telegram's send or photo path.
+         */
+        @Override
+        public void onComposerMediaInput(Uri uri, Runnable releasePermission) {
+            attachMediaUri(uri, releasePermission);
         }
     }
 

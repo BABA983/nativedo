@@ -1,5 +1,6 @@
 package io.github.baba983.nativedo.messagebus
 
+import io.github.baba983.nativedo.core.messagebus.MessageBusClient
 import io.github.baba983.nativedo.core.messagebus.MessageBusSession
 import io.github.baba983.nativedo.core.messagebus.NotificationUnreadCounts
 import io.github.baba983.nativedo.core.session.AppSessionState
@@ -13,6 +14,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
@@ -104,6 +107,31 @@ internal class MessageBusSessionTest {
         state.value = authenticated("someone-else")
         await("the new reader's own client") { session.clientId != null && session.clientId != firstClient }
         assertNotNull("which starts polling", server.takeRequest(5, TimeUnit.SECONDS))
+        session.close()
+    }
+
+    @Test
+    fun theRunningClientIsObservableAndClearedWithTheSession() {
+        val state = MutableStateFlow<AppSessionState>(authenticated("baba"))
+        val session = newSession(state)
+        val seen = java.util.concurrent.CopyOnWriteArrayList<MessageBusClient?>()
+        val collector = newScope().launch {
+            session.runningClientFlow.collect { client -> seen.add(client) }
+        }
+
+        session.onForeground()
+        await("the session's client to be observable") { seen.any { it != null } }
+        val running = session.runningClient
+        assertNotNull("a signed-in foreground session has a client", running)
+        assertTrue(
+            "the flow publishes the client that is actually polling",
+            seen.contains(running),
+        )
+
+        state.value = AppSessionState.Anonymous
+        await("the sign-out to clear the observed client") { seen.isNotEmpty() && seen.last() == null }
+        assertNull("and the getter agrees", session.runningClient)
+        collector.cancel()
         session.close()
     }
 

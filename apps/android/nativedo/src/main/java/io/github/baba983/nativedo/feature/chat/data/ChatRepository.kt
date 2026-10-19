@@ -89,17 +89,23 @@ class ChatRepository(
      * Uploads one file for a chat message (`upload_type=chat-composer`) and answers the upload the
      * site accepted. The id it carries is what [send] references through `upload_ids`; the site
      * checks ownership again on the message write, so an upload alone sends nothing.
+     *
+     * <p>[filename] is the name the site records for the upload. A picker's file is copied into the
+     * cache under a name of our own making, so a caller that knows the reader's own name passes it
+     * here rather than letting the copy's name become the file's name on the site.</p>
      */
     suspend fun upload(
         file: File,
         mimeType: String?,
         onProgress: (Float) -> Unit = {},
+        filename: String = file.name,
     ): Result<UploadedFile> = runCatching {
         client.uploadFile(
             file = file,
             mimeType = mimeType,
             onProgress = onProgress,
             uploadType = DiscourseUploadType.ChatComposer,
+            filename = filename,
         )
     }
 
