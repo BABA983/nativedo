@@ -28,6 +28,7 @@ import io.github.baba983.nativedo.harness.shadows.ShadowSQLiteDatabase
 import io.github.baba983.nativedo.harness.shadows.ShadowSQLitePreparedStatement
 import io.github.baba983.nativedo.harness.shadows.ShadowUtilities
 import org.junit.After
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -43,6 +44,7 @@ import org.robolectric.shadows.ShadowDialog
 import org.robolectric.shadows.ShadowEnvironment
 import org.telegram.messenger.ApplicationLoader
 import org.telegram.messenger.MediaController
+import org.telegram.messenger.VideoEditedInfo
 import org.telegram.ui.ActionBar.AlertDialog
 import org.telegram.ui.Components.ChatActivityEnterView
 import org.telegram.ui.Components.ChatAttachAlert
@@ -175,6 +177,136 @@ internal class AttachSheetTest {
             "![screenshot.png|1080x720](upload://9d5a2f6f0a1b2c3d4e5f60718293a4b5c6d7e8f9.png)\n",
             composer.getFieldText()?.toString(),
         )
+        assertTrue(
+            "the sheet closes once its selection was handed to the upload path",
+            sheet.isDismissed(),
+        )
+        assertFalse(
+            "a handed-off selection is not something to ask the reader to discard",
+            ShadowDialog.getLatestDialog() is AlertDialog,
+        )
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * A video the reader edited in the sheet's own editor cannot be attached. The editor's work -
+     * the trim, the crop - lives in the entry's `VideoEditedInfo`/`cropState`, and the upload path
+     * can only send the file the entry points at, so uploading it would silently replace what the
+     * reader edited with the original.
+     *
+     * <p>The refusal comes before the first hand-off, not per file: the photo ahead of the videos in
+     * the batch must not land in the field while the edited video is still being judged. The reader
+     * is told why, the sheet, the selection and the draft stay as they were, and unselecting the
+     * videos is all it takes to attach the rest.</p>
+     */
+    @Test
+    fun anEditedVideoIsRefusedBeforeAnyUploadAndTheSheetSaysWhy() {
+        site.serveJson("uploads.json", harness.fixture("upload-response.json"))
+        openTopic()
+        val composer = composer() ?: throw AssertionError("the screen has no composer")
+        composer.setFieldText("这段草稿不该被动")
+        harness.idle()
+
+        val sheet = openSheetFromStrip()
+        sheet.selectAction(DiscourseAttachSheet.Action.GALLERY)
+        harness.idle()
+        // The reader's batch: an ordinary photo first, then two videos the editor has touched -
+        // one trimmed, one cropped - which is exactly what the upload path would flatten.
+        selectGalleryPhoto(writeCachePng("before.png").absolutePath)
+        selectGalleryVideo(GALLERY_TRIMMED_VIDEO_ID, writeCacheVideo("trimmed.mp4").absolutePath) { entry ->
+            entry.editedInfo = VideoEditedInfo().apply {
+                start = 0.25f
+                end = 0.7f
+                startTime = 1_500
+                endTime = 4_200
+                originalDuration = 6_000
+                estimatedDuration = 6_000
+                originalWidth = 1280
+                originalHeight = 720
+                resultWidth = 1280
+                resultHeight = 720
+            }
+        }
+        selectGalleryVideo(GALLERY_CROPPED_VIDEO_ID, writeCacheVideo("cropped.mp4").absolutePath) { entry ->
+            entry.isCropped = true
+            entry.cropState = MediaController.CropState().apply {
+                cropPw = 0.5f
+                cropPh = 0.5f
+            }
+        }
+        harness.idle()
+        sheetWriteButton(sheet).performClick()
+        harness.idle()
+
+        val refusal = ShadowDialog.getLatestDialog() as? AlertDialog
+            ?: throw AssertionError("Done on an edited video uploaded it instead of explaining itself")
+        assertTrue(
+            "the reader is told, in the sheet's own words, why the video cannot be attached",
+            shownText().any { it.contains("已编辑的视频") },
+        )
+        assertEquals(
+            "not even the photo ahead of the videos in the batch is sent",
+            0,
+            site.requestPaths.count { it == "uploads.json" },
+        )
+        assertEquals(
+            "and the draft is exactly as the reader left it",
+            "这段草稿不该被动",
+            composer.getFieldText()?.toString(),
+        )
+        assertTrue("the sheet stays, with its selection", sheet.isShowing)
+        assertFalse("an edited video does not discard the sheet", sheet.isDismissed())
+        captureDialog(refusal, "attach-edited-video-refusal")
+
+        // Unselecting the videos and pressing Done again attaches the rest: the refusal is a
+        // statement about the videos, not a dead end for the batch.
+        refusal.getButton(DialogInterface.BUTTON_POSITIVE).performClick()
+        harness.idle()
+        clearGalleryVideos()
+        sheetWriteButton(sheet).performClick()
+        harness.await("the photo left in the selection to upload") {
+            site.requestPaths.count { it == "uploads.json" } == 1
+        }
+        harness.await("the field to hold its markup") {
+            composer.getFieldText()?.toString().orEmpty().contains("upload://")
+        }
+        assertTrue("the sheet closes once the batch is clean", sheet.isDismissed())
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * An unedited video is an ordinary attachment: the reader never opened it in the editor, so
+     * there is nothing to lose by sending it, and its own bytes are what the site receives - not a
+     * re-encode and not the photo the entry also names.
+     */
+    @Test
+    fun theGalleryDoneUploadsAnUneditedVideoAsItsOwnFile() {
+        site.serveJson("uploads.json", harness.fixture("upload-response.json"))
+        val composer = openTopicWithComposer()
+        val clip = writeCacheVideo("clip.mp4")
+        val sheet = openSheetFromPaperclip()
+        sheet.selectAction(DiscourseAttachSheet.Action.GALLERY)
+        harness.idle()
+        selectGalleryVideo(GALLERY_VIDEO_ID, clip.absolutePath)
+        harness.idle()
+        sheetWriteButton(sheet).performClick()
+        harness.idle()
+
+        harness.await("the field to hold the uploaded video") {
+            !composer.getFieldText().isNullOrEmpty()
+        }
+        val part = filePart(site.requestBytesFor("uploads.json")!!)
+        assertEquals("the part is the video's own file", "clip.mp4", part.first)
+        assertArrayEquals(
+            "and its bytes are the file the reader picked, untouched",
+            clip.readBytes(),
+            part.second,
+        )
+        assertTrue(
+            "the field carries the site's own handle for it",
+            composer.getFieldText()?.toString().orEmpty().contains("upload://"),
+        )
+        assertTrue("the sheet closes once the video was handed off", sheet.isDismissed())
         harness.assertNoTelegramSideEffects()
     }
 
@@ -1024,6 +1156,29 @@ internal class AttachSheetTest {
         ChatAttachAlertPhotoLayout.selectedPhotosOrder.add(GALLERY_PHOTO_ID)
     }
 
+    /**
+     * One video in the same selection. [edit] is what the alert's own editor records when the
+     * reader trims, crops or annotates it - the entry, never the file the entry points at, which is
+     * why the upload path cannot carry such a video.
+     */
+    private fun selectGalleryVideo(
+        imageId: Int,
+        path: String,
+        edit: (MediaController.PhotoEntry) -> Unit = {},
+    ) {
+        val entry = MediaController.PhotoEntry(0, imageId, 0L, path, 6, true, 1280, 720, 4096L)
+        edit(entry)
+        ChatAttachAlertPhotoLayout.selectedPhotos[imageId] = entry
+        ChatAttachAlertPhotoLayout.selectedPhotosOrder.add(imageId)
+    }
+
+    private fun clearGalleryVideos() {
+        for (imageId in listOf(GALLERY_VIDEO_ID, GALLERY_TRIMMED_VIDEO_ID, GALLERY_CROPPED_VIDEO_ID)) {
+            ChatAttachAlertPhotoLayout.selectedPhotos.remove(imageId)
+            ChatAttachAlertPhotoLayout.selectedPhotosOrder.remove(imageId)
+        }
+    }
+
     private fun clearGallerySelection() {
         ChatAttachAlertPhotoLayout.selectedPhotos.clear()
         ChatAttachAlertPhotoLayout.selectedPhotosOrder.clear()
@@ -1044,6 +1199,32 @@ internal class AttachSheetTest {
         file.parentFile?.mkdirs()
         file.writeBytes(transparentPng())
         return file
+    }
+
+    /** A video the reader picked: its bytes stand in for a real clip, and must survive untouched. */
+    private fun writeCacheVideo(name: String): File {
+        val file = File(File(harness.context.cacheDir, "attach-sheet"), name)
+        file.parentFile?.mkdirs()
+        file.writeBytes(ByteArray(2048) { index -> (index * 31 + 7).toByte() })
+        return file
+    }
+
+    /**
+     * The file part of a multipart body, read from the bytes as they were sent: the name in its
+     * `Content-Disposition` and its payload. ISO-8859-1 makes every character one byte, so the
+     * header scan indexes the same bytes it slices.
+     */
+    private fun filePart(bytes: ByteArray): Pair<String, ByteArray> {
+        val wire = bytes.toString(Charsets.ISO_8859_1)
+        val header = "Content-Disposition: form-data; name=\"file\"; filename=\""
+        val headerAt = wire.indexOf(header)
+        assertTrue("the body carries a file part", headerAt >= 0)
+        val nameAt = headerAt + header.length
+        val name = wire.substring(nameAt, wire.indexOf('"', nameAt))
+        val payloadAt = wire.indexOf("\r\n\r\n", headerAt) + 4
+        val payloadEnd = wire.indexOf("\r\n--", payloadAt)
+        assertTrue("the file part has a payload of its own", payloadAt >= 4 && payloadEnd > payloadAt)
+        return name to bytes.copyOfRange(payloadAt, payloadEnd)
     }
 
     /** A 1x1 PNG: the uploader sends the file's bytes, and any real image would do. */
@@ -1192,6 +1373,15 @@ internal class AttachSheetTest {
 
         /** The gallery pane's own photo key, matching the single photo the capture case selects. */
         const val GALLERY_PHOTO_ID = 1
+
+        /** A video the reader picked and never opened in the editor. */
+        const val GALLERY_VIDEO_ID = 2
+
+        /** A video the editor trimmed: the edit is the entry's own `VideoEditedInfo`. */
+        const val GALLERY_TRIMMED_VIDEO_ID = 3
+
+        /** A video the editor cropped: the edit is the entry's own `cropState`. */
+        const val GALLERY_CROPPED_VIDEO_ID = 4
 
         /** How long the sheet's open and pane transitions are given to settle before a capture. */
         const val SETTLE_MS = 400L

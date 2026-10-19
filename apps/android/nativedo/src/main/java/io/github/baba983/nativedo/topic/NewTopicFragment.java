@@ -777,7 +777,7 @@ public class NewTopicFragment extends BaseFragment {
         destroyed = true;
         saveDraft();
         if (attachSheet != null) {
-            attachSheet.dismiss();
+            attachSheet.dismissInternal();
             attachSheet = null;
         }
         if (composerTools != null) {

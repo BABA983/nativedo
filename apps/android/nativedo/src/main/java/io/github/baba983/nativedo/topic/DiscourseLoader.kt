@@ -447,6 +447,10 @@ object DiscourseLoader {
      * Uploads one file for a reply and reports the site's markdown for it, or the failure the
      * reader has to see. The site decides what an upload looks like in a post, so the markup is
      * built here from the answer's own handle, name, size and dimensions.
+     *
+     * The site is told the name the picker reported, not the cache copy's: the copy carries a
+     * timestamp prefix that exists only to keep two same-named picks apart on disk, and the site
+     * records the name it is sent (`original_filename`), which is what a reader sees on the upload.
      */
     fun uploadReplyMedia(
         container: AppContainer,
@@ -461,6 +465,7 @@ object DiscourseLoader {
                         file = picked.file,
                         mimeType = picked.mimeType,
                         onProgress = { },
+                        filename = picked.name,
                     )
                 // A site that answers an upload without a resolvable target leaves nothing to point
                 // a post at, and that is the one case the reader has to see as a failure.

@@ -12,7 +12,9 @@ import androidx.annotation.Nullable;
 
 import org.telegram.messenger.MediaController;
 import org.telegram.messenger.MessageObject;
+import org.telegram.messenger.VideoEditedInfo;
 import org.telegram.tgnet.TLRPC;
+import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.BulletinFactory;
@@ -39,7 +41,9 @@ import io.github.baba983.nativedo.hooks.NativeDoHooks;
  * what the tabs mean: the gallery and files panes hand their selection to this client's own
  * URI upload path, the article pane is seeded and read back as Discourse markdown, and the poll
  * pane is the site's own poll raw rather than a Telegram poll message. Nothing here builds a
- * Telegram message, reaches Telegram RPC or writes Telegram's database.</p>
+ * Telegram message, reaches Telegram RPC or writes Telegram's database. A video the reader edited
+ * in the alert's own editor is refused there instead of being uploaded as its original file: the
+ * editor's work lives in the entry, which a URI upload cannot carry.</p>
  *
  * <p>The alert's own account-backed behavior is answered through the instance-bound
  * {@link NativeDoHooks.AttachSheetHost} seam: this alert is the host, so the upstream call sites
@@ -100,6 +104,8 @@ public class DiscourseAttachSheet extends ChatAttachAlert
     /** The site's own poll pane, created once and reused, so its identity is stable. */
     private ChatAttachAlert.AttachAlertLayout pollLayout;
     private List<BlockRow> articleRows;
+    /** The refusal a video the reader edited in the editor gets, while it is up. */
+    private AlertDialog editedVideoRefusal;
 
     /**
      * @param host         the screen hosting the sheet; upstream uses it for the activity and the
@@ -192,6 +198,7 @@ public class DiscourseAttachSheet extends ChatAttachAlert
      */
     @Override
     public void dismissInternal() {
+        dismissEditedVideoRefusal();
         super.dismissInternal();
         if (!destroyed) {
             onDestroy();
@@ -207,6 +214,7 @@ public class DiscourseAttachSheet extends ChatAttachAlert
     @Override
     public void onPause() {
         if (!destroyed) {
+            dismissEditedVideoRefusal();
             if (!isDismissed() && articleRows != null
                     && getCurrentAttachLayout() instanceof ChatAttachAlertRichLayout) {
                 onRichAttachPersistDraft(articleRows);
@@ -326,17 +334,32 @@ public class DiscourseAttachSheet extends ChatAttachAlert
      * The alert's own done action. Action 7 is the gallery's exit: the reader's selected device
      * images become local URIs for the screen's upload path, then the sheet closes. Every other
      * button is Telegram's and is not run - this sheet has no Telegram send.
+     *
+     * <p>A video the reader edited in the alert's own editor refuses the whole selection before the
+     * first URI is handed off, so no part of the batch is uploaded ahead of the refusal and nothing
+     * the reader edited is silently replaced by its original file. The sheet stays open with the
+     * selection and the draft as they were.</p>
      */
     @Override
     public void didPressedButton(int button, boolean arg, boolean notify, int scheduleDate,
             int scheduleRepeatPeriod, long effectId, boolean invertMedia, boolean forceDocument, long payStars) {
-        if (button == 7) {
-            List<Uri> picked = selectedPhotoUris();
-            if (!picked.isEmpty()) {
-                listener.onAttachUris(picked);
-            }
-            dismiss();
+        if (button != 7) {
+            return;
         }
+        List<MediaController.PhotoEntry> selection = selectedPhotoEntries();
+        if (hasEditedVideo(selection)) {
+            // The alert marked its send button as pressed before handing the action over; this
+            // refusal hands nothing over, so the button must work again once the videos are gone.
+            setButtonPressed(false);
+            showEditedVideoRefusal();
+            return;
+        }
+        List<Uri> picked = photoUris(selection);
+        if (!picked.isEmpty()) {
+            listener.onAttachUris(picked);
+        }
+        // The selection was handed off, not discarded; bypass upstream's discard confirmation.
+        dismiss(true);
     }
 
     // ------------------------------------------------------ DocumentSelectActivityDelegate
@@ -360,7 +383,7 @@ public class DiscourseAttachSheet extends ChatAttachAlert
         if (!picked.isEmpty()) {
             listener.onAttachUris(picked);
         }
-        dismiss();
+        dismiss(true);
     }
 
     /**
@@ -369,34 +392,147 @@ public class DiscourseAttachSheet extends ChatAttachAlert
      */
     @Override
     public void startDocumentSelectActivity() {
-        dismiss();
+        dismiss(true);
         listener.onAttachAction(Action.FILES);
     }
 
     // ------------------------------------------------------------- selected media
 
-    /** The gallery pane's selection as local URIs, in the order the reader picked it. */
-    private List<Uri> selectedPhotoUris() {
-        List<Uri> uris = new ArrayList<>();
+    /** The gallery pane's selection, in the order the reader picked it. */
+    private List<MediaController.PhotoEntry> selectedPhotoEntries() {
+        List<MediaController.PhotoEntry> entries = new ArrayList<>();
         ChatAttachAlertPhotoLayout photoLayout = getPhotoLayout();
         if (photoLayout == null) {
-            return uris;
+            return entries;
         }
         HashMap<Object, Object> selected = photoLayout.getSelectedPhotos();
         ArrayList<Object> order = photoLayout.getSelectedPhotosOrder();
         if (selected == null || order == null) {
-            return uris;
+            return entries;
         }
         for (Object key : order) {
             Object item = selected.get(key);
             if (item instanceof MediaController.PhotoEntry) {
-                MediaController.PhotoEntry photo = (MediaController.PhotoEntry) item;
-                String path = photo.imagePath != null ? photo.imagePath : photo.path;
-                if (path != null && !path.isEmpty()) {
-                    uris.add(Uri.fromFile(new File(path)));
-                }
+                entries.add((MediaController.PhotoEntry) item);
+            }
+        }
+        return entries;
+    }
+
+    /** Those entries as local URIs for the screen's upload path, in the same order. */
+    private List<Uri> photoUris(List<MediaController.PhotoEntry> entries) {
+        List<Uri> uris = new ArrayList<>();
+        for (MediaController.PhotoEntry photo : entries) {
+            String path = photo.imagePath != null ? photo.imagePath : photo.path;
+            if (path != null && !path.isEmpty()) {
+                uris.add(Uri.fromFile(new File(path)));
             }
         }
         return uris;
+    }
+
+    /**
+     * Whether the reader edited a video in the alert's own editor. The editor keeps its work in the
+     * entry itself - {@link VideoEditedInfo} and {@link MediaController.CropState} - while the file
+     * the entry points at stays the original, which is all this client's URI upload can send.
+     * Uploading that file would silently drop the trim, crop, paint, filter, mute or text the reader
+     * applied, so such a selection is refused instead.
+     *
+     * <p>{@link VideoEditedInfo#needConvert()} cannot answer this: it is true for every ordinary
+     * gallery video, edited or not, because {@code roundVideo} is false. The edit is read from the
+     * fields the editor actually fills, with the unedited state taken from its own defaults: an
+     * entry it never touched, or one whose {@code editedInfo} only carries a quality choice
+     * (full-length {@code start}/{@code end}, original dimensions), stays uploadable.</p>
+     */
+    private static boolean hasEditedVideo(List<MediaController.PhotoEntry> entries) {
+        for (MediaController.PhotoEntry photo : entries) {
+            if (isEditedVideo(photo)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isEditedVideo(MediaController.PhotoEntry photo) {
+        if (photo == null || !photo.isVideo) {
+            return false;
+        }
+        // The editor's own marks on the entry: a crop, a filter or paint it applied.
+        if (photo.isCropped || photo.isFiltered || photo.isPainted) {
+            return true;
+        }
+        if (!isEmptyCrop(photo.cropState)) {
+            return true;
+        }
+        VideoEditedInfo edited = photo.editedInfo;
+        if (edited == null) {
+            return false;
+        }
+        // The video itself: cropped, filtered, painted, annotated or muted.
+        if (!isEmptyCrop(edited.cropState) || edited.filterState != null) {
+            return true;
+        }
+        if (edited.paintPath != null || edited.blurPath != null
+                || edited.messagePath != null || edited.messageVideoMaskPath != null
+                || edited.backgroundPath != null) {
+            return true;
+        }
+        if (edited.mediaEntities != null && !edited.mediaEntities.isEmpty()) {
+            return true;
+        }
+        // The mute button: the editor sets `muted` only for a video the reader silenced.
+        if (edited.muted) {
+            return true;
+        }
+        // The reader's trim. Untrimmed, the editor records 0..1 and the -1 sentinels.
+        if (edited.start > 0f || (edited.end > 0f && edited.end < 1f)) {
+            return true;
+        }
+        if (edited.startTime > 0) {
+            return true;
+        }
+        return edited.endTime > 0 && edited.estimatedDuration > 0
+                && edited.endTime != edited.estimatedDuration;
+    }
+
+    private static boolean isEmptyCrop(MediaController.CropState crop) {
+        return crop == null || crop.isEmpty();
+    }
+
+    /**
+     * Says why an edited video cannot be attached, over the sheet the reader chose it in. It stays
+     * up until the reader dismisses it; the sheet, the selection and the draft are untouched, so
+     * unselecting the video and pressing Done again is all it takes.
+     */
+    private void showEditedVideoRefusal() {
+        if (editedVideoRefusal != null && editedVideoRefusal.isShowing()) {
+            return;
+        }
+        Context context = getContext();
+        if (context == null) {
+            return;
+        }
+        AlertDialog refusal = new AlertDialog.Builder(context, resourcesProvider)
+                .setTitle("无法上传已编辑的视频")
+                .setMessage("这个视频在编辑器里做过修剪、裁剪、涂画或滤镜，附件上传只能发送原文件。"
+                        + "请取消选择这个视频，或改选未编辑的视频。")
+                .setPositiveButton("好", null)
+                .create();
+        refusal.setOnDismissListener(dialog -> {
+            if (editedVideoRefusal == dialog) {
+                editedVideoRefusal = null;
+            }
+        });
+        editedVideoRefusal = refusal;
+        refusal.show();
+    }
+
+    /** The refusal is this sheet's own window: it never outlives the sheet or its screen. */
+    private void dismissEditedVideoRefusal() {
+        AlertDialog refusal = editedVideoRefusal;
+        editedVideoRefusal = null;
+        if (refusal != null && refusal.isShowing()) {
+            refusal.dismiss();
+        }
     }
 }

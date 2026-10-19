@@ -24,6 +24,7 @@ import io.github.baba983.nativedo.harness.shadows.ShadowSQLiteDatabase
 import io.github.baba983.nativedo.harness.shadows.ShadowSQLitePreparedStatement
 import io.github.baba983.nativedo.harness.shadows.ShadowUtilities
 import org.junit.After
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -115,6 +116,17 @@ internal class UploadReplyTest {
             "csrf-token-demo",
             site.csrfHeaderFor("uploads.json"),
         )
+        val part = filePart(site.requestBytesFor("uploads.json")!!)
+        assertEquals(
+            "the part is named after the file the reader picked, not the cache copy that carries it",
+            "screenshot.png",
+            part.first,
+        )
+        assertArrayEquals(
+            "and its bytes are the picked file's, not the copy's own naming or anything re-encoded",
+            transparentPng(),
+            part.second,
+        )
 
         val field = composer.fieldText.toString()
         println("upload: field = $field")
@@ -150,6 +162,49 @@ internal class UploadReplyTest {
             field,
         )
         harness.renderApp("topic-reply-upload-attachment")
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * Two files the reader picks can report the same name; only the copies we make of them differ,
+     * by the prefix that keeps them apart in the cache. The site records the name it is sent, so
+     * that prefix must not travel: each part keeps the picker's name and its own bytes.
+     */
+    @Test
+    fun twoPicksWithTheSameNameAreUploadedUnderThatNameWithTheirOwnBytes() {
+        site.serveJson("uploads.json", harness.fixture("upload-response.json"))
+        val composer = openComposerAndAttach()
+        pickFile("screenshot.png", "first screenshot".toByteArray(), source = "first")
+        harness.await("the first upload to land in the field") {
+            !composer.getFieldText().isNullOrEmpty()
+        }
+
+        // The cache copy is stamped with the clock, so the second pick has to land on a later tick
+        // to be a copy of its own rather than an overwrite of the first.
+        harness.idleClock(1_000)
+        harness.layoutApp()
+        val strip = attachStrip() ?: throw AssertionError("the screen has no attach strip")
+        strip.performClick()
+        harness.idle()
+        openSystemFilePicker()
+        harness.idle()
+        pickFile("screenshot.png", "second screenshot".toByteArray(), source = "second")
+        harness.await("the second upload to land in the field") {
+            composer.getFieldText()?.count { it == '\n' } == 2
+        }
+
+        val parts = site.requestBodiesFor("uploads.json").map { body -> filePart(body.toByteArray()) }
+        assertEquals("both picks reached the site as their own upload", 2, parts.size)
+        assertEquals(
+            "each part is named after its pick, with no cache prefix in front of it",
+            listOf("screenshot.png", "screenshot.png"),
+            parts.map { part -> part.first },
+        )
+        assertEquals(
+            "and each carries the bytes of the pick it was uploaded from, not its same-named neighbour's",
+            listOf("first screenshot", "second screenshot"),
+            parts.map { part -> part.second.toString(Charsets.UTF_8) },
+        )
         harness.assertNoTelegramSideEffects()
     }
 
@@ -302,8 +357,12 @@ internal class UploadReplyTest {
         harness.assertNoTelegramSideEffects()
     }
 
-    /** Answers the picker the attach button opened, the way the system would. */
-    private fun pickFile(name: String, bytes: ByteArray): Uri {
+    /**
+     * Answers the picker the attach button opened, the way the system would. [source] only makes
+     * two picks of the same filename different documents; the name the app reads is [name] either
+     * way, because it is the last segment.
+     */
+    private fun pickFile(name: String, bytes: ByteArray, source: String = "picked"): Uri {
         val activity = harness.activity
         val requested = shadowOf(activity).nextStartedActivityForResult
             ?: throw AssertionError("the attach button opened no picker")
@@ -312,11 +371,29 @@ internal class UploadReplyTest {
             Intent.ACTION_OPEN_DOCUMENT,
             requested.intent.action,
         )
-        val uri = Uri.parse("content://io.github.baba983.nativedo.test/$name")
+        val uri = Uri.parse("content://io.github.baba983.nativedo.test/$source/$name")
         shadowOf(activity.contentResolver).registerInputStream(uri, bytes.inputStream())
         shadowOf(activity).receiveResult(requested.intent, Activity.RESULT_OK, Intent().setData(uri))
         harness.idle()
         return uri
+    }
+
+    /**
+     * The file part of a multipart body, read from the bytes as they were sent: the name in its
+     * `Content-Disposition` and its payload. ISO-8859-1 makes every character one byte, so the
+     * header scan indexes the same bytes it slices.
+     */
+    private fun filePart(bytes: ByteArray): Pair<String, ByteArray> {
+        val wire = bytes.toString(Charsets.ISO_8859_1)
+        val header = "Content-Disposition: form-data; name=\"file\"; filename=\""
+        val headerAt = wire.indexOf(header)
+        assertTrue("the body carries a file part", headerAt >= 0)
+        val nameAt = headerAt + header.length
+        val name = wire.substring(nameAt, wire.indexOf('"', nameAt))
+        val payloadAt = wire.indexOf("\r\n\r\n", headerAt) + 4
+        val payloadEnd = wire.indexOf("\r\n--", payloadAt)
+        assertTrue("the file part has a payload of its own", payloadAt >= 4 && payloadEnd > payloadAt)
+        return name to bytes.copyOfRange(payloadAt, payloadEnd)
     }
 
     /** Our own attach strip, by the label it shows while it is idle. */

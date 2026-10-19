@@ -3160,7 +3160,7 @@ public class TopicFragment extends BaseFragment
     public void onFragmentDestroy() {
         // A dialog nobody dismisses outlives the screen that opened it; the sheet goes with this one.
         if (attachSheet != null) {
-            attachSheet.dismiss();
+            attachSheet.dismissInternal();
             attachSheet = null;
         }
         if (topicSearch != null) {
@@ -6163,11 +6163,15 @@ public class TopicFragment extends BaseFragment
                     container,
                     video,
                     () -> {
-                        ArticlePhotoViewer.open(TopicFragment.this, message, block, listView);
+                        if (!isFinished && isLastFragment() && !isPaused()) {
+                            ArticlePhotoViewer.open(TopicFragment.this, message, block, listView);
+                        }
                         return kotlin.Unit.INSTANCE;
                     },
                     () -> {
-                        ArticlePhotoViewer.stream(TopicFragment.this, block);
+                        if (!isFinished && isLastFragment() && !isPaused()) {
+                            ArticlePhotoViewer.stream(TopicFragment.this, block);
+                        }
                         return kotlin.Unit.INSTANCE;
                     });
             return true;

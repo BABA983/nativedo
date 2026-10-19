@@ -652,18 +652,24 @@ class DiscourseApiClient(
      * decides which the site accepts the file for; it defaults to `composer`, which is what every
      * existing caller already sent. The URL comes back as the site wrote it - usually absolute, a
      * path when the site answered one - and the caller resolves it.
+     *
+     * [filename] is the name the site records for the upload, which is not always the local file's:
+     * a picker's file is copied into the cache under a name of our own making, and that copy keeps
+     * the picker's name beside it. It defaults to the file's own name, which is what a caller that
+     * has no other name to offer already sent.
      */
     suspend fun uploadFile(
         file: File,
         mimeType: String?,
         onProgress: (Float) -> Unit,
         uploadType: DiscourseUploadType = DiscourseUploadType.Composer,
+        filename: String = file.name,
     ): UploadedFile = runWithSessionBoundary(requiresAuthentication = true) {
         val csrfToken = service.csrf().csrf
         val response = service.upload(
             file = MultipartBody.Part.createFormData(
                 "file",
-                file.name,
+                filename,
                 ProgressRequestBody(file, mimeType, onProgress),
             ),
             uploadType = uploadType.wireValue.toUploadField(),

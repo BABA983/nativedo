@@ -215,6 +215,25 @@ internal class PostVideoTest {
     }
 
     @Test
+    fun aDownloadedClipDoesNotOpenOverTheScreenTheReaderMovedTo() {
+        val clip = "uploads/leaving-topic.mp4"
+        site.serveThrottled(clip, ByteArray(256 * 1024) { 3 }, "video/mp4",
+            bytesPerPeriod = 32 * 1024, periodMillis = 250)
+        val cell = openTopic(videoPost(clip, poster = null))
+        val block = videoBlockOf(cell.messageObject!!)
+        pressPlay(cell, block)
+        harness.await("the clip request") { site.recordedRequests.any { it.contains(clip) } }
+        harness.present(io.github.baba983.nativedo.settings.SettingsFragment())
+        harness.await("the download finishing behind settings", iterations = 12_000) {
+            DiscourseImageBridge.videoFileExists(block.video_id)
+        }
+        harness.idleClock(500)
+        assertFalse("a background topic must not open its viewer", PhotoViewer.getInstance().isVisibleOrAnimating())
+        assertNull("or launch an external player", startedActivity())
+        harness.assertNoTelegramSideEffects()
+    }
+
+    @Test
     fun aClipOverTheCapGoesToTheDevicePlayer() {
         val clip = "uploads/huge-clip.mp4"
         site.serveResponse(clip) {

@@ -51,6 +51,14 @@ cache entry; duplicate consumers share the transfer and its outcome. Fetching vi
 bytes remains a separate action from rendering its cover. Never retain recycled
 view/block instances as a data cache.
 
+Channel messages use the same image viewer, attachment cache and video-cover path as
+topic posts. Media taps open the selected picture in its message's gallery or fetch a
+video on demand. A completed video fetch may open a viewer or external player only
+while its originating screen is still visible. Ordinary channel links use the native
+topic/profile destinations or the browser; received voice links retain local playback.
+External video playback receives a URL, not the app's cookies, so it cannot guarantee
+playback of authenticated uploads. Codec support and GPU playback require device checks.
+
 PhotoViewer groups the media of one rich message into upstream's thumbnail strip;
 single-media messages have no strip, and neighbouring posts are not combined.
 Thumbnail receivers use downloaded local previews or originals, never synthetic
@@ -190,6 +198,23 @@ It is not forced into a second ActionBar or a new full-screen page. Like Telegra
 chat host, the owning screen keeps the sheet through pause/resume. A
 visible article saves before the screen persists its draft; a hidden article cannot
 overwrite later edits. Apply is labelled as completion, not as sending a post.
+
+Completed gallery/files handoffs close without asking to discard the selection that
+was just handed to the uploader. Screen destruction also closes the sheet without a
+confirmation dialog. The multipart filename preserves the picker's display name rather
+than the cache copy's timestamp prefix; the site's returned filename still owns markup.
+Edited stills use the editor's output filename because the URI does not carry the
+original name alongside it.
+
+The local gallery's upstream mode supports still-image crop/rotate/mirror and uploads
+the resulting `PhotoEntry.imagePath`, leaving the source file intact. Paint/filter
+controls are hidden in that mode; post images remain read-only. Video edits are not
+transcoded by this host: a selection containing a trimmed, cropped, painted, filtered
+or muted video is refused before any file is uploaded, with an explanation and the
+selection/draft intact. Unedited videos upload as their original bytes. A quality-only
+compression preference does not trigger conversion; original encoding is retained.
+Host tests exercise file handoff and refusal, not real crop encoding, gallery grants,
+hardware video playback or live-site upload acceptance.
 
 Not advertised because the site has no path for them: Telegram's location, contact,
 audio, sticker, emoji, quick-reply and to-do panes (so the tab set is only the four
