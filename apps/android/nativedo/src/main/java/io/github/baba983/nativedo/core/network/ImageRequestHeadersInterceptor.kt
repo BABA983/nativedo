@@ -9,11 +9,16 @@ class ImageRequestHeadersInterceptor(
     private val baseUrl: String = "https://linux.do/",
     /** The same client identity the API and the WebView present; see [resolveNativeDoUserAgent]. */
     private val userAgent: String = FALLBACK_USER_AGENT,
+    private val acceptLanguage: String = resolveAcceptLanguage(),
 ) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request().newBuilder()
             .apply {
-                addImageRequestHeaders(baseUrl = baseUrl, userAgent = userAgent)
+                addImageRequestHeaders(
+                    baseUrl = baseUrl,
+                    userAgent = userAgent,
+                    acceptLanguage = acceptLanguage,
+                )
             }
             .build()
         return chain.proceed(request)
@@ -23,6 +28,7 @@ class ImageRequestHeadersInterceptor(
 internal fun Request.Builder.addImageRequestHeaders(
     baseUrl: String,
     userAgent: String = FALLBACK_USER_AGENT,
+    acceptLanguage: String = resolveAcceptLanguage(),
 ): Request.Builder {
     val referer = buildImageRequestReferer(baseUrl)
     val originalRequest = build()
@@ -30,7 +36,7 @@ internal fun Request.Builder.addImageRequestHeaders(
         header("Accept", IMAGE_ACCEPT_HEADER)
     }
     if (originalRequest.header("Accept-Language") == null) {
-        header("Accept-Language", ACCEPT_LANGUAGE_HEADER)
+        header("Accept-Language", acceptLanguage)
     }
     if (originalRequest.header("Referer") == null) {
         header("Referer", referer)
@@ -60,4 +66,3 @@ private fun buildImageRequestReferer(baseUrl: String): String {
 
 private const val IMAGE_ACCEPT_HEADER =
     "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
-private const val ACCEPT_LANGUAGE_HEADER = "zh-CN,zh;q=0.9,en;q=0.8"

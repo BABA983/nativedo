@@ -18,6 +18,7 @@ import io.github.baba983.nativedo.core.network.ReadCacheScope
 import io.github.baba983.nativedo.core.network.RequestHeadersInterceptor
 import io.github.baba983.nativedo.core.network.SessionCookieInterceptor
 import io.github.baba983.nativedo.core.network.resolveNativeDoUserAgent
+import io.github.baba983.nativedo.core.network.resolveAcceptLanguage
 import io.github.baba983.nativedo.core.session.AndroidKeystoreCipher
 import io.github.baba983.nativedo.core.session.CompleteLoginUseCase
 import io.github.baba983.nativedo.core.session.CredentialStore
@@ -153,6 +154,7 @@ class AppContainer(
                 RequestHeadersInterceptor(
                     baseUrl = baseUrl,
                     userAgent = this.userAgent,
+                    acceptLanguage = resolveAcceptLanguage(),
                     cookieJar = cookieJar,
                 ),
             ).build()
@@ -161,7 +163,11 @@ class AppContainer(
         OkHttpClient
             .Builder()
             .addNetworkInterceptor(SessionCookieInterceptor(cookieJar))
-            .addInterceptor(ImageRequestHeadersInterceptor(baseUrl = baseUrl, userAgent = this.userAgent))
+            .addInterceptor(ImageRequestHeadersInterceptor(
+                baseUrl = baseUrl,
+                userAgent = this.userAgent,
+                acceptLanguage = resolveAcceptLanguage(),
+            ))
             .build()
 
     /**
@@ -172,7 +178,11 @@ class AppContainer(
     val gifImageOkHttpClient: OkHttpClient =
         OkHttpClient
             .Builder()
-            .addInterceptor(ImageRequestHeadersInterceptor(baseUrl = baseUrl, userAgent = this.userAgent))
+            .addInterceptor(ImageRequestHeadersInterceptor(
+                baseUrl = baseUrl,
+                userAgent = this.userAgent,
+                acceptLanguage = resolveAcceptLanguage(),
+            ))
             .build()
 
     private val retrofit: Retrofit =

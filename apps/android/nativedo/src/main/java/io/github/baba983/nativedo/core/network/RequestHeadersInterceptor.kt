@@ -8,6 +8,7 @@ import okhttp3.Response
 class RequestHeadersInterceptor(
     baseUrl: String = "https://linux.do/",
     private val userAgent: String = FALLBACK_USER_AGENT,
+    private val acceptLanguage: String = resolveAcceptLanguage(),
     private val cookieJar: SharedCookieJar? = null,
 ) : Interceptor {
     private val siteUrl = baseUrl.toHttpUrl()
@@ -34,7 +35,7 @@ class RequestHeadersInterceptor(
                 header("Accept", JSON_ACCEPT_HEADER)
             }
             if (originalRequest.header("Accept-Language") == null) {
-                header("Accept-Language", ACCEPT_LANGUAGE_HEADER)
+                header("Accept-Language", acceptLanguage)
             }
             if (originalRequest.header("User-Agent") == null) {
                 header("User-Agent", userAgent)
@@ -43,7 +44,10 @@ class RequestHeadersInterceptor(
                 header("X-Requested-With", XHR_HEADER_VALUE)
             }
             if (!isHtmlRequest) {
-                if (originalRequest.header("Origin") == null) {
+                // Same-origin GET/HEAD carries no Origin in a browser (Fetch
+                // only adds it for unsafe methods); sending it is a mismatch.
+                val sendsOrigin = originalRequest.method != "GET" && originalRequest.method != "HEAD"
+                if (sendsOrigin && originalRequest.header("Origin") == null) {
                     header("Origin", siteOrigin)
                 }
                 if (originalRequest.header("Referer") == null) {
@@ -60,7 +64,6 @@ class RequestHeadersInterceptor(
 
     private companion object {
         const val JSON_ACCEPT_HEADER: String = "application/json;q=0.9, text/plain;q=0.8, */*;q=0.5"
-        const val ACCEPT_LANGUAGE_HEADER: String = "zh-CN,zh;q=0.9,en;q=0.8"
         const val XHR_HEADER_VALUE: String = "XMLHttpRequest"
     }
 }
