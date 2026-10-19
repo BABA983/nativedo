@@ -1181,10 +1181,24 @@ object BootstrapHtmlParser {
         val username = document.selectFirst("meta[name=current-username]")
             ?.attr("content")
             ?.takeIf { it.isNotBlank() }
-            ?: document.selectFirst("#data-preloaded")
-                ?.attr("data-preloaded")
-                ?.let(::parsePreloadedCurrentUsername)
+            ?: readPreloadedCurrentUsername(document)
         return ParsedBootstrap(currentUsername = username)
+    }
+
+    /**
+     * linux.do renders the preload as `<script id="data-preloaded"
+     * type="application/json">…</script>`; other Discourse builds expose the
+     * same JSON in a `data-preloaded` attribute. Read both shapes, otherwise a
+     * native `/session/current.json` blocked by Cloudflare has no identity
+     * fallback and the app asks the user to verify for no reason.
+     */
+    private fun readPreloadedCurrentUsername(document: org.jsoup.nodes.Document): String? {
+        val element = document.selectFirst("#data-preloaded, [data-preloaded]") ?: return null
+        val raw = element.attr("data-preloaded").takeIf { it.isNotBlank() }
+            ?: element.data().takeIf { it.isNotBlank() }
+            ?: element.text().takeIf { it.isNotBlank() }
+            ?: return null
+        return parsePreloadedCurrentUsername(raw)
     }
 
     fun parsePreloadedCurrentUsername(preloadedData: String): String? =
