@@ -3,6 +3,9 @@ package io.github.baba983.nativedo.chat
 import io.github.baba983.nativedo.app.NativeDo
 import io.github.baba983.nativedo.harness.FakeDiscourseSite
 import io.github.baba983.nativedo.harness.UpstreamUiHarness
+import io.github.baba983.nativedo.harness.clickMenuItem
+import io.github.baba983.nativedo.harness.latestItemOptionsMenu
+import io.github.baba983.nativedo.harness.menuItemLabels
 import io.github.baba983.nativedo.harness.shadows.ShadowAnimatedFileNative
 import io.github.baba983.nativedo.harness.shadows.ShadowConnectionsManager
 import io.github.baba983.nativedo.harness.shadows.ShadowIntro
@@ -30,9 +33,12 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.telegram.messenger.ApplicationLoader
 import org.telegram.messenger.NotificationCenter
+import org.telegram.ui.ActionBar.SimpleTextView
 import org.telegram.ui.ActionBar.Theme
 import org.telegram.ui.Cells.ChatActionCell
 import org.telegram.ui.Components.ChatActivityEnterView
+import org.telegram.ui.Components.ChatAvatarContainer
+import org.telegram.ui.Components.TypingDotsDrawable
 import io.github.baba983.nativedo.topic.DiscourseEmojiPicker
 import io.github.baba983.nativedo.topic.DiscourseMentionsPanel
 import android.view.MotionEvent
@@ -88,13 +94,112 @@ internal class ChatChannelTest {
         site.serveJson("chat/api/channels/71/messages.json", harness.fixture("chat-messages.json"))
         site.serveJson("presence/get", """{"/chat-reply/71":{"users":[{"id":8,"username":"alice","name":"Alice","avatar_template":""}],"count":1,"last_message_id":0}}""")
         val fragment = openChannel(71L, "站点反馈")
+        val capsule = capsule(fragment)
         harness.await("typing in the channel header") {
-            fragment.actionBar.subtitle?.toString() == "alice 正在输入…"
+            subtitleView(capsule).text?.toString() == "正在输入：alice"
         }
+        val dots = subtitleView(capsule).leftDrawable
+        assertTrue(
+            "Telegram's typing dots precede the header line: $dots",
+            dots is TypingDotsDrawable,
+        )
+        assertTrue(
+            "and they run while someone is typing",
+            (dots as TypingDotsDrawable).isStarted,
+        )
         harness.renderApp("chat-typing-header")
         fragment.onPause()
         harness.idleClock(100)
-        assertFalse(fragment.actionBar.subtitle?.toString().orEmpty().contains("正在输入"))
+        assertFalse(subtitleView(capsule).text?.toString().orEmpty().contains("正在输入"))
+        assertNull("the dots go with the line", subtitleView(capsule).leftDrawable)
+        assertFalse("and stop animating", dots.isStarted)
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * The header is the chat's floating capsule, not a strip across the screen: the channel's name
+     * and status sit in the glass capsule over the list, its actions are the overflow's rows, and
+     * the list keeps its first message clear of the bar. The failure this pins: the bar left in the
+     * fragment container (a full-width strip) or a floating bar whose height the list ignores (the
+     * first message drawn underneath it).
+     */
+    @Test
+    fun theHeaderIsTheFloatingCapsuleAboveTheList() {
+        serveJoinedChannel()
+        site.serveJson("chat/api/channels/71/messages.json", harness.fixture("chat-messages.json"))
+
+        val fragment = openChannel(71L, "站点反馈")
+        harness.await("the messages") { fragment.messageCount() == 3 }
+        val capsule = capsule(fragment)
+        harness.await("the channel's status line") {
+            subtitleView(capsule).text?.toString() == "42 人"
+        }
+        harness.layoutApp()
+        harness.idleClock(200)
+
+        assertFalse("the header floats over the list", fragment.actionBar.shouldAddToContainer())
+        assertEquals(
+            "the capsule names the channel",
+            "站点反馈",
+            capsule.titleTextView.text?.toString(),
+        )
+        assertTrue(
+            "the list starts below the floating bar: padding="
+                + fragment.listViewForTest().paddingTop
+                + " bar=" + fragment.actionBar.measuredHeight,
+            fragment.listViewForTest().paddingTop >= fragment.actionBar.measuredHeight,
+        )
+        harness.renderApp("chat-header-capsule")
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * The header's actions are the overflow's rows, not icons beside the title: the only menu icon
+     * is the overflow, and its 刷新 row re-reads the newest window.
+     */
+    @Test
+    fun theHeadersOverflowCarriesTheReload() {
+        serveJoinedChannel()
+        site.serveJson("chat/api/channels/71/messages.json", harness.fixture("chat-messages.json"))
+
+        val fragment = openChannel(71L, "站点反馈")
+        harness.await("the messages") { fragment.messageCount() == 3 }
+        harness.layoutApp()
+
+        fragment.actionBar.createMenu().getItem(1).performClick()
+        harness.idle()
+        val rows = latestItemOptionsMenu(harness.activity)
+        assertEquals("the overflow's one action", listOf("刷新"), menuItemLabels(rows))
+        harness.renderComposite(".amp/in/artifacts/nativedo/chat-header-overflow.png")
+
+        val reads = site.requestPaths.count { it == "chat/api/channels/71/messages.json" }
+        clickMenuItem(rows, "刷新")
+        harness.await("the reload") {
+            site.requestPaths.count { it == "chat/api/channels/71/messages.json" } > reads
+        }
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * A long typer name must not push the capsule past the bar: the capsule grows with its content
+     * up to the space between the back and menu capsules, then the subtitle ellipsizes.
+     */
+    @Test
+    fun aLongTyperNameStaysInsideTheHeaderCapsule() {
+        serveJoinedChannel()
+        site.serveJson("chat/api/channels/71/messages.json", harness.fixture("chat-messages.json"))
+        site.serveJson(
+            "presence/get",
+            """{"/chat-reply/71":{"users":[{"id":8,"username":"a_very_long_username_indeed","name":"A Very Long Username","avatar_template":""}],"count":1,"last_message_id":0}}""",
+        )
+        val fragment = openChannel(71L, "站点反馈")
+        val capsule = capsule(fragment)
+        harness.await("the long typer line") {
+            subtitleView(capsule).text?.toString().orEmpty().contains("a_very_long_username_indeed")
+        }
+        harness.layoutApp()
+        harness.idleClock(600)
+        harness.renderApp("chat-typing-long-name")
         harness.assertNoTelegramSideEffects()
     }
 
@@ -905,6 +1010,16 @@ internal class ChatChannelTest {
         site.serveJson("chat/api/channels/71.json", harness.fixture("chat-channel.json"))
         site.serveJson("chat/api/channels/71/read.json", harness.fixture("chat-read.json"))
     }
+
+    /** The header capsule the screen builds; it owns the channel's title, status and typers line. */
+    private fun capsule(fragment: ChatChannelFragment): ChatAvatarContainer =
+        ChatChannelFragment::class.java.getDeclaredField("avatarContainer").apply {
+            isAccessible = true
+        }.get(fragment) as ChatAvatarContainer
+
+    /** The capsule's subtitle view, where the status/typers line and the dots live. */
+    private fun subtitleView(capsule: ChatAvatarContainer): SimpleTextView =
+        capsule.getSubtitleTextView() as SimpleTextView
 
     private fun openChannel(channelId: Long, title: String): ChatChannelFragment {
         harness.bootApp()

@@ -37,6 +37,7 @@ import org.telegram.tgnet.tl.TL_iv;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
+import org.telegram.ui.ActionBar.SimpleTextView;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.ChatActionCell;
 import org.telegram.ui.Cells.ChatMessageCell;
@@ -93,6 +94,7 @@ import io.github.baba983.nativedo.topic.PostListView;
 import io.github.baba983.nativedo.topic.PostVideo;
 import io.github.baba983.nativedo.topic.PreparedPostBody;
 import io.github.baba983.nativedo.topic.TopicFragment;
+import io.github.baba983.nativedo.topic.TypingDotsSubtitle;
 
 /**
  * One public linux.do chat channel: its conversation, drawn the way a chat draws one.
@@ -128,6 +130,11 @@ public class ChatChannelFragment extends BaseFragment {
     /** A chat message carries a few files, not a gallery: the band stays readable and bounded. */
     private static final int MAX_STAGED_ATTACHMENTS = 4;
 
+    /** The header's overflow capsule; its rows are the channel's actions. */
+    private static final int MENU_ITEM_MORE = 1;
+    /** The overflow's reload row: read the newest window again. */
+    private static final int MENU_ITEM_REFRESH = 2;
+
     private long channelId;
     private String channelTitle;
 
@@ -139,6 +146,8 @@ public class ChatChannelFragment extends BaseFragment {
     private ChatInputViewsContainer inputViews;
     private WindowInsetsStateHolder inputInsets;
     private GlassPanelHost glassHost;
+    /** The floating header capsule: the channel's picture, name and status or typers. */
+    private org.telegram.ui.Components.ChatAvatarContainer avatarContainer;
     private ChatMessageSharedResources sharedResources;
 
     private final List<ChatMessage> chatMessages = new ArrayList<>();
@@ -185,6 +194,8 @@ public class ChatChannelFragment extends BaseFragment {
     private boolean uploadingVoice;
     private TypingPresenceController typingController;
     private String typingSubtitle = "";
+    /** Upstream's animated typing dots before the header's typing line, while it is shown. */
+    private final TypingDotsSubtitle typingDots = new TypingDotsSubtitle(true);
 
     /**
      * The files the reader staged for the next message, in pick order, with the upload ids the site
@@ -269,21 +280,29 @@ public class ChatChannelFragment extends BaseFragment {
         container = NativeDo.container(getParentActivity());
         sharedResources = new ChatMessageSharedResources(context);
 
-        actionBar.setTitle(channelTitle == null || channelTitle.isEmpty() ? "频道" : channelTitle);
-        actionBar.setBackButtonImage(org.telegram.messenger.R.drawable.ic_ab_back);
-        actionBar.setAllowOverlayTitle(true);
+        // The chat header floats over the conversation the way the topic's does: the bar is kept
+        // out of the container (ChatActivity:3678) and given to this screen's own frame, with no
+        // background and the chat's own back arrow (3680-3686). Its actions live in the overflow
+        // capsule, not as icons beside the title.
+        actionBar.setAddToContainer(false);
+        actionBar.setCastShadows(false);
+        actionBar.setBackground(null);
+        actionBar.setBackButtonDrawable(new org.telegram.ui.ActionBar.BackDrawable(false));
         actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
             @Override
             public void onItemClick(int id) {
                 if (id == -1) {
                     finishFragment();
-                } else if (id == 1) {
+                } else if (id == MENU_ITEM_REFRESH) {
                     if (!sending && !joining) loadMessages(null, null, true);
                 }
             }
         });
-        actionBar.createMenu().addItem(1, org.telegram.messenger.R.drawable.msg_retry)
-                .setContentDescription("刷新");
+        org.telegram.ui.ActionBar.ActionBarMenu menu = actionBar.createMenu();
+        org.telegram.ui.ActionBar.ActionBarMenuItem overflow =
+                menu.addItem(MENU_ITEM_MORE, org.telegram.messenger.R.drawable.ic_ab_other);
+        overflow.setContentDescription("更多");
+        overflow.addSubItem(MENU_ITEM_REFRESH, org.telegram.messenger.R.drawable.msg_retry, "刷新");
 
         contentView = new SizeNotifierFrameLayout(context);
         contentView.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundGray));
@@ -324,6 +343,9 @@ public class ChatChannelFragment extends BaseFragment {
         });
         contentView.addView(listView, LayoutHelper.createFrame(
                 LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP));
+        // The screen's one glass source: the header capsules and the composer island both sample
+        // it, so it is built before either (ChatActivity builds it before its views, 2620-2661).
+        glassHost = new GlassPanelHost(listView, contentView);
 
         // The reply target strip, upstream's own reply bar shape: one line under the action bar.
         replyStrip = new android.widget.TextView(context);
@@ -360,7 +382,6 @@ public class ChatChannelFragment extends BaseFragment {
                 Gravity.TOP | Gravity.CENTER_HORIZONTAL, 0, 4, 0, 0));
 
         // The composer rides in upstream's floating island the way the reply box does.
-        glassHost = new GlassPanelHost(listView, contentView);
         inputViews = new ChatInputViewsContainer(context);
         inputViews.setClipChildren(false);
         inputInsets = new WindowInsetsStateHolder(() -> {
@@ -432,6 +453,32 @@ public class ChatChannelFragment extends BaseFragment {
         // The composer is offered only once the channel says the reader may write; it is hidden
         // until then rather than showing a field whose send the site would refuse.
         inputViews.setVisibility(View.GONE);
+
+        // The chat's own header capsule: the channel's name, its status or the readers typing,
+        // and its picture. It is the same ChatAvatarContainer the topic header uses, with the same
+        // glass capsules for the back button and the overflow, floating over the conversation.
+        avatarContainer = new org.telegram.ui.Components.ChatAvatarContainer(
+                context, this, false, resourceProvider);
+        avatarContainer.setGlassMode();
+        avatarContainer.setClipChildren(false);
+        avatarContainer.setActionBar(actionBar);
+        avatarContainer.getTitleTextView().setScrollNonFitText(true);
+        // A tap on the capsule has no destination here: a channel has no native profile screen.
+        avatarContainer.setOnClickListener(null);
+        setCapsuleTitle(channelTitle == null || channelTitle.isEmpty() ? "频道" : channelTitle);
+        setCapsuleAvatar(channelTitle);
+        actionBar.setChatAvatarContainer(avatarContainer);
+        actionBar.addView(avatarContainer, 0, org.telegram.ui.Components.LayoutHelper.createFrame(
+                org.telegram.ui.Components.LayoutHelper.WRAP_CONTENT,
+                org.telegram.ui.Components.LayoutHelper.MATCH_PARENT,
+                Gravity.TOP | Gravity.LEFT, 52, 0, 52, 0));
+        actionBar.createMenu().bringToFront();
+        actionBar.setupGlass(
+                glassHost.getFactory(),
+                org.telegram.ui.Components.blur3.drawable.color.impl.BlurredBackgroundProviderImpl
+                        .topPanelChatActivity(resourceProvider));
+        contentView.addView(actionBar);
+        applyListPadding();
 
         fragmentView = contentView;
         ViewCompat.setOnApplyWindowInsetsListener(contentView, this::onInsetsInternal);
@@ -977,6 +1024,10 @@ public class ChatChannelFragment extends BaseFragment {
         // A fade armed by a scroll must not outlive the screen and call back into a dead view.
         clearFloatingDate();
         floatingDateView = null;
+        if (avatarContainer != null) {
+            avatarContainer.onDestroy();
+            avatarContainer = null;
+        }
         inputViews = null;
         super.onFragmentDestroy();
     }
@@ -1081,11 +1132,32 @@ public class ChatChannelFragment extends BaseFragment {
         if (channel == null) {
             return;
         }
-        actionBar.setTitle(channel.getTitle().isEmpty() ? "频道" : channel.getTitle());
+        setCapsuleTitle(channel.getTitle().isEmpty() ? "频道" : channel.getTitle());
+        setCapsuleAvatar(channel.getTitle());
         updateTypingSubtitle();
         startTyping();
         updateComposerVisibility();
         notifyRowsChanged();
+    }
+
+    /** The capsule's title: the channel's own name. */
+    private void setCapsuleTitle(String title) {
+        if (avatarContainer != null && title != null && !title.trim().isEmpty()) {
+            avatarContainer.setTitle(title.trim());
+        }
+    }
+
+    /**
+     * The capsule's picture. A channel carries no image in this client, so upstream's avatar
+     * drawable draws the initials a chat without a photo gets; the title is what it initials.
+     */
+    private void setCapsuleAvatar(String title) {
+        if (avatarContainer == null || container == null) {
+            return;
+        }
+        String name = title == null || title.trim().isEmpty() ? "频道" : title.trim();
+        avatarContainer.setUserAvatar(DiscourseAvatars.INSTANCE.user(
+                "channel-" + channelId, name, "", container.getBaseUrl(), ""));
     }
 
     private void startTyping() {
@@ -1096,9 +1168,11 @@ public class ChatChannelFragment extends BaseFragment {
                 container.getMessageBusSession().getRunningClientFlow());
         typingController.setUsersListener(typers -> {
             if (isFinished || isPaused()) return;
+            // The status verb comes first so a long name ellipsizes without taking the verb with
+            // it; the capsule can only grow as far as the space between the bar's capsules.
             typingSubtitle = typers.isEmpty() ? ""
-                    : typers.size() == 1 ? typers.get(0).getUsername() + " 正在输入…"
-                    : typers.get(0).getUsername() + " 等 " + typers.size() + " 人正在输入…";
+                    : typers.size() == 1 ? "正在输入：" + typers.get(0).getUsername()
+                    : "正在输入：" + typers.get(0).getUsername() + " 等 " + typers.size() + " 人";
             updateTypingSubtitle();
         });
         typingController.start("/chat-reply/" + channelId, owner.getUsername());
@@ -1115,8 +1189,19 @@ public class ChatChannelFragment extends BaseFragment {
     }
 
     private void updateTypingSubtitle() {
-        if (actionBar != null && channel != null) {
-            actionBar.setSubtitle(typingSubtitle.isEmpty() ? statusLabel(channel) : typingSubtitle);
+        if (avatarContainer == null || channel == null) {
+            return;
+        }
+        avatarContainer.setSubtitle(typingSubtitle.isEmpty() ? statusLabel(channel) : typingSubtitle);
+        android.view.View subtitleView = avatarContainer.getSubtitleTextView();
+        if (!(subtitleView instanceof SimpleTextView)) {
+            return;
+        }
+        SimpleTextView subtitle = (SimpleTextView) subtitleView;
+        if (typingSubtitle.isEmpty()) {
+            typingDots.hide(subtitle);
+        } else {
+            typingDots.show(subtitle, avatarContainer.getSubtitlePaint().getColor());
         }
     }
 
@@ -2433,19 +2518,42 @@ public class ChatChannelFragment extends BaseFragment {
         if (attachmentStrip != null && attachmentStrip.getVisibility() == View.VISIBLE) {
             bottom += Math.max(attachmentStrip.getMeasuredHeight(), AndroidUtilities.dp(64));
         }
-        listView.setPadding(0, AndroidUtilities.dp(4), 0, bottom + navigationBarHeight + AndroidUtilities.dp(4));
+        // The header floats over the list, so the first message starts below it: the bar's own
+        // measured height (the status bar is already in it) plus the 4dp upstream's lists keep.
+        int top = AndroidUtilities.dp(4) + actionBarHeight();
+        listView.setPadding(0, top, 0, bottom + navigationBarHeight + AndroidUtilities.dp(4));
+        // The date pill and the reply strip are bands of the list's own top edge; they move down
+        // with the floating bar instead of drawing under it.
+        if (floatingDateView != null) {
+            floatingDateView.setTranslationY(actionBarHeight());
+        }
+        if (replyStrip != null) {
+            replyStrip.setTranslationY(actionBarHeight());
+        }
         placePending();
         positionAttachmentStrip();
+    }
+
+    /** The bar's measured height; before the first layout its resting one, as upstream reads it. */
+    private int actionBarHeight() {
+        return actionBar != null && actionBar.getMeasuredHeight() > 0
+                ? actionBar.getMeasuredHeight()
+                : org.telegram.ui.ActionBar.ActionBar.getCurrentActionBarHeight() + AndroidUtilities.statusBarHeight;
     }
 
     private void updateColors() {
         if (contentView != null) contentView.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundGray));
         if (actionBar != null) {
-            actionBar.setBackgroundColor(getThemedColor(Theme.key_actionBarDefault));
-            actionBar.setTitleColor(getThemedColor(Theme.key_actionBarDefaultTitle));
-            actionBar.setSubtitleColor(getThemedColor(Theme.key_actionBarDefaultSubtitle));
             actionBar.setItemsColor(getThemedColor(Theme.key_actionBarDefaultIcon), false);
             actionBar.updateColors();
+        }
+        if (avatarContainer != null) {
+            avatarContainer.updateColors();
+            avatarContainer.setTitleColors(
+                    getThemedColor(Theme.key_actionBarDefaultTitle),
+                    getThemedColor(Theme.key_actionBarDefaultSubtitle));
+            // The dots carry their own paint, so redrawing the header line recolours them too.
+            updateTypingSubtitle();
         }
         if (glassHost != null) glassHost.updateColors();
         if (inputViews != null) inputViews.updateColors();

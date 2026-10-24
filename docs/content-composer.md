@@ -254,16 +254,16 @@ composer's text, and nothing here broadcasts the reader globally through
 
 Two screens share the controller, each naming the site's own channel. A chat
 channel binds `/chat-reply/{channelId}` (the chat plugin's name) and shows the
-other typers in place of the channel's status label: `正在输入：name`, or
+other typers in its header capsule's status line, with Telegram's own
+`TypingDotsDrawable` before the line: `正在输入：name`, or
 `正在输入：name 等 N 人`, five seconds after the last input. The status verb leads
-so a long name is what the line's edge ellipsizes, not the verb. The topic screen
-binds `/discourse-presence/reply/{topicId}` (the discourse-presence plugin's name)
-and shows them in the header capsule's subtitle as `正在回复：name` or
-`正在回复：name 等 N 人`, with Telegram's own `TypingDotsDrawable` before the line,
-restoring the topic's category/count line when the last replier leaves; its
-composer keeps the reader announced for the plugin's own 10 s `KEEP_ALIVE`. A post
-being edited is never announced as a reply - the plugin has a separate edit
-channel, and this client does not claim one yet.
+so a long name is what the capsule's edge ellipsizes, not the verb. The topic
+screen binds `/discourse-presence/reply/{topicId}` (the discourse-presence
+plugin's name) and shows them in the same capsule line as `正在回复：name` or
+`正在回复：name 等 N 人`, restoring the topic's category/count line when the last
+replier leaves; its composer keeps the reader announced for the plugin's own 10 s
+`KEEP_ALIVE`. A post being edited is never announced as a reply - the plugin has a
+separate edit channel, and this client does not claim one yet.
 
 ### Attachment sheet and recorded audio
 
@@ -407,8 +407,9 @@ inset hosting, not actual keyboard motion. Host-side coverage is scoped to the
 IME/paste intake seam, a chat file staged, uploaded and sent as `upload_ids[]`
 (including a refused write that keeps its accepted id), the staging discarded on
 an account change, the typing controller against a fake site and the real bus, the
-chat typing line, the topic screen's replier line and its own announce/leave
-writes, and the GIF panel's category, search, paging and insert paths.
+chat header's typing line and its dots, the topic screen's replier line and its own
+announce/leave writes, and the GIF panel's category, search, paging and insert
+paths.
 Device-only, not provable by the host renderer: actual microphone encoding and
 playback, a real keyboard's `commitContent` and clipboard handoff, drag feel, IME
 transitions and the on-device gallery grid; animated

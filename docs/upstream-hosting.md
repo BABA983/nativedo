@@ -110,6 +110,17 @@ and inset ownership. Keep the bar in its content host when following that upstre
 layout, so PhotoViewer transitions do not scale the body independently of the bar.
 Wallpaper fade and content-sampling glass are different sources, not interchangeable.
 
+The two conversation screens share one header shape. A topic and a chat channel both
+keep the `ActionBar` out of the fragment container, add the same `ChatAvatarContainer`
+in glass mode (avatar, title, subtitle, overflow capsule, back capsule) and hand the
+list the bar's measured height as its top padding, so scrolled rows pass behind the
+capsules instead of the first row starting under them. The chat channel's floating
+date pill and reply strip move down with the bar; a channel has no picture of its own,
+so its capsule shows the initials upstream's `AvatarDrawable` gives a chat without a
+photo, and its only action (reload) is a row of the overflow rather than an icon
+beside the title. Both screens host the composer in the same
+`ChatInputViewsContainer` island.
+
 Message-row animations are also a host contract: `ChatMessageCell` paints reply
 previews and reactions using its own alpha. `PostListView` invalidates on each
 addition-animation update, including completion; asset rebinds reuse the cell
