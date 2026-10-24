@@ -774,6 +774,8 @@ public class TopicListFragment extends BaseFragment
         boolean hasMore;
         boolean loadingMore;
         boolean moreFailed;
+        /** Why the last extra page did not arrive, so the footer can name the session's own action. */
+        TopicLoadFailure moreFailure = TopicLoadFailure.Unknown;
         /** Where the reader was: the first visible row and its offset under the list's top. */
         int scrollPosition;
         int scrollOffset;
@@ -1145,6 +1147,7 @@ public class TopicListFragment extends BaseFragment
                     }
                     feed.loadingMore = false;
                     feed.moreFailed = true;
+                    feed.moreFailure = TopicLoadFailure.of(error);
                     FileLog.e("topic list page failed", error);
                     if (page.feed == feed) {
                         page.adapter.notifyDataSetChanged();
@@ -3331,12 +3334,26 @@ public class TopicListFragment extends BaseFragment
         footer.shimmer.setVisibility(feed.moreFailed ? View.GONE : View.VISIBLE);
         footer.failure.setVisibility(feed.moreFailed ? View.VISIBLE : View.GONE);
         footer.failure.setTextColor(getThemedColor(Theme.key_windowBackgroundWhiteGrayText2));
+        // A page the session is what it needs says so and its tap opens the login WebView (which
+        // re-reads the feed once the reader is back); an outage is the footer's own retry.
+        final boolean session = feed.moreFailure == TopicLoadFailure.Challenge
+                || feed.moreFailure == TopicLoadFailure.LoginRequired;
+        footer.failure.setText(session
+                ? (feed.moreFailure == TopicLoadFailure.Challenge
+                        ? R.string.page_verify_required
+                        : R.string.page_login_required)
+                : R.string.topic_list_more_failed);
         footer.setOnClickListener(feed.moreFailed ? view -> {
-            if (feed.moreFailed && !feed.loadingMore) {
-                feed.moreFailed = false;
-                page.adapter.notifyDataSetChanged();
-                requestMore(page, feed);
+            if (!feed.moreFailed || feed.loadingMore) {
+                return;
             }
+            if (session) {
+                openRecovery(feed.moreFailure == TopicLoadFailure.Challenge);
+                return;
+            }
+            feed.moreFailed = false;
+            page.adapter.notifyDataSetChanged();
+            requestMore(page, feed);
         } : null);
     }
 

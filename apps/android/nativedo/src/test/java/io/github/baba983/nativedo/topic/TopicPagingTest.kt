@@ -206,6 +206,51 @@ internal class TopicPagingTest {
     }
 
     /**
+     * A page that did not arrive because the session is gone says so and its action is the login
+     * page, not a generic retry. The failure this pins: a reader scrolling a long topic after the
+     * site logged them out is told "this page did not load, retry", which can never succeed, and
+     * is never sent to the one place that can fix it.
+     */
+    @Test
+    fun aPageThatNeedsTheSessionOffersLoginAndOpensIt() {
+        site.serveResponse("t/$TOPIC_ID/posts.json") {
+            okhttp3.mockwebserver.MockResponse()
+                .setResponseCode(401)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"errors":["您需要登录才能执行此操作"]}""")
+        }
+        harness.bootApp()
+        harness.await("the topic list to load") { rowCount() == 2 }
+        harness.present(TopicFragment.forTopic(TOPIC_ID, "Expired session"))
+        harness.await("the first page to load") { rowCount() == FIRST_PAGE }
+
+        val list = listView()!!
+        harness.idle()
+        org.telegram.ui.Components.Bulletin.hideVisible()
+        harness.idle()
+        list.scrollBy(0, list.height * 4)
+        val bulletin = awaitBulletin()
+        val shown = bulkText(bulletin.getLayout())
+        assertTrue("the hint names the lost session: $shown", shown.any { it.contains("登录已失效") })
+        val button = retryButtonOf(bulletin) as? org.telegram.ui.Components.Bulletin.UndoButton
+            ?: throw AssertionError("the hint carries no action")
+        assertTrue(
+            "the hint's action is the login, not a retry: ${bulkText(button)}",
+            bulkText(button).any { it == "登录" },
+        )
+        button.performClick()
+        harness.idle()
+
+        val shell = harness.activity as io.github.baba983.nativedo.app.NativeDoActivity
+        val layoutField = shell.javaClass.getDeclaredField("actionBarLayout").apply { isAccessible = true }
+        val layout = layoutField.get(shell) as org.telegram.ui.ActionBar.INavigationLayout
+        harness.await("the login page from the paging hint") {
+            layout.fragmentStack.last().javaClass.simpleName == "LoginWebViewFragment"
+        }
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
      * A page that failed is asked for once, not on every twitch of the reader's finger. The failure
      * this pins: with no per-edge latch, every near-edge callback - a real few-pixel scroll, a
      * repeated layout pass, time passing - fires another request and another hint at the same broken

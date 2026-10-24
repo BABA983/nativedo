@@ -492,6 +492,116 @@ internal class ChatChannelTest {
     }
 
     /**
+     * A scroll into history whose older page is refused for the lost session must end in the login,
+     * not in silence. The failure this pins: the older page's failure was dropped while rows were on
+     * screen, so the reader kept scrolling a conversation that could not load further and was never
+     * told the session is what it needs.
+     */
+    @Test
+    fun anOlderPageThatNeedsTheSessionSaysSoAndOffersLogin() {
+        serveJoinedChannel()
+        site.serveResponseByQuery("chat/api/channels/71/messages.json") { path ->
+            if (path.contains("target_message_id")) {
+                MockResponse().setResponseCode(401)
+                    .setHeader("Content-Type", "application/json")
+                    .setBody("""{"errors":["您需要登录才能执行此操作"]}""")
+            } else {
+                MockResponse().setResponseCode(200)
+                    .setHeader("Content-Type", "application/json")
+                    .setBody(
+                        messagesFixture(25).replace(
+                            "\"can_load_more_past\":false",
+                            "\"can_load_more_past\":true",
+                        ),
+                    )
+            }
+        }
+
+        val fragment = openChannel(71L, "站点反馈")
+        harness.await("the window") { fragment.messageCount() == 25 }
+        harness.idleClock(300)
+        harness.layoutApp()
+
+        // Up the history: the older window is asked for and refused for the lost session.
+        val list = fragment.listViewForTest()
+        list.scrollBy(0, -list.height * 20)
+        harness.await("the older page to be asked for") {
+            site.queriesFor("chat/api/channels/71/messages.json").any { it.contains("direction=past") }
+        }
+        harness.await("the lost session to be said") { fragment.stateForTest() != null }
+        harness.idleClock(300)
+        harness.layoutApp()
+
+        val row = fragment.listViewForTest().findViewHolderForAdapterPosition(0)?.itemView
+            ?: throw AssertionError("the screen says nothing where the conversation was")
+        val shown = bulkText(row).joinToString(" ")
+        assertTrue("the screen names the session: $shown", shown.contains("登录"))
+        row.performClick()
+        harness.idle()
+
+        val shell = harness.activity as io.github.baba983.nativedo.app.NativeDoActivity
+        val layoutField = shell.javaClass.getDeclaredField("actionBarLayout").apply { isAccessible = true }
+        val layout = layoutField.get(shell) as org.telegram.ui.ActionBar.INavigationLayout
+        harness.await("the login page from the conversation") {
+            layout.fragmentStack.last().javaClass.simpleName == "LoginWebViewFragment"
+        }
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * An older page that failed for an outage is said in passing and can be asked for again, from the
+     * same older cursor. The failure this pins: the rows stay but the reader is never told why the
+     * history stopped, and has no way to ask again.
+     */
+    @Test
+    fun aFailedOlderPageIsSaidAndCanBeRetried() {
+        serveJoinedChannel()
+        val refuseOlder = java.util.concurrent.atomic.AtomicBoolean(true)
+        site.serveResponseByQuery("chat/api/channels/71/messages.json") { path ->
+            if (refuseOlder.get() && path.contains("target_message_id")) {
+                MockResponse().setResponseCode(503).setBody("")
+            } else {
+                MockResponse().setResponseCode(200)
+                    .setHeader("Content-Type", "application/json")
+                    .setBody(
+                        messagesFixture(25).replace(
+                            "\"can_load_more_past\":false",
+                            "\"can_load_more_past\":true",
+                        ),
+                    )
+            }
+        }
+
+        val fragment = openChannel(71L, "站点反馈")
+        harness.await("the window") { fragment.messageCount() == 25 }
+        harness.idleClock(300)
+        harness.layoutApp()
+        org.telegram.ui.Components.Bulletin.hideVisible()
+        harness.idle()
+
+        val list = fragment.listViewForTest()
+        list.scrollBy(0, -list.height * 20)
+        val bulletin = awaitBulletin()
+        val button = retryButtonOf(bulletin) as? org.telegram.ui.Components.Bulletin.UndoButton
+            ?: throw AssertionError("the hint carries no action")
+        assertEquals("the hint's action is the retry", "重试", bulkText(button).joinToString(" "))
+
+        refuseOlder.set(false)
+        val olderBefore = site.queriesFor("chat/api/channels/71/messages.json")
+            .count { it.contains("direction=past") }
+        button.performClick()
+        harness.await("the retried older window") {
+            site.queriesFor("chat/api/channels/71/messages.json")
+                .count { it.contains("direction=past") } > olderBefore
+        }
+        harness.idleClock(400)
+        harness.layoutApp()
+        assertNull("a loaded older page leaves no state", fragment.stateForTest())
+        assertTrue("the rows are still the conversation", fragment.messageCount() >= 25)
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
      * A reader who scrolled up into the channel's history must not be yanked to the newest message
      * when one arrives live: the incoming message is appended below the viewport and announced,
      * never allowed to move the reader's place. The failure this pins is the current behaviour -
@@ -935,6 +1045,33 @@ internal class ChatChannelTest {
     private fun pillText(pill: ChatActionCell): CharSequence? {
         val field = ChatActionCell::class.java.getDeclaredField("customText").apply { isAccessible = true }
         return field.get(pill) as CharSequence?
+    }
+
+    private fun awaitBulletin(): org.telegram.ui.Components.Bulletin {
+        var bulletin: org.telegram.ui.Components.Bulletin? = null
+        repeat(3_000) {
+            if (bulletin == null) {
+                harness.idle(1)
+                bulletin = org.telegram.ui.Components.Bulletin.getVisibleBulletin()
+                java.util.concurrent.locks.LockSupport.parkNanos(500_000L)
+            }
+        }
+        assertNotNull("the page failure is said in passing, not silently", bulletin)
+        return bulletin!!
+    }
+
+    /** The hint's own explicit action, when the Bulletin carries a button. */
+    private fun retryButtonOf(bulletin: org.telegram.ui.Components.Bulletin): android.view.View? {
+        val layout = bulletin.getLayout()
+        if (layout !is org.telegram.ui.Components.Bulletin.ButtonLayout) return null
+        return layout.getButton()
+    }
+
+    private fun bulkText(view: android.view.View): List<String> = when (view) {
+        is android.widget.TextView -> listOf(view.text.toString())
+        is SimpleTextView -> listOf(view.text.toString())
+        is android.view.ViewGroup -> (0 until view.childCount).flatMap { bulkText(view.getChildAt(it)) }
+        else -> emptyList()
     }
 
     /**

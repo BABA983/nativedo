@@ -33,6 +33,15 @@
     <string name="topic_page_retry_failed">这一页没能读出来，点按重试</string>
     <!-- The stream-page failure hint's button: what its tap asks for. -->
     <string name="topic_page_retry">重试</string>
+    <!--
+      A page after the first that did not arrive because the session is gone or the site wants a
+      challenge. The hint says which, and its button opens the login WebView (the same page the
+      rest of the app uses) before the page is asked for again.
+    -->
+    <string name="page_login_required">登录已失效，点按登录</string>
+    <string name="page_verify_required">站点要求完成验证，点按验证</string>
+    <string name="page_login">登录</string>
+    <string name="page_verify">验证</string>
     <string name="topic_page_down_failed">这一页没能读出来，点按箭头重试</string>
     <!--
       A topic list the site could not answer that was drawn from the cache instead. The Bulletin says

@@ -24,6 +24,7 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.ChatMessageSharedResources;
 import org.telegram.messenger.FileLoader;
 import org.telegram.messenger.FileLog;
@@ -54,6 +55,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import io.github.baba983.nativedo.R;
 import io.github.baba983.nativedo.app.GlassPanelHost;
 import io.github.baba983.nativedo.app.NativeDo;
 import io.github.baba983.nativedo.auth.LoginWebViewFragment;
@@ -1249,14 +1251,65 @@ public class ChatChannelFragment extends BaseFragment {
                     loadingOlder = false;
                     FileLog.e("chat messages failed", error);
                     // A read that did not arrive with nothing on screen is its own state; one that
-                    // failed with messages already drawn leaves them standing.
+                    // failed with messages already drawn leaves them standing and says in passing
+                    // what the next step is.
                     if (chatMessages.isEmpty()) {
                         stateUi = SessionUi.stateForLoadFailure(error);
                         clearFloatingDate();
+                    } else {
+                        showPagingFailure(error);
                     }
                     notifyRowsChanged();
                     return kotlin.Unit.INSTANCE;
                 });
+    }
+
+    /**
+     * A page of older messages that did not arrive while the conversation is on screen. The rows
+     * stay; the hint says whether the session is what the page needs - its action opens the login
+     * WebView, whose completion reloads the channel - or whether it is an outage, which the hint's
+     * action retries from the same older cursor.
+     */
+    private void showPagingFailure(Throwable error) {
+        final io.github.baba983.nativedo.topic.TopicLoadFailure reason =
+                io.github.baba983.nativedo.topic.TopicLoadFailure.of(error);
+        final boolean session = reason == io.github.baba983.nativedo.topic.TopicLoadFailure.Challenge
+                || reason == io.github.baba983.nativedo.topic.TopicLoadFailure.LoginRequired;
+        final int messageRes = reason == io.github.baba983.nativedo.topic.TopicLoadFailure.Challenge
+                ? R.string.page_verify_required
+                : reason == io.github.baba983.nativedo.topic.TopicLoadFailure.LoginRequired
+                        ? R.string.page_login_required
+                        : R.string.topic_page_retry_failed;
+        final int actionRes = reason == io.github.baba983.nativedo.topic.TopicLoadFailure.Challenge
+                ? R.string.page_verify
+                : reason == io.github.baba983.nativedo.topic.TopicLoadFailure.LoginRequired
+                        ? R.string.page_login
+                        : R.string.topic_page_retry;
+        try {
+            org.telegram.ui.Components.BulletinFactory.of(this).createSimpleBulletin(
+                    org.telegram.messenger.R.raw.chats_infotip,
+                    ApplicationLoader.applicationContext.getString(messageRes),
+                    ApplicationLoader.applicationContext.getString(actionRes),
+                    org.telegram.ui.Components.Bulletin.DURATION_PROLONG,
+                    () -> {
+                        if (session) {
+                            openRecovery(
+                                    reason == io.github.baba983.nativedo.topic.TopicLoadFailure.Challenge);
+                        } else {
+                            retryOlderPage();
+                        }
+                    }).show();
+        } catch (Exception bulletinError) {
+            FileLog.e(bulletinError);
+        }
+    }
+
+    /** Asks for the same older window again, from the first message the screen still holds. */
+    private void retryOlderPage() {
+        if (loadingOlder || chatMessages.isEmpty()) {
+            return;
+        }
+        loadMessages(chatMessages.get(0).getId(), "past", false);
     }
 
     private void applyPage(ChatMessagePage page, boolean replace, boolean landOnTarget) {

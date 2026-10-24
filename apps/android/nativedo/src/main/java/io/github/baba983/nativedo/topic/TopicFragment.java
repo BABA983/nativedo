@@ -5562,13 +5562,25 @@ public class TopicFragment extends BaseFragment
                 forward ? "topic next page failed" : "topic previous page failed", error);
         final int generation = windowGeneration;
         final int cursor = forward ? nextPageStart : windowStart;
+        // A page that needs the session is not an outage: the hint says which it is, and its own
+        // action opens the login/verification WebView before asking for the page again.
+        final int messageRes;
+        final int actionRes;
+        if (reason == TopicLoadFailure.Challenge) {
+            messageRes = io.github.baba983.nativedo.R.string.page_verify_required;
+            actionRes = io.github.baba983.nativedo.R.string.page_verify;
+        } else if (reason == TopicLoadFailure.LoginRequired) {
+            messageRes = io.github.baba983.nativedo.R.string.page_login_required;
+            actionRes = io.github.baba983.nativedo.R.string.page_login;
+        } else {
+            messageRes = io.github.baba983.nativedo.R.string.topic_page_retry_failed;
+            actionRes = io.github.baba983.nativedo.R.string.topic_page_retry;
+        }
         try {
             org.telegram.ui.Components.BulletinFactory.of(this).createSimpleBulletin(
                     org.telegram.messenger.R.raw.chats_infotip,
-                    org.telegram.messenger.ApplicationLoader.applicationContext.getString(
-                            io.github.baba983.nativedo.R.string.topic_page_retry_failed),
-                    org.telegram.messenger.ApplicationLoader.applicationContext.getString(
-                            io.github.baba983.nativedo.R.string.topic_page_retry),
+                    org.telegram.messenger.ApplicationLoader.applicationContext.getString(messageRes),
+                    org.telegram.messenger.ApplicationLoader.applicationContext.getString(actionRes),
                     org.telegram.ui.Components.Bulletin.DURATION_PROLONG,
                     () -> retryStreamPage(forward, generation, cursor, reason)).show();
         } catch (Exception bulletinError) {

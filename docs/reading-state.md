@@ -71,6 +71,20 @@ The legacy `:app` page restores the exit viewport before falling back to read
 progress; explicit floor links and a user drag take precedence. See the
 [scoped viewport contract](../contracts/discourse/models.md#local-topic-viewport).
 
+### A page that did not arrive
+
+A page that fails while rows are already on screen keeps them and says in passing
+what the next step is. The hint distinguishes the two causes: a page the session is
+what it needs (`401`, or a challenge) offers the login/verification WebView and asks
+for that same page once the reader is back, while an outage offers a retry from the
+same cursor. The topic list's next-page footer follows the same split - its tap opens
+the recovery WebView instead of retrying a request the site will refuse again. A chat
+channel's older window that needs the session ends in the screen's own session state,
+whose tap opens the login page; an outage there is a retry hint and leaves the rows
+standing. The [topic paging flow](../apps/android/nativedo/src/test/java/io/github/baba983/nativedo/topic/TopicPagingTest.kt)
+and the [channel flow](../apps/android/nativedo/src/test/java/io/github/baba983/nativedo/chat/ChatChannelTest.kt)
+drive both.
+
 ### Reading on from the end of a topic
 
 When the reader has the whole real stream loaded and the list is at its end, one
