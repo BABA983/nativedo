@@ -241,6 +241,18 @@ Source (pinned to discourse main at the time of writing):
   explicitly `false`, and a missing option is not permission. Neither request carries the
   composer's text, and these routes are separate from the chat plugin's `/chat/online` presence
   channel.
+- A topic's own repliers are the same backend, under the `discourse-presence` plugin's channels
+  (`plugins/discourse-presence/plugin.rb`; `presence_enabled`, default on). The reply channel is
+  `/discourse-presence/reply/{topicId}`: the web client subscribes to it at the topic footer (avatars
+  and "正在回复...") and enters it from the reply composer. Its permission is the topic's own: a
+  private message allows the topic's users and groups plus staff, a secure category its secure
+  groups plus admins, and a public topic trust level 0. The plugin also registers
+  `/discourse-presence/whisper/{topicId}` (whisper-allowed groups intersected with the topic's) and
+  `/discourse-presence/edit/{postId}` and `/discourse-presence/translate/{postId}` (staff, the
+  post's author, wiki/edit-all groups, category moderators). Its composer presence manager keeps a
+  reader announced for 10 s after the last input (`KEEP_ALIVE`) and never enters while
+  `hide_presence` is true; the reply channel's deltas ride `/presence/discourse-presence/reply/{topicId}`
+  with the same `{entering_users, leaving_user_ids}` shape.
 
 Foreground live updates ride the app's existing message-bus poller, subscribed at
 `/chat/{id}` and `/chat/{id}/new-messages`, seeded from the channel's own

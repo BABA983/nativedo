@@ -93,7 +93,8 @@ logs programmatic positioning and layout movement without post content or accoun
   message it was answering), keyed by site + account + channel. A draft never follows the reader to
   another account and two channels never share a field.
 - `ChatPresenceState` / `ChatPresenceDelta` - one presence channel's state and one bus delta, both
-  keyed by the full presence name (`/chat-reply/{channelId}` here). A channel the site answers
+  keyed by the full presence name (`/chat-reply/{channelId}` for a chat channel,
+  `/discourse-presence/reply/{topicId}` for a topic's repliers). A channel the site answers
   `null` (not viewable, or unknown) has no state at all - not an empty one - and its count is
   therefore unknown too. Within a state, `users` is null rather than empty for a `countOnly`
   channel that never reveals identities; `count` stays the site's own number, and `lastMessageId`

@@ -65,6 +65,7 @@ import io.github.baba983.nativedo.core.model.ChatMessage;
 import io.github.baba983.nativedo.core.model.ChatMessagePage;
 import io.github.baba983.nativedo.core.media.VoiceRecording;
 import io.github.baba983.nativedo.core.media.VoiceRecordingFeedback;
+import io.github.baba983.nativedo.core.presence.TypingPresenceController;
 import io.github.baba983.nativedo.core.session.AppSessionState;
 import io.github.baba983.nativedo.core.session.SessionSnapshot;
 import io.github.baba983.nativedo.core.web.DiscourseLinks;
@@ -182,7 +183,7 @@ public class ChatChannelFragment extends BaseFragment {
     private Long pendingUploadId;
     /** True while the take is on its way to the site (upload or send), so no second capture starts. */
     private boolean uploadingVoice;
-    private ChatTypingController typingController;
+    private TypingPresenceController typingController;
     private String typingSubtitle = "";
 
     /**
@@ -1091,7 +1092,7 @@ public class ChatChannelFragment extends BaseFragment {
         if (typingController != null || container == null || channel == null || isFinished || isPaused()) return;
         SessionSnapshot owner = container.getSessionStore().snapshot();
         if (owner == null || owner.getUsername().isEmpty()) return;
-        typingController = new ChatTypingController(container.getDiscourseApiClient(),
+        typingController = new TypingPresenceController(container.getDiscourseApiClient(),
                 container.getMessageBusSession().getRunningClientFlow());
         typingController.setUsersListener(typers -> {
             if (isFinished || isPaused()) return;
@@ -1100,7 +1101,7 @@ public class ChatChannelFragment extends BaseFragment {
                     : typers.get(0).getUsername() + " 等 " + typers.size() + " 人正在输入…";
             updateTypingSubtitle();
         });
-        typingController.start(channelId, owner.getUsername());
+        typingController.start("/chat-reply/" + channelId, owner.getUsername());
     }
 
     private void stopTyping() {

@@ -1,4 +1,4 @@
-package io.github.baba983.nativedo.chat
+package io.github.baba983.nativedo.core.presence
 
 import io.github.baba983.nativedo.core.messagebus.MessageBusClient
 import io.github.baba983.nativedo.core.messagebus.MessageBusListener
@@ -28,20 +28,21 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * The timings of one chat typing presence, with the defaults the site's own web client uses.
+ * The timings of one typing presence, with the defaults the site's own web client uses.
  *
  * <p>[refreshIntervalMillis] mirrors `PRESENCE_INTERVAL_S` (30 s): a present client re-announces
  * before `PresenceChannel::DEFAULT_TIMEOUT` (60 s) expires it. [throttleMillis] mirrors
  * `PRESENCE_THROTTLE_MS` (1 s), and the server also allows 20 updates per 10 s per user.
- * [typingIdleMillis] mirrors the chat composer's `CHAT_PRESENCE_KEEP_ALIVE` (5 s): typing stops
- * being announced five seconds after the last input, while the draft itself stays untouched.
+ * [typingIdleMillis] is how long the last input keeps this reader announced: the chat plugin's
+ * `CHAT_PRESENCE_KEEP_ALIVE` (5 s, the default) for a chat channel, the discourse-presence
+ * composer's `KEEP_ALIVE` (10 s) for a topic reply. The draft itself stays untouched.
  * [snapshotRetryMillis] mirrors `PRESENCE_GET_RETRY_MS`; [retryBaseMillis]/[retryMaxMillis] mirror
  * the web client's exponential backoff for a failed update, capped at the 30 s refresh interval.
  *
  * <p>The values are a constructor seam so a test can drive the same state machine in milliseconds;
  * production uses the defaults.
  */
-data class ChatTypingPolicy(
+data class TypingPresencePolicy @JvmOverloads constructor(
     val refreshIntervalMillis: Long = 30_000L,
     val throttleMillis: Long = 1_000L,
     val typingIdleMillis: Long = 5_000L,
@@ -51,16 +52,17 @@ data class ChatTypingPolicy(
 )
 
 /**
- * One chat channel's typing presence: who else has something in their composer, and whether this
+ * One presence channel's typing state: who else has something in their composer, and whether this
  * reader's own composing is announced to them.
  *
  * <p>Discourse's presence is a pair of endpoints and a message-bus channel, not a chat endpoint:
- * `GET /presence/get?channels[]=/chat-reply/{id}` returns the channel's `users`/`count` and the
- * message-bus `last_message_id`; `POST /presence/update` names this client present in
- * `present_channels[]` or absent in `leave_channels[]`; and `/presence/chat-reply/{id}` publishes
- * `entering_users`/`leaving_user_ids` deltas, whose message ids are contiguous or the subscriber
- * must resynchronise from a fresh `/presence/get`. The channel name is the chat plugin's
- * `PRESENCE_REGEXP` (`/chat-reply/{channelId}`); nothing here touches `/chat/online` and nothing
+ * `GET /presence/get?channels[]={name}` returns the channel's `users`/`count` and the message-bus
+ * `last_message_id`; `POST /presence/update` names this client present in `present_channels[]` or
+ * absent in `leave_channels[]`; and `/presence{name}` publishes `entering_users`/`leaving_user_ids`
+ * deltas, whose message ids are contiguous or the subscriber must resynchronise from a fresh
+ * `/presence/get`. The name is the site's own: the chat plugin's `PRESENCE_REGEXP`
+ * (`/chat-reply/{channelId}`), or the discourse-presence plugin's reply channel
+ * (`/discourse-presence/reply/{topicId}`). Nothing here touches `/chat/online` and nothing
  * broadcasts this reader globally.
  *
  * <p>Privacy is the site's own rule, read from the same `GET /session/current.json` the session
@@ -75,12 +77,12 @@ data class ChatTypingPolicy(
  * the callback dispatcher, and only [ChatUser]s other than this reader are passed - the site's
  * own list includes the reader, and the reader is never a typers indicator for themselves.
  */
-class ChatTypingController @JvmOverloads constructor(
+class TypingPresenceController @JvmOverloads constructor(
     private val client: DiscourseApiClient,
     private val runningClient: StateFlow<MessageBusClient?>,
+    private val policy: TypingPresencePolicy = TypingPresencePolicy(),
     scope: CoroutineScope = hostScope,
     private val callbacks: CoroutineDispatcher = Dispatchers.Main.immediate,
-    private val policy: ChatTypingPolicy = ChatTypingPolicy(),
 ) : AutoCloseable {
 
     private val scope: CoroutineScope = scope
@@ -132,14 +134,15 @@ class ChatTypingController @JvmOverloads constructor(
     }
 
     /**
-     * Binds this controller to [channelId] for [ownerUsername] and starts observing the channel.
-     * Idempotent for the same channel and owner (treated as [resume]). Announcing is not implied:
-     * the composer reports its text through [textChanged], and a non-empty composer is what makes
-     * this reader present. A different channel or owner retires the old binding (it is left as
-     * soon as it had announced itself) and starts a new one.
+     * Binds this controller to the presence channel [presenceName] for [ownerUsername] and starts
+     * observing it. Idempotent for the same channel and owner (treated as [resume]). Announcing is
+     * not implied: the composer reports its text through [textChanged], and a non-empty composer is
+     * what makes this reader present. A different channel or owner retires the old binding (it is
+     * left as soon as it had announced itself) and starts a new one.
      */
-    fun start(channelId: Long, ownerUsername: String) {
-        require(channelId > 0L) { "channelId must be positive" }
+    fun start(presenceName: String, ownerUsername: String) {
+        val name = presenceName.trim()
+        require(name.startsWith("/")) { "presenceName must be the site's own channel name" }
         val owner = ownerUsername.trim()
         require(owner.isNotEmpty()) { "ownerUsername must not be blank" }
 
@@ -147,7 +150,7 @@ class ChatTypingController @JvmOverloads constructor(
         var fresh = false
         val target = synchronized(lock) {
             val existing = binding
-            if (existing != null && !existing.closed && existing.channelId == channelId &&
+            if (existing != null && !existing.closed && existing.channel == name &&
                 existing.owner.equals(owner, ignoreCase = true)
             ) {
                 existing.active = true
@@ -156,7 +159,7 @@ class ChatTypingController @JvmOverloads constructor(
             } else {
                 previous = existing
                 fresh = true
-                Binding(channelId, owner).also { created ->
+                Binding(name, owner).also { created ->
                     created.observedClient = runningClient.value
                     binding = created
                 }
@@ -295,12 +298,10 @@ class ChatTypingController @JvmOverloads constructor(
      * an in-flight present.
      */
     private inner class Binding(
-        val channelId: Long,
+        /** The presence name, as the site's `PresenceChannel` names it. */
+        val channel: String,
         val owner: String,
     ) {
-        /** The presence name, as `PresenceChannel` names it (`/chat-reply/{id}`). */
-        val channel: String = "/chat-reply/$channelId"
-
         /** The message bus channel that carries this presence's deltas. */
         val busChannel: String = "/presence$channel"
 

@@ -45,10 +45,13 @@ import java.util.Set;
 import io.github.baba983.nativedo.app.NativeDo;
 import io.github.baba983.nativedo.app.NativeDoActivity;
 import io.github.baba983.nativedo.core.di.AppContainer;
+import io.github.baba983.nativedo.core.model.ChatUser;
 import io.github.baba983.nativedo.core.model.Post;
 import io.github.baba983.nativedo.core.model.PostPoll;
 import io.github.baba983.nativedo.core.model.PostReaction;
 import io.github.baba983.nativedo.core.model.TopicDetail;
+import io.github.baba983.nativedo.core.presence.TypingPresenceController;
+import io.github.baba983.nativedo.core.presence.TypingPresencePolicy;
 import io.github.baba983.nativedo.core.session.SessionSnapshot;
 import io.github.baba983.nativedo.feature.topic.data.TopicReadMarks;
 import io.github.baba983.nativedo.feature.topic.data.TopicReadReporter;
@@ -244,6 +247,18 @@ public class TopicFragment extends BaseFragment
     private DiscourseComposerTools composerTools;
     /** The native reply strip above the composer, created the first time the reader answers a post. */
     private DiscourseReplyPanel replyPanel;
+    /**
+     * Who else is writing a reply to this topic, from the site's own presence channel. The screen
+     * reads the channel and announces its own composer through the same controller a chat channel
+     * uses; the reply channel is `discourse-presence`'s, not the chat plugin's.
+     */
+    private TypingPresenceController replyPresence;
+    /** The capsule's own line, kept while another replier's line takes the capsule over. */
+    private CharSequence capsuleSubtitle;
+    /** The repliers line, or empty when nobody else is replying. */
+    private String repliersSubtitle = "";
+    /** Upstream's animated typing dots, drawn before the replier line while it is shown. */
+    private final TypingDotsSubtitle repliersDots = new TypingDotsSubtitle(false);
     /** The floating center capsule: the topic author's avatar, the title and the subtitle. */
     private org.telegram.ui.Components.ChatAvatarContainer avatarContainer;
     /** The bar's blur source; the post list is the content it records. */
@@ -396,6 +411,9 @@ public class TopicFragment extends BaseFragment
                     avatarContainer.setTitleColors(
                             getThemedColor(org.telegram.ui.ActionBar.Theme.key_actionBarDefaultTitle),
                             getThemedColor(org.telegram.ui.ActionBar.Theme.key_actionBarDefaultSubtitle));
+                    // The typing dots carry their own paint, so a theme switch recolours them by
+                    // redrawing the line they belong to.
+                    refreshCapsuleSubtitle();
                 }
             };
     /** The frame that draws the chat wallpaper behind the posts (ChatActivity's contentView). */
@@ -1905,7 +1923,7 @@ public class TopicFragment extends BaseFragment
             // topic's capsule carries its reply count beside its category (setCapsuleSubtitle).
             subtitle += " · " + Math.max(0, threadReplyCount) + " 回复";
         }
-        avatarContainer.setSubtitle(subtitle);
+        setCapsuleSubtitle(subtitle);
     }
 
     /** The first page of replies, once the root is drawn. */
@@ -2814,7 +2832,111 @@ public class TopicFragment extends BaseFragment
                     io.github.baba983.nativedo.R.string.offline_indicator);
             subtitle = subtitle == null ? marker : marker + " · " + subtitle;
         }
-        avatarContainer.setSubtitle(subtitle);
+        setCapsuleSubtitle(subtitle);
+    }
+
+    /** Stores the capsule's own line and draws it unless a replier's line is taking it over. */
+    private void setCapsuleSubtitle(CharSequence subtitle) {
+        capsuleSubtitle = subtitle;
+        refreshCapsuleSubtitle();
+    }
+
+    /**
+     * Draws the capsule's line: the repliers take it while anyone else is composing a reply, and
+     * the topic's own line (category, count, offline marker) comes back when the last one leaves.
+     * The replier line carries upstream's animated typing dots before it, the way Telegram's chat
+     * header draws a printing status.
+     */
+    private void refreshCapsuleSubtitle() {
+        if (avatarContainer == null) {
+            return;
+        }
+        boolean repliers = !repliersSubtitle.isEmpty();
+        avatarContainer.setSubtitle(repliers ? repliersSubtitle : capsuleSubtitle);
+        setCapsuleTypingDots(repliers);
+    }
+
+    /**
+     * Attaches and runs (or stops and detaches) upstream's typing dots on the capsule's subtitle,
+     * in the line's own colour. This is the component {@code ChatAvatarContainer} itself uses for a
+     * chat's printing status; the dots sit inside the text line, before the words.
+     */
+    private void setCapsuleTypingDots(boolean show) {
+        android.view.View subtitleView = avatarContainer.getSubtitleTextView();
+        if (!(subtitleView instanceof org.telegram.ui.ActionBar.SimpleTextView)) {
+            return;
+        }
+        org.telegram.ui.ActionBar.SimpleTextView subtitle =
+                (org.telegram.ui.ActionBar.SimpleTextView) subtitleView;
+        if (show) {
+            repliersDots.show(subtitle, avatarContainer.getSubtitlePaint().getColor());
+        } else {
+            repliersDots.hide(subtitle);
+        }
+    }
+
+    /**
+     * Binds this screen to the topic's reply presence. The channel is `discourse-presence`'s own
+     * (`/discourse-presence/reply/{topicId}`): the web client subscribes to it at the topic's footer
+     * and enters it from the reply composer, so a reader here is visible to the site's own clients
+     * and theirs are visible here. A screen that is not signed in has no reader to announce and no
+     * channel to read.
+     */
+    private void startReplyPresence() {
+        if (replyPresence != null) {
+            // Back from the background: the controller re-reads the channel and its own policy.
+            replyPresence.resume();
+            return;
+        }
+        if (container == null || topicId <= 0 || isFinished || isPaused()) {
+            return;
+        }
+        SessionSnapshot owner = container.getSessionStore().snapshot();
+        if (owner == null || owner.getUsername().isEmpty()) {
+            return;
+        }
+        // The site's reply composer keeps its presence for 10 s after the last input
+        // (discourse-presence's KEEP_ALIVE), longer than a chat channel's 5 s.
+        replyPresence = new TypingPresenceController(
+                container.getDiscourseApiClient(),
+                container.getMessageBusSession().getRunningClientFlow(),
+                new TypingPresencePolicy(30_000L, 1_000L, 10_000L));
+        replyPresence.setUsersListener(repliers -> {
+            if (isFinished || isPaused()) {
+                return;
+            }
+            repliersSubtitle = repliersLabel(repliers);
+            refreshCapsuleSubtitle();
+        });
+        replyPresence.start("/discourse-presence/reply/" + topicId, owner.getUsername());
+    }
+
+    /** The capsule's line for the site's repliers, in the chat header's own wording. */
+    private static String repliersLabel(java.util.List<ChatUser> repliers) {
+        if (repliers.isEmpty()) {
+            return "";
+        }
+        // The status verb comes first so a long name ellipsizes without taking the verb with it.
+        String first = repliers.get(0).getUsername();
+        if (repliers.size() == 1) {
+            return "正在回复：" + first;
+        }
+        return "正在回复：" + first + " 等 " + repliers.size() + " 人";
+    }
+
+    /** The screen is gone or hidden: nobody is composing here, and the capsule stops saying they are. */
+    private void stopReplyPresence(boolean destroy) {
+        if (replyPresence != null) {
+            replyPresence.setUsersListener(null);
+            if (destroy) {
+                replyPresence.stop();
+                replyPresence = null;
+            } else {
+                replyPresence.pause();
+            }
+        }
+        repliersSubtitle = "";
+        refreshCapsuleSubtitle();
     }
 
     /**
@@ -3107,6 +3229,7 @@ public class TopicFragment extends BaseFragment
             composerTools.onResume();
         }
         if (attachSheet != null) attachSheet.onResume();
+        startReplyPresence();
     }
 
     /**
@@ -3158,6 +3281,7 @@ public class TopicFragment extends BaseFragment
         if (composer != null) {
             composer.onPause();
         }
+        stopReplyPresence(false);
         leaveTopic();
     }
 
@@ -3206,6 +3330,7 @@ public class TopicFragment extends BaseFragment
             listView.stopScroll();
         }
         saveDraft();
+        stopReplyPresence(true);
         if (composerTools != null) {
             composerTools.onDestroy();
             composerTools = null;
@@ -5694,6 +5819,12 @@ public class TopicFragment extends BaseFragment
             // Every keystroke is the reader's current draft; the field is the source of truth and
             // the store is written from it (the send path clears it, a failure keeps it).
             saveDraft();
+            if (!fromDraft && replyPresence != null) {
+                // A post being edited is not a reply: the site has its own edit channel for that,
+                // and announcing here would tell the topic somebody is answering it.
+                replyPresence.textChanged(editFloor < 0 && text != null
+                        && text.toString().trim().length() > 0);
+            }
         }
 
         @Override

@@ -1,4 +1,4 @@
-package io.github.baba983.nativedo.chat
+package io.github.baba983.nativedo.core.presence
 
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import io.github.baba983.nativedo.core.messagebus.MessageBusClient
@@ -33,9 +33,9 @@ import org.junit.Test
 import retrofit2.Retrofit
 
 /**
- * The chat typing-presence controller against a fake site and a real message bus.
+ * The typing-presence controller against a fake site and a real message bus.
  *
- * <p>Failure modes pinned here, none of which a chat screen render can reach: announcing a reader
+ * <p>Failure modes pinned here, none of which a screen render can reach: announcing a reader
  * whose `hide_presence` is true, unknown or unanswered (the site's own composer treats only
  * `false` as permission); re-announcing a screen under a different account after the session
  * moved; applying a presence delta whose message id skipped, which would leave the visible list
@@ -48,14 +48,14 @@ import retrofit2.Retrofit
  * same server. The assertions read the visible callback/`getUsers()` and the requests the site
  * received, so they fail if the controller announces the wrong thing or draws the wrong list.
  */
-internal class ChatTypingControllerTest {
+internal class TypingPresenceControllerTest {
 
     private lateinit var server: MockWebServer
     private lateinit var api: DiscourseApiClient
     private lateinit var scope: CoroutineScope
     private lateinit var clientFlow: MutableStateFlow<MessageBusClient?>
 
-    private val controllers = CopyOnWriteArrayList<ChatTypingController>()
+    private val controllers = CopyOnWriteArrayList<TypingPresenceController>()
     private val buses = CopyOnWriteArrayList<MessageBusClient>()
     private val seenUsers = CopyOnWriteArrayList<List<ChatUser>>()
 
@@ -154,7 +154,7 @@ internal class ChatTypingControllerTest {
         )
         val controller = controller()
 
-        controller.start(CHANNEL, "baba")
+        controller.start(CHANNEL_NAME, "baba")
 
         await("the snapshot's other readers") {
             latestUsers().map { it.username } == listOf("alice", "bob")
@@ -174,7 +174,7 @@ internal class ChatTypingControllerTest {
         defaultSnapshot = snapshot(2, listOf(user(8, "alice")))
         attachBus()
         val controller = controller()
-        controller.start(CHANNEL, "baba")
+        controller.start(CHANNEL_NAME, "baba")
         await("the snapshot reader") { latestUsers().map { it.username } == listOf("alice") }
         await("the message-bus subscription") { bus().lastIdOf(BUS_CHANNEL) != null }
         assertEquals(
@@ -201,7 +201,7 @@ internal class ChatTypingControllerTest {
         snapshotAnswers.add(200 to snapshot(4, listOf(user(8, "alice"), user(10, "carol"))))
         attachBus()
         val controller = controller()
-        controller.start(CHANNEL, "baba")
+        controller.start(CHANNEL_NAME, "baba")
         await("alice from the first snapshot") { latestUsers().map { it.username } == listOf("alice") }
         await("the message-bus subscription") { bus().lastIdOf(BUS_CHANNEL) != null }
 
@@ -222,7 +222,7 @@ internal class ChatTypingControllerTest {
         snapshotAnswers.add(500 to "")
         snapshotAnswers.add(200 to snapshot(2, listOf(user(8, "alice"))))
         val controller = controller(timing(snapshotRetry = 50))
-        controller.start(CHANNEL, "baba")
+        controller.start(CHANNEL_NAME, "baba")
 
         await("the retried snapshot") { latestUsers().map { it.username } == listOf("alice") }
         assertTrue("the outage surfaced only as a retry", presenceGetQueries.size >= 2)
@@ -232,7 +232,7 @@ internal class ChatTypingControllerTest {
     fun aBusThatArrivesAfterTheScreenStillSubscribesAndAppliesDeltas() {
         defaultSnapshot = snapshot(2, listOf(user(8, "alice")))
         val controller = controller()
-        controller.start(CHANNEL, "baba")
+        controller.start(CHANNEL_NAME, "baba")
         await("the snapshot before any bus") { latestUsers().map { it.username } == listOf("alice") }
         assertNull("no subscription without a client", clientFlow.value)
 
@@ -247,10 +247,10 @@ internal class ChatTypingControllerTest {
 
     @Test
     fun anInaccessibleChannelIsNeverAnnounced() {
-        defaultSnapshot = """{"/chat-reply/$CHANNEL":null}"""
+        defaultSnapshot = """{"$CHANNEL_NAME":null}"""
         attachBus()
         val controller = controller()
-        controller.start(CHANNEL, "baba")
+        controller.start(CHANNEL_NAME, "baba")
 
         await("the authoritative null") { presenceGetQueries.isNotEmpty() }
         controller.textChanged(true)
@@ -270,7 +270,7 @@ internal class ChatTypingControllerTest {
     @Test
     fun typingAnnouncesWithOneClientIdForPresentAndLeave() {
         val controller = controller()
-        controller.start(CHANNEL, "baba")
+        controller.start(CHANNEL_NAME, "baba")
         await("the initial read") { presenceGetQueries.isNotEmpty() }
 
         controller.textChanged(true)
@@ -304,7 +304,7 @@ internal class ChatTypingControllerTest {
         defaultPolicyJson = policyJson("baba", 7, hidePresence = true)
         defaultSnapshot = snapshot(2, listOf(user(8, "alice")))
         val controller = controller()
-        controller.start(CHANNEL, "baba")
+        controller.start(CHANNEL_NAME, "baba")
         await("the other reader") { latestUsers().map { it.username } == listOf("alice") }
 
         controller.textChanged(true)
@@ -319,7 +319,7 @@ internal class ChatTypingControllerTest {
     fun aPresenceOptionTheSiteDidNotAnswerIsTreatedAsHidden() {
         defaultPolicyJson = """{"current_user":{"id":7,"username":"baba","user_option":{}}}"""
         val controller = controller()
-        controller.start(CHANNEL, "baba")
+        controller.start(CHANNEL_NAME, "baba")
         await("the option read") { policyReads.get() >= 1 && presenceGetQueries.isNotEmpty() }
 
         controller.textChanged(true)
@@ -333,7 +333,7 @@ internal class ChatTypingControllerTest {
     fun aPolicyThatCannotBeReadNeverBecomesPermission() {
         policyStatus = 500
         val controller = controller()
-        controller.start(CHANNEL, "baba")
+        controller.start(CHANNEL_NAME, "baba")
         await("the failed option read") { policyReads.get() >= 1 && presenceGetQueries.isNotEmpty() }
 
         controller.textChanged(true)
@@ -347,7 +347,7 @@ internal class ChatTypingControllerTest {
     fun aRefusedPresentIsNotRetriedInALoop() {
         presentVerdict = false
         val controller = controller()
-        controller.start(CHANNEL, "baba")
+        controller.start(CHANNEL_NAME, "baba")
         await("the initial read") { presenceGetQueries.isNotEmpty() }
 
         controller.textChanged(true)
@@ -370,7 +370,7 @@ internal class ChatTypingControllerTest {
     fun aLoggedOutPresentIsNotReplayed() {
         updateFailures.add(401)
         val controller = controller(timing(refresh = 100, idle = 2_000))
-        controller.start(CHANNEL, "baba")
+        controller.start(CHANNEL_NAME, "baba")
         await("the initial read") { presenceGetQueries.isNotEmpty() }
         controller.textChanged(true)
         await("the refused write") { updates.isNotEmpty() }
@@ -383,7 +383,7 @@ internal class ChatTypingControllerTest {
     fun aTransientFailureIsRetriedWithTheSameState() {
         updateFailures.add(500)
         val controller = controller(timing(retryBase = 60, retryMax = 200))
-        controller.start(CHANNEL, "baba")
+        controller.start(CHANNEL_NAME, "baba")
         await("the initial read") { presenceGetQueries.isNotEmpty() }
 
         controller.textChanged(true)
@@ -394,7 +394,7 @@ internal class ChatTypingControllerTest {
     @Test
     fun theRefreshKeepsPresenceAliveAndTheTypingWindowLeaves() {
         val controller = controller(timing(refresh = 150, idle = 900))
-        controller.start(CHANNEL, "baba")
+        controller.start(CHANNEL_NAME, "baba")
         await("the initial read") { presenceGetQueries.isNotEmpty() }
 
         controller.textChanged(true)
@@ -412,7 +412,7 @@ internal class ChatTypingControllerTest {
     @Test
     fun aBurstOfComposerChangesCoalescesToTheFinalState() {
         val controller = controller(timing(refresh = 3_000, throttle = 300, idle = 2_000))
-        controller.start(CHANNEL, "baba")
+        controller.start(CHANNEL_NAME, "baba")
         await("the initial read") { presenceGetQueries.isNotEmpty() }
 
         controller.textChanged(true)
@@ -443,7 +443,7 @@ internal class ChatTypingControllerTest {
     fun pauseLeavesAndResumeReattachesWithoutReannouncing() {
         val controller = controller(timing(refresh = 3_000, idle = 2_000))
         attachBus()
-        controller.start(CHANNEL, "baba")
+        controller.start(CHANNEL_NAME, "baba")
         await("the initial read") { presenceGetQueries.isNotEmpty() }
         await("the subscription") { bus().lastIdOf(BUS_CHANNEL) != null }
 
@@ -478,7 +478,7 @@ internal class ChatTypingControllerTest {
         updateGate = gate
         attachBus()
         val controller = controller(timing(refresh = 3_000, idle = 2_000))
-        controller.start(CHANNEL, "baba")
+        controller.start(CHANNEL_NAME, "baba")
         await("the read") { presenceGetQueries.isNotEmpty() }
         await("the subscription") { bus().lastIdOf(BUS_CHANNEL) != null }
 
@@ -504,7 +504,7 @@ internal class ChatTypingControllerTest {
     fun aNewSessionMustProveTheSameReaderBeforeAnythingIsAnnounced() {
         attachBus()
         val controller = controller(timing(refresh = 3_000, idle = 2_000))
-        controller.start(CHANNEL, "baba")
+        controller.start(CHANNEL_NAME, "baba")
         await("the subscription") { bus().lastIdOf(BUS_CHANNEL) != null }
         controller.textChanged(true)
         await("the first reader's present") { controller.isPresent() }
@@ -533,8 +533,14 @@ internal class ChatTypingControllerTest {
     // The fake site
     // ------------------------------------------------------------------------------------------
 
-    private fun controller(policy: ChatTypingPolicy = timing()): ChatTypingController {
-        val created = ChatTypingController(api, clientFlow, scope, Dispatchers.Unconfined, policy)
+    private fun controller(policy: TypingPresencePolicy = timing()): TypingPresenceController {
+        val created = TypingPresenceController(
+            client = api,
+            runningClient = clientFlow,
+            policy = policy,
+            scope = scope,
+            callbacks = Dispatchers.Unconfined,
+        )
         created.setUsersListener { users -> seenUsers.add(users) }
         controllers.add(created)
         return created
@@ -664,7 +670,7 @@ internal class ChatTypingControllerTest {
         retryBase: Long = 60L,
         retryMax: Long = 250L,
         snapshotRetry: Long = 60L,
-    ): ChatTypingPolicy = ChatTypingPolicy(
+    ): TypingPresencePolicy = TypingPresencePolicy(
         refreshIntervalMillis = refresh,
         throttleMillis = throttle,
         typingIdleMillis = idle,

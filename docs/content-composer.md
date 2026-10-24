@@ -225,12 +225,12 @@ its copy, an account change or screen destroy discards the whole staging, and an
 upload id alone sends nothing. A take and a staged file are different writes, so
 the composer refuses to start or send either one while the other is pending.
 
-### Chat typing presence
+### Typing presence
 
-[ChatTypingController](../apps/android/nativedo/src/main/java/io/github/baba983/nativedo/chat/ChatTypingController.kt)
-binds one screen, channel and reader to Discourse's core presence backend, not to
-a chat endpoint. Reading others is `GET /presence/get?channels[]=/chat-reply/{id}`,
-seeded into the `/presence/chat-reply/{id}` message-bus channel; announcing is
+[TypingPresenceController](../apps/android/nativedo/src/main/java/io/github/baba983/nativedo/core/presence/TypingPresenceController.kt)
+binds one screen, presence channel and reader to Discourse's core presence backend,
+not to a chat endpoint. Reading others is `GET /presence/get?channels[]={name}`,
+seeded into the `/presence{name}` message-bus channel; announcing is
 `POST /presence/update` with a random per-binding client id. A skipped bus message
 id, or a payload it cannot decode, re-reads the snapshot instead of guessing who
 entered or left; a `null` channel state (the site will not show it to this reader)
@@ -246,12 +246,24 @@ non-whitespace text and the channel still accepts posts, only after
 message-bus client is the running one. An
 unanswered or failed privacy read, a `true` value, a different signed-in account
 and a session/bus change all mean "read but do not announce"; none of them may
-inherit a previous announcement. Typing stops being announced five seconds after
-the last input even if the text stays in the box - which leaves the draft itself
-untouched - and leaving the screen sends a leave. The action bar shows the other
-typers in place of the channel's status label: one name, or the first name and the
-total. Neither request carries the composer's text, and nothing here broadcasts
-the reader globally through `/chat/online`.
+inherit a previous announcement. Typing stops being announced after the last
+input even if the text stays in the box - which leaves the draft itself
+untouched - and leaving the screen sends a leave. Neither request carries the
+composer's text, and nothing here broadcasts the reader globally through
+`/chat/online`.
+
+Two screens share the controller, each naming the site's own channel. A chat
+channel binds `/chat-reply/{channelId}` (the chat plugin's name) and shows the
+other typers in place of the channel's status label: `正在输入：name`, or
+`正在输入：name 等 N 人`, five seconds after the last input. The status verb leads
+so a long name is what the line's edge ellipsizes, not the verb. The topic screen
+binds `/discourse-presence/reply/{topicId}` (the discourse-presence plugin's name)
+and shows them in the header capsule's subtitle as `正在回复：name` or
+`正在回复：name 等 N 人`, with Telegram's own `TypingDotsDrawable` before the line,
+restoring the topic's category/count line when the last replier leaves; its
+composer keeps the reader announced for the plugin's own 10 s `KEEP_ALIVE`. A post
+being edited is never announced as a reply - the plugin has a separate edit
+channel, and this client does not claim one yet.
 
 ### Attachment sheet and recorded audio
 
@@ -394,8 +406,9 @@ selected clip. Rendered states and accessibility bounds check the editor and IME
 inset hosting, not actual keyboard motion. Host-side coverage is scoped to the
 IME/paste intake seam, a chat file staged, uploaded and sent as `upload_ids[]`
 (including a refused write that keeps its accepted id), the staging discarded on
-an account change, the typing controller against a fake site and the real bus, and
-the GIF panel's category, search, paging and insert paths.
+an account change, the typing controller against a fake site and the real bus, the
+chat typing line, the topic screen's replier line and its own announce/leave
+writes, and the GIF panel's category, search, paging and insert paths.
 Device-only, not provable by the host renderer: actual microphone encoding and
 playback, a real keyboard's `commitContent` and clipboard handoff, drag feel, IME
 transitions and the on-device gallery grid; animated

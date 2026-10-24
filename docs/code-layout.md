@@ -21,7 +21,7 @@ All paths below are under
 
 - `app/`: Application/Activity, navigation, root tabs and host lifecycle.
 - `auth/`: WebView login/recovery and experimental device authorization.
-- `core/`: Discourse transport, DTOs/models, session, storage, MessageBus and DI.
+- `core/`: Discourse transport, DTOs/models, session, storage, MessageBus, presence and DI.
 - `feature/`: repositories and persisted feature state (drafts/read positions).
 - `topic/`, `chat/`, `messages/`, `profile/`, `search/`, `notifications/`,
   `bookmarks/`, `settings/`: product screens and their upstream UI adapters.
