@@ -6237,6 +6237,29 @@ public class TopicFragment extends BaseFragment
         }
 
         /**
+         * "View Votes" on a poll: the site's own voters list, one section per option, and a tap on a
+         * voter opens that reader's profile. Upstream's cell only asks its host for this on a poll
+         * whose voters are public, which is exactly when the site answers with a list.
+         */
+        @Override
+        public void didPressInstantButton(ChatMessageCell cell, int type) {
+            if (cell == null || type != ChatMessageCell.INSTANT_BUTTON_TYPE_VIEW_VOTES_PUBLIC_LIST) {
+                return;
+            }
+            MessageObject message = cell.getMessageObject();
+            PostPoll poll = pollOf(message);
+            int floor = floorOf(message);
+            if (poll == null || floor < 0) {
+                return;
+            }
+            showDialog(DiscoursePollVotersUi.voters(TopicFragment.this, container,
+                    floors.get(floor).getId(), poll, (username, displayName) -> {
+                        presentFragment(io.github.baba983.nativedo.profile.ProfileFragment.forUser(username, displayName));
+                        return kotlin.Unit.INSTANCE;
+                    }));
+        }
+
+        /**
          * A tap on a poll's answers. Upstream hands over the answers that are being voted for - the
          * one that was tapped in a single-choice poll, the whole checked set in a multiple-choice
          * one - and this client sends exactly those to the site.
