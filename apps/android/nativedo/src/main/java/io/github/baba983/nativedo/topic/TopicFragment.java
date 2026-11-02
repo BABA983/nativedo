@@ -114,6 +114,9 @@ public class TopicFragment extends BaseFragment
      * screen, so the id is its own.
      */
     private static final int ANIMATOR_ID_PAGE_DOWN_VISIBLE = 0x50;
+    /** The way back to the first floor, animated with the same shape as the page-down button. */
+    private static final int ANIMATOR_ID_PAGE_UP_VISIBLE = 0x51;
+
     /** The copy the empty discussion page shows when the site says the root has no replies at all. */
     private static final String THREAD_EMPTY_LINE = "还没有回复";
 
@@ -250,6 +253,21 @@ public class TopicFragment extends BaseFragment
                     280);
     /** The button's resting bottom offset from the frame's own bottom edge; see [placeThreadStatus]. */
     private int pageDownBottom;
+    /**
+     * The way back to the first floor: the same floating round button with the chevron turned up,
+     * floating above the page-down control while the first post is off-screen. Null until the
+     * screen is built.
+     */
+    private org.telegram.ui.Components.chat.buttons.ChatActivityBlurredRoundPageDownButton threadPageUp;
+    /** The up button's own visibility factor; the same show animation as the page-down button. */
+    private final me.vkryl.android.animator.BoolAnimator pageUpVisible =
+            new me.vkryl.android.animator.BoolAnimator(
+                    ANIMATOR_ID_PAGE_UP_VISIBLE,
+                    this,
+                    me.vkryl.android.AnimatorUtils.DECELERATE_INTERPOLATOR,
+                    280);
+    /** The up button's resting bottom offset: one button plus its gap above the page-down band. */
+    private int pageUpBottom;
     /**
      * Whether an ordinary read's jump is on its way. The button's stock spinner shows it, the button
      * refuses a second tap, and only a read that belongs to the window it was asked for clears it.
@@ -415,6 +433,9 @@ public class TopicFragment extends BaseFragment
                     // The button's blur drawable caches its own colours and its icon is themed too;
                     // upstream re-reads both in place on a theme switch.
                     this.threadPageDown.updateColors();
+                }
+                if (this.threadPageUp != null) {
+                    this.threadPageUp.updateColors();
                 }
                 if (this.threadEmptyCell != null) {
                     // The service pill re-reads its paints on every draw; a redraw is the recolor.
@@ -1127,6 +1148,32 @@ public class TopicFragment extends BaseFragment
         threadPageDown.setPivotY(AndroidUtilities.dp(28 + 8));
         threadPageDown.setOnClickListener(view -> onPageDownTap());
         contentView.addView(threadPageDown, org.telegram.ui.Components.LayoutHelper.createFrame(
+                56,
+                64,
+                Gravity.RIGHT | Gravity.BOTTOM));
+        // The same control, pointing the other way: a long discussion read from the middle keeps
+        // its first post one tap away. Same glass source, size, pivot and animation as the
+        // page-down button, floating directly above it so the pair reads as one stack.
+        threadPageUp =
+                org.telegram.ui.Components.chat.buttons.ChatActivityBlurredRoundPageDownButton.create(
+                        context,
+                        56, 48,
+                        resourceProvider,
+                        glassHost.getFactory(),
+                        buttonProvider,
+                        io.github.baba983.nativedo.R.drawable.ic_nativedo_page_up);
+        threadPageUp.setClipChildren(false);
+        threadPageUp.setClipToPadding(false);
+        threadPageUp.setVisibility(View.GONE);
+        threadPageUp.setPivotX(AndroidUtilities.dp(28));
+        threadPageUp.setPivotY(AndroidUtilities.dp(28 + 8));
+        threadPageUp.setContentDescription("回到顶部");
+        threadPageUp.setOnClickListener(view -> {
+            if (listView != null) {
+                listView.smoothScrollToPosition(0);
+            }
+        });
+        contentView.addView(threadPageUp, org.telegram.ui.Components.LayoutHelper.createFrame(
                 56,
                 64,
                 Gravity.RIGHT | Gravity.BOTTOM));
@@ -2454,11 +2501,56 @@ public class TopicFragment extends BaseFragment
         threadPageDown.setTranslationY(-pageDownBottom + AndroidUtilities.dp(80) * (1f - factor));
     }
 
+    /**
+     * The way back up is shown once the first post has scrolled under the bar - the list can still
+     * scroll up and more than a bar's height is above the viewport - so the button does not flicker
+     * on the first pixel of a scroll. A discussion page and the search overlay own their own
+     * affordances, so neither shows it.
+     */
+    private void updateTopicPageUp() {
+        if (threadPageUp == null) {
+            return;
+        }
+        if (topicSearch != null || threadMode || listView == null) {
+            applyPageUpVisible(false, true);
+            return;
+        }
+        boolean scrolledPastTheTop = listView.canScrollVertically(-1)
+                && listView.computeVerticalScrollOffset() > AndroidUtilities.dp(48);
+        applyPageUpVisible(scrolledPastTheTop, true);
+    }
+
+    /** Shows or hides the up button through its own factor. */
+    private void applyPageUpVisible(boolean show, boolean animated) {
+        if (threadPageUp == null) {
+            return;
+        }
+        pageUpVisible.setValue(show, animated);
+    }
+
+    /** The page-down button's own show animation, one band higher. */
+    private void applyPageUpTransform() {
+        if (threadPageUp == null) {
+            return;
+        }
+        float factor = pageUpVisible.getFloatValue();
+        if (composer != null && (composer.isRecordingAudioVideo() || composer.hasAudioToSend())) {
+            factor = 0f;
+        }
+        threadPageUp.setVisibility(factor > 0f ? View.VISIBLE : View.GONE);
+        threadPageUp.setAlpha(factor);
+        threadPageUp.setScaleX(org.telegram.messenger.AndroidUtilities.lerp(0.7f, 1f, factor));
+        threadPageUp.setScaleY(org.telegram.messenger.AndroidUtilities.lerp(0.7f, 1f, factor));
+        threadPageUp.setTranslationY(-pageUpBottom + AndroidUtilities.dp(80) * (1f - factor));
+    }
+
     @Override
     public void onFactorChanged(int id, float factor, float fraction,
             me.vkryl.android.animator.FactorAnimator callee) {
         if (id == ANIMATOR_ID_PAGE_DOWN_VISIBLE) {
             applyPageDownTransform();
+        } else if (id == ANIMATOR_ID_PAGE_UP_VISIBLE) {
+            applyPageUpTransform();
         }
     }
 
@@ -2589,9 +2681,12 @@ public class TopicFragment extends BaseFragment
     private void placeThreadStatus() {
         int bottom = threadAffordanceBottom();
         pageDownBottom = bottom;
+        // The up button rides one control plus its gap above the page-down band.
+        pageUpBottom = bottom + AndroidUtilities.dp(56 + 8);
         // The button's own slide (its show animation) is measured from this resting offset, so the
         // factor is re-applied whenever the band moves.
         applyPageDownTransform();
+        applyPageUpTransform();
         if (threadEmptyCell != null) {
             ViewGroup.LayoutParams params = threadEmptyCell.getLayoutParams();
             if (params instanceof android.widget.FrameLayout.LayoutParams) {
@@ -3270,6 +3365,8 @@ public class TopicFragment extends BaseFragment
      * position rather than the position alone.
      */
     private void reportViewport() {
+        // The way back up follows the viewport alone; it is not part of the read report.
+        updateTopicPageUp();
         // The saved reading window also fences a queued callback after the search UI is destroyed.
         if (searchReadingPosts != null) {
             return;
@@ -3448,6 +3545,7 @@ public class TopicFragment extends BaseFragment
         // The button's own show factor is clock-driven; a screen that leaves with it mid-flight must
         // drop the frame callback rather than let it draw into a dead view.
         pageDownVisible.cancel();
+        pageUpVisible.cancel();
         cancelFloatingDateAnimation();
         pageDownJumping = false;
         if (listView != null) {
@@ -3628,6 +3726,7 @@ public class TopicFragment extends BaseFragment
         inputViews.setVisibility(View.GONE);
         attachStrip.setVisibility(View.GONE);
         applyPageDownVisible(false, false);
+        applyPageUpVisible(false, false);
         threadEmptyCell.setVisibility(View.GONE);
         topicSearch = new io.github.baba983.nativedo.search.TopicSearch(
                 getContext(), container, topicId, (android.widget.FrameLayout) fragmentView,
