@@ -134,6 +134,25 @@ internal class PollTest {
         harness.assertNoTelegramSideEffects()
     }
 
+    /**
+     * The site has no cap on a poll's options, and Telegram's cell sizes its answer checkboxes from
+     * its own cap (12). A poll with more options than that must still draw every option and keep
+     * every answer tappable; the crash this pins is the cell indexing its shorter array.
+     */
+    @Test
+    fun aPollWithMoreAnswersThanTelegramsCapStillDrawsEveryAnswer() {
+        site.servePostFixture(TOPIC_ID, "post-polls-many.json")
+        openTopic()
+
+        val pollCell = laidOutCells().firstOrNull { it.messageObject?.type == MessageObject.TYPE_POLL }
+            ?: throw AssertionError("the poll drew no cell")
+        val media = MessageObject.getMedia(pollCell.messageObject!!.messageOwner) as TLRPC.TL_messageMediaPoll
+        assertEquals("every option the site sent is drawn", MANY_ANSWERS, media.poll.answers.size)
+        assertEquals("and each one has its own answer button", MANY_ANSWERS, pollCell.pollButtons.size)
+        harness.drawApp()
+        harness.assertNoTelegramSideEffects()
+    }
+
     @Test
     fun tappingAnAnswerVotesOnTheSiteAndTheAnswerUpdatesTheFloor() {
         openTopic()
@@ -254,5 +273,8 @@ internal class PollTest {
     private companion object {
         const val TOPIC_ID = 2001L
         const val OPTION_A = "e539a9df8700d0d05c69356a07b768cf"
+
+        /** The options of the many-answer poll fixture: more than Telegram's 12-answer cap. */
+        const val MANY_ANSWERS = 13
     }
 }

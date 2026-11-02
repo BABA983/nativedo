@@ -1,0 +1,94 @@
+{
+  "id": 2002,
+  "post_number": 1,
+  "reply_to_post_number": null,
+  "reply_count": 0,
+  "username": "baba",
+  "name": "Baba",
+  "avatar_template": "/user_avatar/linux.do/baba/{size}/1.png",
+  "created_at": "2026-04-05T09:07:00.000Z",
+  "updated_at": "2026-04-05T09:12:00.000Z",
+  "version": 1,
+  "cooked": "<p>这一楼带一个选项很多的投票。</p>\n<div class=\"poll\" data-poll-charttype=\"bar\" data-poll-name=\"many\" data-poll-public=\"true\" data-poll-results=\"always\" data-poll-status=\"open\" data-poll-type=\"regular\">\n<div class=\"poll-container\">\n<div class=\"poll-title\">选一个</div>\n<ul>\n<li data-poll-option-id=\"6fe767b2d399d9225fdd7d3a4bbe0af5\">选项 A</li>\n<li data-poll-option-id=\"07b79d4782d2c9e5c082c1b10643cfd7\">选项 B</li>\n<li data-poll-option-id=\"95d859a5da6507621a8734ac57409b19\">选项 C</li>\n<li data-poll-option-id=\"d721e5d0a7eea22643feec1feb4d94c4\">选项 D</li>\n<li data-poll-option-id=\"6f9b747372a4b9694b4d7346be5b8abb\">选项 E</li>\n<li data-poll-option-id=\"5e73e285600287bfc421b44d0d75f858\">选项 F</li>\n<li data-poll-option-id=\"9b8ee3d7856f666999075cecf49b3e96\">选项 G</li>\n<li data-poll-option-id=\"1c7a357dab89ef0fda9637800a9dcec3\">选项 H</li>\n<li data-poll-option-id=\"1548702a7ba00ae46580cbb6098f8cce\">选项 I</li>\n<li data-poll-option-id=\"8da0b5f33321d7ab1a9170a9609d95dc\">选项 J</li>\n<li data-poll-option-id=\"2cf499fab0032dd74498aa803c18d9f7\">选项 K</li>\n<li data-poll-option-id=\"f15cc1ac2350f131097c12f6ea0b581a\">选项 L</li>\n<li data-poll-option-id=\"6255444421c2d1870ea7743890e2a482\">选项 M</li>\n</ul>\n</div>\n</div>\n<p>投票说完。</p>",
+  "polls": [
+    {
+      "id": 1550,
+      "name": "many",
+      "type": "regular",
+      "status": "open",
+      "results": "always",
+      "public": true,
+      "chart_type": "bar",
+      "title": "选一个",
+      "options": [
+        {
+          "id": "6fe767b2d399d9225fdd7d3a4bbe0af5",
+          "html": "选项 A",
+          "votes": 3
+        },
+        {
+          "id": "07b79d4782d2c9e5c082c1b10643cfd7",
+          "html": "选项 B",
+          "votes": 4
+        },
+        {
+          "id": "95d859a5da6507621a8734ac57409b19",
+          "html": "选项 C",
+          "votes": 5
+        },
+        {
+          "id": "d721e5d0a7eea22643feec1feb4d94c4",
+          "html": "选项 D",
+          "votes": 6
+        },
+        {
+          "id": "6f9b747372a4b9694b4d7346be5b8abb",
+          "html": "选项 E",
+          "votes": 7
+        },
+        {
+          "id": "5e73e285600287bfc421b44d0d75f858",
+          "html": "选项 F",
+          "votes": 8
+        },
+        {
+          "id": "9b8ee3d7856f666999075cecf49b3e96",
+          "html": "选项 G",
+          "votes": 9
+        },
+        {
+          "id": "1c7a357dab89ef0fda9637800a9dcec3",
+          "html": "选项 H",
+          "votes": 10
+        },
+        {
+          "id": "1548702a7ba00ae46580cbb6098f8cce",
+          "html": "选项 I",
+          "votes": 11
+        },
+        {
+          "id": "8da0b5f33321d7ab1a9170a9609d95dc",
+          "html": "选项 J",
+          "votes": 12
+        },
+        {
+          "id": "2cf499fab0032dd74498aa803c18d9f7",
+          "html": "选项 K",
+          "votes": 13
+        },
+        {
+          "id": "f15cc1ac2350f131097c12f6ea0b581a",
+          "html": "选项 L",
+          "votes": 14
+        },
+        {
+          "id": "6255444421c2d1870ea7743890e2a482",
+          "html": "选项 M",
+          "votes": 15
+        }
+      ],
+      "voters": 117
+    }
+  ],
+  "polls_votes": {}
+}

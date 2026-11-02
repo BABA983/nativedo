@@ -133,13 +133,20 @@ object DiscoursePolls {
     ): MessageObject {
         val user = DiscourseRows.author(post, baseUrl)
         users[user.id] = user
-        val message = DiscourseRows.localMessage(
-            post.id.toInt(),
-            DiscourseRows.epochSeconds(post.createdAt),
-            topicId,
-            user.id,
-            media(poll),
-        )
+        val pollMedia = media(poll)
+        // A Discourse poll has no cap on its options, while Telegram's cell sizes its answer
+        // checkboxes from its own cap (12) and then indexes that array per answer: the site's own
+        // count is handed over before the cell that draws the poll is built.
+        io.github.baba983.nativedo.hooks.NativeDoHooks
+            .ensurePollAnswerCapacity(pollMedia.poll.answers.size)
+        val message =
+            DiscourseRows.localMessage(
+                post.id.toInt(),
+                DiscourseRows.epochSeconds(post.createdAt),
+                topicId,
+                user.id,
+                pollMedia,
+            )
         // A poll the floor's body opens with is that floor's first bubble, so it carries the reply
         // header like any other first bubble (set before the MessageObject reads it).
         DiscourseRows.applyReply(message, replyTo)

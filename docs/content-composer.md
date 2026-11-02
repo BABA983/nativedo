@@ -81,6 +81,10 @@ same site emoji catalog even when the replies endpoint omits individual icon URL
 A drawn upstream affordance is not proof its Telegram-account
 action is supported by this host; rank-based polls and richer voter UI need their
 own product wiring rather than pretending a tap supplies the missing semantics.
+A poll's answers are not capped by the site the way Telegram caps its own (12): the
+cell sizes its answer controls from that cap and then indexes them per answer, so
+the site's own count has to reach the cell before it is built - a poll with more
+options than the cap otherwise throws while the row attaches.
 
 ## Writing owns text and account identity
 

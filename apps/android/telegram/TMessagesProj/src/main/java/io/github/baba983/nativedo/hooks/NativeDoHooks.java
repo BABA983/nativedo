@@ -1324,6 +1324,32 @@ public final class NativeDoHooks {
         if (hostedRichPanes.containsKey(delegate)) control.setVisibility(android.view.View.GONE);
     }
 
+    /**
+     * A poll cell sizes its answer checkboxes from Telegram's own cap - {@code poll_answers_max}, 12
+     * by default - and then indexes that array once per answer, so a poll with more options than the
+     * cap throws on attach. A Discourse poll has no such cap: the site's own count raises it before
+     * the cell that draws the poll is built, and Telegram's value stays the floor.
+     */
+    public static void ensurePollAnswerCapacity(int answers) {
+        if (answers <= 0) {
+            return;
+        }
+        org.telegram.messenger.MessagesController controller =
+                org.telegram.messenger.MessagesController.getInstance(
+                        org.telegram.messenger.UserConfig.selectedAccount);
+        if (answers <= controller.config.pollAnswersMax.get()) {
+            return;
+        }
+        // The cap is read from the account's own preferences when the config loads, so the value is
+        // written there and re-read through the config's own public load: no reflection into it.
+        android.content.SharedPreferences preferences =
+                org.telegram.messenger.ApplicationLoader.applicationContext.getSharedPreferences(
+                        "mainconfig" + org.telegram.messenger.UserConfig.selectedAccount,
+                        android.content.Context.MODE_PRIVATE);
+        preferences.edit().putInt("poll_answers_max", answers).apply();
+        controller.config.load(preferences);
+    }
+
     private NativeDoHooks() {
     }
 }
