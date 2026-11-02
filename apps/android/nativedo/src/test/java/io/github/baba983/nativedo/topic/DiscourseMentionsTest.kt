@@ -11,6 +11,7 @@ import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.harness.FakeDiscourseSite
 import io.github.baba983.nativedo.harness.UpstreamUiHarness
 import io.github.baba983.nativedo.harness.contentListOf
+import io.github.baba983.nativedo.harness.contentRowCount
 import io.github.baba983.nativedo.harness.shadows.ShadowAnimatedFileNative
 import io.github.baba983.nativedo.harness.shadows.ShadowConnectionsManager
 import io.github.baba983.nativedo.harness.shadows.ShadowIntro
@@ -423,7 +424,7 @@ internal class DiscourseMentionsTest {
         return pixels.count { Color.red(it) > 200 && Color.blue(it) > 200 && Color.green(it) < 80 }
     }
 
-    private fun rowCount(): Int = contentListOf(harness.activity)?.adapter?.itemCount ?: 0
+    private fun rowCount(): Int = contentRowCount(harness)
 
     private fun viewTree(): List<View> {
         val content = harness.activity.findViewById<ViewGroup>(android.R.id.content) ?: return emptyList()

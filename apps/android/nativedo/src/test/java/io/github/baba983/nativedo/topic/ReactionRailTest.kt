@@ -11,6 +11,7 @@ import io.github.baba983.nativedo.app.NativeDo
 import io.github.baba983.nativedo.harness.FakeDiscourseSite
 import io.github.baba983.nativedo.harness.UpstreamUiHarness
 import io.github.baba983.nativedo.harness.contentListOf
+import io.github.baba983.nativedo.harness.contentRowCount
 import io.github.baba983.nativedo.harness.latestItemOptionsMenu
 import io.github.baba983.nativedo.harness.menuItemLabels
 import io.github.baba983.nativedo.harness.shadows.ShadowAnimatedFileNative
@@ -1124,7 +1125,7 @@ internal class ReactionRailTest {
 
     private fun ViewGroup.children(): List<View> = (0 until childCount).map { getChildAt(it) }
 
-    private fun rowCount(): Int = listView()?.adapter?.itemCount ?: 0
+    private fun rowCount(): Int = contentRowCount(harness)
 
     private fun laidOutCells(): List<ChatMessageCell> {
         val list = listView() ?: return emptyList()

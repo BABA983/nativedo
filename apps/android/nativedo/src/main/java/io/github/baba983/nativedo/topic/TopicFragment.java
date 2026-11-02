@@ -19,6 +19,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLoader;
 import org.telegram.messenger.ImageLocation;
+import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
@@ -113,9 +114,11 @@ public class TopicFragment extends BaseFragment
      * screen, so the id is its own.
      */
     private static final int ANIMATOR_ID_PAGE_DOWN_VISIBLE = 0x50;
-
     /** The copy the empty discussion page shows when the site says the root has no replies at all. */
     private static final String THREAD_EMPTY_LINE = "还没有回复";
+
+    /** The line above the first floor the reader has not seen, as upstream's chat writes it. */
+    private static final String UNREAD_DIVIDER_LINE = "未读消息";
 
     /**
      * The copy an empty discussion page shows when the site's own count promises replies but the
@@ -159,6 +162,11 @@ public class TopicFragment extends BaseFragment
     private final List<MessageObject> bubbles = new ArrayList<>();
     /** Per bubble, the floor it draws. */
     private final List<Integer> bubbleFloors = new ArrayList<>();
+    /**
+     * The divider above the first floor the site says the reader has not read, as a row of its own.
+     * Null until a window carrying that floor is bound.
+     */
+    private MessageObject unreadDivider;
     /** Per bubble, the prepared body a text bubble draws from; a poll bubble has none. */
     private final List<PreparedPostBody> bubbleBodies = new ArrayList<>();
     private final HashMap<Long, TLRPC.User> users = new HashMap<>();
@@ -924,7 +932,7 @@ public class TopicFragment extends BaseFragment
         // pressable, which a rich message's text is not, so the row asks for the menu itself. Same
         // floor, same menu as a long press would open, anchored on the row that was pressed.
         listView.setOnItemLongClickListener((view, position) -> {
-            if (position < 0 || position >= bubbleFloors.size()) {
+            if (position < 0 || position >= bubbleFloors.size() || isDividerRow(position)) {
                 return false;
             }
             showMessageMenu(view, bubbleFloors.get(position));
@@ -2141,11 +2149,9 @@ public class TopicFragment extends BaseFragment
         }
         int count = 0;
         boolean show = false;
-        LinearLayoutManager manager = listView == null
-                ? null : (LinearLayoutManager) listView.getLayoutManager();
-        if (manager != null) {
-            int last = manager.findLastVisibleItemPosition();
-            int floorIndex = last >= 0 && last < bubbleFloors.size() ? bubbleFloors.get(last) : -1;
+        int last = lastVisibleBubbleRow();
+        if (last >= 0) {
+            int floorIndex = bubbleFloors.get(last);
             if (floorIndex >= 0 && floorIndex < floors.size()) {
                 int streamIndex = streamPostIds.indexOf(floors.get(floorIndex).getId());
                 if (streamIndex >= 0) {
@@ -2234,15 +2240,30 @@ public class TopicFragment extends BaseFragment
         return highest;
     }
 
-    /** The floor number of the list's last visible row, or null when there is none. */
-    private Integer lastVisibleFloorNumber() {
+    /**
+     * The last row of the viewport that draws a floor's bubble, or -1. A day's date row and the
+     * unread divider stand above a floor rather than in it, so the floor they name is not on screen
+     * yet and the row below the viewport is not counted as seen.
+     */
+    private int lastVisibleBubbleRow() {
         LinearLayoutManager manager = listView == null
                 ? null : (LinearLayoutManager) listView.getLayoutManager();
         if (manager == null) {
-            return null;
+            return -1;
         }
-        int last = manager.findLastVisibleItemPosition();
-        if (last < 0 || last >= bubbleFloors.size()) {
+        int last = Math.min(manager.findLastVisibleItemPosition(), bubbles.size() - 1);
+        for (int position = last; position >= 0; position--) {
+            if (!isDividerRow(position)) {
+                return position;
+            }
+        }
+        return -1;
+    }
+
+    /** The floor number of the list's last visible row, or null when there is none. */
+    private Integer lastVisibleFloorNumber() {
+        int last = lastVisibleBubbleRow();
+        if (last < 0) {
             return null;
         }
         int floorIndex = bubbleFloors.get(last);
@@ -2261,6 +2282,11 @@ public class TopicFragment extends BaseFragment
      */
     private int rowIndexOrAfter(int floor) {
         for (int index = 0; index < bubbleFloors.size(); index++) {
+            // A day's date row stands above the floor rather than in it, and a jump lands on the
+            // floor itself, not on the row above it.
+            if (isDividerRow(index)) {
+                continue;
+            }
             Integer number = floors.get(bubbleFloors.get(index)).getPostNumber();
             if (number == null) {
                 continue;
@@ -3172,6 +3198,11 @@ public class TopicFragment extends BaseFragment
         }
         java.util.List<Integer> visible = new ArrayList<>();
         for (int position = Math.max(0, first); position <= last && position < bubbleFloors.size(); position++) {
+            // A day's date row and the unread divider stand above a floor rather than in it, so
+            // only a bubble row is what the reader has actually seen.
+            if (isDividerRow(position)) {
+                continue;
+            }
             // The row holds the floor's index; what a report is made of is the site's own number for
             // the floor, which is the one an open of the topic is answered with.
             Integer number = floors.get(bubbleFloors.get(position)).getPostNumber();
@@ -3722,6 +3753,7 @@ public class TopicFragment extends BaseFragment
         bubbles.clear();
         bubbleFloors.clear();
         bubbleBodies.clear();
+        unreadDivider = null;
         users.clear();
         avatarTemplates.clear();
         postByNumber.clear();
@@ -3742,6 +3774,7 @@ public class TopicFragment extends BaseFragment
         for (Post post : loaded) {
             add(post, topicId);
         }
+        placeUnreadDivider();
         // The stock cell resolves an author through MessagesController, not through the map it was
         // built with, so the authors have to be registered there before the cells bind. putUser with
         // fromCache=true is a map write: no request, no database.
@@ -3924,18 +3957,11 @@ public class TopicFragment extends BaseFragment
         return Math.min(loaded.size(), streamPostIds.size());
     }
 
-    /** One floor, drawn as the bubbles its body splits into: its text segments and its polls. */
+    /** One floor, drawn as its date row (when it opens a day) and the bubbles its body splits into. */
     private void add(Post post, long topicId) {
         int floor = floors.size();
         floors.add(post);
-        List<MessageObject> floorBubbles = new ArrayList<>();
-        List<PreparedPostBody> floorBodies = new ArrayList<>();
-        buildBubbles(post, topicId, floorBubbles, floorBodies);
-        for (int index = 0; index < floorBubbles.size(); index++) {
-            bubbles.add(floorBubbles.get(index));
-            bubbleBodies.add(floorBodies.get(index));
-            bubbleFloors.add(floor);
-        }
+        appendFloorRows(post, topicId, floor, bubbles, bubbleBodies, bubbleFloors);
         Integer number = post.getPostNumber();
         if (number != null) {
             postByNumber.put(number, post);
@@ -3943,6 +3969,141 @@ public class TopicFragment extends BaseFragment
         String avatarTemplate = post.getAuthorAvatarTemplate();
         if (avatarTemplate != null && !avatarTemplate.isEmpty()) {
             avatarTemplates.put(DiscourseRows.userId(post.getAuthorUsername()), avatarTemplate);
+        }
+    }
+
+    /**
+     * The divider upstream's chat draws above the first message the reader has not seen. The site
+     * owns the mark: its own last-read floor says where reading stopped, so a window that carries a
+     * later floor gets the divider in front of that floor's first bubble - and no divider at all
+     * when the reader is already at the first unread floor.
+     */
+    private void placeUnreadDivider() {
+        if (threadMode || topicDetail == null) {
+            return;
+        }
+        int lastRead = topicDetail.getLastReadPostNumber();
+        if (lastRead <= 0) {
+            return;
+        }
+        int row = -1;
+        for (int index = 0; index < bubbleFloors.size(); index++) {
+            // A date row above the floor names that floor too; the divider goes below it, above the
+            // floor's own first bubble, the way a chat writes it.
+            if (isDividerRow(index)) {
+                continue;
+            }
+            Integer number = floors.get(bubbleFloors.get(index)).getPostNumber();
+            if (number != null && number > lastRead) {
+                row = index;
+                break;
+            }
+        }
+        if (row <= 0) {
+            return;
+        }
+        unreadDivider = unreadDividerMessage();
+        bubbles.add(row, unreadDivider);
+        bubbleBodies.add(row, null);
+        // The divider introduces the same floor its next row draws, so every mapping stays aligned.
+        bubbleFloors.add(row, bubbleFloors.get(row));
+    }
+
+    /** The divider's own message: upstream's date row, carrying the line a chat writes there. */
+    private MessageObject unreadDividerMessage() {
+        TLRPC.TL_message message = new TLRPC.TL_message();
+        message.id = Integer.MAX_VALUE;
+        message.date = (int) (System.currentTimeMillis() / 1000);
+        message.message = "";
+        MessageObject object = new MessageObject(currentAccount, message, false, false);
+        object.type = MessageObject.TYPE_DATE;
+        object.messageText = UNREAD_DIVIDER_LINE;
+        return object;
+    }
+
+    /** Whether the row at [position] is the unread divider rather than a floor's bubble. */
+    private boolean isUnreadDividerRow(int position) {
+        return unreadDivider != null && position >= 0 && position < bubbles.size()
+                && bubbles.get(position) == unreadDivider;
+    }
+
+    /**
+     * Whether the row at [position] is a day's date row or the unread divider rather than a floor's
+     * bubble. Both stand above a floor and hold that floor's index in [bubbleFloors], so a mapping
+     * read from a divider row names the floor it introduces.
+     */
+    private boolean isDividerRow(int position) {
+        if (position < 0 || position >= bubbles.size()) {
+            return false;
+        }
+        MessageObject row = bubbles.get(position);
+        return row.isDateObject || row == unreadDivider;
+    }
+
+    /** A floor's day, as the chat counts it: the site's timestamp in the reader's own calendar. */
+    private static int dayKey(long epochSeconds) {
+        if (epochSeconds <= 0) {
+            return -1;
+        }
+        java.util.Calendar calendar = java.util.Calendar.getInstance();
+        calendar.setTimeInMillis(epochSeconds * 1000L);
+        return calendar.get(java.util.Calendar.YEAR) * 1000 + calendar.get(java.util.Calendar.DAY_OF_YEAR);
+    }
+
+    /** The day the last row of [rows] belongs to; the day a floor that follows it opens against. */
+    private static int lastRowDay(List<MessageObject> rows) {
+        if (rows.isEmpty()) {
+            return -1;
+        }
+        MessageObject last = rows.get(rows.size() - 1);
+        return last.messageOwner == null ? -1 : dayKey(last.messageOwner.date);
+    }
+
+    /**
+     * The date row a chat writes above a day's first message: the day itself, at its midnight, with
+     * the day's own text (ChatActivity 21132-21155). The date is the day's, not the message's hour,
+     * so a row always names the day its floors belong to.
+     */
+    private MessageObject dateRow(Post post) {
+        java.util.Calendar calendar = java.util.Calendar.getInstance();
+        calendar.setTimeInMillis(DiscourseRows.epochSeconds(post.getCreatedAt()) * 1000L);
+        calendar.set(java.util.Calendar.HOUR_OF_DAY, 0);
+        calendar.set(java.util.Calendar.MINUTE, 0);
+        calendar.set(java.util.Calendar.SECOND, 0);
+        calendar.set(java.util.Calendar.MILLISECOND, 0);
+        int midnight = (int) (calendar.getTimeInMillis() / 1000);
+        TLRPC.TL_message message = new TLRPC.TL_message();
+        message.message = LocaleController.formatDateChat(midnight);
+        message.id = 0;
+        message.date = midnight;
+        MessageObject row = new MessageObject(currentAccount, message, false, false);
+        row.type = MessageObject.TYPE_DATE;
+        row.contentType = 1;
+        row.isDateObject = true;
+        return row;
+    }
+
+    /**
+     * One floor's rows: the day's own date row first when the floor opens a day, then the floor's
+     * bubbles. The date row is the one a chat writes above the first message of each day; the rows
+     * of the same day that follow it carry none.
+     */
+    private void appendFloorRows(Post post, long topicId, int floor,
+            List<MessageObject> rows, List<PreparedPostBody> bodies, List<Integer> rowFloors) {
+        int day = dayKey(DiscourseRows.epochSeconds(post.getCreatedAt()));
+        if (day >= 0 && lastRowDay(rows) != day) {
+            rows.add(dateRow(post));
+            bodies.add(null);
+            // The row stands above this floor and introduces it, so it names the floor below it.
+            rowFloors.add(floor);
+        }
+        List<MessageObject> floorBubbles = new ArrayList<>();
+        List<PreparedPostBody> floorBodies = new ArrayList<>();
+        buildBubbles(post, topicId, floorBubbles, floorBodies);
+        for (int index = 0; index < floorBubbles.size(); index++) {
+            rows.add(floorBubbles.get(index));
+            bodies.add(floorBodies.get(index));
+            rowFloors.add(floor);
         }
     }
 
@@ -4341,14 +4502,7 @@ public class TopicFragment extends BaseFragment
         for (Post post : loaded) {
             int floor = newFloors.size();
             newFloors.add(post);
-            List<MessageObject> floorBubbles = new ArrayList<>();
-            List<PreparedPostBody> floorBodies = new ArrayList<>();
-            buildBubbles(post, topicId, floorBubbles, floorBodies);
-            for (int index = 0; index < floorBubbles.size(); index++) {
-                newBubbles.add(floorBubbles.get(index));
-                newBubbleBodies.add(floorBodies.get(index));
-                newBubbleFloors.add(floor);
-            }
+            appendFloorRows(post, topicId, floor, newBubbles, newBubbleBodies, newBubbleFloors);
             String avatarTemplate = post.getAuthorAvatarTemplate();
             if (avatarTemplate != null && !avatarTemplate.isEmpty()) {
                 avatarTemplates.put(DiscourseRows.userId(post.getAuthorUsername()), avatarTemplate);
@@ -4356,6 +4510,24 @@ public class TopicFragment extends BaseFragment
         }
         int addedFloors = newFloors.size();
         int addedBubbles = newBubbles.size();
+
+        // A slice whose last day is the day the window already opens on leaves the window's own date
+        // row inside that same day: the slice's row is the day's (it stands above the day's first
+        // floor), so the old row goes and the seam carries one date row, not two.
+        boolean droppedSeamDate = !newBubbles.isEmpty()
+                && newBubbles.get(newBubbles.size() - 1).isDateObject
+                && !bubbles.isEmpty()
+                && bubbles.get(0).isDateObject
+                && dayKey(newBubbles.get(newBubbles.size() - 1).messageOwner.date)
+                        == dayKey(bubbles.get(0).messageOwner.date);
+        if (droppedSeamDate) {
+            bubbles.remove(0);
+            bubbleBodies.remove(0);
+            bubbleFloors.remove(0);
+            if (listView.getAdapter() != null) {
+                listView.getAdapter().notifyItemRemoved(0);
+            }
+        }
 
         // Every floor already loaded now sits below the new ones: the floor indexes the loaded
         // bubbles hold are shifted by what was prepended. The bubbles themselves are untouched, so
@@ -4429,7 +4601,9 @@ public class TopicFragment extends BaseFragment
                 if (floorIndex >= 0) {
                     int first = -1;
                     for (int i = 0; i < bubbleFloors.size(); i++) {
-                        if (bubbleFloors.get(i) == floorIndex) {
+                        // The floor's first bubble, not the date row that names the floor: the
+                        // reader's place is a row of the floor's own content.
+                        if (bubbleFloors.get(i) == floorIndex && !isDividerRow(i)) {
                             first = i;
                             break;
                         }
@@ -4514,7 +4688,8 @@ public class TopicFragment extends BaseFragment
         int first = -1;
         int count = 0;
         for (int index = 0; index < bubbleFloors.size(); index++) {
-            if (bubbleFloors.get(index) == floor) {
+            // A date row above the floor names the floor too; it is not one of the floor's rows.
+            if (bubbleFloors.get(index) == floor && !isDividerRow(index)) {
                 if (first < 0) {
                     first = index;
                 }
@@ -4553,7 +4728,7 @@ public class TopicFragment extends BaseFragment
         }
         registerUsersInController();
         for (int index = 0; index < bubbleFloors.size(); index++) {
-            if (bubbleFloors.get(index) == floor) {
+            if (bubbleFloors.get(index) == floor && !isDividerRow(index)) {
                 MessageObject message = bubbles.get(index);
                 DiscourseRows.applyReply(message.messageOwner, reply);
                 message.replyMessageObject = DiscourseRows.messageObject(reply, users);
@@ -4743,6 +4918,9 @@ public class TopicFragment extends BaseFragment
 
     /** The floor a bubble draws; -1 when the message is not one of the list's bubbles. */
     private int floorOf(MessageObject message) {
+        if (message == null || message.isDateObject) {
+            return -1;
+        }
         int index = bubbles.indexOf(message);
         return index >= 0 && index < bubbleFloors.size() ? bubbleFloors.get(index) : -1;
     }
@@ -5338,7 +5516,7 @@ public class TopicFragment extends BaseFragment
     /** Hands one floor's rebuilt rows to the media downloader, the path a freshly loaded row uses. */
     private void refreshFloorMedia(int floor) {
         for (int index = 0; index < bubbles.size(); index++) {
-            if (bubbleFloors.get(index) == floor) {
+            if (bubbleFloors.get(index) == floor && !isDividerRow(index)) {
                 fetchPostMedia(index);
             }
         }
@@ -5891,7 +6069,7 @@ public class TopicFragment extends BaseFragment
      * when the cache fills, then rebind the row for its other assets and download-button state.
      */
     private void fetchPostMedia(int index) {
-        if (container == null || index < 0 || index >= bubbles.size()) {
+        if (container == null || index < 0 || index >= bubbles.size() || isDividerRow(index)) {
             return;
         }
         // The row is identified by the message it draws, not by the index it happened to sit at:
@@ -6072,6 +6250,34 @@ public class TopicFragment extends BaseFragment
         @NonNull
         @Override
         public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+            if (viewType == 1) {
+                // Upstream's own "Unread Messages" row: the themed bar with the arrow, the same one
+                // a chat inserts where the reader stopped reading.
+                org.telegram.ui.Cells.ChatUnreadCell cell = new org.telegram.ui.Cells.ChatUnreadCell(
+                        parent.getContext(), resourceProvider);
+                cell.setLayoutParams(new RecyclerView.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                cell.setOnClickListener(view -> {
+                    if (listView == null) {
+                        return;
+                    }
+                    int position = listView.getChildAdapterPosition(cell);
+                    if (position >= 0 && position + 1 < bubbles.size()) {
+                        listView.smoothScrollToPosition(position + 1);
+                    }
+                });
+                return new RecyclerListView.Holder(cell);
+            }
+            if (viewType == 2) {
+                // Upstream's own date row: the service pill a chat writes above a day's first message,
+                // drawn by the same cell the chat draws it with (ChatActivity 37397, 38008-38015).
+                org.telegram.ui.Cells.ChatActionCell cell =
+                        new org.telegram.ui.Cells.ChatActionCell(
+                                parent.getContext(), false, resourceProvider);
+                cell.setLayoutParams(new RecyclerView.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                return new RecyclerListView.Holder(cell);
+            }
             ChatMessageCell cell = new ChatMessageCell(
                     parent.getContext(), currentAccount, false, sharedResources, resourceProvider);
             cell.setDelegate(new PostCellDelegate());
@@ -6091,7 +6297,28 @@ public class TopicFragment extends BaseFragment
         }
 
         @Override
+        public int getItemViewType(int position) {
+            if (bubbles.get(position).isDateObject) {
+                return 2;
+            }
+            return isUnreadDividerRow(position) ? 1 : 0;
+        }
+
+        @Override
         public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
+            if (holder.itemView instanceof org.telegram.ui.Cells.ChatUnreadCell) {
+                ((org.telegram.ui.Cells.ChatUnreadCell) holder.itemView).setText(UNREAD_DIVIDER_LINE);
+                return;
+            }
+            if (holder.itemView instanceof org.telegram.ui.Cells.ChatActionCell) {
+                org.telegram.ui.Cells.ChatActionCell cell =
+                        (org.telegram.ui.Cells.ChatActionCell) holder.itemView;
+                cell.setMessageObject(bubbles.get(position));
+                // A row that was recycled while it sat under the top edge was faded out; the chat
+                // puts it back on bind (ChatActivity 38013).
+                cell.setAlpha(1f);
+                return;
+            }
             ChatMessageCell cell = (ChatMessageCell) holder.itemView;
             MessageObject message = bubbles.get(position);
             // A floor's bubbles are a run of messages by one author, the shape upstream's own chat
@@ -6127,7 +6354,7 @@ public class TopicFragment extends BaseFragment
     private int firstBubbleOfFloor(int position) {
         int floor = bubbleFloors.get(position);
         for (int index = 0; index < bubbleFloors.size(); index++) {
-            if (bubbleFloors.get(index) == floor) {
+            if (bubbleFloors.get(index) == floor && !isDividerRow(index)) {
                 return index;
             }
         }
@@ -6138,7 +6365,7 @@ public class TopicFragment extends BaseFragment
     private int lastBubbleOfFloor(int position) {
         int floor = bubbleFloors.get(position);
         for (int index = bubbleFloors.size() - 1; index >= 0; index--) {
-            if (bubbleFloors.get(index) == floor) {
+            if (bubbleFloors.get(index) == floor && !isDividerRow(index)) {
                 return index;
             }
         }

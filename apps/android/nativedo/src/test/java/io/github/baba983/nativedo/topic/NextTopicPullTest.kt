@@ -8,6 +8,7 @@ import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.harness.FakeDiscourseSite
 import io.github.baba983.nativedo.harness.UpstreamUiHarness
 import io.github.baba983.nativedo.harness.contentListOf
+import io.github.baba983.nativedo.harness.contentRowCount
 import io.github.baba983.nativedo.harness.latestItemOptionsMenu
 import io.github.baba983.nativedo.harness.menuItemLabels
 import io.github.baba983.nativedo.harness.shadows.ShadowAnimatedFileNative
@@ -703,7 +704,7 @@ internal class NextTopicPullTest {
         return field.get(fragment) as List<Post>
     }
 
-    private fun rowCount(): Int = contentListOf(harness.activity)?.adapter?.itemCount ?: 0
+    private fun rowCount(): Int = contentRowCount(harness)
 
     private fun composer(): org.telegram.ui.Components.ChatActivityEnterView =
         viewsUnder(harness.visibleFragment()?.fragmentView)

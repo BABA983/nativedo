@@ -8,6 +8,7 @@ import io.github.baba983.nativedo.harness.FakeDiscourseSite
 import io.github.baba983.nativedo.harness.UpstreamUiHarness
 import io.github.baba983.nativedo.harness.clickMenuItem
 import io.github.baba983.nativedo.harness.contentListOf
+import io.github.baba983.nativedo.harness.contentRowCount
 import io.github.baba983.nativedo.harness.latestItemOptionsMenu
 import io.github.baba983.nativedo.harness.menuItemLabels
 import io.github.baba983.nativedo.harness.shadows.ShadowAnimatedFileNative
@@ -309,7 +310,7 @@ internal class PostLinkBrowserTest {
         assertNull(DiscourseLinks.topicLink("https://evil.example.com/t/101/3", base))
     }
 
-    private fun rowCount(): Int = listView()?.adapter?.itemCount ?: 0
+    private fun rowCount(): Int = contentRowCount(harness)
 
     /**
      * Makes Robolectric's instrumentation throw for an intent nothing resolves, the way a device

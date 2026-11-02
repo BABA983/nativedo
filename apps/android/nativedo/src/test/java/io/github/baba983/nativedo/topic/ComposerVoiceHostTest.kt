@@ -10,6 +10,7 @@ import io.github.baba983.nativedo.core.session.SessionSnapshot
 import io.github.baba983.nativedo.harness.FakeDiscourseSite
 import io.github.baba983.nativedo.harness.UpstreamUiHarness
 import io.github.baba983.nativedo.harness.contentListOf
+import io.github.baba983.nativedo.harness.contentRowCount
 import io.github.baba983.nativedo.harness.shadows.ShadowAnimatedFileNative
 import io.github.baba983.nativedo.harness.shadows.ShadowConnectionsManager
 import io.github.baba983.nativedo.harness.shadows.ShadowIntro
@@ -473,7 +474,7 @@ internal class ComposerVoiceHostTest {
         return VoiceRecording(file, name, "audio/mp4", duration, waveform)
     }
 
-    private fun rowCount(): Int = contentListOf(harness.activity)?.adapter?.itemCount ?: 0
+    private fun rowCount(): Int = contentRowCount(harness)
 
     /** Grants or denies the microphone before a test drives the composer's own gesture. */
     private fun grantRecordPermission(grant: Boolean) {

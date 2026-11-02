@@ -8,6 +8,7 @@ import io.github.baba983.nativedo.core.di.AppContainer
 import io.github.baba983.nativedo.harness.FakeDiscourseSite
 import io.github.baba983.nativedo.harness.UpstreamUiHarness
 import io.github.baba983.nativedo.harness.contentListOf
+import io.github.baba983.nativedo.harness.contentRowCount
 import io.github.baba983.nativedo.harness.shadows.ShadowAnimatedFileNative
 import io.github.baba983.nativedo.harness.shadows.ShadowConnectionsManager
 import io.github.baba983.nativedo.harness.shadows.ShadowIntro
@@ -226,7 +227,7 @@ internal class TopicScreensTest {
     }
 
     /** What the adapter holds, which is what the fetch produced. */
-    private fun rowCount(): Int = listView()?.adapter?.itemCount ?: 0
+    private fun rowCount(): Int = contentRowCount(harness)
 
     /** What the list actually laid out and drew, i.e. what the screenshot shows. */
     private fun laidOutChildren(): List<View> {

@@ -8,6 +8,7 @@ import io.github.baba983.nativedo.app.NativeDo
 import io.github.baba983.nativedo.harness.FakeDiscourseSite
 import io.github.baba983.nativedo.harness.UpstreamUiHarness
 import io.github.baba983.nativedo.harness.contentListOf
+import io.github.baba983.nativedo.harness.contentRowCount
 import io.github.baba983.nativedo.harness.shadows.ShadowAnimatedFileNative
 import io.github.baba983.nativedo.harness.shadows.ShadowConnectionsManager
 import io.github.baba983.nativedo.harness.shadows.ShadowIntro
@@ -248,7 +249,9 @@ internal class PollTest {
         harness.bootApp()
         harness.await("the topic list to load") { rowCount() == 2 }
         harness.present(TopicFragment.forTopic(TOPIC_ID, "Poll"))
-        harness.await("the topic to load") { rowCount() == 3 }
+        // The list's rows include the day's own date row; what the screen draws for the floor is
+        // the run of bubbles, so the wait is on those.
+        harness.await("the topic to load") { laidOutCells().size == 3 }
     }
 
     private fun digestOf(answer: TLRPC.PollAnswer): String =
@@ -258,7 +261,7 @@ internal class PollTest {
     private fun isRichText(message: MessageObject): Boolean =
         message.type == MessageObject.TYPE_ARTICLE && message.messageOwner.rich_message != null
 
-    private fun rowCount(): Int = listView()?.adapter?.itemCount ?: 0
+    private fun rowCount(): Int = contentRowCount(harness)
 
     private fun laidOutCells(): List<ChatMessageCell> {
         val list = listView() ?: return emptyList()

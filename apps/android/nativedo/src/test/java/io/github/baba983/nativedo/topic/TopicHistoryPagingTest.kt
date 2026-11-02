@@ -149,8 +149,10 @@ internal class TopicHistoryPagingTest {
 
         val list = listView()!!
         scrollToTop(list)
-        val bubblesBefore = bubblesOf(fragment)
-        val anchor = bubblesBefore[0]
+        // A copy: the screen's list is the same object the prepend appends to.
+        val bubblesBefore = bubblesOf(fragment).toList()
+        // The window's first row is the day's own date row; the anchor is the first message row.
+        val anchor = bubblesBefore.first { !it.isDateObject }
         list.scrollBy(0, 1)
         val anchorCell = laidOutCells().firstOrNull { it.messageObject === anchor }
             ?: throw AssertionError("the anchor row is not on screen before the prepend")
@@ -172,8 +174,11 @@ internal class TopicHistoryPagingTest {
         harness.idle()
 
         val bubblesAfter = bubblesOf(fragment)
-        val added = bubblesAfter.size - WINDOW_PAGE
-        assertTrue("something was prepended", added > 0)
+        assertTrue("something was prepended", bubblesAfter.size > bubblesBefore.size)
+        // The anchor is found by identity: the seam may drop one row of the old window (a date row
+        // the slice's own last day already covers), so the size difference is not its index.
+        val added = bubblesAfter.indexOfFirst { it === anchor }
+        assertTrue("the anchor row is still the row it was", added >= 0)
         assertSame(
             "an already-loaded floor keeps its own MessageObject (the list is not rebuilt)",
             anchor,
@@ -266,7 +271,14 @@ internal class TopicHistoryPagingTest {
         // Before the answer lands, the reader keeps scrolling: the floor that answers a floor of
         // the arriving slice becomes the first visible row, a little above the viewport's top edge.
         val anchorFloor = floorsOf(fragment).indexOfFirst { it.postNumber == REPLYING_FLOOR }
-        val anchorRow = bubbleFloorsOf(fragment).indexOfFirst { it == anchorFloor }
+        // The row that draws the floor, not the day's date row that names it: a row's own index is
+        // what the list is told to scroll to.
+        val anchorRow =
+            bubbleFloorsOf(fragment)
+                .withIndex()
+                .firstOrNull { (row, floor) -> floor == anchorFloor && !isDividerRow(fragment, row) }
+                ?.index
+                ?: -1
         assertTrue("the answering floor is in the loaded window", anchorFloor >= 0 && anchorRow >= 0)
         list.scrollToPosition(anchorRow)
         harness.layoutApp()
@@ -1028,7 +1040,29 @@ internal class TopicHistoryPagingTest {
         return f.get(target) as Any
     }
 
-    private fun rowCount(): Int = listView()?.adapter?.itemCount ?: 0
+    /**
+     * The list's rows that draw a floor's bubble. A topic window also draws a date row per day and,
+     * when the reader has an unread start, the unread divider - rows of the list, but not posts the
+     * reader reads - while the home feed has no such rows, so a feed count is the adapter's own.
+     */
+    /** A day's date row and the unread divider stand above a floor rather than in it. */
+    private fun isDividerRow(fragment: TopicFragment, position: Int): Boolean {
+        val bubbles = bubblesOf(fragment)
+        if (position !in bubbles.indices) return false
+        val dividerField = TopicFragment::class.java.getDeclaredField("unreadDivider").apply { isAccessible = true }
+        return bubbles[position].isDateObject || bubbles[position] === dividerField.get(fragment)
+    }
+
+    private fun rowCount(): Int {
+        val adapter = listView()?.adapter ?: return 0
+        val fragment = harness.visibleFragment() as? TopicFragment ?: return adapter.itemCount
+        val bubblesField = TopicFragment::class.java.getDeclaredField("bubbles").apply { isAccessible = true }
+        val dividerField = TopicFragment::class.java.getDeclaredField("unreadDivider").apply { isAccessible = true }
+        @Suppress("UNCHECKED_CAST")
+        val bubbles = bubblesField.get(fragment) as List<MessageObject>
+        val divider = dividerField.get(fragment)
+        return bubbles.count { !it.isDateObject && it !== divider }
+    }
 
     /** Draws the screen as it stands to a retained artifact under [artifacts]. */
     private fun writeVisual(name: String) {

@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.view.View
 import android.view.ViewGroup
 import io.github.baba983.nativedo.app.NativeDo
+import io.github.baba983.nativedo.harness.contentRowCount
 import io.github.baba983.nativedo.profile.ProfileFragment
 import io.github.baba983.nativedo.harness.FakeDiscourseSite
 import io.github.baba983.nativedo.harness.UpstreamUiHarness
@@ -268,7 +269,7 @@ internal class GifMediaTest {
         return bytes.toByteArray()
     }
 
-    private fun rowCount(): Int = listView()?.adapter?.itemCount ?: 0
+    private fun rowCount(): Int = contentRowCount(harness)
 
     private fun laidOutCells(): List<org.telegram.ui.Cells.ChatMessageCell> {
         val list = listView() ?: return emptyList()

@@ -29,6 +29,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.telegram.messenger.ApplicationLoader
+import org.telegram.messenger.MessageObject
 import org.telegram.ui.Components.RecyclerListView
 
 /**
@@ -156,6 +157,9 @@ internal class TopicPagingTest {
         val list = listView()!!
         harness.idle()
         val rowsBefore = rowCount()
+        // The adapter's own count includes the window's date rows; the failed page must add none of
+        // either kind, so the raw count is compared with itself.
+        val adapterRowsBefore = list.adapter!!.itemCount
         // A Bulletin shown by an earlier test in the shared sandbox must not be mistaken for this
         // page's hint: clear any standing one before the scroll that triggers the failure.
         org.telegram.ui.Components.Bulletin.hideVisible()
@@ -176,7 +180,7 @@ internal class TopicPagingTest {
         assertEquals("a failed page keeps the rows already on screen", rowsBefore, rowCount())
         assertEquals(
             "a failed page does not move the reader",
-            rowsBefore, list.adapter!!.itemCount,
+            adapterRowsBefore, list.adapter!!.itemCount,
         )
 
         // The hint sits above the composer: the fragment reports the composer's own height as the
@@ -443,7 +447,21 @@ internal class TopicPagingTest {
         return base.toString()
     }
 
-    private fun rowCount(): Int = listView()?.adapter?.itemCount ?: 0
+    /**
+     * The list's rows that draw a floor's bubble. A topic window also draws a date row per day and,
+     * when the reader has an unread start, the unread divider - rows of the list, but not posts the
+     * reader reads - while the home feed has no such rows, so a feed count is the adapter's own.
+     */
+    private fun rowCount(): Int {
+        val adapter = listView()?.adapter ?: return 0
+        val fragment = harness.visibleFragment() as? TopicFragment ?: return adapter.itemCount
+        val bubblesField = TopicFragment::class.java.getDeclaredField("bubbles").apply { isAccessible = true }
+        val dividerField = TopicFragment::class.java.getDeclaredField("unreadDivider").apply { isAccessible = true }
+        @Suppress("UNCHECKED_CAST")
+        val bubbles = bubblesField.get(fragment) as List<MessageObject>
+        val divider = dividerField.get(fragment)
+        return bubbles.count { !it.isDateObject && it !== divider }
+    }
 
     private fun listView(): RecyclerListView? =
         contentListOf(harness.activity)

@@ -8,6 +8,7 @@ import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.harness.FakeDiscourseSite
 import io.github.baba983.nativedo.harness.UpstreamUiHarness
 import io.github.baba983.nativedo.harness.contentListOf
+import io.github.baba983.nativedo.harness.contentRowCount
 import io.github.baba983.nativedo.harness.shadows.ShadowAnimatedFileNative
 import io.github.baba983.nativedo.harness.shadows.ShadowConnectionsManager
 import io.github.baba983.nativedo.harness.shadows.ShadowIntro
@@ -32,6 +33,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.telegram.messenger.ApplicationLoader
+import org.telegram.messenger.MessageObject
 import org.telegram.ui.Components.RecyclerListView
 import org.telegram.ui.Components.chat.buttons.ChatActivityBlurredRoundPageDownButton
 import java.util.concurrent.CountDownLatch
@@ -874,10 +876,42 @@ internal class TopicPageDownTest {
     }
 
     private fun firstVisibleFloor(fragment: TopicFragment): Int? =
-        floorNumberAt(fragment, linearManager()?.findFirstVisibleItemPosition() ?: -1)
+        floorNumberAt(
+            fragment,
+            bubbleRowFrom(fragment, linearManager()?.findFirstVisibleItemPosition() ?: -1, 1),
+        )
 
     private fun lastVisibleFloor(fragment: TopicFragment): Int? =
-        floorNumberAt(fragment, linearManager()?.findLastVisibleItemPosition() ?: -1)
+        floorNumberAt(
+            fragment,
+            bubbleRowFrom(fragment, linearManager()?.findLastVisibleItemPosition() ?: -1, -1),
+        )
+
+    /** The first row at or after [position] in [step]'s direction that draws a floor's bubble. */
+    private fun bubbleRowFrom(
+        fragment: TopicFragment,
+        position: Int,
+        step: Int,
+    ): Int {
+        val size = bubbleFloorsOf(fragment).size
+        var at = position
+        while (at in 0 until size && isDividerRow(fragment, at)) {
+            at += step
+        }
+        return if (at in 0 until size) at else -1
+    }
+
+    /** A day's date row and the unread divider stand above a floor rather than in it. */
+    private fun isDividerRow(
+        fragment: TopicFragment,
+        position: Int,
+    ): Boolean {
+        @Suppress("UNCHECKED_CAST")
+        val bubbles = field(fragment, "bubbles") as List<MessageObject>
+        if (position !in bubbles.indices) return false
+        val row = bubbles[position]
+        return row.isDateObject || row === nullableField(fragment, "unreadDivider")
+    }
 
     private fun floorNumberAt(fragment: TopicFragment, position: Int): Int? {
         if (position < 0) return null
@@ -909,7 +943,14 @@ internal class TopicPageDownTest {
         return f.get(target) as Any
     }
 
-    private fun rowCount(): Int = listView()?.adapter?.itemCount ?: 0
+    /** The same read, for a field the screen leaves null until it has something to hold. */
+    private fun nullableField(target: Any, name: String): Any? {
+        val f = target.javaClass.getDeclaredField(name)
+        f.isAccessible = true
+        return f.get(target)
+    }
+
+    private fun rowCount(): Int = contentRowCount(harness)
 
     private fun listView(): RecyclerListView? = contentListOf(harness.activity)
 
