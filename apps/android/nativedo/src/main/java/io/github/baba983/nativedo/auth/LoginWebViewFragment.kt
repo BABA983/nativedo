@@ -21,7 +21,6 @@ import android.webkit.WebViewClient
 import android.webkit.WebResourceRequest
 import android.webkit.URLUtil
 import android.widget.FrameLayout
-import android.widget.Toast
 import io.github.baba983.nativedo.app.NativeDo
 import io.github.baba983.nativedo.R
 import io.github.baba983.nativedo.core.di.AppContainer
@@ -31,6 +30,8 @@ import org.telegram.ui.ActionBar.BaseFragment
 import org.telegram.ui.ActionBar.Theme
 import org.telegram.ui.ActionBar.ThemeDescription
 import org.telegram.ui.ArticleViewer
+import org.telegram.ui.Components.Bulletin
+import org.telegram.ui.Components.BulletinFactory
 import org.telegram.ui.Components.LayoutHelper
 import org.telegram.ui.Components.LineProgressView
 import org.telegram.messenger.browser.Browser
@@ -69,7 +70,6 @@ class LoginWebViewFragment @JvmOverloads constructor(
     private var failedUrl: String? = null
     private var navigationGeneration = 0
     private var failedNavigationGeneration = -1
-    private var completedNavigationGeneration = -1
     private var hasWebHistory = false
     private val popupWebViews = Collections.newSetFromMap(IdentityHashMap<WebView, Boolean>())
 
@@ -227,7 +227,6 @@ class LoginWebViewFragment @JvmOverloads constructor(
             super.onPageStarted(view, url, favicon)
             if (view !== webView) return
             navigationGeneration += 1
-            completedNavigationGeneration = -1
             if (recoveryMode) {
                 restoreJob?.cancel()
                 restoreJob = null
@@ -265,7 +264,6 @@ class LoginWebViewFragment @JvmOverloads constructor(
             if (!loginWebCanCompleteNavigation(navigationGeneration, failedNavigationGeneration)) {
                 return
             }
-            completedNavigationGeneration = navigationGeneration
             if (!recoveryMode) autofillManager.onPageFinished(view, url)
             captureDiscourseAssetsIcons(webView = view, currentUrl = url)
             if (!recoveryMode) maybeCompleteLogin(webView = view, currentUrl = url)
@@ -298,11 +296,15 @@ class LoginWebViewFragment @JvmOverloads constructor(
             request: WebResourceRequest,
             errorResponse: WebResourceResponse,
         ) {
-            // Cloudflare's 403 document contains the interactive verification. Do not cover it
-            // with a native error panel, but it is still not a completed navigation.
-            if (recoveryMode && view === webView && request.isForMainFrame && errorResponse.statusCode == 403) {
+            // A 403 whose body is Cloudflare's verification page is the page the reader needs: it
+            // solves itself and navigates on, so the native panel would announce "failed" over a
+            // page that is still working. Recovery opens that page on purpose. Either way it is
+            // still not a completed navigation, so nothing may complete the login from it.
+            val showsTheChallengePage = request.isForMainFrame &&
+                errorResponse.statusCode == 403 &&
+                (recoveryMode || loginWebIsChallengeResponse(errorResponse.responseHeaders))
+            if (view === webView && showsTheChallengePage) {
                 failedNavigationGeneration = navigationGeneration
-                completedNavigationGeneration = -1
                 progressJob?.cancel()
                 progressView?.setProgress(0f, false)
                 return
@@ -474,9 +476,15 @@ class LoginWebViewFragment @JvmOverloads constructor(
                     val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
                     manager.enqueue(request)
                 }.onSuccess {
-                    Toast.makeText(context, R.string.app_browser_download_started, Toast.LENGTH_SHORT).show()
+                    BulletinFactory.of(this).createSimpleBulletin(
+                        org.telegram.messenger.R.raw.ic_download,
+                        context.getString(R.string.app_browser_download_started),
+                    ).show()
                 }.onFailure {
-                    Toast.makeText(context, R.string.app_browser_download_failed, Toast.LENGTH_SHORT).show()
+                    BulletinFactory.of(this).createSimpleBulletin(
+                        org.telegram.messenger.R.raw.error,
+                        context.getString(R.string.app_browser_download_failed),
+                    ).show()
                 }
             }
         }
@@ -627,17 +635,30 @@ class LoginWebViewFragment @JvmOverloads constructor(
             if (hasFinished || (recoveryMode && generation != navigationGeneration)) return@launch
             if (authenticated) {
                 hasFinished = true
-                if (recoveryMode) {
-                    Toast.makeText(webView.context, R.string.verification_session_synced, Toast.LENGTH_LONG).show()
-                }
+                // The hint belongs to the screen the reader comes back to: this page closes here, and
+                // a Bulletin attached to it closes with it. Read that screen before the caller finishes.
+                val returning = if (recoveryMode) getParentLayout()?.backgroundFragment else null
                 val next = onAuthenticated
                 if (next != null) {
                     next.run()
                 } else {
                     finishFragment()
                 }
+                if (returning != null) {
+                    BulletinFactory.of(returning).createSimpleBulletin(
+                        org.telegram.messenger.R.raw.info,
+                        webView.context.getString(R.string.verification_session_synced),
+                        2,
+                        Bulletin.DURATION_PROLONG,
+                    ).show()
+                }
             } else if (recoveryMode) {
-                Toast.makeText(webView.context, R.string.verification_not_completed, Toast.LENGTH_LONG).show()
+                BulletinFactory.of(this@LoginWebViewFragment).createSimpleBulletin(
+                    org.telegram.messenger.R.raw.error,
+                    webView.context.getString(R.string.verification_not_completed),
+                    2,
+                    Bulletin.DURATION_PROLONG,
+                ).show()
             }
         }
     }
@@ -646,13 +667,24 @@ class LoginWebViewFragment @JvmOverloads constructor(
         if (hasFinished || restoreJob?.isActive == true) return
         val view = webView ?: return
         val url = view.url.orEmpty()
-        if (completedNavigationGeneration != navigationGeneration ||
-            !loginWebCanCompleteNavigation(navigationGeneration, failedNavigationGeneration) ||
-            !shouldAttemptLoginSessionRestore(url, appContainer.baseUrl, hasFinished, false)
-        ) {
-            Toast.makeText(view.context, R.string.verification_not_completed, Toast.LENGTH_LONG).show()
+        // The tap is the reader saying the challenge is done, so it asks the session itself rather
+        // than the navigation bookkeeping: a challenge page that solved in place leaves the
+        // generations disagreeing while the site already accepts the session. The cookies and the
+        // native session check are the evidence; a page that is not the site still cannot complete.
+        if (!shouldAttemptLoginSessionRestore(url, appContainer.baseUrl, hasFinished, false)) {
+            BulletinFactory.of(this).createSimpleBulletin(
+                org.telegram.messenger.R.raw.error,
+                view.context.getString(R.string.verification_not_completed),
+                2,
+                Bulletin.DURATION_PROLONG,
+            ).show()
             return
         }
+        // The check polls for up to ten seconds; say so, or the tap looks ignored.
+        BulletinFactory.of(this).createSimpleBulletin(
+            org.telegram.messenger.R.raw.info,
+            view.context.getString(R.string.verification_checking),
+        ).show()
         startLoginCompletion(view, url)
     }
 }

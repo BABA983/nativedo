@@ -24,6 +24,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -32,10 +33,10 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import org.robolectric.shadows.ShadowDialog
+import org.robolectric.shadows.ShadowToast
 import org.telegram.messenger.ApplicationLoader
 import org.telegram.ui.ActionBar.AlertDialog
 import org.telegram.ui.MainTabsLayout
-import org.telegram.ui.Components.RecyclerListView
 
 /**
  * The settings tab.
@@ -364,6 +365,23 @@ internal class SettingsTabTest {
             container.cookieJar.requestCookieHeader(site.baseUrl.toHttpUrl()), "cf_clearance"))
         assertTrue("completion actually ran the session use case",
             generation != container.sessionCoordinator.currentRequestContext())
+        // The page is gone by the time the reader is back, and the shell keeps only the side the
+        // reader's screen is in. The hint has to ride that side, as upstream's own component.
+        val returned = currentFragment(shell) as org.telegram.ui.ActionBar.BaseFragment
+        var live: View = returned.getBulletinLayoutContainer()
+            ?: throw AssertionError("the screen the reader came back to carries no container")
+        while (live.parent is View && live.parent !is org.telegram.ui.ActionBar.ActionBarLayout) {
+            live = live.parent as View
+        }
+        assertTrue(
+            "the recovery hint is a Bulletin on the screen the reader came back to",
+            viewsUnder(live).filterIsInstance<TextView>()
+                .any { text -> text.text.toString().contains("会话已同步") },
+        )
+        assertNull(
+            "the recovery hint is not a platform toast",
+            ShadowToast.getTextOfLatestToast(),
+        )
         assertNoWrites()
         harness.assertNoTelegramSideEffects()
     }

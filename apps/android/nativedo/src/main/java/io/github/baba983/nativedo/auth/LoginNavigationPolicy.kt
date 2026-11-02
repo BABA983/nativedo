@@ -64,6 +64,17 @@ internal fun loginWebShouldShowMainFrameError(
     httpStatusCode: Int? = null,
 ): Boolean = isForMainFrame && (httpStatusCode == null || httpStatusCode >= 400)
 
+/**
+ * Cloudflare answers a client without a clearance with `403` and `Cf-Mitigated: challenge`, and the
+ * body is its interactive verification page. That document is the page the reader needs: it solves
+ * itself and navigates on, so a native error panel would cover a page that is still working. The
+ * header, not the status code, is what separates it from a real refusal.
+ */
+internal fun loginWebIsChallengeResponse(headers: Map<String, String>?): Boolean =
+    headers?.any { (name, value) ->
+        name.equals("cf-mitigated", ignoreCase = true) && value.equals("challenge", ignoreCase = true)
+    } == true
+
 internal fun loginWebCanCompleteNavigation(
     navigationGeneration: Int,
     failedNavigationGeneration: Int,

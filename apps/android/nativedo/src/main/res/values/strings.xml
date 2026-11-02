@@ -8,6 +8,7 @@
     <string name="verification_webview_title">验证 linux.do</string>
     <string name="verification_webview_hint">网页验证后点完成，返回取消</string>
     <string name="verification_complete">完成验证</string>
+    <string name="verification_checking">正在确认会话…</string>
     <string name="verification_session_synced">会话已同步，尚未测试写入；回复需手动发送</string>
     <string name="verification_not_completed">请等站点页面加载完成并完成网页验证后再试</string>
     <string name="app_browser_download_started">已开始下载</string>
