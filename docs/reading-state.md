@@ -135,6 +135,32 @@ repaint as the pull grows.
 [test]: ../apps/android/nativedo/src/test/java/io/github/baba983/nativedo/topic/NextTopicPullTest.kt
 
 
+### The topic screen's date rows
+
+The topic screen draws a day as a row of its own above that day's first floor, and
+floats the day of the row at the top of the viewport while that day's row is above
+the list's top edge. Both are upstream's chat interaction and upstream's own cell
+([ChatActivity][chat-date]): one `ChatActionCell` draws the row and the floating
+pill, so the plate, the text colour and the floating pill's reduced alpha come from
+upstream rather than from a second drawing. The row's date is the day's midnight,
+not the floor's hour, so the row and the pill always name the same day; a window
+whose slice is prepended keeps one row at the seam when the slice's last day is the
+day the window already opens on.
+
+The pill is not a scroll-only overlay: it is up exactly while the day's row is
+scrolled away, and the row and the pill hand over through the pill's own slide
+(`floatingDateViewOffset`) as that row leaves or returns. That is why the pill can
+stay standing after a scroll settles, and why it leaves when the row comes back
+rather than on a timer of its own. A date row draws no floor of its own: it holds
+the index of the floor it introduces, the way the unread divider does, so every
+position-to-floor mapping stays aligned. A jump target, the last visible floor and the
+floors a read report credits are still read from bubble rows, so the day pill above a
+floor is never mistaken for the floor itself.
+
+Non-goals: no tap-to-jump, because the site has no date-jump endpoint, so the pill
+stays a label rather than a control. The channel keeps its overlay pill (below): a
+channel has no per-day rows to hand over to.
+
 ### The chat channel's floating date
 
 The active chat channel
@@ -162,10 +188,11 @@ channel has no date-jump endpoint, so the capsule is a label rather than a contr
 It does not touch read progress, the history viewport, pending arrivals or reply
 targeting.
 
-Alternative considered: hand-draw a lookalike capsule, or add date separator rows.
-Both were rejected - the first is a second drawing of something upstream already
-draws, and the second changes the list's row model for a label the reader only sees
-while moving.
+Alternative considered for the channel: hand-draw a lookalike capsule, or add date
+separator rows. Both were rejected there - the first is a second drawing of
+something upstream already draws, and the second changes the channel's row model for
+a label the reader only sees while moving; the topic screen, whose rows the site
+itself groups by day, takes the row instead (above).
 
 Verification: the [chat channel flow][chat-test] drives the shipped screen with
 messages on different days and real scrolling, and checks that the capsule names

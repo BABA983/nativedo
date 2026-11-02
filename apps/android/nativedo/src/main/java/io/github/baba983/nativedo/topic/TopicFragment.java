@@ -167,6 +167,20 @@ public class TopicFragment extends BaseFragment
      * Null until a window carrying that floor is bound.
      */
     private MessageObject unreadDivider;
+    /**
+     * The floating date pill a chat shows: the day of the row at the top of the viewport, drawn over
+     * the posts while that day's own date row is above the list's top edge.
+     */
+    private org.telegram.ui.Cells.ChatActionCell floatingDate;
+    /** How far the pill is pushed up as the day's own date row leaves the top edge. */
+    private float floatingDateOffset;
+    /** Whether the pill is up because that date row is scrolled away; upstream tracks the same. */
+    private boolean currentFloatingDateOnScreen;
+    /** Whether the row at the top of the viewport is neither a bubble nor a date row. */
+    private boolean currentFloatingTopIsNotMessage;
+    /** Whether the reader is dragging: the pill only comes up for a scroll the reader started. */
+    private boolean scrollingFloatingDate;
+    private android.animation.AnimatorSet floatingDateAnimation;
     /** Per bubble, the prepared body a text bubble draws from; a poll bubble has none. */
     private final List<PreparedPostBody> bubbleBodies = new ArrayList<>();
     private final HashMap<Long, TLRPC.User> users = new HashMap<>();
@@ -961,19 +975,35 @@ public class TopicFragment extends BaseFragment
                     // the same in its own scroll listener.
                     textSelectionHelper.onParentScrolled();
                 }
+                if (dy != 0 && scrollingFloatingDate && !currentFloatingTopIsNotMessage) {
+                    showFloatingDateView();
+                }
+                updateFloatingDate();
             }
 
             @Override
             public void onScrollStateChanged(@NonNull RecyclerView recyclerView, int newState) {
-                if (newState == RecyclerView.SCROLL_STATE_IDLE && textSelectionHelper != null) {
-                    textSelectionHelper.stopScrolling();
+                if (newState == RecyclerView.SCROLL_STATE_IDLE) {
+                    if (textSelectionHelper != null) {
+                        textSelectionHelper.stopScrolling();
+                    }
+                    // The pill is a scroll aid: it leaves once the day's own row is back on screen,
+                    // and stays up while that row is above the edge (ChatActivity 6775-6784).
+                    scrollingFloatingDate = false;
+                    hideFloatingDateView(true);
+                    updateFloatingDate();
+                } else if (newState == RecyclerView.SCROLL_STATE_DRAGGING) {
+                    scrollingFloatingDate = true;
                 }
             }
         });
         // The first layout is what fills the viewport, and a viewport that never scrolls never
         // reports a scroll: the floors the reader has seen are reported from the layout too.
-        listView.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
-                reportViewport());
+        listView.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+            reportViewport();
+            // The pill's own text and offset are read from the rows, which a layout just moved.
+            updateFloatingDate();
+        });
 
         // The bar floats at the top of the list and the composer at its bottom, so the list keeps
         // both clear: the top padding is the bar's measured height (the status bar is already in
@@ -989,6 +1019,68 @@ public class TopicFragment extends BaseFragment
         contentView.addView(listView, org.telegram.ui.Components.LayoutHelper.createFrame(
                 org.telegram.ui.Components.LayoutHelper.MATCH_PARENT,
                 org.telegram.ui.Components.LayoutHelper.MATCH_PARENT));
+        // The floating date, the way a chat shows it: the day of the top row, drawn over the posts
+        // while that day's own date row is above the list's top edge, and pushed up as that row
+        // leaves so the two hand over to each other. The overrides are ChatActivity's own
+        // (7043-7099): the pill is clipped to the edge its list starts at and only takes touches
+        // while it is up.
+        floatingDate = new org.telegram.ui.Cells.ChatActionCell(context, false, resourceProvider) {
+            @Override
+            public boolean isFloating() {
+                return true;
+            }
+
+            @Override
+            public void setTranslationY(float translationY) {
+                if (getTranslationY() != translationY) {
+                    invalidate();
+                }
+                super.setTranslationY(translationY);
+            }
+
+            @Override
+            public boolean onInterceptTouchEvent(MotionEvent ev) {
+                return getAlpha() != 0 && super.onInterceptTouchEvent(ev);
+            }
+
+            @Override
+            public boolean onTouchEvent(MotionEvent event) {
+                return getAlpha() != 0 && super.onTouchEvent(event);
+            }
+
+            @Override
+            protected void onDraw(Canvas canvas) {
+                // The list does not clip its children to its padding (see the list's own setup), so
+                // the pill is clipped to the edge its list starts at, as upstream's is (7074-7087).
+                float clipTop = listView.getY() + listPaddingTop - getY() - AndroidUtilities.dp(4);
+                if (clipTop > 0) {
+                    if (clipTop < getMeasuredHeight()) {
+                        canvas.save();
+                        canvas.clipRect(0, clipTop, getMeasuredWidth(), getMeasuredHeight());
+                        super.onDraw(canvas);
+                        canvas.restore();
+                    }
+                } else {
+                    super.onDraw(canvas);
+                }
+            }
+
+            @Override
+            public void setAlpha(float alpha) {
+                super.setAlpha(alpha);
+                setVisibility(alpha > 0 ? View.VISIBLE : View.INVISIBLE);
+            }
+        };
+        floatingDate.setCustomDate((int) (System.currentTimeMillis() / 1000), false, false);
+        floatingDate.setAlpha(0f);
+        floatingDate.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        floatingDate.setInvalidateColors(true);
+        contentView.addView(floatingDate, org.telegram.ui.Components.LayoutHelper.createFrame(
+                org.telegram.ui.Components.LayoutHelper.WRAP_CONTENT,
+                org.telegram.ui.Components.LayoutHelper.WRAP_CONTENT,
+                Gravity.TOP | Gravity.CENTER_HORIZONTAL, 0, 4, 0, 0));
+        // The pill rests under the edge its list starts at; the first read puts it there.
+        updateFloatingDate();
         // ChatActivity's own fade band (6969-6973): added right after the list, so the posts scroll
         // behind it and every overlay - composer, progress, bar - draws over it. It is built from
         // the wallpaper factory and not from the capsules' one (6970 -> 2652): the band is the
@@ -1468,6 +1560,8 @@ public class TopicFragment extends BaseFragment
         }
         listPaddingTop = AndroidUtilities.dp(4) + actionBarHeight();
         applyListPadding();
+        // The pill rests just under the edge its list starts at, so a padding change moves it too.
+        updateFloatingDate();
         checkUi_topFade();
         checkUi_BlurHeight();
     }
@@ -2283,7 +2377,7 @@ public class TopicFragment extends BaseFragment
     private int rowIndexOrAfter(int floor) {
         for (int index = 0; index < bubbleFloors.size(); index++) {
             // A day's date row stands above the floor rather than in it, and a jump lands on the
-            // floor itself, not on the row above it.
+            // floor itself, not on the pill above it.
             if (isDividerRow(index)) {
                 continue;
             }
@@ -3354,6 +3448,7 @@ public class TopicFragment extends BaseFragment
         // The button's own show factor is clock-driven; a screen that leaves with it mid-flight must
         // drop the frame callback rather than let it draw into a dead view.
         pageDownVisible.cancel();
+        cancelFloatingDateAnimation();
         pageDownJumping = false;
         if (listView != null) {
             // A smooth scroll in flight also posts frame callbacks; a screen that leaves must stop
@@ -4062,7 +4157,7 @@ public class TopicFragment extends BaseFragment
     /**
      * The date row a chat writes above a day's first message: the day itself, at its midnight, with
      * the day's own text (ChatActivity 21132-21155). The date is the day's, not the message's hour,
-     * so a row always names the day its floors belong to.
+     * so the row and the floating pill always name the same day.
      */
     private MessageObject dateRow(Post post) {
         java.util.Calendar calendar = java.util.Calendar.getInstance();
@@ -4104,6 +4199,152 @@ public class TopicFragment extends BaseFragment
             rows.add(floorBubbles.get(index));
             bodies.add(floorBodies.get(index));
             rowFloors.add(floor);
+        }
+    }
+
+    /**
+     * The floating date, read the way the chat reads it (ChatActivity 16220-16405): the top row's day
+     * is written into the pill, the day's own row is hidden once it slides under the list's top edge,
+     * and the pill is pushed up as that row leaves so the two hand over to each other.
+     */
+    private void updateFloatingDate() {
+        if (floatingDate == null || listView == null) {
+            return;
+        }
+        int clipTop = listPaddingTop;
+        View minChild = null;
+        View minMessageChild = null;
+        View minDateChild = null;
+        int minBottom = Integer.MAX_VALUE;
+        int minDateBottom = Integer.MAX_VALUE;
+        for (int index = 0; index < listView.getChildCount(); index++) {
+            View child = listView.getChildAt(index);
+            int position = listView.getChildAdapterPosition(child);
+            if (position < 0 || position >= bubbles.size()) {
+                continue;
+            }
+            boolean dateRow = child instanceof org.telegram.ui.Cells.ChatActionCell
+                    && bubbles.get(position).isDateObject;
+            if (child.getBottom() <= clipTop) {
+                // A date row that has slid under the top edge is not drawn there; the pill is.
+                if (dateRow && child.getAlpha() != 0f) {
+                    child.setAlpha(0f);
+                }
+                continue;
+            }
+            int bottom = child.getBottom();
+            if (bottom < minBottom) {
+                minBottom = bottom;
+                minChild = child;
+                minMessageChild = child instanceof ChatMessageCell
+                        || child instanceof org.telegram.ui.Cells.ChatActionCell ? child : null;
+            }
+            if (dateRow && bottom < minDateBottom) {
+                minDateBottom = bottom;
+                minDateChild = child;
+            }
+        }
+        if (minMessageChild != null) {
+            MessageObject message = messageOf(minMessageChild);
+            if (message != null && message.messageOwner != null) {
+                floatingDate.setCustomDate(message.messageOwner.date, false, true);
+            }
+        }
+        currentFloatingDateOnScreen = false;
+        currentFloatingTopIsNotMessage = minChild == null
+                || !(minChild instanceof ChatMessageCell
+                        || minChild instanceof org.telegram.ui.Cells.ChatActionCell);
+        if (minDateChild != null) {
+            boolean showFloating = false;
+            if (minDateChild.getY() > clipTop || currentFloatingTopIsNotMessage) {
+                // The day's own row is still on screen: it is the date, and the pill steps aside.
+                if (minDateChild.getAlpha() != 1f) {
+                    minDateChild.setAlpha(1f);
+                }
+                hideFloatingDateView(!currentFloatingTopIsNotMessage);
+            } else {
+                if (minDateChild.getAlpha() != 0f) {
+                    minDateChild.setAlpha(0f);
+                }
+                showFloating = true;
+            }
+            int pillHeight = floatingDate.getMeasuredHeight();
+            float offset = minDateChild.getY() + minDateChild.getMeasuredHeight() - clipTop;
+            if (pillHeight > 0 && offset > pillHeight && offset < pillHeight * 2) {
+                floatingDateOffset = -pillHeight * 2 + offset;
+            } else {
+                floatingDateOffset = 0;
+            }
+            if (showFloating) {
+                cancelFloatingDateAnimation();
+                if (floatingDate.getTag() == null) {
+                    floatingDate.setTag(1);
+                }
+                if (floatingDate.getAlpha() != 1f) {
+                    floatingDate.setAlpha(1f);
+                }
+                currentFloatingDateOnScreen = true;
+            }
+        } else {
+            hideFloatingDateView(true);
+            floatingDateOffset = 0;
+        }
+        floatingDate.setTranslationY(
+                listView.getY() + listPaddingTop + floatingDateOffset - AndroidUtilities.dp(4));
+    }
+
+    /** The message a row draws; null for a row this screen does not own. */
+    private MessageObject messageOf(View view) {
+        if (view instanceof ChatMessageCell) {
+            return ((ChatMessageCell) view).getMessageObject();
+        }
+        if (view instanceof org.telegram.ui.Cells.ChatActionCell) {
+            return ((org.telegram.ui.Cells.ChatActionCell) view).getMessageObject();
+        }
+        return null;
+    }
+
+    /** Brings the pill up, with upstream's own 150ms fade (ChatActivity 13604-13630). */
+    private void showFloatingDateView() {
+        if (floatingDate == null) {
+            return;
+        }
+        if (floatingDate.getTag() == null) {
+            cancelFloatingDateAnimation();
+            floatingDate.setTag(1);
+            floatingDateAnimation = new android.animation.AnimatorSet();
+            floatingDateAnimation.setDuration(150);
+            floatingDateAnimation.playTogether(
+                    android.animation.ObjectAnimator.ofFloat(floatingDate, View.ALPHA, 1f));
+            floatingDateAnimation.start();
+        }
+    }
+
+    /** Lets the pill go once the day's own row is back on screen (ChatActivity 13632-13657). */
+    private void hideFloatingDateView(boolean animated) {
+        if (floatingDate == null || floatingDate.getTag() == null || currentFloatingDateOnScreen
+                || (scrollingFloatingDate && !currentFloatingTopIsNotMessage)) {
+            return;
+        }
+        floatingDate.setTag(null);
+        if (animated) {
+            cancelFloatingDateAnimation();
+            floatingDateAnimation = new android.animation.AnimatorSet();
+            floatingDateAnimation.setDuration(150);
+            floatingDateAnimation.playTogether(
+                    android.animation.ObjectAnimator.ofFloat(floatingDate, View.ALPHA, 0f));
+            floatingDateAnimation.setStartDelay(500);
+            floatingDateAnimation.start();
+        } else {
+            cancelFloatingDateAnimation();
+            floatingDate.setAlpha(0f);
+        }
+    }
+
+    private void cancelFloatingDateAnimation() {
+        if (floatingDateAnimation != null) {
+            floatingDateAnimation.cancel();
+            floatingDateAnimation = null;
         }
     }
 
