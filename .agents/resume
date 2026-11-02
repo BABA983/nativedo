@@ -28,6 +28,24 @@ if [[ ! -f "$local_props" ]] || ! grep -q '^sdk\.dir=' "$local_props"; then
   printf 'sdk.dir=%s\n' "$ANDROID_SDK_DIR" >"$local_props"
 fi
 
+# Shared signing key. Without apps/android/nativedo/keystore.properties the build falls back to
+# this machine's Android debug key, so an APK built here cannot replace one built on another
+# machine (-7). The key never enters Git: the project's NATIVEDO_KEYSTORE_B64 secret carries it,
+# and it is written here rather than in .agents/setup so it stays out of the project snapshot.
+signing_key="$HOME/.nativedo/nativedo-signing.jks"
+keystore_properties="$REPO_ROOT/apps/android/nativedo/keystore.properties"
+if [[ -n "${NATIVEDO_KEYSTORE_B64:-}" ]]; then
+  mkdir -p "${signing_key%/*}"
+  printf '%s' "$NATIVEDO_KEYSTORE_B64" | base64 -d >"$signing_key"
+  chmod 600 "$signing_key"
+  {
+    printf 'storeFile=%s\n' "$signing_key"
+    printf 'storePassword=%s\n' "${NATIVEDO_KEYSTORE_PASSWORD:-}"
+    printf 'keyAlias=%s\n' "${NATIVEDO_KEY_ALIAS:-androiddebugkey}"
+    printf 'keyPassword=%s\n' "${NATIVEDO_KEY_PASSWORD:-${NATIVEDO_KEYSTORE_PASSWORD:-}}"
+  } >"$keystore_properties"
+fi
+
 VENDOR_DIR="$(
   PYTHONPATH="$REPO_ROOT/scripts" NATIVEDO_ROOT="$REPO_ROOT" python3 -c \
     'from vendorlib import vendor_dir; print(vendor_dir())' 2>/dev/null ||

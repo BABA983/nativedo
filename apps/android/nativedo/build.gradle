@@ -55,7 +55,9 @@ def sharedSigningStorePassword = sharedSigningProps.getProperty('storePassword')
 def sharedSigningKeyPassword = sharedSigningProps.getProperty('keyPassword') ?: sharedSigningStorePassword
 
 if (sharedSigningFile == null) {
-    logger.warn('nativedo: no shared signing key configured (keystore.properties or NATIVEDO_* ' +
+    // Logged at error level on purpose: `--quiet`, which every documented build command uses,
+    // hides warn-level output, and this fallback is exactly what makes two builders disagree.
+    logger.error('nativedo: no shared signing key configured (keystore.properties or NATIVEDO_* ' +
         'environment): debug builds fall back to the per-machine debug key and release builds stay ' +
         'unsigned, so either APK fails to replace an install made on another machine - ' +
         'INSTALL_FAILED_UPDATE_INCOMPATIBLE (-7).')

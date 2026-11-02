@@ -65,21 +65,34 @@ fail as a downgrade.
 
 Every variant signs with the shared key when one is configured, which is what lets an
 APK from any builder replace the same package in place instead of failing with
-`INSTALL_FAILED_UPDATE_INCOMPATIBLE` (-7). The key is never committed: write
-`apps/android/nativedo/keystore.properties` (gitignored)
+`INSTALL_FAILED_UPDATE_INCOMPATIBLE` (-7). The key is never committed. The one key every
+builder uses is `~/.nativedo/nativedo-signing.jks` (`CN=Android Debug`, SHA-256
+`55:73:6E:EC:…:B3:8E:87`, valid to 2055): the Mac's original debug key, copied out of
+`~/.android` so clearing that directory cannot change the app's identity. Keep a backup of
+it; losing it means every install has to be removed before the next one lands.
 
-```properties
-storeFile=/path/to/nativedo.jks   # absolute, or relative to apps/android/nativedo
-storePassword=...
-keyAlias=...
-keyPassword=...                   # optional; defaults to storePassword
-```
+Each builder points at its own copy:
 
-or set `NATIVEDO_KEYSTORE_FILE`, `NATIVEDO_KEYSTORE_PASSWORD`, `NATIVEDO_KEY_ALIAS`
-and `NATIVEDO_KEY_PASSWORD`, which is what CI reads from repository secrets. Existing
-installations were signed with the Mac key, so every builder needs *that* key to update
-them in place; a build without this configuration falls back to Gradle's per-machine
-debug key, and its APK only installs after the older one is uninstalled.
+- **Mac or another PC** — copy the `.jks`, then write
+  `apps/android/nativedo/keystore.properties` (gitignored):
+
+  ```properties
+  storeFile=/path/to/nativedo-signing.jks   # absolute, or relative to apps/android/nativedo
+  storePassword=...
+  keyAlias=...
+  keyPassword=...                            # optional; defaults to storePassword
+  ```
+
+  The same four values work as `NATIVEDO_KEYSTORE_FILE`, `NATIVEDO_KEYSTORE_PASSWORD`,
+  `NATIVEDO_KEY_ALIAS` and `NATIVEDO_KEY_PASSWORD`.
+- **Orb** — add the key to the Amp project's secrets as `NATIVEDO_KEYSTORE_B64`
+  (`base64 < nativedo-signing.jks | tr -d '\n'`) plus the three password/alias values;
+  `.agents/resume` materializes them into the key path and `keystore.properties` on every wake.
+- **CI** — the same four names as repository secrets; the workflow materializes them the same way.
+
+A build without this configuration falls back to that machine's Gradle debug key and says so at
+error level, because `--quiet` would otherwise hide it. `:nativedo:signingReport` shows which one
+a build used: `Config: shared` is the shared key, `Config: debug` is the per-machine fallback.
 
 Orb setup and the active CI job override upstream's 8 GB Gradle heap with 3 GB,
 2 workers, no project parallelism and in-process Kotlin compilation. This is a
