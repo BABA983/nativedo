@@ -68,7 +68,6 @@ import org.telegram.ui.Components.RecyclerListView
     ],
 )
 internal class PollTest {
-
     private val harness = UpstreamUiHarness()
     private val site = FakeDiscourseSite()
 
@@ -107,8 +106,16 @@ internal class PollTest {
             media.poll.question.text,
         )
         assertEquals("the site's options", 2, media.poll.answers.size)
-        assertEquals("Tool A", media.poll.answers[0].text.text)
-        assertEquals("Tool B", media.poll.answers[1].text.text)
+        assertEquals(
+            "Tool A",
+            media.poll.answers[0]
+                .text.text,
+        )
+        assertEquals(
+            "Tool B",
+            media.poll.answers[1]
+                .text.text,
+        )
         assertEquals("the digest the site votes by travels as the option", OPTION_A, digestOf(media.poll.answers[0]))
         assertEquals("the counts come from polls[].options[].votes", 12, media.results.results[0].voters)
         assertEquals(5, media.results.results[1].voters)
@@ -163,11 +170,12 @@ internal class PollTest {
         val pollCell = laidOutCells().first { it.messageObject!!.type == MessageObject.TYPE_POLL }
         tapFirstAnswer(pollCell)
 
-        val reached = runCatching {
-            harness.await("the vote to reach the site") {
-                site.recordedRequests.any { it.startsWith("PUT /polls/vote") }
+        val reached =
+            runCatching {
+                harness.await("the vote to reach the site") {
+                    site.recordedRequests.any { it.startsWith("PUT /polls/vote") }
+                }
             }
-        }
         println("poll: requests = " + site.recordedRequests)
         reached.exceptionOrNull()?.let { throw it }
 
@@ -180,12 +188,13 @@ internal class PollTest {
 
         // The site's answer is the poll's new state, and the floor is rebuilt from it: a new row
         // carries the new counts and the reader's own choice, without the topic being read again.
-        val voted = runCatching {
-            harness.await("the answer to reach the floor") {
-                val cell = laidOutCells().firstOrNull { it.messageObject!!.type == MessageObject.TYPE_POLL }
-                cell?.messageObject?.isVoted() == true
+        val voted =
+            runCatching {
+                harness.await("the answer to reach the floor") {
+                    val cell = laidOutCells().firstOrNull { it.messageObject!!.type == MessageObject.TYPE_POLL }
+                    cell?.messageObject?.isVoted() == true
+                }
             }
-        }
         voted.exceptionOrNull()?.let { throw it }
 
         val votedCell = laidOutCells().first { it.messageObject!!.type == MessageObject.TYPE_POLL }
@@ -254,8 +263,7 @@ internal class PollTest {
         harness.await("the topic to load") { laidOutCells().size == 3 }
     }
 
-    private fun digestOf(answer: TLRPC.PollAnswer): String =
-        String(answer.option, java.nio.charset.StandardCharsets.UTF_8)
+    private fun digestOf(answer: TLRPC.PollAnswer): String = String(answer.option, java.nio.charset.StandardCharsets.UTF_8)
 
     /** A rich body drew as its own bubble, not as a poll: the article upstream imports for it. */
     private fun isRichText(message: MessageObject): Boolean =
@@ -270,8 +278,7 @@ internal class PollTest {
             .filterIsInstance<ChatMessageCell>()
     }
 
-    private fun listView(): RecyclerListView? =
-        contentListOf(harness.activity)
+    private fun listView(): RecyclerListView? = contentListOf(harness.activity)
 
     private companion object {
         const val TOPIC_ID = 2001L

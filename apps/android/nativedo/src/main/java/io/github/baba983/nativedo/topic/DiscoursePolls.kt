@@ -23,7 +23,6 @@ class PollVoteSelection(
  * option. They round-trip, and the answer's `text` stays what the reader sees.
  */
 object DiscoursePolls {
-
     /**
      * The poll of [media] within [post], or null when the media is not one of the post's polls.
      *
@@ -31,7 +30,10 @@ object DiscoursePolls {
      * assigned it - with the option digests as a fallback for a payload that omits the id.
      */
     @JvmStatic
-    fun pollOf(post: Post, media: TLRPC.MessageMedia): PostPoll? {
+    fun pollOf(
+        post: Post,
+        media: TLRPC.MessageMedia,
+    ): PostPoll? {
         val poll = (media as? TLRPC.TL_messageMediaPoll)?.poll ?: return null
         post.polls.firstOrNull { candidate -> candidate.id != 0L && candidate.id == poll.id }?.let { return it }
         val digests = poll.answers.map { answer -> String(answer.option, StandardCharsets.UTF_8) }.toSet()
@@ -47,7 +49,10 @@ object DiscoursePolls {
      * tap cannot express).
      */
     @JvmStatic
-    fun selectionFor(poll: PostPoll, digest: String): PollVoteSelection? {
+    fun selectionFor(
+        poll: PostPoll,
+        digest: String,
+    ): PollVoteSelection? {
         if (poll.isClosed || poll.type == "ranked_choice" || digest.isEmpty()) {
             return null
         }

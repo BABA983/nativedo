@@ -77,7 +77,6 @@ import java.util.concurrent.atomic.AtomicBoolean
     ],
 )
 internal class TopicPageDownTest {
-
     private val harness = UpstreamUiHarness()
     private val site = FakeDiscourseSite()
     private val artifacts: java.io.File = java.io.File(repoRoot(), ".amp/in/artifacts/topic-pagedown")
@@ -92,7 +91,10 @@ internal class TopicPageDownTest {
 
     @After
     fun tearDown() {
-        runCatching { org.telegram.ui.Components.Bulletin.hideVisible() }
+        runCatching {
+            org.telegram.ui.Components.Bulletin
+                .hideVisible()
+        }
         runCatching { harness.idleClock(300) }
         // Every screen this class opened carries a live read reporter (a ticking coroutine) and a
         // show animation. Left running, they spend a later test's idle budget inside the shared
@@ -154,7 +156,7 @@ internal class TopicPageDownTest {
         assertEquals("the badge at the top", topRemaining, badgeCount(fragment))
         assertTrue(
             "the count is the stream's, not highest_post_number minus the visible floor " +
-                "(${topRemaining} vs ${HIGHEST - atTop})",
+                "($topRemaining vs ${HIGHEST - atTop})",
             topRemaining != HIGHEST - atTop,
         )
 
@@ -239,12 +241,13 @@ internal class TopicPageDownTest {
             "the counter did not swap to the settled digits the instant the viewport moved",
             immediate!!.sameAs(settledFrame),
         )
-        val inFlight = sampled.firstOrNull { frame ->
-            val pixels = IntArray(frame.width * frame.height)
-            frame.getPixels(pixels, 0, frame.width, 0, 0, frame.width, frame.height)
-            pixels.any { android.graphics.Color.alpha(it) > 0 } &&
-                !frame.sameAs(beforeFrame!!) && !frame.sameAs(settledFrame)
-        }
+        val inFlight =
+            sampled.firstOrNull { frame ->
+                val pixels = IntArray(frame.width * frame.height)
+                frame.getPixels(pixels, 0, frame.width, 0, 0, frame.width, frame.height)
+                pixels.any { android.graphics.Color.alpha(it) > 0 } &&
+                    !frame.sameAs(beforeFrame!!) && !frame.sameAs(settledFrame)
+            }
         assertTrue(
             "the counter interpolates instead of delaying an instant digit swap",
             inFlight != null,
@@ -276,8 +279,11 @@ internal class TopicPageDownTest {
         val unreadStart = reached + 1
         println("pagedown: unread reached=$reached last=$last unreadStart=$unreadStart")
         assertEquals("the high-water mark is the site's read floor", 50, reached)
-        assertEquals("the server's read id counts only floors 51–60, even outside this window",
-            10, badgeCount(fragment))
+        assertEquals(
+            "the server's read id counts only floors 51–60, even outside this window",
+            10,
+            badgeCount(fragment),
+        )
         assertTrue("the unread start is below the viewport", unreadStart > last)
         assertTrue(
             "the unread start is not loaded yet: ${floorsOf(fragment).mapNotNull { it.postNumber }}",
@@ -363,8 +369,11 @@ internal class TopicPageDownTest {
             0,
             badgeCount(fragment),
         )
-        assertEquals("the arrow says it returns to the newest post", "回到最新帖子",
-            pageDownButton(fragment)!!.contentDescription)
+        assertEquals(
+            "the arrow says it returns to the newest post",
+            "回到最新帖子",
+            pageDownButton(fragment)!!.contentDescription,
+        )
         writeVisual("topic-pagedown-review")
 
         pageDownButton(fragment)!!.performClick()
@@ -413,7 +422,8 @@ internal class TopicPageDownTest {
             if (first.getAndSet(false)) {
                 release.await(20, TimeUnit.SECONDS)
             }
-            MockResponse().setResponseCode(200)
+            MockResponse()
+                .setResponseCode(200)
                 .setHeader("Content-Type", "application/json")
                 .setBody(detailJson(windowAround(target), target))
         }
@@ -424,8 +434,11 @@ internal class TopicPageDownTest {
         scrollToTopAndSettle(fragment)
         assertEquals("the tap targets the first unread below", 51, reachedFloorMark(fragment) + 1)
         assertEquals("without a known read id, do not count history as unread", 0, badgeCount(fragment))
-        assertEquals("the unnumbered arrow still offers the unread jump", "查看未读帖子",
-            pageDownButton(fragment)!!.contentDescription)
+        assertEquals(
+            "the unnumbered arrow still offers the unread jump",
+            "查看未读帖子",
+            pageDownButton(fragment)!!.contentDescription,
+        )
 
         pageDownButton(fragment)!!.performClick()
         harness.await("the unread window to be asked for") {
@@ -474,7 +487,8 @@ internal class TopicPageDownTest {
             if (failing.get()) {
                 MockResponse().setResponseCode(503)
             } else {
-                MockResponse().setResponseCode(200)
+                MockResponse()
+                    .setResponseCode(200)
                     .setHeader("Content-Type", "application/json")
                     .setBody(detailJson(windowAround(target), target))
             }
@@ -502,14 +516,18 @@ internal class TopicPageDownTest {
         assertEquals("the reader's place is kept", lastBefore, lastVisibleFloor(fragment))
         assertEquals("the reader's place is kept", firstBefore, firstVisibleFloor(fragment))
         writeVisual("topic-pagedown-failed")
-        val banner = org.telegram.ui.Components.Bulletin.getVisibleBulletin()
-            ?: throw AssertionError("the retry hint disappeared before it could be read")
+        val banner =
+            org.telegram.ui.Components.Bulletin
+                .getVisibleBulletin()
+                ?: throw AssertionError("the retry hint disappeared before it could be read")
         val bannerRect = android.graphics.Rect()
         val buttonRect = android.graphics.Rect()
         assertTrue("the retry hint is on screen", banner.getLayout().getGlobalVisibleRect(bannerRect))
         assertTrue("the retry arrow is on screen", pageDownButton(fragment)!!.getGlobalVisibleRect(buttonRect))
-        assertTrue("the hint must not cover the arrow it asks the reader to tap: $bannerRect / $buttonRect",
-            !android.graphics.Rect.intersects(bannerRect, buttonRect))
+        assertTrue(
+            "the hint must not cover the arrow it asks the reader to tap: $bannerRect / $buttonRect",
+            !android.graphics.Rect.intersects(bannerRect, buttonRect),
+        )
 
         failing.set(false)
         pageDownButton(fragment)!!.performClick()
@@ -543,7 +561,8 @@ internal class TopicPageDownTest {
             if (first.getAndSet(false)) {
                 release.await(20, TimeUnit.SECONDS)
             }
-            MockResponse().setResponseCode(200)
+            MockResponse()
+                .setResponseCode(200)
                 .setHeader("Content-Type", "application/json")
                 .setBody(detailJson(windowAround(target), target))
         }
@@ -662,7 +681,10 @@ internal class TopicPageDownTest {
 
     // ---- opening -------------------------------------------------------------
 
-    private fun serveLongTopic(headFloors: List<Int>, lastRead: Int) {
+    private fun serveLongTopic(
+        headFloors: List<Int>,
+        lastRead: Int,
+    ) {
         site.serveJson("t/$TOPIC_ID.json", detailJson(headFloors, lastRead))
         site.serveJsonFor("t/$TOPIC_ID/posts.json") { query -> postsResponse(requestedFloors(query)) }
     }
@@ -676,7 +698,11 @@ internal class TopicPageDownTest {
     }
 
     /** Opens the topic at [center], with the site's own read position set to [lastRead]. */
-    private fun openFloorWindow(center: Int, lastRead: Int, readId: Long? = null): TopicFragment {
+    private fun openFloorWindow(
+        center: Int,
+        lastRead: Int,
+        readId: Long? = null,
+    ): TopicFragment {
         // A wide window so neither prefetch edge is reached on the open: the reader's own viewport
         // stays away from both ends, and the loaded set does not grow under the jump.
         val detail = JSONObject(detailJson(windowAround(center, FLOOR_WINDOW), lastRead))
@@ -700,7 +726,10 @@ internal class TopicPageDownTest {
     }
 
     /** Advances the clock until a smooth scroll has brought [floor] into view; false on timeout. */
-    private fun settleUntilFloorVisible(fragment: TopicFragment, floor: Int): Boolean {
+    private fun settleUntilFloorVisible(
+        fragment: TopicFragment,
+        floor: Int,
+    ): Boolean {
         repeat(80) {
             harness.idleClock(100)
             val first = firstVisibleFloor(fragment)
@@ -714,7 +743,10 @@ internal class TopicPageDownTest {
     }
 
     /** Advances the clock until a smooth scroll has brought [floor] into view; false on timeout. */
-    private fun settleUntilLastFloor(fragment: TopicFragment, floor: Int): Boolean {
+    private fun settleUntilLastFloor(
+        fragment: TopicFragment,
+        floor: Int,
+    ): Boolean {
         repeat(60) {
             harness.idleClock(100)
             if (lastVisibleFloor(fragment) == floor) {
@@ -734,12 +766,17 @@ internal class TopicPageDownTest {
     private fun firstFloor(fragment: TopicFragment): Int? = floorsOf(fragment).firstOrNull()?.postNumber
 
     /** Opens another window over the presented one the way a reply-target jump does. */
-    private fun loadWindow(fragment: TopicFragment, postNumber: Int, scrollTo: Int) {
-        val method = TopicFragment::class.java.getDeclaredMethod(
-            "loadWindow",
-            Int::class.javaPrimitiveType,
-            Int::class.javaPrimitiveType,
-        )
+    private fun loadWindow(
+        fragment: TopicFragment,
+        postNumber: Int,
+        scrollTo: Int,
+    ) {
+        val method =
+            TopicFragment::class.java.getDeclaredMethod(
+                "loadWindow",
+                Int::class.javaPrimitiveType,
+                Int::class.javaPrimitiveType,
+            )
         method.isAccessible = true
         method.invoke(fragment, postNumber, scrollTo)
         harness.idle()
@@ -750,7 +787,8 @@ internal class TopicPageDownTest {
         repeat(iterations) {
             harness.idle()
             harness.idleUpstreamQueues()
-            java.util.concurrent.locks.LockSupport.parkNanos(1_000_000L)
+            java.util.concurrent.locks.LockSupport
+                .parkNanos(1_000_000L)
         }
     }
 
@@ -788,26 +826,29 @@ internal class TopicPageDownTest {
     private fun awaitPageDownFailureBulletin(): List<String> {
         repeat(5_000) {
             harness.idle(1)
-            val bulletin = org.telegram.ui.Components.Bulletin.getVisibleBulletin()
+            val bulletin =
+                org.telegram.ui.Components.Bulletin
+                    .getVisibleBulletin()
             if (bulletin != null) {
                 val texts = bulkText(bulletin.getLayout())
                 if (texts.any { it.contains("没能读出来") }) return texts
             }
-            java.util.concurrent.locks.LockSupport.parkNanos(500_000L)
+            java.util.concurrent.locks.LockSupport
+                .parkNanos(500_000L)
         }
         throw AssertionError("the page-down failure Bulletin never appeared")
     }
 
     /** Every text a view tree draws, for reading a Bulletin the screen showed in passing. */
-    private fun bulkText(view: View): List<String> = when (view) {
-        is android.widget.TextView -> listOf(view.text.toString())
-        is org.telegram.ui.ActionBar.SimpleTextView -> listOf(view.text.toString())
-        is ViewGroup -> (0 until view.childCount).flatMap { bulkText(view.getChildAt(it)) }
-        else -> emptyList()
-    }
+    private fun bulkText(view: View): List<String> =
+        when (view) {
+            is android.widget.TextView -> listOf(view.text.toString())
+            is org.telegram.ui.ActionBar.SimpleTextView -> listOf(view.text.toString())
+            is ViewGroup -> (0 until view.childCount).flatMap { bulkText(view.getChildAt(it)) }
+            else -> emptyList()
+        }
 
-    private fun pageDownVisible(fragment: TopicFragment): Boolean =
-        fragment.threadStatusView()?.visibility == View.VISIBLE
+    private fun pageDownVisible(fragment: TopicFragment): Boolean = fragment.threadStatusView()?.visibility == View.VISIBLE
 
     /**
      * The badge's own number, read from upstream's counter the way the screen set it - the number
@@ -834,11 +875,12 @@ internal class TopicPageDownTest {
     private fun drawCounter(fragment: TopicFragment): android.graphics.Bitmap? {
         val counter = counterView(fragment) ?: return null
         if (counter.width <= 0 || counter.height <= 0) return null
-        val bitmap = android.graphics.Bitmap.createBitmap(
-            counter.width,
-            counter.height,
-            android.graphics.Bitmap.Config.ARGB_8888,
-        )
+        val bitmap =
+            android.graphics.Bitmap.createBitmap(
+                counter.width,
+                counter.height,
+                android.graphics.Bitmap.Config.ARGB_8888,
+            )
         counter.draw(android.graphics.Canvas(bitmap))
         return bitmap
     }
@@ -860,7 +902,10 @@ internal class TopicPageDownTest {
     }
 
     /** Retains a rendered badge frame under [polishArtifacts], the ui-polish animation artifact. */
-    private fun writeFrame(name: String, bitmap: android.graphics.Bitmap) {
+    private fun writeFrame(
+        name: String,
+        bitmap: android.graphics.Bitmap,
+    ) {
         val out = java.io.File(polishArtifacts, "$name.png")
         out.parentFile?.mkdirs()
         java.io.FileOutputStream(out).use {
@@ -913,38 +958,43 @@ internal class TopicPageDownTest {
         return row.isDateObject || row === nullableField(fragment, "unreadDivider")
     }
 
-    private fun floorNumberAt(fragment: TopicFragment, position: Int): Int? {
+    private fun floorNumberAt(
+        fragment: TopicFragment,
+        position: Int,
+    ): Int? {
         if (position < 0) return null
         val bubbleFloors = bubbleFloorsOf(fragment)
         if (position >= bubbleFloors.size) return null
         return floorsOf(fragment)[bubbleFloors[position]].postNumber
     }
 
-    private fun linearManager(): LinearLayoutManager? =
-        listView()?.layoutManager as? LinearLayoutManager
+    private fun linearManager(): LinearLayoutManager? = listView()?.layoutManager as? LinearLayoutManager
 
     /** The real stream posts strictly below a floor: the number the badge is made of. */
-    private fun streamRemainingBelow(floorNumber: Int): Int =
-        ALL.size - ALL.indexOf(floorNumber) - 1
+    private fun streamRemainingBelow(floorNumber: Int): Int = ALL.size - ALL.indexOf(floorNumber) - 1
 
     // ---- fragment internals --------------------------------------------------
 
     @Suppress("UNCHECKED_CAST")
-    private fun floorsOf(fragment: TopicFragment): List<Post> =
-        field(fragment, "floors") as List<Post>
+    private fun floorsOf(fragment: TopicFragment): List<Post> = field(fragment, "floors") as List<Post>
 
     @Suppress("UNCHECKED_CAST")
-    private fun bubbleFloorsOf(fragment: TopicFragment): List<Int> =
-        field(fragment, "bubbleFloors") as List<Int>
+    private fun bubbleFloorsOf(fragment: TopicFragment): List<Int> = field(fragment, "bubbleFloors") as List<Int>
 
-    private fun field(target: Any, name: String): Any {
+    private fun field(
+        target: Any,
+        name: String,
+    ): Any {
         val f = target.javaClass.getDeclaredField(name)
         f.isAccessible = true
         return f.get(target) as Any
     }
 
     /** The same read, for a field the screen leaves null until it has something to hold. */
-    private fun nullableField(target: Any, name: String): Any? {
+    private fun nullableField(
+        target: Any,
+        name: String,
+    ): Any? {
         val f = target.javaClass.getDeclaredField(name)
         f.isAccessible = true
         return f.get(target)
@@ -970,7 +1020,10 @@ internal class TopicPageDownTest {
     // ---- payloads ------------------------------------------------------------
 
     /** A read of the head, carrying [floors] as the first window. */
-    private fun detailJson(floors: List<Int>, lastRead: Int): String {
+    private fun detailJson(
+        floors: List<Int>,
+        lastRead: Int,
+    ): String {
         val base = JSONObject(harness.fixture("topic-detail.json"))
         val stream = base.getJSONObject("post_stream")
         stream.put("stream", JSONArray(ALL.map { idFor(it) }))
@@ -984,7 +1037,10 @@ internal class TopicPageDownTest {
     }
 
     /** The window the site answers when a floor is named: [size] real floors around [center]. */
-    private fun windowAround(center: Int, size: Int = WINDOW_PAGE): List<Int> {
+    private fun windowAround(
+        center: Int,
+        size: Int = WINDOW_PAGE,
+    ): List<Int> {
         val index = ALL.indexOf(center)
         if (index < 0) return emptyList()
         val half = size / 2
@@ -999,40 +1055,44 @@ internal class TopicPageDownTest {
             .put("post_stream", JSONObject().put("posts", JSONArray(floors.map { postJson(it) })))
             .toString()
 
-    private fun postJson(floor: Int): JSONObject = JSONObject().apply {
-        put("id", idFor(floor))
-        put("post_number", floor)
-        put("username", "reader$floor")
-        put("name", "Reader $floor")
-        put("reply_count", 0)
-        put("created_at", "2024-01-0${(floor % 9) + 1}T10:00:00.000Z")
-        val filler = (1..6).joinToString("") { "<p>第 $floor 楼，正文第 $it 段，用来撑高这条回复。</p>" }
-        val body = StringBuilder("<p>第 $floor 楼</p>$filler")
-        if (floor == POLL_FLOOR) {
-            // One floor drawn as three rows - text, the poll, more text - so every row after it is
-            // shifted by two. This is what tells a row-index jump apart from a floor-index one.
-            body.append("<p>投个票</p>")
-            body.append("<div class=\"poll\" data-poll-name=\"frontend\"></div>")
-            body.append("<p>投票说完</p>")
-            put("polls", JSONArray(pollPayload()))
-            put("polls_votes", JSONObject())
+    private fun postJson(floor: Int): JSONObject =
+        JSONObject().apply {
+            put("id", idFor(floor))
+            put("post_number", floor)
+            put("username", "reader$floor")
+            put("name", "Reader $floor")
+            put("reply_count", 0)
+            put("created_at", "2024-01-0${(floor % 9) + 1}T10:00:00.000Z")
+            val filler = (1..6).joinToString("") { "<p>第 $floor 楼，正文第 $it 段，用来撑高这条回复。</p>" }
+            val body = StringBuilder("<p>第 $floor 楼</p>$filler")
+            if (floor == POLL_FLOOR) {
+                // One floor drawn as three rows - text, the poll, more text - so every row after it is
+                // shifted by two. This is what tells a row-index jump apart from a floor-index one.
+                body.append("<p>投个票</p>")
+                body.append("<div class=\"poll\" data-poll-name=\"frontend\"></div>")
+                body.append("<p>投票说完</p>")
+                put("polls", JSONArray(pollPayload()))
+                put("polls_votes", JSONObject())
+            }
+            put("cooked", body.toString())
+            put("avatar_template", "/user_avatar/linux.do/reader$floor/{size}.png")
         }
-        put("cooked", body.toString())
-        put("avatar_template", "/user_avatar/linux.do/reader$floor/{size}.png")
-    }
 
-    private fun pollPayload(): String =
-        JSONObject(harness.fixture("post-polls.json")).getJSONArray("polls").toString()
+    private fun pollPayload(): String = JSONObject(harness.fixture("post-polls.json")).getJSONArray("polls").toString()
 
     /** The discussion page's root: the floor the replies hang off, with the site's own reply count. */
-    private fun discussionRootJson(parentId: Long, replyCount: Int): String {
+    private fun discussionRootJson(
+        parentId: Long,
+        replyCount: Int,
+    ): String {
         val base = JSONObject(harness.fixture("topic-detail.json"))
         val stream = base.getJSONObject("post_stream")
-        val root = postJson(PARENT_FLOOR).apply {
-            put("id", parentId)
-            put("reply_count", replyCount)
-            put("avatar_template", "/user_avatar/linux.do/op/{size}.png")
-        }
+        val root =
+            postJson(PARENT_FLOOR).apply {
+                put("id", parentId)
+                put("reply_count", replyCount)
+                put("avatar_template", "/user_avatar/linux.do/op/{size}.png")
+            }
         stream.put("stream", JSONArray(listOf(parentId)))
         stream.put("posts", JSONArray(listOf(root)))
         base.put("id", TOPIC_ID)
@@ -1056,7 +1116,8 @@ internal class TopicPageDownTest {
     }
 
     private fun requestedFloors(query: String): List<Int> =
-        Regex("post_ids%5B%5D=(\\d+)").findAll(query)
+        Regex("post_ids%5B%5D=(\\d+)")
+            .findAll(query)
             .map { floorForId(it.groupValues[1].toLong()) }
             .toList()
 
@@ -1079,16 +1140,21 @@ internal class TopicPageDownTest {
         const val TOPIC_ID = 828281L
         const val HIGHEST = 60
         const val WINDOW_PAGE = 20
+
         /** The wider window the floor-open tests are dropped into, so no prefetch edge is reached. */
         const val FLOOR_WINDOW = 40
+
         /** A different window another read can open over a pending page-down jump. */
         const val OTHER_WINDOW = 30
+
         /** Ids are far from both floor numbers and stream positions on purpose. */
         const val ID_BASE = 6_000_000L
         const val ID_STEP = 61L
         const val PARENT_FLOOR = 12
+
         /** One floor is drawn as three rows (a poll splits it), shifting the rows after it. */
         const val POLL_FLOOR = 20
+
         /** Two floors were deleted: the stream is shorter than the topic's highest floor. */
         val DELETED = setOf(7, 25)
         val ALL = (1..HIGHEST).filterNot { it in DELETED }
