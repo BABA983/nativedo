@@ -33,9 +33,11 @@ then adapts posts into the presentation objects upstream `ChatMessageCell` draws
 
 A post's own `user_title` is drawn where a chat draws a sender's tag: the title goes
 into the message's `from_rank`, and the stock cell lays it out at the end of the name
-line - the slot a group's admin rank uses, so the bubble's metrics stay upstream's. The
-wire carries only the text; linux.do's theme, not the answer, decides which titles are
-special. Its holographic rule names `种子用户`, `破界者` and `premium`, and those are
+line - the slot a group's admin rank uses, so the bubble's metrics stay upstream's. A title
+longer than the tag's 100 dp is ellipsized to one line before it is written, so a long
+site title cannot wrap over the body or take the whole name width; the author's name
+keeps upstream's own ellipsis for whatever is left. The wire carries only the text;
+linux.do's theme, not the answer, decides which titles are special. Its holographic rule names `种子用户`, `破界者` and `premium`, and those are
 painted with the same animated gradient; every other title keeps the plain muted tag.
 The gradient is a `CharacterStyle` span on the tag that reads a shared phase on every
 draw, so the cell's layout is built once; a frame loop in the topic screen advances the

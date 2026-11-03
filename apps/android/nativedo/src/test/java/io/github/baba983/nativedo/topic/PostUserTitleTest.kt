@@ -32,6 +32,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.ApplicationLoader
 import org.telegram.ui.Cells.ChatMessageCell
 import org.telegram.ui.Components.RecyclerListView
@@ -127,6 +128,32 @@ internal class PostUserTitleTest {
             harness.idleClock(300)
         }
         assertTrue("the gradient advances while the post is on screen: $phases", phases.size > 1)
+
+        // A long title is one line of tag, and the name keeps its own ellipsis instead of being
+        // starved by it: the two bounds the web's plain text does not have.
+        val long = cellById(LONG_ID)
+        val longTag = tagLayout(long)
+        val longName = field(long, "nameLayout") as StaticLayout
+        println(
+            "title: long tag=\"${longTag.text}\" lines=${longTag.lineCount} " +
+                "width=${longTag.getLineWidth(0)} name=\"${longName.text}\"",
+        )
+        assertEquals("a long tag stays on one line", 1, longTag.lineCount)
+        assertTrue(
+            "a long tag is ellipsized at the tag's own bound",
+            longTag.text.length < LONG_TITLE.length,
+        )
+        assertTrue(
+            "the tag never grows past its bound",
+            longTag.getLineWidth(0) <= AndroidUtilities.dp(100f) + 2,
+        )
+        assertEquals("the name line never wraps", 1, longName.lineCount)
+        assertTrue(
+            "the author's name is ellipsized rather than emptied",
+            longName.text.isNotEmpty() && longName.text.length < LONG_NAME.length,
+        )
+        harness.layoutApp()
+        harness.renderApp("post-user-title-long")
         harness.assertNoTelegramSideEffects()
     }
 
@@ -136,9 +163,21 @@ internal class PostUserTitleTest {
         harness.bootApp()
         harness.await("the topic list to load") { contentRowCount(harness) == 2 }
         harness.present(TopicFragment.forTopic(TOPIC_ID, "Titles"))
-        harness.await("the topic") { contentRowCount(harness) == 2 }
+        harness.await("the topic") { contentRowCount(harness) == 3 }
         harness.layoutApp()
         harness.idleClock(300)
+    }
+
+    /** The drawn cell whose message id is [id]. */
+    private fun cellById(id: Long): ChatMessageCell {
+        val list = listView() ?: throw AssertionError("no topic list")
+        for (index in 0 until list.childCount) {
+            val cell = list.getChildAt(index) as? ChatMessageCell ?: continue
+            if (cell.messageObject?.messageOwner?.id?.toLong() == id) {
+                return cell
+            }
+        }
+        throw AssertionError("no cell draws message $id")
     }
 
     /** The drawn cell whose tag is [title]. */
@@ -190,17 +229,18 @@ internal class PostUserTitleTest {
         val base = JSONObject(harness.fixture("topic-detail.json"))
         base.put("id", TOPIC_ID)
         base.put("title", "Titles")
-        base.put("posts_count", 2)
-        base.put("highest_post_number", 2)
-        base.put("last_read_post_number", 2)
+        base.put("posts_count", 3)
+        base.put("highest_post_number", 3)
+        base.put("last_read_post_number", 3)
         val stream = base.getJSONObject("post_stream")
-        stream.put("stream", JSONArray(listOf(HOLOGRAPHIC_ID, PLAIN_ID)))
+        stream.put("stream", JSONArray(listOf(HOLOGRAPHIC_ID, PLAIN_ID, LONG_ID)))
         stream.put(
             "posts",
             JSONArray(
                 listOf(
                     postJson(1, HOLOGRAPHIC_ID, "op", "楼主", "种子用户"),
                     postJson(2, PLAIN_ID, "guest", "路人", "骐骥驰骋"),
+                    postJson(3, LONG_ID, "long", LONG_NAME, LONG_TITLE),
                 ),
             ),
         )
@@ -223,5 +263,10 @@ internal class PostUserTitleTest {
         const val TOPIC_ID = 7800L
         const val HOLOGRAPHIC_ID = 7801L
         const val PLAIN_ID = 7802L
+        const val LONG_ID = 7803L
+
+        /** Long enough that the tag and the name both have to be cut to fit the name line. */
+        const val LONG_TITLE = "这是一个非常非常长的头衔会超出名字行能放下的宽度"
+        const val LONG_NAME = "A very long display name that keeps going well past the name line"
     }
 }

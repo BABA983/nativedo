@@ -1,7 +1,11 @@
 package io.github.baba983.nativedo.topic;
 
+import android.text.TextUtils;
+
+import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.MessageObject;
 import org.telegram.tgnet.TLRPC;
+import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.DialogCell;
 
 import java.text.ParsePosition;
@@ -157,6 +161,9 @@ public final class DiscourseRows {
      * Upstream reads {@code from_rank} for exactly that slot: a short label after the name, never a
      * rank this client asks Telegram for. An empty title leaves the message without one.
      */
+    /** How wide an author's title tag may grow before it is ellipsized, in dp. */
+    private static final int AUTHOR_TITLE_MAX_WIDTH_DP = 100;
+
     public static void applyAuthorTitle(TLRPC.Message message, Post post) {
         if (message == null || post == null) {
             return;
@@ -166,9 +173,20 @@ public final class DiscourseRows {
         if (title == null) {
             return;
         }
-        title = title.trim();
+        title = title.replace('\n', ' ').replace('\r', ' ').trim();
         if (title.isEmpty()) {
             return;
+        }
+        // The tag is one short label on the name line, not a paragraph: a site title that runs
+        // longer is ellipsized so its layout cannot wrap over the body or take the whole name
+        // width from the author. The name has upstream's own ellipsis after this reservation.
+        if (Theme.chat_adminPaint != null) {
+            title = TextUtils.ellipsize(
+                    title,
+                    Theme.chat_adminPaint,
+                    AndroidUtilities.dp(AUTHOR_TITLE_MAX_WIDTH_DP),
+                    TextUtils.TruncateAt.END
+            ).toString();
         }
         message.from_rank = title;
     }
