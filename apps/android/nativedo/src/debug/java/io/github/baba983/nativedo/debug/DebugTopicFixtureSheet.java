@@ -54,7 +54,9 @@ final class DebugTopicFixtureSheet {
                         items.add(UItem.asButton(
                                 rowIdForIndex(index),
                                 fixture.label,
-                                "#" + fixture.topicId + " · " + fixture.category));
+                                "#" + fixture.topicId
+                                        + (fixture.floor > 0 ? " · " + fixture.floor + " 楼" : "")
+                                        + " · " + fixture.category));
                     }
                 },
                 (item, view, position, x, y) -> {
@@ -64,7 +66,8 @@ final class DebugTopicFixtureSheet {
                     }
                     DebugTopicFixtures.Fixture fixture = fixtures.get(index);
                     sheet.dismiss();
-                    fragment.presentFragment(TopicFragment.forFloor(fixture.topicId, fixture.label, null));
+                    Integer floor = fixture.floor > 0 ? fixture.floor : null;
+                    fragment.presentFragment(TopicFragment.forFloor(fixture.topicId, fixture.label, floor));
                 },
                 (item, view, position, x, y) -> false,
                 fragment.getResourceProvider());

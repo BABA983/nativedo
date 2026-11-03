@@ -33,3 +33,5 @@ https://linux.do/t/topic/2503776
 https://linux.do/t/topic/2790689
 消息闪烁
 https://linux.do/t/topic/2981415
+用户头衔渐变（19 楼）
+https://linux.do/t/2924095/19

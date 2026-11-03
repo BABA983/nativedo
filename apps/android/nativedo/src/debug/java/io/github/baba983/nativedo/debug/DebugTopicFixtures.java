@@ -11,14 +11,24 @@ import java.util.List;
  */
 public final class DebugTopicFixtures {
 
-    /** One curated topic: its id, the label it is known by, and the rendering area it exercises. */
+    /**
+     * One curated topic: its id, the floor to land on when the point is a post rather than the
+     * topic's head (0 opens the head), the label it is known by, and the rendering area it
+     * exercises.
+     */
     public static final class Fixture {
         public final long topicId;
+        public final int floor;
         public final String label;
         public final String category;
 
         Fixture(long topicId, String label, String category) {
+            this(topicId, 0, label, category);
+        }
+
+        Fixture(long topicId, int floor, String label, String category) {
             this.topicId = topicId;
+            this.floor = floor;
             this.label = label;
             this.category = category;
         }
@@ -38,7 +48,8 @@ public final class DebugTopicFixtures {
             new Fixture(2336669L, "又来修一下 CC", "杂项"),
             new Fixture(2501882L, "auto scroll issue", "滚动"),
             new Fixture(2503776L, "emoji title", "标题"),
-            new Fixture(2790689L, "渲染极限：bbcode/HTML", "富文本")
+            new Fixture(2790689L, "渲染极限：bbcode/HTML", "富文本"),
+            new Fixture(2924095L, 19, "用户头衔渐变", "头衔")
     ));
 
     private DebugTopicFixtures() {

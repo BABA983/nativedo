@@ -75,6 +75,12 @@ internal class DebugMenuTest {
         site.serveFixture("u/baba.json", "user-profile.json")
         site.serve(1L, "topic-detail.json")
         site.serve(DebugTopicFixtures.entries().first().topicId, "topic-detail.json")
+        val floorFixture = DebugTopicFixtures.entries().first { it.floor > 0 }
+        site.serve(floorFixture.topicId, "topic-detail.json")
+        site.serveJson(
+            "t/${floorFixture.topicId}/${floorFixture.floor}.json",
+            harness.fixture("topic-detail.json"),
+        )
         NativeDo.setContainerFactory { context -> site.authenticatedContainer(context) }
     }
 
@@ -142,6 +148,26 @@ internal class DebugMenuTest {
         harness.layoutApp()
         assertEquals("the curated row opened the fixture's own topic", fixture.topicId, topicIdOf(shell))
         assertEquals("no floor was named, so the topic opens at its top", 0, topicFloorOf(shell))
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /** A curated entry can name a floor: the row lands on that post, not on the topic's head. */
+    @Test
+    fun aCuratedFixtureOpensAtTheFloorItNames() {
+        val shell = openSettings()
+        val fixture = DebugTopicFixtures.entries().first { it.floor > 0 }
+
+        clickNamedRow("渲染测试帖")
+        harness.idle()
+        val list = sheetList()
+        val index = DebugTopicFixtures.entries().indexOf(fixture)
+        list.clickItem(null, index)
+        harness.await("the fixture's topic") {
+            harness.topFragment()?.javaClass?.simpleName == "TopicFragment"
+        }
+        harness.layoutApp()
+        assertEquals("the curated row opened its own topic", fixture.topicId, topicIdOf(shell))
+        assertEquals("and the floor the entry names", fixture.floor, topicFloorOf(shell))
         harness.assertNoTelegramSideEffects()
     }
 
