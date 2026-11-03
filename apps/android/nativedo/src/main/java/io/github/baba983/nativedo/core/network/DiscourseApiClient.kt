@@ -534,13 +534,28 @@ class DiscourseApiClient(
     /** The site's tags, for the topic list's tag filter. */
     suspend fun fetchTags(): List<Tag> = runWithSessionBoundary { service.tags().toModel() }
 
-    suspend fun fetchTopic(topicId: Long, postNumber: Int? = null): TopicDetail =
+    /**
+     * One topic, or one window of it. [usernameFilter] is the site's own `username_filters`: its
+     * answer then carries post 1 plus the posts that person wrote, and the stream is that filtered
+     * list, so a "only this author" read pages through those floors rather than the whole topic.
+     * The filter is part of the cache key: a filtered window and the full one are different reads.
+     */
+    suspend fun fetchTopic(
+        topicId: Long,
+        postNumber: Int? = null,
+        usernameFilter: String? = null,
+    ): TopicDetail =
         runWithSessionBoundary {
+            val filter = usernameFilter?.takeIf { it.isNotBlank() }
             cachedRead(
-                keySuffix = "topic|$topicId|${postNumber ?: 0}",
+                keySuffix = "topic|$topicId|${postNumber ?: 0}" + (filter?.let { "|author|$it" } ?: ""),
                 serializer = TopicResponseDto.serializer(),
                 fetch = {
-                    if (postNumber == null) service.topic(topicId) else service.topicAtPost(topicId, postNumber)
+                    if (postNumber == null) {
+                        service.topic(topicId, filter)
+                    } else {
+                        service.topicAtPost(topicId, postNumber, filter)
+                    }
                 },
                 map = { response ->
                     // The emoji table is decoration, and asking the site for it up front is what

@@ -202,13 +202,23 @@ interface DiscourseApiService {
         @Query("page") page: Int,
     ): TopicListResponseDto
 
+    /**
+     * One topic. `username_filters` asks the site for the filtered stream: post 1 plus the posts of
+     * the usernames named there, paged over that filtered list (`TopicView#setup_filtered_posts`).
+     * Null omits the parameter, which is the whole topic.
+     */
     @GET("t/{id}.json")
-    suspend fun topic(@Path("id") id: Long): TopicResponseDto
+    suspend fun topic(
+        @Path("id") id: Long,
+        @Query("username_filters") usernameFilters: String? = null,
+    ): TopicResponseDto
 
+    /** The same read, answered with the window around [postNumber] of the filtered stream. */
     @GET("t/{id}/{postNumber}.json")
     suspend fun topicAtPost(
         @Path("id") id: Long,
         @Path("postNumber") postNumber: Int,
+        @Query("username_filters") usernameFilters: String? = null,
     ): TopicResponseDto
 
     @GET("t/{id}/posts.json")

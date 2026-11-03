@@ -149,6 +149,8 @@ public class TopicFragment extends BaseFragment
     private static final int MENU_ITEM_SHARE = 6;
     /** The overflow's notification-level entry; its own ItemOptions carries the four choices. */
     private static final int MENU_ITEM_NOTIFICATION = 7;
+    /** The overflow's only-original-poster toggle; the label says which way the next tap goes. */
+    private static final int MENU_ITEM_ONLY_OP = 8;
 
     /** Upstream fragments take their arguments through the constructor, not a setter. */
     public TopicFragment(android.os.Bundle args) {
@@ -347,6 +349,27 @@ public class TopicFragment extends BaseFragment
     private org.telegram.ui.ActionBar.ActionBarMenuSubItem bookmarkMenuItem;
     /** The overflow item's notification-level row; it opens the four checked choices. */
     private org.telegram.ui.ActionBar.ActionBarMenuSubItem notificationLevelMenuItem;
+    /** The overflow item's only-original-poster row; null on a discussion page, which is a subset. */
+    private org.telegram.ui.ActionBar.ActionBarMenuSubItem onlyOpMenuItem;
+    /**
+     * Whether the list carries only the original poster's floors, read as the site's own
+     * `username_filters` answer rather than filtered on the client. Read-progress reporting is
+     * suspended while it is on: crediting floors here would advance the topic's cursor past posts
+     * the reader never saw.
+     */
+    private boolean onlyOp;
+    /**
+     * A tap on 只看楼主 before the site had named the author: read the head once, then take the
+     * mode the reader asked for if that answer names one.
+     */
+    private boolean pendingOnlyOpToggle;
+    /**
+     * Whether the window read now in flight is the one a 只看楼主 switch asked for, and the mode
+     * before it: a filtered window that does not arrive leaves the old rows on screen, so the row
+     * and the capsule must go back to the mode those rows really are.
+     */
+    private boolean onlyOpSwitchInFlight;
+    private boolean onlyOpBeforeSwitch;
     /** The overflow item itself, which the level ItemOptions anchors on. */
     private org.telegram.ui.ActionBar.ActionBarMenuItem overflowItem;
     /**
@@ -776,6 +799,8 @@ public class TopicFragment extends BaseFragment
                     openTopicSearchFromMenu();
                 } else if (id == MENU_ITEM_NOTIFICATION) {
                     showNotificationLevelOptions();
+                } else if (id == MENU_ITEM_ONLY_OP) {
+                    toggleOnlyOp();
                 }
             }
         });
@@ -791,6 +816,14 @@ public class TopicFragment extends BaseFragment
         notificationLevelMenuItem = overflowItem.addSubItem(
                 MENU_ITEM_NOTIFICATION, org.telegram.messenger.R.drawable.msg_folders_read, "");
         updateNotificationLevelMenuItem();
+        // Reading only the topic's original poster, as the web client's own author filter does.
+        // A discussion page is already a subset of one floor, so the row belongs to an ordinary
+        // read; the label says which way the next tap goes, like the bookmark row.
+        if (!isThreadMode()) {
+            onlyOpMenuItem = overflowItem.addSubItem(
+                    MENU_ITEM_ONLY_OP, org.telegram.messenger.R.drawable.msg_openprofile, "只看楼主");
+            updateOnlyOpMenuItem();
+        }
         overflowItem.addSubItem(
                 MENU_ITEM_COPY_LINK, org.telegram.messenger.R.drawable.msg_link, "复制链接");
         overflowItem.addSubItem(
@@ -1826,6 +1859,9 @@ public class TopicFragment extends BaseFragment
         loadingPage = false;
         loadingBackward = false;
         loadingWindow = true;
+        // A mode switch's read is only the switch's while it is the newest read; a read that
+        // replaces it owns whatever answer arrives next.
+        onlyOpSwitchInFlight = false;
         // A new window owns its own edges: a direction that failed in the one being replaced must
         // not stay latched and silence that direction in the window that replaces it.
         nextPageFailed = false;
@@ -1871,7 +1907,8 @@ public class TopicFragment extends BaseFragment
         // Opening a topic at its first floor would show a reader half-way through a thread the part
         // they have already read.
         retryAction = () -> loadTopic(topicId);
-        DiscourseLoader.INSTANCE.topic(container, topicId, null, detail -> {
+        final String authorFilter = onlyOp ? opUsername() : null;
+        DiscourseLoader.INSTANCE.topic(container, topicId, null, authorFilter, detail -> {
             if (generation != windowGeneration) {
                 // The reader left this read behind - another floor, another window, the screen gone -
                 // before the head arrived; the answer names a window nobody is looking at.
@@ -1908,7 +1945,8 @@ public class TopicFragment extends BaseFragment
         pageDownJumping = false;
         final int generation = windowGeneration;
         retryAction = () -> loadWindow(postNumber, scrollTo);
-        DiscourseLoader.INSTANCE.topic(container, topicId, postNumber, detail -> {
+        final String authorFilter = onlyOp ? opUsername() : null;
+        DiscourseLoader.INSTANCE.topic(container, topicId, postNumber, authorFilter, detail -> {
             if (generation != windowGeneration) {
                 return kotlin.Unit.INSTANCE;
             }
@@ -2291,17 +2329,16 @@ public class TopicFragment extends BaseFragment
         }
         int count = 0;
         boolean show = false;
-        int last = lastVisibleBubbleRow();
-        if (last >= 0) {
-            int floorIndex = bubbleFloors.get(last);
-            if (floorIndex >= 0 && floorIndex < floors.size()) {
-                int streamIndex = streamPostIds.indexOf(floors.get(floorIndex).getId());
-                if (streamIndex >= 0) {
-                    show = streamIndex < streamPostIds.size() - 1;
-                }
-            }
+        int streamIndex = lastVisibleStreamIndex();
+        if (streamIndex >= 0) {
+            show = streamIndex < streamPostIds.size() - 1;
         }
-        if (reporter != null) {
+        if (onlyOp) {
+            // The filtered stream is the poster's floors: the number is how many of those are still
+            // below the viewport. Nothing here claims "unread" - this screen reports no read
+            // position while the filter is on, so no cursor moves as the reader scrolls.
+            count = show ? streamPostIds.size() - streamIndex - 1 : 0;
+        } else if (reporter != null) {
             int reached = reporter.getReachedFloorMark();
             Post readPost = postByNumber.get(reached);
             Long readId = readPost == null ? null : readPost.getId();
@@ -2319,8 +2356,22 @@ public class TopicFragment extends BaseFragment
         threadPageDown.setEnabled(!pageDownJumping, true);
         // ChatActivity animates unread count changes through the stock CounterView.
         threadPageDown.setCount(show ? count : 0, true);
-        threadPageDown.setContentDescription(topicPageDownDescription(count));
+        threadPageDown.setContentDescription(
+                onlyOp ? onlyOpPageDownDescription(count) : topicPageDownDescription(count));
         applyPageDownVisible(show, true);
+    }
+
+    /** The stream index of the floor at the bottom of the viewport, or -1. */
+    private int lastVisibleStreamIndex() {
+        int last = lastVisibleBubbleRow();
+        if (last < 0) {
+            return -1;
+        }
+        int floorIndex = bubbleFloors.get(last);
+        if (floorIndex < 0 || floorIndex >= floors.size()) {
+            return -1;
+        }
+        return streamPostIds.indexOf(floors.get(floorIndex).getId());
     }
 
     /** The ordinary button's description: what a tap does, as the accessibility contract. */
@@ -2330,6 +2381,13 @@ public class TopicFragment extends BaseFragment
         }
         return reporter != null && reporter.getReachedFloorMark() < reporter.getHighestFloorMark()
                 ? "查看未读帖子" : "回到最新帖子";
+    }
+
+    /** The filtered button's description: the poster's floors, never an unread claim. */
+    private CharSequence onlyOpPageDownDescription(int remaining) {
+        return remaining > 0
+                ? "还有 " + remaining + " 条楼主的帖子，点按查看"
+                : "点按查看楼主的帖子";
     }
 
     /**
@@ -2365,6 +2423,12 @@ public class TopicFragment extends BaseFragment
      * taps goes to the newest post.
      */
     private int topicPageDownTargetFloor() {
+        if (onlyOp) {
+            // The filter tracks no read cursor: a tap moves to the next floor after the viewport,
+            // and the filtered window read lands on the first poster's floor at or after it.
+            Integer last = lastVisibleFloorNumber();
+            return last == null ? 0 : last + 1;
+        }
         if (reporter == null) {
             return 0;
         }
@@ -2451,7 +2515,8 @@ public class TopicFragment extends BaseFragment
         final int generation = windowGeneration;
         final long topicId = getArguments() == null ? 0 : getArguments().getLong(ARG_TOPIC_ID, 0);
         retryAction = () -> loadPageDownWindow(floor);
-        DiscourseLoader.INSTANCE.topic(container, topicId, floor, detail -> {
+        final String authorFilter = onlyOp ? opUsername() : null;
+        DiscourseLoader.INSTANCE.topic(container, topicId, floor, authorFilter, detail -> {
             if (generation != windowGeneration) {
                 // The window moved on while this read was on its way; the rows belong to a window
                 // nobody is looking at.
@@ -2716,6 +2781,8 @@ public class TopicFragment extends BaseFragment
     /** What has arrived: the topic's stream, its floors, and where in it the reader is standing. */
     private kotlin.Unit show(TopicDetail detail, int scrollTo) {
         loadingWindow = false;
+        // The answer belongs to the newest read: a filter switch waiting on one has it now.
+        onlyOpSwitchInFlight = false;
         // The page is here: ChatActivity turns its ring off with the same call it turned it on
         // (9197 -> showProgressView(false)).
         showProgressView(false);
@@ -2732,6 +2799,23 @@ public class TopicFragment extends BaseFragment
         // The site's own title is the authoritative one; a link that named no title gets it here,
         // and it goes into the center capsule the way a chat's title does.
         bindHeader(detail);
+        if (pendingOnlyOpToggle) {
+            // The reader asked for the poster's floors before any answer named who that is. The
+            // answer in hand is the one that can name them; the mode is then taken on a read of the
+            // filtered stream rather than by hiding rows this window happens to hold.
+            pendingOnlyOpToggle = false;
+            if (opUsername() == null) {
+                showPassingNote("站点没有给出楼主的名字");
+            } else {
+                onlyOp = true;
+                updateOnlyOpMenuItem();
+                bindSubtitle(detail);
+                onlyOpBeforeSwitch = false;
+                loadTopic(topicId);
+                onlyOpSwitchInFlight = true;
+                return kotlin.Unit.INSTANCE;
+            }
+        }
         streamPostIds = detail.getStreamPostIds();
         if (reporter != null) {
             reporter.start(detail);
@@ -2787,7 +2871,7 @@ public class TopicFragment extends BaseFragment
         if (nextTopicCandidate == null || listView == null) {
             return false;
         }
-        if (threadMode || topicSearch != null || showingCachedContent) {
+        if (threadMode || topicSearch != null || showingCachedContent || onlyOp) {
             return false;
         }
         if (textSelectionHelper != null && textSelectionHelper.isInSelectionMode()) {
@@ -3046,10 +3130,20 @@ public class TopicFragment extends BaseFragment
             return;
         }
         String subtitle = categoryName == null || categoryName.isEmpty() ? null : categoryName;
-        if (replies >= 0) {
-            String count = Math.max(0, replies) + " 回复";
-            String composed = subtitle == null ? count : subtitle + " · " + count;
-            if (subtitleFits(composed)) {
+        // While the list is the poster's floors only, the site's total reply count would describe
+        // rows that are not on screen; the line names the filter instead, so the reader can always
+        // tell why the topic looks shorter than its own count.
+        String tail = null;
+        if (onlyOp) {
+            tail = "只看楼主";
+        } else if (replies >= 0) {
+            tail = Math.max(0, replies) + " 回复";
+        }
+        if (tail != null) {
+            String composed = subtitle == null ? tail : subtitle + " · " + tail;
+            // The filter label is short and must not be what the width check drops: a reader
+            // looking at filtered rows has to be able to see why.
+            if (onlyOp || subtitleFits(composed)) {
                 subtitle = composed;
             }
         }
@@ -3230,6 +3324,122 @@ public class TopicFragment extends BaseFragment
                 org.telegram.messenger.R.drawable.msg_folders_read);
     }
 
+    /** The overflow's filter row says which way the next tap goes; the capsule says the mode. */
+    private void updateOnlyOpMenuItem() {
+        if (onlyOpMenuItem == null) {
+            return;
+        }
+        onlyOpMenuItem.setTextAndIcon(
+                onlyOp ? "显示全部" : "只看楼主",
+                org.telegram.messenger.R.drawable.msg_openprofile);
+    }
+
+    /**
+     * The topic's original poster: the site's own `details.created_by`, or the author the row that
+     * opened this screen already drew. Null when neither names one.
+     */
+    private String opUsername() {
+        if (topicDetail != null && topicDetail.getCreatedBy() != null) {
+            String username = topicDetail.getCreatedBy().getUsername();
+            if (username != null && !username.isEmpty()) {
+                return username;
+            }
+        }
+        String fromRow = getArguments() == null ? null : getArguments().getString(ARG_AUTHOR_USERNAME);
+        return fromRow == null || fromRow.isEmpty() ? null : fromRow;
+    }
+
+    /**
+     * The overflow's 只看楼主 row. The site owns the filter (`username_filters`), so the screen
+     * re-reads the topic at the reader's place in the new mode instead of hiding rows it happens
+     * to hold: a window in the middle of a thread may carry none of the poster's floors, and the
+     * filtered stream is what paging, the badge and the capsule then describe. A discussion page
+     * has no row at all - its list is already one floor's replies.
+     */
+    private void toggleOnlyOp() {
+        if (threadMode || isThreadMode()) {
+            return;
+        }
+        if (opUsername() == null) {
+            // The site names the author in its own answer; a tap before that answer arrived reads
+            // the head once and takes the mode when it names one (see [show]).
+            pendingOnlyOpToggle = true;
+            if (topicDetail == null && !loadingWindow) {
+                loadTopic(topicId);
+            }
+            return;
+        }
+        setOnlyOp(!onlyOp);
+    }
+
+    private void setOnlyOp(boolean only) {
+        if (onlyOp == only || threadMode || isThreadMode()) {
+            return;
+        }
+        onlyOp = only;
+        updateOnlyOpMenuItem();
+        // Nothing on this screen is credited as read while the filter is on: the rows are the
+        // poster's, and reporting them would advance the topic's cursor past floors by others the
+        // reader never saw. The dwell that was accumulating stops at the mode change.
+        if (reporter != null) {
+            reporter.visibleFloors(java.util.Collections.emptyList());
+        }
+        if (topicDetail != null) {
+            bindSubtitle(topicDetail);
+        }
+        // Re-read at the top of the viewport: the filtered answer is a window of the filtered
+        // stream around that floor, and the list lands on the first poster's floor at or after it.
+        onlyOpBeforeSwitch = !only;
+        Integer anchor = firstVisibleFloorNumber();
+        if (anchor == null || anchor <= 0) {
+            loadTopic(topicId);
+        } else {
+            loadWindow(anchor, anchor);
+        }
+        // `loadTopic`/`loadWindow` supersede the previous read, which clears the flag; this read is
+        // the switch's from here on, and a failure puts the mode those rows really are back.
+        onlyOpSwitchInFlight = true;
+    }
+
+    /** The floor drawn by the first row of the viewport, or null; divider rows name none. */
+    private Integer firstVisibleFloorNumber() {
+        LinearLayoutManager manager = listView == null
+                ? null : (LinearLayoutManager) listView.getLayoutManager();
+        if (manager == null || bubbles.isEmpty()) {
+            return null;
+        }
+        int first = Math.max(0, manager.findFirstVisibleItemPosition());
+        int last = Math.min(manager.findLastVisibleItemPosition(), bubbles.size() - 1);
+        for (int position = first; position <= last; position++) {
+            if (isDividerRow(position)) {
+                continue;
+            }
+            int floorIndex = bubbleFloors.get(position);
+            if (floorIndex < 0 || floorIndex >= floors.size()) {
+                continue;
+            }
+            Integer number = floors.get(floorIndex).getPostNumber();
+            if (number != null) {
+                return number;
+            }
+        }
+        return null;
+    }
+
+    /** A short note about something the screen could not do, said in passing. */
+    private void showPassingNote(String text) {
+        if (getParentActivity() == null) {
+            return;
+        }
+        try {
+            org.telegram.ui.Components.BulletinFactory.of(this)
+                    .createSimpleBulletin(org.telegram.messenger.R.drawable.msg_info, text)
+                    .show();
+        } catch (Exception bulletinError) {
+            org.telegram.messenger.FileLog.e(bulletinError);
+        }
+    }
+
     private static String notificationLevelLabel(int level) {
         switch (level) {
             case 0:
@@ -3382,6 +3592,16 @@ public class TopicFragment extends BaseFragment
         updateTopicPageUp();
         // The saved reading window also fences a queued callback after the search UI is destroyed.
         if (searchReadingPosts != null) {
+            return;
+        }
+        if (onlyOp) {
+            // The filtered list is the poster's floors; crediting them would advance the site's
+            // cursor past floors by others that were never shown. No floor is on screen as far as
+            // the report is concerned, and the arrow's number is the filtered stream below.
+            if (reporter != null) {
+                reporter.visibleFloors(java.util.Collections.emptyList());
+            }
+            updateTopicPageDown();
             return;
         }
         if (reporter == null || listView == null) {
@@ -6162,6 +6382,19 @@ public class TopicFragment extends BaseFragment
      * Bulletin, anchored above the composer - with [pagingLineRes] as its copy.
      */
     private void showFailure(Throwable error, int pagingLineRes, String logLabel) {
+        // A filtered window that did not arrive leaves the previous rows on screen; the row and
+        // the capsule go back to the mode those rows really are instead of naming a filter that
+        // is not in force.
+        if (onlyOpSwitchInFlight) {
+            onlyOpSwitchInFlight = false;
+            if (onlyOp != onlyOpBeforeSwitch) {
+                onlyOp = onlyOpBeforeSwitch;
+                updateOnlyOpMenuItem();
+                if (topicDetail != null) {
+                    bindSubtitle(topicDetail);
+                }
+            }
+        }
         // The read is over, so the ring goes with it (ChatActivity:20606 shows the same).
         showProgressView(false);
         lastFailure = TopicLoadFailure.of(error);

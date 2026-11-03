@@ -74,6 +74,35 @@ resting over an empty slot, and the pair rides back apart when the down arrow
 returns. The up arrow's resting offset is a function of the down arrow's
 visibility factor, so a frame mid-flight never leaves a gap.
 
+### Only the original poster
+
+A long topic can be read as its original poster's floors: the overflow's
+**只看楼主** row asks the site for its own author filter (`username_filters`, see
+the [endpoint contract](../contracts/discourse/endpoints.md)) and re-reads the
+window around the floor at the top of the viewport. The answer's stream is post 1
+plus that author's posts, so forward/backward paging and the page-down count walk
+the filtered list - a window in the middle of a topic may carry none of the
+poster's floors, which is why the filter is not applied to the rows already held.
+The capsule's second line names the filter while it is on, and the same row
+becomes **显示全部**.
+
+While the filter is on, no floor is credited as read: `topics/timings` may still
+carry the reader's dwell, but no `timings[...]` field, and the reporter's mark
+does not move. Reporting the poster's floor 40 would advance the site's cursor
+past every floor in between, which the reader never saw. The page-down badge
+counts the poster's posts below the viewport rather than unread posts, and the
+end-of-topic read-on pull is withheld because the topic's real end was not
+reached. The [filter flow](../apps/android/nativedo/src/test/java/io/github/baba983/nativedo/topic/TopicOnlyOpTest.kt)
+drives the overflow row, the filtered request, filtered paging, the suspended
+read report and the way back.
+
+The alternative - hiding non-poster rows from the loaded window - was rejected:
+it cannot show a window that holds none of the poster's floors, would page the
+whole topic, and could not count what is left. A third floating button was
+rejected too: the two glass circles are already one stack, and this is a reading
+mode that the overflow and the capsule can carry without a control that competes
+with navigation.
+
 The legacy `:app` page restores the exit viewport before falling back to read
 progress; explicit floor links and a user drag take precedence. See the
 [scoped viewport contract](../contracts/discourse/models.md#local-topic-viewport).

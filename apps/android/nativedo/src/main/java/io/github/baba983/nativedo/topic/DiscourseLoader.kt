@@ -238,8 +238,24 @@ object DiscourseLoader {
         onLoaded: (TopicDetail) -> Unit,
         onFailed: (Throwable) -> Unit,
     ) {
+        topic(container, topicId, postNumber, null, onLoaded, onFailed)
+    }
+
+    /**
+     * The same read filtered to one author (`username_filters`): the site's answer carries post 1
+     * plus that author's posts, and its stream is the filtered list - which is what "only the
+     * original poster" pages through. Null keeps the whole topic.
+     */
+    fun topic(
+        container: AppContainer,
+        topicId: Long,
+        postNumber: Int?,
+        usernameFilter: String?,
+        onLoaded: (TopicDetail) -> Unit,
+        onFailed: (Throwable) -> Unit,
+    ) {
         scope.launch {
-            runCatching { container.discourseApiClient.fetchTopic(topicId, postNumber) }
+            runCatching { container.discourseApiClient.fetchTopic(topicId, postNumber, usernameFilter) }
                 .onSuccess(onLoaded)
                 .onFailure(onFailed)
         }
