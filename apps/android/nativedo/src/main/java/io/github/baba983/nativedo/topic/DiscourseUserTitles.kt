@@ -9,7 +9,6 @@ import android.text.SpannableStringBuilder
 import android.text.TextPaint
 import android.text.style.CharacterStyle
 import io.github.baba983.nativedo.hooks.NativeDoHooks
-import kotlin.math.cos
 
 /**
  * The site's holographic user titles.
@@ -66,9 +65,10 @@ object DiscourseUserTitles {
     fun advance() {
         val elapsed = (SystemClock.uptimeMillis() - startedAt) % CYCLE_MILLIS
         val progress = elapsed / CYCLE_MILLIS.toFloat()
-        // The theme animates the background's position; a smooth there-and-back keeps the travel
-        // without a visible seam when one cycle meets the next.
-        phase = (0.5f - 0.5f * cos(2.0 * Math.PI * progress)).toFloat()
+        // The theme animates the background's position there and back; a linear turn keeps the
+        // gradient visibly travelling at the ends of the cycle too, where an eased curve would sit
+        // still long enough to read as a static tag.
+        phase = if (progress < 0.5f) progress * 2f else 2f - progress * 2f
     }
 
     private fun decorate(tag: SpannableStringBuilder): SpannableStringBuilder {

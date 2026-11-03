@@ -299,13 +299,16 @@ public class TopicFragment extends BaseFragment
                     || getParentActivity() == null || isPaused()) {
                 return;
             }
-            // A tag that scrolled away costs nothing: the loop stops and the next scroll (or bind)
+            // A tag that scrolled away costs nothing: the loop stops and the next bind (or scroll)
             // re-arms it, so an invisible title never keeps the list redrawing.
             if (!animatedTagVisible()) {
                 return;
             }
+            // The rows, not the list: a group's display list is reused as-is, so invalidating the
+            // RecyclerView alone would leave each cell's cached text on screen. The cells that draw
+            // a tag re-record, and their StaticLayout re-applies the span with the new phase.
             DiscourseUserTitles.INSTANCE.advance();
-            listView.invalidate();
+            invalidateAnimatedTags();
             titleGradientTicking = true;
             listView.postOnAnimationDelayed(this, 33);
         }
@@ -2643,6 +2646,25 @@ public class TopicFragment extends BaseFragment
         threadPageUp.setScaleX(org.telegram.messenger.AndroidUtilities.lerp(0.7f, 1f, factor));
         threadPageUp.setScaleY(org.telegram.messenger.AndroidUtilities.lerp(0.7f, 1f, factor));
         threadPageUp.setTranslationY(-restingBottom + AndroidUtilities.dp(80) * (1f - factor));
+    }
+
+    /** Redraws every visible row that draws a holographic tag. */
+    private void invalidateAnimatedTags() {
+        if (listView == null) {
+            return;
+        }
+        for (int index = 0; index < listView.getChildCount(); index++) {
+            android.view.View child = listView.getChildAt(index);
+            if (!(child instanceof org.telegram.ui.Cells.ChatMessageCell)) {
+                continue;
+            }
+            org.telegram.messenger.MessageObject message =
+                    ((org.telegram.ui.Cells.ChatMessageCell) child).getMessageObject();
+            if (message != null && message.messageOwner != null
+                    && DiscourseUserTitles.INSTANCE.isAnimated(message.messageOwner.from_rank)) {
+                child.invalidate();
+            }
+        }
     }
 
     /** Whether a visible row draws one of the site's holographic tags right now. */
@@ -7002,6 +7024,13 @@ public class TopicFragment extends BaseFragment
             // conditional on the order of the two.
             if (message.richLayout != null) {
                 message.richLayout.attach(cell);
+            }
+            // The row is bound, which is the moment a holographic tag becomes drawable: the first
+            // frame after the bind sees it. A bind is the one event the initial layout and every
+            // recycling pass share, so the loop cannot miss the tag until a scroll happens.
+            if (message.messageOwner != null
+                    && DiscourseUserTitles.INSTANCE.isAnimated(message.messageOwner.from_rank)) {
+                startTitleGradient();
             }
         }
 

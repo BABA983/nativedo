@@ -1,5 +1,7 @@
 package io.github.baba983.nativedo.topic
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.text.Spanned
 import android.text.StaticLayout
 import android.text.TextPaint
@@ -95,6 +97,15 @@ internal class PostUserTitleTest {
     fun aPostCarriesItsAuthorsTitleAsTheChatsNameTag() {
         openTopic()
 
+        // No tap and no scroll: the row bind itself re-arms the loop, so the tag is already
+        // moving when the reader first sees it.
+        val opening = linkedSetOf<Float>()
+        repeat(4) {
+            opening += DiscourseUserTitles.phase
+            harness.idleClock(250)
+        }
+        assertTrue("the gradient moves without a tap or a scroll: $opening", opening.size > 1)
+
         val holographic = cellFor("种子用户")
         val plain = cellFor("骐骥驰骋")
 
@@ -120,14 +131,24 @@ internal class PostUserTitleTest {
         harness.layoutApp()
         harness.renderApp("post-user-title")
 
-        // The gradient travels while the post is on screen: the phase is what every animated tag
-        // reads, and the screen's frame loop is what moves it.
+        // The gradient still travels after a render pass: drawing does not consume the loop.
         val phases = linkedSetOf<Float>()
-        repeat(6) {
+        repeat(3) {
             phases += DiscourseUserTitles.phase
             harness.idleClock(300)
         }
         assertTrue("the gradient advances while the post is on screen: $phases", phases.size > 1)
+        // And the pixels follow: the tag is redrawn with the new phase rather than left as the
+        // cached frame it had before (a group's display list is reused unless the cell invalidates).
+        val frames = ArrayList<Bitmap>()
+        repeat(5) {
+            harness.idleClock(700)
+            frames += drawCell(holographic)
+        }
+        assertTrue(
+            "the tag's pixels move with the gradient",
+            frames.any { frame -> !frame.sameAs(frames.first()) },
+        )
 
         // A long title is one line of tag, and the name keeps its own ellipsis instead of being
         // starved by it: the two bounds the web's plain text does not have.
@@ -166,6 +187,14 @@ internal class PostUserTitleTest {
         harness.await("the topic") { contentRowCount(harness) == 3 }
         harness.layoutApp()
         harness.idleClock(300)
+    }
+
+    /** The cell's current frame, drawn directly so its updates are not hidden by a parent cache. */
+    private fun drawCell(cell: ChatMessageCell): Bitmap {
+        assertTrue("the cell has a size", cell.width > 0 && cell.height > 0)
+        val bitmap = Bitmap.createBitmap(cell.width, cell.height, Bitmap.Config.ARGB_8888)
+        cell.draw(Canvas(bitmap))
+        return bitmap
     }
 
     /** The drawn cell whose message id is [id]. */
