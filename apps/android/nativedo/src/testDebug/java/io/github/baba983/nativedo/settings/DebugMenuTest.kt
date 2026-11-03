@@ -30,6 +30,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
+import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.ApplicationLoader
 import org.telegram.ui.ActionBar.AlertDialog
 import org.telegram.ui.Components.EditTextBoldCursor
@@ -126,6 +127,15 @@ internal class DebugMenuTest {
             DebugTopicFixtures.entries().size,
             list.adapter?.itemCount,
         )
+        // The sheet paints through the system bar and the list reserves its height, so the gesture
+        // pill never sits on the last row.
+        val sheet = ShadowDialog.getLatestDialog() as org.telegram.ui.ActionBar.BottomSheet
+        assertTrue("the sheet paints through the system navigation bar", sheet.drawNavigationBar)
+        assertTrue(
+            "the list clears the system bar at the bottom",
+            list.paddingBottom >= AndroidUtilities.navigationBarHeight,
+        )
+        assertFalse("the list draws its rows past that padding", list.clipToPadding)
 
         harness.renderComposite(".amp/in/artifacts/nativedo/debug-menu-fixtures.png")
 

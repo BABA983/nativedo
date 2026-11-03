@@ -44,6 +44,9 @@ final class DebugTopicFixtureSheet {
         final List<DebugTopicFixtures.Fixture> fixtures = DebugTopicFixtures.entries();
 
         final BottomSheet sheet = new BottomSheet(activity, false);
+        // Telegram's sheets that paint through the system navigation bar say so explicitly: the
+        // default stops the sheet above the bar, which is the gap this debug sheet used to show.
+        sheet.fixNavigationBar(Theme.getColor(Theme.key_dialogBackground, fragment.getResourceProvider()));
         sheet.setTitle("渲染测试帖");
 
         final UniversalRecyclerView list = new UniversalRecyclerView(
@@ -71,6 +74,14 @@ final class DebugTopicFixtureSheet {
                 },
                 (item, view, position, x, y) -> false,
                 fragment.getResourceProvider());
+        // The sheet now runs to the screen's bottom edge, so the list reserves the system bar's
+        // height for the last row instead of letting the gesture pill sit over it.
+        list.setPadding(
+                list.getPaddingLeft(),
+                list.getPaddingTop(),
+                list.getPaddingRight(),
+                AndroidUtilities.navigationBarHeight);
+        list.setClipToPadding(false);
         // The adapter fills its rows on update, not in the constructor; do it now so the sheet is
         // ready to be laid out (and to be driven by a test).
         list.adapter.update(false);
