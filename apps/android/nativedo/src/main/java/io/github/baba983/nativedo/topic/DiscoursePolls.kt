@@ -152,6 +152,8 @@ object DiscoursePolls {
                 user.id,
                 pollMedia,
             )
+        // The floor's own title belongs on its first bubble, which a poll opening the body is.
+        DiscourseRows.applyAuthorTitle(message, post)
         // A poll the floor's body opens with is that floor's first bubble, so it carries the reply
         // header like any other first bubble (set before the MessageObject reads it).
         DiscourseRows.applyReply(message, replyTo)

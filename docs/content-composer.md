@@ -31,6 +31,20 @@ is not a second Discourse post. Polls still need separate bubbles because upstre
 cannot draw a poll as a rich-text block. [DiscourseRows](../apps/android/nativedo/src/main/java/io/github/baba983/nativedo/topic/DiscourseRows.java)
 then adapts posts into the presentation objects upstream `ChatMessageCell` draws.
 
+A post's own `user_title` is drawn where a chat draws a sender's tag: the title goes
+into the message's `from_rank`, and the stock cell lays it out at the end of the name
+line - the slot a group's admin rank uses, so the bubble's metrics stay upstream's. The
+wire carries only the text; linux.do's theme, not the answer, decides which titles are
+special. Its holographic rule names `种子用户`, `破界者` and `premium`, and those are
+painted with the same animated gradient; every other title keeps the plain muted tag.
+The gradient is a `CharacterStyle` span on the tag that reads a shared phase on every
+draw, so the cell's layout is built once; a frame loop in the topic screen advances the
+phase only while a row with such a title is visible, and stops when it scrolls away.
+A title the site adds to that rule later still needs its name added here - the payload
+has no class to follow. The [title test](../apps/android/nativedo/src/test/java/io/github/baba983/nativedo/topic/PostUserTitleTest.kt)
+drives a holographic and a plain title, the drawn tag text, the shader and the moving
+phase.
+
 Discourse quote asides retain their author and quoted blocks, including lists and
 media; they are not converted to decorative pull-quotes. An existing attribution
 link is preserved. When it is absent, positive `data-topic` / `data-post` values

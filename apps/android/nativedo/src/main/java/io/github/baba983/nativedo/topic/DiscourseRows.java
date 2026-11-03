@@ -138,6 +138,7 @@ public final class DiscourseRows {
                 topicId,
                 user.id,
                 new TLRPC.TL_messageMediaEmpty());
+        applyAuthorTitle(message, post);
         message.rich_message = DiscourseCookedHtml.richMessage(body);
         for (PostAttachment attachment : body.getAttachments()) {
             message.rich_message.documents.add(DiscourseImageBridge.INSTANCE.documentFor(attachment));
@@ -149,6 +150,27 @@ public final class DiscourseRows {
             applyReply(message, replyTo);
         }
         return messageObject(message, users);
+    }
+
+    /**
+     * The site's own user title (`user_title`) as the tag a chat draws beside the sender's name.
+     * Upstream reads {@code from_rank} for exactly that slot: a short label after the name, never a
+     * rank this client asks Telegram for. An empty title leaves the message without one.
+     */
+    public static void applyAuthorTitle(TLRPC.Message message, Post post) {
+        if (message == null || post == null) {
+            return;
+        }
+        DiscourseUserTitles.INSTANCE.install();
+        String title = post.getAuthorTitle();
+        if (title == null) {
+            return;
+        }
+        title = title.trim();
+        if (title.isEmpty()) {
+            return;
+        }
+        message.from_rank = title;
     }
 
     /**

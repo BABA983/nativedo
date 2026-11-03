@@ -284,6 +284,32 @@ public class TopicFragment extends BaseFragment
     private org.telegram.ui.Cells.ChatActionCell threadEmptyCell;
     /** What the empty note says; null whenever the note is not the state to show. */
     private CharSequence threadEmptyText;
+    /**
+     * Whether a loaded floor carries one of the site's holographic titles. The frame loop below
+     * only runs while one is loaded, so a topic without one pays no frames.
+     */
+    private boolean animatedTitlesLoaded;
+    private boolean titleGradientTicking;
+    /** One frame of the holographic gradient: advance it, redraw the rows, ask for the next. */
+    private final Runnable titleGradientTick = new Runnable() {
+        @Override
+        public void run() {
+            titleGradientTicking = false;
+            if (!animatedTitlesLoaded || listView == null || fragmentView == null
+                    || getParentActivity() == null || isPaused()) {
+                return;
+            }
+            // A tag that scrolled away costs nothing: the loop stops and the next scroll (or bind)
+            // re-arms it, so an invisible title never keeps the list redrawing.
+            if (!animatedTagVisible()) {
+                return;
+            }
+            DiscourseUserTitles.INSTANCE.advance();
+            listView.invalidate();
+            titleGradientTicking = true;
+            listView.postOnAnimationDelayed(this, 33);
+        }
+    };
     /** Upstream's floating-composer host: the island bubble the enter view rides in. */
     private org.telegram.ui.Components.chat.ChatInputViewsContainer inputViews;
     private org.telegram.ui.Components.inset.WindowInsetsStateHolder inputInsets;
@@ -1013,6 +1039,8 @@ public class TopicFragment extends BaseFragment
             public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
                 maybeLoadNextPage(dy);
                 reportViewport();
+                // A holographic tag that scrolled back into view re-arms the frame loop.
+                startTitleGradient();
                 if (glassHost != null) {
                     // What the band and the capsules draw is recorded from the list each frame,
                     // and a view keeps the frame it was last recorded with until it is told to
@@ -2617,6 +2645,43 @@ public class TopicFragment extends BaseFragment
         threadPageUp.setTranslationY(-restingBottom + AndroidUtilities.dp(80) * (1f - factor));
     }
 
+    /** Whether a visible row draws one of the site's holographic tags right now. */
+    private boolean animatedTagVisible() {
+        if (listView == null) {
+            return false;
+        }
+        for (int index = 0; index < listView.getChildCount(); index++) {
+            android.view.View child = listView.getChildAt(index);
+            if (!(child instanceof org.telegram.ui.Cells.ChatMessageCell)) {
+                continue;
+            }
+            org.telegram.messenger.MessageObject message =
+                    ((org.telegram.ui.Cells.ChatMessageCell) child).getMessageObject();
+            if (message != null && message.messageOwner != null
+                    && DiscourseUserTitles.INSTANCE.isAnimated(message.messageOwner.from_rank)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Starts the title gradient's frame loop once a holographic tag is loaded, and only then. */
+    private void startTitleGradient() {
+        if (titleGradientTicking || !animatedTitlesLoaded || listView == null
+                || getParentActivity() == null || isPaused()) {
+            return;
+        }
+        titleGradientTicking = true;
+        listView.postOnAnimation(titleGradientTick);
+    }
+
+    private void stopTitleGradient() {
+        titleGradientTicking = false;
+        if (listView != null) {
+            listView.removeCallbacks(titleGradientTick);
+        }
+    }
+
     @Override
     public void onFactorChanged(int id, float factor, float fraction,
             me.vkryl.android.animator.FactorAnimator callee) {
@@ -3683,6 +3748,7 @@ public class TopicFragment extends BaseFragment
         if (composerTools != null) {
             composerTools.onResume();
         }
+        startTitleGradient();
         if (attachSheet != null) attachSheet.onResume();
         startReplyPresence();
     }
@@ -3726,6 +3792,7 @@ public class TopicFragment extends BaseFragment
     @Override
     public void onPause() {
         super.onPause();
+        stopTitleGradient();
         if (attachSheet != null) attachSheet.onPause();
         // The reader is leaving: what is in the field is written down before anything else (a
         // process death after this loses only the uncommitted keystroke, the same as Telegram).
@@ -3779,6 +3846,7 @@ public class TopicFragment extends BaseFragment
         // drop the frame callback rather than let it draw into a dead view.
         pageDownVisible.cancel();
         pageUpVisible.cancel();
+        stopTitleGradient();
         cancelFloatingDateAnimation();
         pageDownJumping = false;
         if (listView != null) {
@@ -4170,6 +4238,10 @@ public class TopicFragment extends BaseFragment
      * discussion page - which binds its one root here and appends its replies as they arrive.
      */
     private void bindPosts(List<Post> loaded) {
+        // A new window owns its titles too: the frame loop stops with the old rows and starts again
+        // when a rebound floor carries a holographic title.
+        stopTitleGradient();
+        animatedTitlesLoaded = false;
         // A new window: any target read still in flight belongs to the window before it.
         bindGeneration++;
         // And any stream page on its way belonged to that window too: the flag it left behind must
@@ -4216,6 +4288,10 @@ public class TopicFragment extends BaseFragment
         resolveMissingReplies();
         // And a reply target a restored draft carried is named again, now that the floors exist.
         applyReplyTarget();
+        // The rows are laid out after this bind, so the visibility check runs on the next frame.
+        if (animatedTitlesLoaded && listView != null) {
+            listView.post(this::startTitleGradient);
+        }
     }
 
     /**
@@ -4386,6 +4462,10 @@ public class TopicFragment extends BaseFragment
 
     /** One floor, drawn as its date row (when it opens a day) and the bubbles its body splits into. */
     private void add(Post post, long topicId) {
+        if (!animatedTitlesLoaded && DiscourseUserTitles.INSTANCE.isAnimated(post.getAuthorTitle())) {
+            animatedTitlesLoaded = true;
+            startTitleGradient();
+        }
         int floor = floors.size();
         floors.add(post);
         appendFloorRows(post, topicId, floor, bubbles, bubbleBodies, bubbleFloors);

@@ -379,6 +379,29 @@ public final class NativeDoHooks {
     }
 
     /**
+     * NativeDo: the sender tag a chat draws beside the author's name.
+     *
+     * <p>A forum keeps the site's own user title in that slot ({@code from_rank}). The tag's text
+     * is the site's; only its paint is ours, so a holographic title can carry its gradient without
+     * upstream knowing what a Discourse title is. A missing decorator leaves upstream's tag
+     * exactly as it was.</p>
+     */
+    public interface NameTagDecorator {
+        android.text.SpannableStringBuilder decorate(android.text.SpannableStringBuilder tag);
+    }
+
+    private static volatile NameTagDecorator nameTagDecorator;
+
+    public static void setNameTagDecorator(NameTagDecorator decorator) {
+        nameTagDecorator = decorator;
+    }
+
+    public static android.text.SpannableStringBuilder decorateNameTag(android.text.SpannableStringBuilder tag) {
+        NameTagDecorator decorator = nameTagDecorator;
+        return tag == null || decorator == null ? tag : decorator.decorate(tag);
+    }
+
+    /**
      * The shell that hosts upstream's screens, as far as upstream's browser is concerned.
      *
      * <p>Upstream's in-app browser ({@code Browser.openInTelegramBrowser}, {@code ArticleViewer},

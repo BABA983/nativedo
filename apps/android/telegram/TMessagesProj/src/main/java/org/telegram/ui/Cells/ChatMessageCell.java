@@ -18867,6 +18867,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                         adminLabel = getString(isOwner ? R.string.ChatTagOwner : R.string.ChatTagAdmin);
                     }
                     adminString = new SpannableStringBuilder(adminLabel);
+                    adminString = io.github.baba983.nativedo.hooks.NativeDoHooks.decorateNameTag(adminString);
                 }
             }
 
