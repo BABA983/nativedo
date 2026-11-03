@@ -67,6 +67,13 @@ checks forward/backward reading, the fully-read arrow, deleted floors and jump
 loading/retry. Discussion-page counts remain the root's remaining replies, not
 the ordinary topic's unread badge.
 
+The way back up floats one control above the page-down button. When nothing
+remains below the viewport the down arrow plays its own hide, and the up arrow
+takes the resting slot it frees - the stack collapses to one button instead of
+resting over an empty slot, and the pair rides back apart when the down arrow
+returns. The up arrow's resting offset is a function of the down arrow's
+visibility factor, so a frame mid-flight never leaves a gap.
+
 The legacy `:app` page restores the exit viewport before falling back to read
 progress; explicit floor links and a user drag take precedence. See the
 [scoped viewport contract](../contracts/discourse/models.md#local-topic-viewport).

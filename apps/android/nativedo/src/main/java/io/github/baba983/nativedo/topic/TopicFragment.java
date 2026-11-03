@@ -117,6 +117,9 @@ public class TopicFragment extends BaseFragment
     /** The way back to the first floor, animated with the same shape as the page-down button. */
     private static final int ANIMATOR_ID_PAGE_UP_VISIBLE = 0x51;
 
+    /** One stacked floating button plus the gap between the two of them, in dp. */
+    private static final int PAGE_BUTTON_STEP_DP = 56 + 8;
+
     /** The copy the empty discussion page shows when the site says the root has no replies at all. */
     private static final String THREAD_EMPTY_LINE = "还没有回复";
 
@@ -266,8 +269,6 @@ public class TopicFragment extends BaseFragment
                     this,
                     me.vkryl.android.AnimatorUtils.DECELERATE_INTERPOLATOR,
                     280);
-    /** The up button's resting bottom offset: one button plus its gap above the page-down band. */
-    private int pageUpBottom;
     /**
      * Whether an ordinary read's jump is on its way. The button's stock spinner shows it, the button
      * refuses a second tap, and only a read that belongs to the window it was asked for clears it.
@@ -2537,11 +2538,18 @@ public class TopicFragment extends BaseFragment
         if (composer != null && (composer.isRecordingAudioVideo() || composer.hasAudioToSend())) {
             factor = 0f;
         }
+        // The up button rides the page-down button's own factor: while the down arrow is on its way
+        // out (the real end of the stream), the way back up slides into the slot it frees, so the
+        // stack collapses instead of leaving a hole, and it rides back up when the down arrow
+        // returns. One animator drives both, which is why a mid-flight frame is never a gap.
+        float down = pageDownVisible.getFloatValue();
+        int restingBottom = pageDownBottom
+                + Math.round(AndroidUtilities.dp(PAGE_BUTTON_STEP_DP) * down);
         threadPageUp.setVisibility(factor > 0f ? View.VISIBLE : View.GONE);
         threadPageUp.setAlpha(factor);
         threadPageUp.setScaleX(org.telegram.messenger.AndroidUtilities.lerp(0.7f, 1f, factor));
         threadPageUp.setScaleY(org.telegram.messenger.AndroidUtilities.lerp(0.7f, 1f, factor));
-        threadPageUp.setTranslationY(-pageUpBottom + AndroidUtilities.dp(80) * (1f - factor));
+        threadPageUp.setTranslationY(-restingBottom + AndroidUtilities.dp(80) * (1f - factor));
     }
 
     @Override
@@ -2549,6 +2557,12 @@ public class TopicFragment extends BaseFragment
             me.vkryl.android.animator.FactorAnimator callee) {
         if (id == ANIMATOR_ID_PAGE_DOWN_VISIBLE) {
             applyPageDownTransform();
+            // The stacked button's resting offset is a function of this factor (see above), so it
+            // has to be redrawn on every frame of the down arrow's show/hide. A hidden up button
+            // has nothing to move; it reads the factor when it appears.
+            if (pageUpVisible.getFloatValue() > 0f) {
+                applyPageUpTransform();
+            }
         } else if (id == ANIMATOR_ID_PAGE_UP_VISIBLE) {
             applyPageUpTransform();
         }
@@ -2681,10 +2695,9 @@ public class TopicFragment extends BaseFragment
     private void placeThreadStatus() {
         int bottom = threadAffordanceBottom();
         pageDownBottom = bottom;
-        // The up button rides one control plus its gap above the page-down band.
-        pageUpBottom = bottom + AndroidUtilities.dp(56 + 8);
-        // The button's own slide (its show animation) is measured from this resting offset, so the
-        // factor is re-applied whenever the band moves.
+        // The button's own slide (its show animation) is measured from this resting offset, and the
+        // up button's is one control plus its gap above it until the down arrow leaves; the factor
+        // is re-applied whenever the band moves.
         applyPageDownTransform();
         applyPageUpTransform();
         if (threadEmptyCell != null) {

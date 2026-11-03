@@ -410,6 +410,66 @@ internal class TopicPageDownTest {
     }
 
     /**
+     * The end collapses the stack instead of leaving a hole: the down arrow plays its own show
+     * animation out, and the way back up takes the resting slot it frees. The sameness of the two
+     * rest offsets is the observable a client that only hid the down arrow would miss - it would
+     * leave the up arrow one step higher, over an empty slot.
+     *
+     * <p>The animator's own frames are upstream's ({@code BoolAnimator}, the same 280 ms show the
+     * chat plays); this harness settles animations, so the landing and the collapsed rest are what
+     * it can honestly check, not GPU timing.</p>
+     */
+    @Test
+    fun atTheEndTheWayUpTakesTheSlotTheDownArrowFrees() {
+        serveLongTopic(ALL, lastRead = 0)
+
+        val fragment = openTopic()
+        harness.await("the whole topic") { floorsOf(fragment).size == ALL.size }
+        harness.layoutApp()
+        harness.idleClock(400)
+
+        val down = pageDownButton(fragment) ?: throw AssertionError("no page-down button")
+        val up = field(fragment, "threadPageUp") as View
+        val step = org.telegram.messenger.AndroidUtilities.dp(56f + 8f)
+
+        // One viewport down: the pair is stacked, the down arrow resting in its slot.
+        listView()!!.scrollBy(0, listView()!!.height - 120)
+        harness.layoutApp()
+        harness.idleClock(600)
+        assertTrue("the down arrow is up while posts remain below", down.visibility == View.VISIBLE)
+        assertTrue("the way back up is up too", up.visibility == View.VISIBLE)
+        val downRest = down.translationY
+        val stacked = up.translationY
+        assertEquals(
+            "the pair rests one control plus its gap apart",
+            downRest - step,
+            stacked,
+            1.5f,
+        )
+
+        // To the very end: nothing is below the viewport any more. The down arrow leaves and the
+        // way back up lands in the slot it rested in.
+        val lastPosition = (listView()!!.adapter?.itemCount ?: 0) - 1
+        listView()!!.scrollToPosition(lastPosition)
+        harness.layoutApp()
+        listView()!!.scrollBy(0, -1)
+        listView()!!.scrollBy(0, 1)
+        harness.idleClock(700)
+
+        assertEquals("the viewport holds the last floor", HIGHEST, lastVisibleFloor(fragment))
+        assertTrue("nothing is left below, so the down arrow is gone", down.visibility != View.VISIBLE)
+        assertTrue("the way back up is still there", up.visibility == View.VISIBLE)
+        assertEquals(
+            "the way back up took the resting slot the down arrow had, closing the gap",
+            downRest,
+            up.translationY,
+            1.5f,
+        )
+        writeVisual("topic-pagedown-stack-collapsed")
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
      * A jump whose window is still on its way shows the stock spinner and refuses a second tap: a
      * page already being read must not be asked for twice.
      */
