@@ -39,8 +39,9 @@ site title cannot wrap over the body or take the whole name width; the author's 
 keeps upstream's own ellipsis for whatever is left. The wire carries only the text;
 linux.do's theme, not the answer, decides which titles are special. Its holographic rule names `种子用户`, `破界者` and `premium`, and those are
 painted with the same animated gradient; every other title keeps the plain muted tag.
-The gradient is a `CharacterStyle` span on the tag that reads a shared phase on every
-draw, so the cell's layout is built once; a frame loop in the topic screen advances the
+The gradient travels in one direction and its ends share a colour, so the cycle wraps
+without a seam; it is a `CharacterStyle` span on the tag that reads a shared phase on
+every draw, so the cell's layout is built once; a frame loop in the topic screen advances the
 phase only while a row with such a title is visible, and stops when it scrolls away.
 A title the site adds to that rule later still needs its name added here - the payload
 has no class to follow. The [title test](../apps/android/nativedo/src/test/java/io/github/baba983/nativedo/topic/PostUserTitleTest.kt)

@@ -26,15 +26,18 @@ object DiscourseUserTitles {
     /** The titles the site's holographic selector paints, as its theme names them. */
     private val ANIMATED = setOf("种子用户", "破界者", "premium")
 
-    /** The gradient's stops, taken from the theme's `holographic` rule. */
+    /**
+     * The gradient's stops, taken from the theme's `holographic` rule (magenta, cyan, yellow).
+     * The ends are the same colour so a cycle can wrap without a visible seam: the web's rule
+     * repeats its background in one direction, and the tag shows a window of it.
+     */
     private val COLORS = intArrayOf(
         0xFFFF00FF.toInt(),
         0xFF00FFFF.toInt(),
         0xFFFFFF00.toInt(),
         0xFFFF00FF.toInt(),
-        0xFF00FFFF.toInt(),
     )
-    private val POSITIONS = floatArrayOf(0f, 0.25f, 0.5f, 0.75f, 1f)
+    private val POSITIONS = floatArrayOf(0f, 1f / 3f, 2f / 3f, 1f)
 
     /** The theme's 15 s cycle; the gradient travels the same distance in that time. */
     private const val CYCLE_MILLIS = 15_000L
@@ -64,11 +67,9 @@ object DiscourseUserTitles {
      */
     fun advance() {
         val elapsed = (SystemClock.uptimeMillis() - startedAt) % CYCLE_MILLIS
-        val progress = elapsed / CYCLE_MILLIS.toFloat()
-        // The theme animates the background's position there and back; a linear turn keeps the
-        // gradient visibly travelling at the ends of the cycle too, where an eased curve would sit
-        // still long enough to read as a static tag.
-        phase = if (progress < 0.5f) progress * 2f else 2f - progress * 2f
+        // One direction, like the theme's `infinite normal` animation: the background slides
+        // through its 400% gradient and the next cycle starts where the last one ended.
+        phase = elapsed / CYCLE_MILLIS.toFloat()
     }
 
     private fun decorate(tag: SpannableStringBuilder): SpannableStringBuilder {
@@ -101,7 +102,7 @@ object DiscourseUserTitles {
                 period = width
                 shader = LinearGradient(
                     0f, 0f, width, 0f,
-                    COLORS, POSITIONS, Shader.TileMode.CLAMP,
+                    COLORS, POSITIONS, Shader.TileMode.REPEAT,
                 )
                 matrix = Matrix()
             }
