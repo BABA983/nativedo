@@ -1,8 +1,14 @@
 package io.github.baba983.nativedo.debug;
 
 import android.app.Activity;
+import android.os.Build;
 import android.view.Gravity;
+import android.view.WindowInsets;
+import android.view.WindowManager;
 import android.widget.FrameLayout;
+
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.ui.ActionBar.BottomSheet;
@@ -75,13 +81,29 @@ final class DebugTopicFixtureSheet {
                 (item, view, position, x, y) -> false,
                 fragment.getResourceProvider());
         // The sheet now runs to the screen's bottom edge, so the list reserves the system bar's
-        // height for the last row instead of letting the gesture pill sit over it.
+        // height for the last row instead of letting the gesture pill sit over it. The height comes
+        // from this window's own insets: AndroidUtilities.navigationBarHeight is only filled by
+        // screens that host upstream's drawer, not by this shell.
+        int navigationBar = 0;
+        WindowInsetsCompat rootInsets =
+                ViewCompat.getRootWindowInsets(activity.getWindow().getDecorView());
+        if (rootInsets != null) {
+            navigationBar = AndroidUtilities.getDefaultWindowInsets(rootInsets, false).bottom;
+        }
+        if (navigationBar == 0 && Build.VERSION.SDK_INT >= 30) {
+            WindowManager manager = activity.getWindowManager();
+            navigationBar = manager.getCurrentWindowMetrics().getWindowInsets()
+                    .getInsetsIgnoringVisibility(WindowInsets.Type.navigationBars()).bottom;
+        }
         list.setPadding(
                 list.getPaddingLeft(),
                 list.getPaddingTop(),
                 list.getPaddingRight(),
-                AndroidUtilities.navigationBarHeight);
-        list.setClipToPadding(false);
+                list.getPaddingBottom() + navigationBar);
+        // The padding is a viewport edge, not extra scroll room: a row must never be drawn under
+        // the system bar, so the list clips its content there and the sheet's own background shows
+        // behind the gesture pill.
+        list.setClipToPadding(true);
         // The adapter fills its rows on update, not in the constructor; do it now so the sheet is
         // ready to be laid out (and to be driven by a test).
         list.adapter.update(false);

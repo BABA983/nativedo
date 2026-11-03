@@ -135,7 +135,7 @@ internal class DebugMenuTest {
             "the list clears the system bar at the bottom",
             list.paddingBottom >= AndroidUtilities.navigationBarHeight,
         )
-        assertFalse("the list draws its rows past that padding", list.clipToPadding)
+        assertTrue("the list clips its rows above that padding", list.clipToPadding)
 
         harness.renderComposite(".amp/in/artifacts/nativedo/debug-menu-fixtures.png")
 
