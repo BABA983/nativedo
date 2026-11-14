@@ -124,7 +124,9 @@ internal class ProfileStatusBarTest {
         // The expanded photo: the picture is behind the status line, so the icons go light whatever
         // the rest state answered - and the shell is asked to recompute this flip too.
         call(profile, "startAvatarExpand", Float::class.javaPrimitiveType!!, 1f)
-        harness.idle()
+        // startAvatarExpand sets the pulled state and posts the shell recompute synchronously.
+        // Do not drain a layout first: the test called the gesture's end method without the pull
+        // that normally precedes it, and a layout pass can legitimately hand the header back.
         assertFalse("the expanded photo wants light icons, not day icons", profile.isLightStatusBar())
         assertFalse("and the window followed the recompute", windowLightStatusBar())
         harness.renderApp("profile-statusbar-expanded-photo")
