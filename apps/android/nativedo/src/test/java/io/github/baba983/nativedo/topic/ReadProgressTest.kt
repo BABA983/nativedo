@@ -1,6 +1,5 @@
 package io.github.baba983.nativedo.topic
 
-import android.view.ViewGroup
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import io.github.baba983.nativedo.app.NativeDo
@@ -370,14 +369,6 @@ internal class ReadProgressTest {
             val id = cell.messageObject?.messageOwner?.id ?: return@mapNotNull null
             (id - POST_ID_BASE).toInt().takeIf { it in 1..1_000 }
         }
-    }
-
-    private fun chatCells(view: android.view.View): List<ChatMessageCell> {
-        if (view is ChatMessageCell && view.isShown) return listOf(view)
-        if (view is ViewGroup) {
-            return (0 until view.childCount).flatMap { chatCells(view.getChildAt(it)) }
-        }
-        return emptyList()
     }
 
     private fun positionOf(view: android.view.View): Int {
