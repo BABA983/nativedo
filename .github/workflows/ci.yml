@@ -450,7 +450,11 @@ jobs:
           name: nativedo-dailyDebug-arm64
           if-no-files-found: error
           retention-days: 14
-          path: apps/android/nativedo/build/outputs/apk/daily/debug/*.apk
+          # An injected ABI makes AGP write the APK under build/intermediates/apk;
+          # a normal variant writes it under build/outputs/apk.
+          path: |
+            apps/android/nativedo/build/intermediates/apk/daily/debug/*.apk
+            apps/android/nativedo/build/outputs/apk/daily/debug/*.apk
 
       - uses: actions/cache/save@v4
         if: success() && steps.native-cache.outputs.cache-hit != 'true'
