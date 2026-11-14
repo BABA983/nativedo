@@ -51,6 +51,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       plugin: ${{ steps.filter.outputs.plugin }}
+      plugin_enabled: ${{ steps.filter.outputs.plugin_enabled }}
       nativedo: ${{ steps.filter.outputs.nativedo }}
     steps:
       - uses: actions/checkout@v4
@@ -61,6 +62,14 @@ jobs:
           BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: |
           set -euo pipefail
+          # `main` disabled the plugin by renaming its entry point to
+          # `index.ts.bak`; keep the gate for when it is re-enabled, but do not
+          # fail on tests that import a file that is deliberately absent.
+          if [ -f .amp/plugins/jev-router/index.ts ]; then
+            echo "plugin_enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "plugin_enabled=false" >> "$GITHUB_OUTPUT"
+          fi
           base="${BASE:-}"
           if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ] \
              || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
@@ -93,7 +102,7 @@ jobs:
 
   plugin:
     needs: changes
-    if: needs.changes.outputs.plugin == 'true'
+    if: needs.changes.outputs.plugin == 'true' && needs.changes.outputs.plugin_enabled == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
