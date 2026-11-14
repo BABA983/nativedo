@@ -105,6 +105,14 @@ change colors loses scroll positions and reloads data. Glass effects follow the
 device's enabled performance path; an opaque low-performance fallback is not
 evidence that the blur path works.
 
+Glass positions and captures belong to upstream's `GlassEngine`. `GlassPanelHost`
+gives one engine the panel root, a `GlassPositionsMerger` and the
+`DownscaleScrollableNoiseSuppressor` whose `setupRenderNodes` it feeds from
+`getAllVisibleDrawablesWithDisplayListPositionsMerged()`, the same way `ChatActivity`
+and `DialogsActivity` do; a source is a `GlassSource` (`GlassSourceColor`,
+`GlassSourceBitmap`, `GlassSourceRenderNode`), not a parallel abstraction. Do not
+read panel positions or register display-list listeners by hand.
+
 Full-height fragment content and its action bar must share the intended transform
 and inset ownership. Keep the bar in its content host when following that upstream
 layout, so PhotoViewer transitions do not scale the body independently of the bar.
@@ -223,7 +231,8 @@ until their filters have product behavior; they are not decorative shortcuts.
 
 ## Upstream updates
 
-The subtree import is the source pin. Materialize native dependencies from its
-gitlinks with `telegram-deps.sh`; do not borrow arbitrary `.so` files from another
-checkout. Update only for a product goal, compare host hooks to the new source and
+The subtree import is the source pin; it currently carries upstream Telegram 13.2.1
+(`7be672ea`). Materialize native dependencies from its gitlinks with
+`telegram-deps.sh`; do not borrow arbitrary `.so` files from another checkout.
+Update only for a product goal, compare host hooks to the new source and
 run the hook, app and device gates appropriate to the change.

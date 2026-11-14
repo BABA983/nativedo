@@ -325,11 +325,7 @@ public class ProfileActionsView extends View {
                     int newAlpha = (int) (action.getAlpha() * alphaFraction1 * wasAlpha);
                     paint.setAlpha((int) (newAlpha * (radialGradient != null ? 0.1f : 1f)));
 
-                    if (SharedConfig.shadowsInSections && isButtonColorLight() && parentExpanded < 0.5f) {
-                        paint.setShadowLayer(dpf2(1.5f), 0, 0, Theme.multAlpha(Color.BLACK & 0x20FFFFFF, (newAlpha / 255f * (radialGradient != null ? 0.1f : 1f))));
-                    } else {
-                        paint.setShadowLayer(0, 0, 0, 0);
-                    }
+                    paint.setShadowLayer(0, 0, 0, 0);
 
                     canvas.drawRoundRect(AndroidUtilities.rectTmp, r, r, paint);
                     if (radialGradient != null) {

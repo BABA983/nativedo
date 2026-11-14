@@ -34,8 +34,8 @@ import org.telegram.ui.Components.blur3.BlurredBackgroundDrawableViewFactory;
 import org.telegram.ui.Components.blur3.BlurredBackgroundWithFadeDrawable;
 import org.telegram.ui.Components.blur3.drawable.BlurredBackgroundDrawable;
 import org.telegram.ui.Components.blur3.drawable.color.impl.BlurredBackgroundProviderImpl;
-import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceColor;
-import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceRenderNode;
+import org.telegram.utils.glass.source.GlassSourceColor;
+import org.telegram.utils.glass.source.GlassSourceRenderNode;
 import org.telegram.ui.Components.chat.ViewPositionWatcher;
 import org.telegram.ui.Components.glass.GlassTabView;
 import org.telegram.ui.DialogsActivity;
@@ -112,8 +112,8 @@ public class NativeDoMainTabsActivity extends ViewPagerActivity {
     /** The page the shell first builds on; the first tab unless a restore named another. */
     private final int startTabPosition;
 
-    private final BlurredBackgroundSourceColor iBlur3SourceColor = new BlurredBackgroundSourceColor();
-    private final BlurredBackgroundSourceRenderNode iBlur3SourceTabGlass;
+    private final GlassSourceColor iBlur3SourceColor = new GlassSourceColor();
+    private final GlassSourceRenderNode iBlur3SourceTabGlass;
 
     public NativeDoMainTabsActivity() {
         this(POSITION_TOPICS);
@@ -128,7 +128,7 @@ public class NativeDoMainTabsActivity extends ViewPagerActivity {
         super();
         this.startTabPosition = startTabPosition;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            iBlur3SourceTabGlass = new BlurredBackgroundSourceRenderNode(iBlur3SourceColor);
+            iBlur3SourceTabGlass = new GlassSourceRenderNode(iBlur3SourceColor);
             // The captured pages are the glass's source, so the frosted look is this blur.
             iBlur3SourceTabGlass.setBlur(dp(8));
         } else {

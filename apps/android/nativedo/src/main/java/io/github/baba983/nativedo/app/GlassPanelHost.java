@@ -2,6 +2,7 @@ package io.github.baba983.nativedo.app;
 
 import android.graphics.Canvas;
 import android.graphics.PointF;
+import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
@@ -13,42 +14,48 @@ import androidx.annotation.Nullable;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.LiteMode;
 import org.telegram.messenger.SharedConfig;
-import org.telegram.messenger.utils.RectFMergeBounding;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.blur3.BlurredBackgroundDrawableViewFactory;
 import org.telegram.ui.Components.blur3.DownscaleScrollableNoiseSuppressor;
 import org.telegram.ui.Components.blur3.capture.IBlur3Capture;
 import org.telegram.ui.Components.blur3.drawable.BlurredBackgroundDrawable;
 import org.telegram.ui.Components.blur3.drawable.color.BlurredBackgroundColorProvider;
-import org.telegram.ui.Components.blur3.source.BlurredBackgroundSource;
-import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceBitmap;
-import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceColor;
-import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceRenderNode;
-import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceWrapped;
 import org.telegram.ui.Components.chat.ViewPositionWatcher;
 import org.telegram.ui.Components.chat.WallpaperBitmapProvider;
+import org.telegram.utils.glass.GlassEngine;
+import org.telegram.utils.glass.positions.GlassPositionsArray;
+import org.telegram.utils.glass.positions.GlassPositionsMerger;
+import org.telegram.utils.glass.source.GlassSource;
+import org.telegram.utils.glass.source.GlassSourceBitmap;
+import org.telegram.utils.glass.source.GlassSourceColor;
+import org.telegram.utils.glass.source.GlassSourceRenderNode;
+import org.telegram.utils.glass.source.GlassSourceWrapped;
 
 import java.util.ArrayList;
 import java.util.List;
 
+import me.vkryl.core.BitwiseUtils;
 import me.vkryl.core.reference.ReferenceList;
 
 /**
  * The blur/glass background of a floating panel, in one reusable place on our side.
  *
- * <p>Upstream's own wiring for a screen whose panels float over a scrolling list: a
- * {@link DownscaleScrollableNoiseSuppressor}-backed source that records the content under the
+ * <p>Upstream's own wiring for a screen whose panels float over a scrolling list, as of Telegram
+ * 13.2.1: a {@link GlassEngine} owns the drawables' positions, their display lists and their theme
+ * updates; a {@link DownscaleScrollableNoiseSuppressor}-backed source records the content under the
  * panels' own rectangles at a 1/8 scale, drawn over the wallpaper chain ({@code setUnderSource}),
  * so a translucent capsule's gaps show the wallpaper and never the sharp list. A chat builds it at
- * ChatActivity.java:2620-2661, its list at DialogsActivity.java:2700-2810 and its own blur-rect
- * path at 930-950; a panel wears a drawable made from the source, exactly like upstream's
- * {@code FilterTabsView.setBlurredBackground} and {@code ActionBar.setupGlass} do.</p>
+ * ChatActivity:2596-2645 and drives its captures at 47832-47847; the dialogs list builds its own
+ * pair at DialogsActivity:2703-2722 and captures at 13832. A panel wears a drawable made from the
+ * source, exactly like upstream's {@code FilterTabsView.setBlurredBackground} and
+ * {@code ActionBar.setupGlass} do.</p>
  *
- * <p>The source exists only while the chat blur is on ({@code SharedConfig.chatBlurEnabled()}), so
- * a panel whose screen cannot blur - a LOW-performance device, where upstream's own provider paints
- * an opaque fill - stands over the flat colour source below, which is what upstream's own
- * {@code iBlur3SourceColor} is for, and so does a platform that cannot render a node at all
- * ({@code RenderEffect} needs API 31).</p>
+ * <p>Two render-node sources share one suppressor, the way upstream keeps a glass and a frosted
+ * source (ChatActivity:2602-2618, DialogsActivity:2706-2713): the drawable picks the glass source
+ * under the liquid-glass setting, the frosted one for a plain blur, and the flat colour source when
+ * the device cannot render a node at all ({@code RenderEffect} needs API 31) or the chat blur is
+ * off. The colour source is registered with the engine, so a day/night switch reaches it without
+ * the screen rebuilding anything.</p>
  */
 public final class GlassPanelHost {
 
@@ -63,11 +70,14 @@ public final class GlassPanelHost {
      */
     private @Nullable Drawable wallpaperDrawable;
     private final WallpaperBitmapProvider wallpaperProvider = new WallpaperBitmapProvider();
-    private final BlurredBackgroundSourceColor colorSource = new BlurredBackgroundSourceColor();
+    /** Owns the panels' positions, display lists and theme updates, as every upstream screen's. */
+    private final GlassEngine engine = new GlassEngine();
+    private final GlassSourceColor colorSource;
     /** Upstream's {@code navbarContentSourceWallpaper}: a source that can be swapped under both. */
-    private final BlurredBackgroundSourceWrapped wallpaperSource = new BlurredBackgroundSourceWrapped();
-    /** The blur source; null while the device cannot blur. */
-    private final @Nullable BlurredBackgroundSourceRenderNode renderNode;
+    private final GlassSourceWrapped wallpaperSource = new GlassSourceWrapped();
+    /** The liquid-glass and the frosted source; null while the device cannot blur. */
+    private final @Nullable GlassSourceRenderNode glassSource;
+    private final @Nullable GlassSourceRenderNode frostedSource;
     private final @Nullable DownscaleScrollableNoiseSuppressor scrollableNoiseSuppressor;
     /** The panels' source: the recording over the wallpaper. */
     private final BlurredBackgroundDrawableViewFactory factory;
@@ -80,28 +90,23 @@ public final class GlassPanelHost {
     private final ViewPositionWatcher positionWatcher;
     /**
      * The views that drew a panel from this source. A view's display list is cached, so a panel
-     * keeps the frame it was last recorded with until it is told to redraw - ChatActivity keeps
-     * its own list of glass-attached views for exactly that ({@code glassAttachedViews},
-     * ChatActivity.java:2653/46715) and every {@code factory.create(view)} registers here.
+     * keeps the frame it was last recorded with until it is told to redraw - the engine keeps the
+     * same list for its registered drawables, and every {@code factory.create(view)} registers
+     * here as well so a wallpaper swap can repaint them.
      */
     private final ReferenceList<View> attachedViews = new ReferenceList<>();
     /** The drawables made from this source, so a colour change reaches all of them. */
     private final List<BlurredBackgroundDrawable> drawables = new ArrayList<>();
     /** The recording under the panels, read through this screen's own coordinates. */
     private final IBlur3Capture capture = this::captureContent;
-    private final ArrayList<RectF> visiblePositions = new ArrayList<>();
-    private final ArrayList<RectF> mergedPositions = new ArrayList<>();
     private final PointF contentPoint = new PointF();
     private final RectF savedPosition = new RectF();
     /**
      * A rectangle the screen reads the recording under with {@link #drawSource} - the header band of
-     * a screen that draws one. DialogsActivity keeps the same list of blurred rectangles
-     * ({@code iBlur3Positions}, 14154-14202): the source records where it is read, and a band that
-     * read a rectangle no panel covers would have nothing to read.
+     * a screen that draws one. The engine records it alongside the panels' own rectangles
+     * ({@code setExternalCapturePosition}, BaseFragment:1517).
      */
-    private final RectF sourceRect = new RectF();
-    /** Whether the panels' rectangles have to be read again before the next recording. */
-    private boolean positionsDirty = true;
+    private final RectF externalCapturePosition = new RectF();
     private boolean recordingEnabled = true;
 
     /**
@@ -113,40 +118,59 @@ public final class GlassPanelHost {
         this.recordedContent = recordedContent;
         this.positionRoot = positionRoot;
         this.positionWatcher = new ViewPositionWatcher(positionRoot);
-        colorSource.setColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        // The engine re-reads the colour when the theme generation changes (GlassEngine.onDraw),
+        // so a day/night switch reaches every panel without this host doing anything.
+        colorSource = engine.createThemedColorSource(() -> Theme.getColor(Theme.key_windowBackgroundWhite));
         wallpaperSource.setSource(colorSource);
+        // Upstream merges the panels' rectangles the same way: one bounding box per axis, so the
+        // header band and the capsules over it are recorded as one region.
+        engine.setPositionsMerger(new GlassPositionsMerger(Float.POSITIVE_INFINITY, AndroidUtilities.dp(48)));
         if (Build.VERSION.SDK_INT >= 31 && SharedConfig.chatBlurEnabled()) {
             DownscaleScrollableNoiseSuppressor noiseSuppressor = new DownscaleScrollableNoiseSuppressor();
-            BlurredBackgroundSourceRenderNode node = new BlurredBackgroundSourceRenderNode(wallpaperSource);
+            GlassSourceRenderNode frosted = new GlassSourceRenderNode(wallpaperSource);
             // What the chat header's glass is made of: the frosted source.
             // DownscaleScrollableNoiseSuppressor's SourcePart blurs dpf2(40) and raises the
-            // saturation by 3 in its simpleMode branch (407-426), so a capsule samples a strongly
-            // frosted, saturated image instead of the barely-softened one an 8dp blur gives - and
-            // only of the rects the panels occupy, at 1/8 the pixels (504-509).
-            node.setScrollableNoiseSuppressor(
+            // saturation by 3 in its simpleMode branch, so a capsule samples a strongly frosted,
+            // saturated image instead of the barely-softened one an 8dp blur gives - and only of
+            // the rects the panels occupy, at 1/8 the pixels.
+            frosted.setScrollableNoiseSuppressor(
                     noiseSuppressor, DownscaleScrollableNoiseSuppressor.DRAW_FROSTED_GLASS);
-            node.setUnderSource(wallpaperSource);
-            node.setOnDrawablesRelativePositionChangeListener(() -> positionsDirty = true);
+            frosted.setUnderSource(wallpaperSource);
+            GlassSourceRenderNode glass = new GlassSourceRenderNode(wallpaperSource);
+            glass.setScrollableNoiseSuppressor(
+                    noiseSuppressor, DownscaleScrollableNoiseSuppressor.DRAW_GLASS);
+            glass.setUnderSource(wallpaperSource);
             scrollableNoiseSuppressor = noiseSuppressor;
-            renderNode = node;
-            factory = new BlurredBackgroundDrawableViewFactory(node);
+            frostedSource = frosted;
+            glassSource = glass;
+            engine.addNoiseSuppressor(noiseSuppressor);
+            engine.setGlassInvalidationListener(this::invalidateBlurCaptures);
+            // A drawable picks its source by the glass settings: liquid glass, frosted, or the
+            // flat colour when neither can be rendered (BlurredBackgroundDrawable.pickSource).
+            factory = new BlurredBackgroundDrawableViewFactory(glass, frosted, colorSource);
         } else {
             scrollableNoiseSuppressor = null;
-            renderNode = null;
+            frostedSource = null;
+            glassSource = null;
             factory = new BlurredBackgroundDrawableViewFactory(colorSource);
         }
         wallpaperFactory = new BlurredBackgroundDrawableViewFactory(wallpaperSource);
+        factory.setLiquidGlassEffectAllowed(LiteMode.isEnabled(LiteMode.FLAG_LIQUID_GLASS));
+        factory.setGlassEngine(engine);
         factory.setSourceRootView(positionWatcher, positionRoot);
         factory.setLinkedViewsRef(attachedViews);
-        factory.setLiquidGlassEffectAllowed(LiteMode.isEnabled(LiteMode.FLAG_LIQUID_GLASS));
+        wallpaperFactory.setGlassEngine(engine);
         wallpaperFactory.setSourceRootView(positionWatcher, positionRoot);
         wallpaperFactory.setLinkedViewsRef(attachedViews);
+        // The engine computes the panels' rectangles in the root's post-draw pass, the way
+        // BaseFragment.onViewCreated attaches every fragment's engine (BaseFragment:330).
+        engine.setRoot(positionRoot);
     }
 
     /** Swaps what is recorded, when the panel that is up changes with the screen's state. */
     public void setRecordedContent(View content) {
         recordedContent = content;
-        positionsDirty = true;
+        engine.invalidate();
     }
 
     /**
@@ -160,26 +184,15 @@ public final class GlassPanelHost {
 
     /**
      * The rectangle a screen reads the recording under, in the position root's coordinates; empty
-     * while the screen draws no such band. It is recorded under like a panel's own rectangle.
+     * while the screen draws no such band. The engine records it alongside the panels' rectangles.
      */
-    public void setSourceRect(@Nullable android.graphics.Rect rect) {
+    public void setSourceRect(@Nullable Rect rect) {
         if (rect == null) {
-            if (sourceRect.isEmpty()) {
-                return;
-            }
-            sourceRect.setEmpty();
+            externalCapturePosition.setEmpty();
         } else {
-            final float left = rect.left - AndroidUtilities.dp(48);
-            final float top = rect.top - AndroidUtilities.dp(48);
-            final float right = rect.right + AndroidUtilities.dp(48);
-            final float bottom = rect.bottom + AndroidUtilities.dp(48);
-            if (sourceRect.left == left && sourceRect.top == top
-                    && sourceRect.right == right && sourceRect.bottom == bottom) {
-                return;
-            }
-            sourceRect.set(left, top, right, bottom);
+            externalCapturePosition.set(rect);
         }
-        positionsDirty = true;
+        engine.setExternalCapturePosition(externalCapturePosition);
     }
 
     /**
@@ -213,7 +226,7 @@ public final class GlassPanelHost {
 
     /** Whether a render node is recording; false on a device that cannot blur. */
     public boolean hasSource() {
-        return renderNode != null;
+        return frostedSource != null;
     }
 
     /**
@@ -222,57 +235,53 @@ public final class GlassPanelHost {
      * rectangle is in the position root's coordinates, which is where the source was recorded.
      */
     public void drawSource(Canvas canvas, float left, float top, float right, float bottom) {
-        if (renderNode == null || right <= left || bottom <= top) {
+        if (frostedSource == null || right <= left || bottom <= top) {
             return;
         }
-        renderNode.draw(canvas, left, top, right, bottom);
+        frostedSource.draw(canvas, left, top, right, bottom);
     }
 
     /**
-     * Records what is behind the panels, from the draw pass that is about to draw them -
-     * DialogsActivity's own {@code blur3_InvalidateBlur} sits in its content view's
-     * {@code dispatchDraw} for the same reason (930-950, 4025, 14163). Called before the frame
-     * draws its children, so a panel samples the content and never itself.
+     * Tells the engine the frame is being drawn, from the draw pass that is about to draw the
+     * panels - DialogsActivity's own {@code blur3_InvalidateBlur} sits in its content view's
+     * {@code dispatchDraw} for the same reason (930-950, 4025, 14163). The engine records what is
+     * behind the panels in its post-draw pass, so a panel samples the content and never itself.
      */
     public void record() {
-        if (scrollableNoiseSuppressor == null || renderNode == null || !recordingEnabled
-                || !recordedContent.isHardwareAccelerated()) {
+        if (scrollableNoiseSuppressor == null || !recordingEnabled) {
             return;
         }
-        int width = positionRoot.getMeasuredWidth();
-        int height = positionRoot.getMeasuredHeight();
+        engine.invalidate();
+    }
+
+    /**
+     * The engine's post-draw pass: the panels' rectangles moved or appeared, or what is under them
+     * changed. Upstream's screens answer it the same way - ChatActivity:47832-47847,
+     * DialogsActivity:13832, ChatAttachAlert and ShareAlert.
+     */
+    private void invalidateBlurCaptures(int flags) {
+        if (scrollableNoiseSuppressor == null) {
+            return;
+        }
+        final int width = positionRoot.getWidth();
+        final int height = positionRoot.getHeight();
         if (width <= 0 || height <= 0) {
             return;
         }
         // A wallpaper image is sampled centre-cropped over the screen, which is a size the source
         // has to be told (ChatActivity does the same from its own onMeasure, 18249-18252).
-        if (wallpaperSource.getSource() instanceof BlurredBackgroundSourceBitmap) {
-            ((BlurredBackgroundSourceBitmap) wallpaperSource.getSource()).setParentSize(width, height, 0);
+        final GlassSource wallpaper = wallpaperSource.getSource();
+        if (wallpaper instanceof GlassSourceBitmap) {
+            ((GlassSourceBitmap) wallpaper).setParentSize(width, height, 0);
         }
-        if (positionsDirty) {
-            positionsDirty = false;
-            int count = 0;
-            if (!sourceRect.isEmpty()) {
-                while (visiblePositions.size() < 1) {
-                    visiblePositions.add(new RectF());
-                }
-                visiblePositions.get(0).set(sourceRect);
-                count = 1;
-            }
-            count += renderNode.getVisiblePositions(visiblePositions, count, AndroidUtilities.dp(48));
-            scrollableNoiseSuppressor.setupRenderNodes(
-                    mergedPositions, RectFMergeBounding.mergeOverlapping(visiblePositions, count, mergedPositions));
+        if (BitwiseUtils.hasFlag(flags, GlassEngine.FLAG_INVALIDATED_POSITIONS)) {
+            final GlassPositionsArray positions = engine.getAllVisibleDrawablesWithDisplayListPositionsMerged();
+            // The capture covers the panel plus the margin its glass may grow into; upstream's
+            // factories reserve the same 48dp (DialogsActivity:2714-2718, ChatActivity:47841).
+            positions.outset(AndroidUtilities.dp(48), AndroidUtilities.dp(48));
+            scrollableNoiseSuppressor.setupRenderNodes(positions);
         }
-        if (scrollableNoiseSuppressor.getRenderNodesCount() == 0) {
-            positionsDirty = true;
-            return;
-        }
-        // The recording is what the panels draw; a panel that drew from it keeps the frame it was
-        // recorded with, so it is told to draw again when the recording or its own rect changed.
-        if (scrollableNoiseSuppressor.invalidateResultRenderNodes(capture, width, height)) {
-            renderNode.invalidateDisplayListForDrawables();
-            invalidateAttachedViews();
-        }
+        scrollableNoiseSuppressor.invalidateResultRenderNodes(capture, width, height);
     }
 
     /** The part of what is recorded that a panel covers - only that is ever rasterized. */
@@ -299,7 +308,7 @@ public final class GlassPanelHost {
     public void setRecordingEnabled(boolean enabled) {
         recordingEnabled = enabled;
         if (enabled) {
-            positionsDirty = true;
+            engine.invalidate();
         }
     }
 
@@ -318,29 +327,32 @@ public final class GlassPanelHost {
 
     /** Re-reads the theme colours, for the day/night switch. */
     public void updateColors() {
-        colorSource.setColor(Theme.getColor(Theme.key_windowBackgroundWhite));
         if (wallpaperDrawable != null) {
             updateWallpaperSource();
         }
         for (int index = 0; index < drawables.size(); index++) {
             drawables.get(index).updateColors();
         }
-        positionsDirty = true;
+        engine.invalidate();
     }
 
     /** Re-reads the wallpaper source from the drawable the screen gave, and repaints what samples it. */
     private void updateWallpaperSource() {
-        final BlurredBackgroundSource source = wallpaperDrawable == null
+        final GlassSource source = wallpaperDrawable == null
                 ? colorSource
                 : wallpaperProvider.updateSourceFromBackgroundViewDrawable(wallpaperDrawable);
         // A drawable the provider could not turn into pixels would leave the band and the capsules'
         // under-layer empty; the theme's own colour is what stands in for it.
-        final boolean usable = !(source instanceof BlurredBackgroundSourceBitmap)
-                || ((BlurredBackgroundSourceBitmap) source).getBitmap() != null;
+        final boolean usable = !(source instanceof GlassSourceBitmap)
+                || ((GlassSourceBitmap) source).getBitmap() != null;
         wallpaperSource.setSource(usable ? source : colorSource);
-        if (renderNode != null) {
-            renderNode.invalidateDisplayListForDrawables();
+        if (frostedSource != null) {
+            frostedSource.invalidateDisplayListForDrawables();
+        }
+        if (glassSource != null) {
+            glassSource.invalidateDisplayListForDrawables();
         }
         invalidateAttachedViews();
+        engine.invalidate();
     }
 }
