@@ -106,13 +106,39 @@ internal class WideTableLayoutTest {
         println("wide-table: rows=" + table.rows.size + " columns=" + table.rows[0].cells.size)
         assertTrue("the fixture is wider than the bubble", table.rows[0].cells.size >= 3)
 
-        // Upstream keeps a table's full width and scrolls it inside the bubble, so the table's
-        // scroll range is the evidence that the wide content is reachable and not just cut off.
+        // 13.2.1 balances a table's columns to the bubble and only scrolls when the cells cannot
+        // wrap enough (TableLayout.setBalancedColumns). The wide content is still reachable: a
+        // table that does not fit reports a scroll range, and one that was balanced to fit draws
+        // its rightmost cell inside the bubble.
         val maxScrollX = tableScrollRange(cell)
-        println("wide-table: table maxScrollX=$maxScrollX")
-        assertTrue("a wide table must be scrollable inside the bubble", maxScrollX > 0)
+        val contentRight = tableContentRight(cell)
+        println("wide-table: table maxScrollX=$maxScrollX contentRight=$contentRight viewport=$viewport")
+        assertTrue(
+            "a wide table stays reachable: scrollable (maxScrollX=$maxScrollX) or drawn inside " +
+                "the bubble (contentRight=$contentRight viewport=$viewport)",
+            maxScrollX > 0 || contentRight <= viewport,
+        )
 
         harness.assertNoTelegramSideEffects()
+    }
+
+    /** The right edge the table's own cells reach, in the bubble layout's coordinates. */
+    private fun tableContentRight(cell: ChatMessageCell): Int {
+        val layout = cell.messageObject!!.richLayout
+        val blocksField = layout.javaClass.getDeclaredField("blocks").apply { isAccessible = true }
+        val layoutBlocks = blocksField.get(layout) as List<*>
+        for (block in layoutBlocks) {
+            if (block!!.javaClass.simpleName != "RichTableBlock") continue
+            val tableField = block.javaClass.getDeclaredField("tableLayout").apply { isAccessible = true }
+            val table = tableField.get(block) as org.telegram.ui.Components.TableLayout
+            var right = 0
+            for (index in 0 until table.childCount) {
+                val child = table.getChildAt(index)
+                right = maxOf(right, child.x + child.getMeasuredWidth())
+            }
+            return right
+        }
+        throw AssertionError("the rich layout holds no table block")
     }
 
     /** Reads the table block's scroll range out of the rich layout. */
