@@ -190,7 +190,8 @@ android {
             all {
                 // Robolectric native graphics also allocates outside the Java heap. Recycle
                 // the JVM between classes so a full run does not accumulate that native state.
-                maxHeapSize = '3g'
+                // CI overrides this on smaller runners; the local default stays 3g.
+                maxHeapSize = project.findProperty('nativedo.test.maxHeapSize') ?: '3g'
                 maxParallelForks = 1
                 forkEvery = 1
                 testLogging {

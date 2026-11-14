@@ -186,17 +186,21 @@ jobs:
       - name: Bound build memory
         # Override upstream's 8 GB daemon without editing the subtree. Tests
         # separately bound their heap and recycle native-graphics state per class.
+        # Private-repository runners have ~7 GB, so the daemon and the test JVM
+        # together must stay well below that.
         run: |
+          free -m
+          nproc
           mkdir -p ~/.gradle
           cat >> ~/.gradle/gradle.properties <<'EOF'
-          org.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8
-          org.gradle.workers.max=2
+          org.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8
+          org.gradle.workers.max=1
           org.gradle.parallel=false
           kotlin.compiler.execution.strategy=in-process
           EOF
 
       - name: Unit tests
-        run: ./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:testDailyDebugUnitTest --quiet
+        run: ./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:testDailyDebugUnitTest -Pnativedo.test.maxHeapSize=2g --quiet
 
       # On failure keep what a human needs to diagnose it without re-running the
       # job: the JUnit XML, the test report, and Gradle logs. Retained for a
@@ -280,10 +284,12 @@ jobs:
         run: scripts/telegram-deps.sh
 
       - name: Bound build memory
+        # Native compilation is the long pole here; keep the Gradle daemon small
+        # enough for a ~7 GB private-repository runner and let clang use the rest.
         run: |
           mkdir -p ~/.gradle
           cat >> ~/.gradle/gradle.properties <<'EOF'
-          org.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8
+          org.gradle.jvmargs=-Xmx2g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8
           org.gradle.workers.max=2
           org.gradle.parallel=false
           kotlin.compiler.execution.strategy=in-process
