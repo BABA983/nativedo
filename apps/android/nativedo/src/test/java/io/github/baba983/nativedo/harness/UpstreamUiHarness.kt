@@ -307,6 +307,7 @@ internal class UpstreamUiHarness {
      * deadline would never be reached when there is no work left to idle.</p>
      */
     fun await(what: String, iterations: Int = 4_000, condition: () -> Boolean) {
+        var frameAdvances = 0
         repeat(iterations) { iteration ->
             idle()
             idleUpstreamQueues()
@@ -317,8 +318,11 @@ internal class UpstreamUiHarness {
             // A device lays the screen out and draws the next frame while it waits; Robolectric's
             // paused clock never reaches that frame on its own. 13.2.1 adds the page host and a
             // presented screen's list on those passes, so without one a screen that was just
-            // presented never binds a row, however long the wait.
-            if (iteration % 4 == 3) {
+            // presented never binds a row, however long the wait. The budget is one delayed open
+            // animation's worth of frames: a reader's dwell is measured on the same clock, and a
+            // wait must not hand it minutes the test never spent in front.
+            if (frameAdvances < 16 && iteration % 4 == 3) {
+                frameAdvances++
                 layoutApp()
                 org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(16))
             }

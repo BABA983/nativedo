@@ -452,21 +452,39 @@ internal class TopicBodyFidelityTest {
         assertTrue("nothing may be drawn as gallery media",
             cell().messageObject.richLayout.blocks.none { it is RichMessageLayout.RichPhotoBlock })
         renderTo("body-table-cell-source-link")
-        // The long source makes this grid wider than the viewport. Drag the production cell,
-        // rather than changing private scroll fields, to show the trailing column is reachable.
+        // 13.2.1 balances a table's columns to the bubble and only scrolls when the cells cannot
+        // wrap enough. This grid still overflows (the source link is long), so drag the production
+        // cell, rather than changing private scroll fields, to show the trailing column is
+        // reachable; a grid that fits already draws it inside the bubble.
         val tableBlock = cell().messageObject.richLayout.blocks
             .filterIsInstance<RichMessageLayout.RichTableBlock>().single()
-        val start = cell().textX + tableBlock.padding.left + 100f
-        val y = cell().textY + tableBlock.currY + tableBlock.height / 2f
-        val now = SystemClock.uptimeMillis()
-        for ((action, x) in listOf(MotionEvent.ACTION_DOWN to start,
-            MotionEvent.ACTION_MOVE to start - 600f, MotionEvent.ACTION_CANCEL to start - 600f)) {
-            val event = MotionEvent.obtain(now, now + 100, action, x, y, 0)
-            val handled = cell().onTouchEvent(event)
-            if (action != MotionEvent.ACTION_CANCEL) {
-                assertTrue("the table must handle horizontal drag action $action", handled)
+        val maxScrollX = tableBlock.javaClass.getDeclaredField("maxScrollX")
+            .apply { isAccessible = true }.getInt(tableBlock)
+        println("table-cell-media: maxScrollX=$maxScrollX maxWidth=${tableBlock.maxWidth}")
+        if (maxScrollX > 0) {
+            val start = cell().textX + tableBlock.padding.left + 100f
+            val y = cell().textY + tableBlock.currY + tableBlock.height / 2f
+            val now = SystemClock.uptimeMillis()
+            for ((action, x) in listOf(MotionEvent.ACTION_DOWN to start,
+                MotionEvent.ACTION_MOVE to start - 600f, MotionEvent.ACTION_CANCEL to start - 600f)) {
+                val event = MotionEvent.obtain(now, now + 100, action, x, y, 0)
+                val handled = cell().onTouchEvent(event)
+                if (action != MotionEvent.ACTION_CANCEL) {
+                    assertTrue("the table must handle horizontal drag action $action", handled)
+                }
+                event.recycle()
             }
-            event.recycle()
+        } else {
+            var right = 0
+            for (index in 0 until tableBlock.tableLayout.childCount) {
+                val child = tableBlock.tableLayout.getChildAt(index)
+                right = maxOf(right, child.x + child.getMeasuredWidth())
+            }
+            assertTrue(
+                "a table that fits draws its trailing column inside the bubble: right=$right " +
+                    "maxWidth=${tableBlock.maxWidth}",
+                right <= tableBlock.maxWidth,
+            )
         }
         renderTo("body-table-cell-source-link-scrolled")
         harness.assertNoTelegramSideEffects()
