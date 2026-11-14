@@ -48,7 +48,7 @@ concurrency:
 
 jobs:
   changes:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       plugin: ${{ steps.filter.outputs.plugin }}
       plugin_enabled: ${{ steps.filter.outputs.plugin_enabled }}
@@ -103,7 +103,7 @@ jobs:
   plugin:
     needs: changes
     if: needs.changes.outputs.plugin == 'true' && needs.changes.outputs.plugin_enabled == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: .amp/plugins
@@ -136,7 +136,8 @@ jobs:
   nativedo:
     needs: changes
     if: needs.changes.outputs.nativedo == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -145,13 +146,20 @@ jobs:
           # either, so both `scripts/telegram-deps.sh` and the hook guard would
           # have nothing to read.
           fetch-depth: 0
+      - name: Free disk space
+        # The private-repository runner has a 14 GB SSD and preinstalls several
+        # SDKs we do not use. The Android build plus Gradle caches otherwise
+        # fill it; the pinned NDK is installed again by setup-android below.
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost /usr/local/lib/android/sdk/ndk
+          df -h /
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
       - uses: android-actions/setup-android@v3
         with:
-          packages: "platforms;android-36 build-tools;36.0.0 ndk;27.2.12479018 cmake;3.22.1 platform-tools"
+          packages: "platforms;android-36 build-tools;36.0.0 platform-tools"
 
       # Same retry-and-cache reasoning as before: artifact resolution fails
       # transiently, and a warm Gradle home turns a re-attempt into local reads.
@@ -191,6 +199,7 @@ jobs:
         run: |
           free -m
           nproc
+          df -h /
           mkdir -p ~/.gradle
           cat >> ~/.gradle/gradle.properties <<'EOF'
           org.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8
@@ -236,11 +245,19 @@ jobs:
   nativedo-apk:
     needs: [changes, nativedo]
     if: needs.changes.outputs.nativedo == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Free disk space
+        # The private-repository runner has a 14 GB SSD and preinstalls several
+        # SDKs we do not use. The Android build plus Gradle caches otherwise
+        # fill it; the pinned NDK is installed again by setup-android below.
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost /usr/local/lib/android/sdk/ndk
+          df -h /
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
