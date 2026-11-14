@@ -159,6 +159,14 @@ if grep -E -q 'example_user|example|192\.0\.|192\.0\.|192\.0\.|192\.0\.|192\.0\.
   die "a sanitized fixture still contains known private values; refusing to rewrite"
 fi
 
+# Resolve a remote name (the default `origin`) to its URL; a local path or a URL
+# is used as-is.
+if git -C "$REPO_ROOT" remote get-url "$SOURCE" >/dev/null 2>&1; then
+  SOURCE_URL="$(git -C "$REPO_ROOT" remote get-url "$SOURCE")"
+else
+  SOURCE_URL="$SOURCE"
+fi
+
 # Refuse to publish back into the private source repository.
 normalize_remote() {
   local url="$1"
@@ -167,8 +175,7 @@ normalize_remote() {
   printf '%s' "$url" | tr '[:upper:]' '[:lower:]'
 }
 TARGET_NORM="$(normalize_remote "$TARGET")"
-SOURCE_URL="$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null || true)"
-if [[ -n "$SOURCE_URL" && "$(normalize_remote "$SOURCE_URL")" == "$TARGET_NORM" ]]; then
+if [[ "$(normalize_remote "$SOURCE_URL")" == "$TARGET_NORM" ]]; then
   die "target is the private source repository; refusing to publish there"
 fi
 if [[ "$SOURCE" != "origin" && -d "$SOURCE" ]]; then
@@ -199,9 +206,9 @@ BLOB_CALLBACK="$WORK_DIR/blob_callback.py"
 REPLACEMENTS="$WORK_DIR/replace-text.txt"
 MESSAGE_REPLACEMENTS="$WORK_DIR/replace-message.txt"
 
-note "Mirroring $SOURCE"
+note "Mirroring $SOURCE ($SOURCE_URL)"
 rm -rf "$MIRROR"
-git clone --mirror --quiet "$SOURCE" "$MIRROR"
+git clone --mirror --quiet "$SOURCE_URL" "$MIRROR"
 
 git -C "$MIRROR" rev-parse --verify --quiet "refs/heads/$BRANCH^{commit}" >/dev/null ||
   die "source branch '$BRANCH' does not exist in $SOURCE"
