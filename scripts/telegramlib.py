@@ -12,9 +12,8 @@ facts about that import drive everything here:
   commit that added or last replaced the prefix) rather than assumed from a
   README.
 
-This module is deliberately standalone: it must not import the skeleton's
-`vendorlib`/`vendor-overlay.json`, because that overlay classifies
-`apps/android/TMessagesProj` (the old shrunk skeleton), not this tree.
+This module is deliberately standalone: it reads the subtree's own git history
+and must not depend on a committed manifest that could drift from the import.
 """
 from __future__ import annotations
 

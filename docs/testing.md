@@ -4,7 +4,7 @@ Commands live in [README](../README.md#checks). This page defines the method,
 not today's verdict. A historical passing run proves only the build and scenario
 it exercised; it is not a current guarantee.
 
-## Choose the gate for the build
+## Choose the gate
 
 **Active `:nativedo`:** the
 [host harness](../apps/android/nativedo/src/test/java/io/github/baba983/nativedo/harness/UpstreamUiHarness.kt)
@@ -14,12 +14,8 @@ shadows replace upstream native methods; assertions guard against tgnet/database
 initialization. This checks wiring, state and host rendering, not a real device
 or linux.do accepting the same requests or timing independence.
 
-**Legacy `:app`:** Paparazzi pixel verification compares committed goldens under
-`apps/android/app/src/test/snapshots/<platform>/images`. Linux and macOS have separate
-sets because their renderers differ. A plain unit run that renders images is not
-pixel verification. Inspect diffs; re-record only intentional changes and verify
-both platform sets where each can run. Shared visual changes include both updated
-platform sets in the same commit. These goldens do not verify `:nativedo`.
+The arm64 `dailyDebug` APK is built by CI and uploaded as an artifact for
+physical-device installation; the host harness does not replace that device pass.
 
 ## Retain contracts, not implementation mirrors
 

@@ -39,23 +39,11 @@ skills-lock.json
 # Orb portal registration files (generated at runtime).
 .amp/portals/
 
-# Python bytecode from the scripts/ vendor tooling.
+# Python bytecode from scripts/ tooling.
 __pycache__/
-
-# Atomic-write temp files from the vendor overlay writers.
-.vendor-overlay.json.*.tmp
-
-# Paparazzi golden images are committed per platform; only the unused video
-# baseline directory stays local.
-apps/android/app/src/test/snapshots/*/videos/
 
 .tmp-home/
 .tmp-robolectric/
-
-# Legacy location of the pristine Telegram checkout. scripts/vendor-setup.sh
-# now clones it next to the repo (default ../telegram); keep the rule so
-# a leftover in-repo tree is never committed.
-/vendor/
 
 # Dev tooling for the Jev Router plugin (types only; the plugin itself is dependency-free).
 .amp/plugins/node_modules/

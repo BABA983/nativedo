@@ -24,15 +24,11 @@ and fails when an upstream file changed in any other way. Allowed, exactly:
     second call, no computed return), so arbitrary logic cannot hide behind a hook
     condition;
   * documented build/config additions, each carrying a `NativeDo` marker;
-  * new files only under our own namespaces (`io/github/baba983/**`,
-    `NativeDoSpike/**`) — our code does not hide at an upstream path.
+  * new files only under our own namespace (`io/github/baba983/**`) — our code
+    does not hide at an upstream path.
 
 Everything else — a rewritten render branch, a tweaked measurement, a deleted
 upstream file, a changed dependency pin — fails.
-
-This is deliberately separate from `scripts/vendor_guard.py`, which checks the
-older `apps/android/TMessagesProj` skeleton against `vendor-overlay.json`. The
-full subtree is not part of that overlay and must not be classified by it.
 
 Usage:
   scripts/telegram-hook-guard.sh                 # the working tree vs the pin
@@ -68,7 +64,6 @@ NATIVEDO_MARKER = "NativeDo"
 
 JAVA_ROOT = SUBTREE_PREFIX + "/TMessagesProj/src/main/java/"
 OUR_JAVA_ROOT = JAVA_ROOT + "io/github/baba983/"
-OUR_SPIKE_ROOT = SUBTREE_PREFIX + "/NativeDoSpike/"
 
 BUILD_FILE_NAMES = {
     "settings.gradle",
@@ -135,7 +130,7 @@ def _code(line: str) -> str:
 
 
 def _is_ours(path: str) -> bool:
-    return path.startswith(OUR_JAVA_ROOT) or path.startswith(OUR_SPIKE_ROOT)
+    return path.startswith(OUR_JAVA_ROOT)
 
 
 def _is_upstream_java(path: str) -> bool:

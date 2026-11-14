@@ -10,13 +10,13 @@ Start with the [design index](docs/README.md) for architecture and rationale,
 ## Layout
 
 - `apps/android/nativedo` — **active app**, our product code.
-- `apps/android/telegram` — full upstream Telegram subtree and narrow host hooks.
+- `apps/android/telegram` — full upstream Telegram subtree, the Gradle root, and narrow host hooks.
 - `contracts/discourse` — endpoint, model and authentication contracts.
 - `fixtures/discourse` — sample wire payloads used by tests.
-- `apps/android/app` + `apps/android/TMessagesProj` — **legacy build**, still retained.
 
-The two Android builds have separate Gradle roots and test gates. See
-[code layout](docs/code-layout.md); do not apply legacy vendor rules to the active subtree.
+The legacy `:app` / standalone `TMessagesProj` build was archived at tag
+`legacy-partial-mirror` and removed; `apps/android/telegram` is the only Android
+build. See [code layout](docs/code-layout.md).
 
 ## Setup and run
 
@@ -36,6 +36,8 @@ Use JDK 17, Android SDK platform/build-tools 36, NDK `27.2.12479018` and CMake
 Alternatively open `apps/android/telegram` in Android Studio and run `nativedo` (`dailyDebug`).
 No separate Telegram clone or copied prebuilt `.so` is needed for this build.
 The subtree import is the pin; dependency and hook tools resolve it from Git history.
+CI builds this same arm64 APK on pushes to `main` and `spike/full-telegram-subtree`
+and on pull requests, and uploads it as the `nativedo-dailyDebug-arm64` artifact.
 
 A variant is a channel (flavor) × a build type:
 
@@ -131,20 +133,3 @@ python3 -m unittest discover -s scripts/tests -t scripts/tests -p 'test_telegram
 `--verify` checks dependency stamps; an unstamped populated tree is unverified,
 not proof of a matching or mismatching pin. The CI jobs are in
 [ci.yml](.github/workflows/ci.yml).
-
-## Legacy build
-
-Only use these commands when working on `apps/android/app` or the standalone
-`apps/android/TMessagesProj`:
-
-```sh
-./apps/android/gradlew -p apps/android :app:assembleDebug --quiet
-./apps/android/gradlew -p apps/android runUnitAndScreenshotTests --quiet
-# For intentional visual changes, record on each supported host before verifying.
-./apps/android/gradlew -p apps/android :app:recordPaparazziDebug --quiet
-./apps/android/gradlew -p apps/android :app:verifyPaparazziDebug --quiet
-./scripts/vendor-guard.sh --compile
-```
-
-The [legacy vendor workflow](VENDOR.md) owns overlay, provenance and re-sync rules.
-Neither this documentation refactor nor the active build removes the old stack.

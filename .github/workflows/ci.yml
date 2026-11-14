@@ -1,21 +1,15 @@
 name: ci
 
 # Runs only when something that can actually break CI changed: a docs-only
-# commit skips the workflow entirely, a vendor-tooling commit skips the Android
-# job, and a plugin-only commit runs just the plugin job (both gates come from
-# the `changes` job below). Every job costs minutes on a free plan, so a commit
-# pays only for the gates its own paths can break.
+# commit skips the workflow entirely, and a plugin-only commit runs just the
+# plugin job (both gates come from the `changes` job below). Every job costs
+# minutes on a free plan, so a commit pays only for the gates its own paths can
+# break.
 #
-# Docs are deliberately not a trigger. The one gate a prose change can trip is
-# the guard's retired-term scan over `*.md` and `docs/**/*.md`, and that runs in
-# the pre-commit hook (`vendor-guard.sh --quick` scans the same files) on every
-# commit — more reliably than a post-push job, which would cost ~11 minutes of
-# Actions quota for the same text scan.
-#
-# The macOS snapshot set is not a trigger either: this runner is Linux and only
-# ever compares `src/test/snapshots/linux`, so a push that touches nothing but
-# `snapshots/macos` has no gate here — the machine that recorded it verifies it.
-# A push that carries macOS goldens *and* code still runs the code's gates.
+# Docs are deliberately not a trigger: prose changes cannot break the Android
+# build or the hook guard, and the guard's own retired-term scan over `*.md`
+# runs in the pre-commit hook on every commit — more reliably than a post-push
+# job.
 #
 # Note: with `paths` filtering plus gated jobs, a skipped job reports "skipped"
 # rather than "success". If branch protection ever requires these check names
@@ -23,15 +17,12 @@ name: ci
 # step-level `if:` conditions instead.
 on:
   push:
-    branches: [main]
+    branches: [main, spike/full-telegram-subtree]
     paths: &ci_paths
       - "apps/android/**"
-      - "!apps/android/app/src/test/snapshots/macos/**"
       - "fixtures/**"
       - "scripts/**"
       - "contracts/**"
-      - "vendor-overlay.json"
-      - "VENDOR.md"
       - ".amp/plugins/**"
       - ".github/workflows/**"
   pull_request:
@@ -44,12 +35,12 @@ on:
 # commit range (`github.event.before..HEAD`), so the surviving run covers everything that range
 # touches. The case that used to break this was a docs-only commit landing right after a code
 # commit: it cancelled the only run that would have exercised `apps/android/**` and then skipped
-# that job (it happened four times in one day). Docs commits now trigger nothing at all - their one
-# gate runs in the pre-commit hook - so they cannot cancel a run either. The residual case is a
-# push of one area (say `scripts/**`) landing inside the few minutes an app push's run lasts: that
-# push's run does not cover `apps/android/**`, and the app commit gets its Android gate from the
-# next app push plus the local gate before it. An expression like `${{ github.event_name != 'push' }}`
-# for `cancel-in-progress` would not help here: the interpolated `false` is a non-empty string and
+# that job (it happened four times in one day). Docs commits now trigger nothing at all, so they
+# cannot cancel a run either. The residual case is a push of one area (say `scripts/**`) landing
+# inside the few minutes an app push's run lasts: that push's run does not cover
+# `apps/android/**`, and the app commit gets its Android gate from the next app push plus the
+# local gate before it. An expression like `${{ github.event_name != 'push' }}` for
+# `cancel-in-progress` would not help here: the interpolated `false` is a non-empty string and
 # the runner reads it as true.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -59,8 +50,6 @@ jobs:
   changes:
     runs-on: ubuntu-latest
     outputs:
-      android: ${{ steps.filter.outputs.android }}
-      vendor: ${{ steps.filter.outputs.vendor }}
       plugin: ${{ steps.filter.outputs.plugin }}
       nativedo: ${{ steps.filter.outputs.nativedo }}
     steps:
@@ -76,8 +65,6 @@ jobs:
           if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ] \
              || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
             # Unknown base (first push, force push, manual run): check everything.
-            echo "android=true" >> "$GITHUB_OUTPUT"
-            echo "vendor=true" >> "$GITHUB_OUTPUT"
             echo "plugin=true" >> "$GITHUB_OUTPUT"
             echo "nativedo=true" >> "$GITHUB_OUTPUT"
             exit 0
@@ -85,30 +72,22 @@ jobs:
           # Both events classify the same way: over the files this push (or this pull request)
           # actually changed. A push's range is its own commits, so the run that survives
           # cancellation still covers everything the surviving push touches.
-          android=false
-          vendor=false
           plugin=false
           nativedo=false
           while IFS= read -r path; do
             case "$path" in
-              # The full-Telegram subtree and our module: the old :app job does not
-              # cover them, so they get their own job (dependency prep + NDK build).
+              # The full-Telegram subtree and our module.
               apps/android/telegram/*|apps/android/nativedo/*) nativedo=true ;;
-              apps/android/*) android=true; vendor=true ;;
               # `DiscourseApiClientTest` / `DiscourseMediaUploaderTest` read fixtures/discourse/*,
               # so a fixture edit can fail the unit suite even though it ships no code.
-              fixtures/*) android=true; nativedo=true ;;
-              # The telegram deps/hook-guard tools and their tests both live in
-              # `scripts/`, so their edits run the vendor test discovery *and* the
-              # nativedo job (which needs full history to resolve the pin).
-              scripts/telegram_*|scripts/telegram-*|scripts/telegramlib.py|scripts/tests/test_telegram_*) vendor=true; nativedo=true ;;
-              scripts/*|contracts/*|vendor-overlay.json|VENDOR.md) vendor=true ;;
+              fixtures/*) nativedo=true ;;
+              # The telegram deps/hook-guard tools and their tests both live in `scripts/`.
+              scripts/telegram_*|scripts/telegram-*|scripts/telegramlib.py|scripts/tests/test_telegram_*) nativedo=true ;;
+              scripts/*|contracts/*) nativedo=true ;;
               .amp/plugins/*) plugin=true ;;
-              .github/workflows/*) android=true; vendor=true; plugin=true; nativedo=true ;;
+              .github/workflows/*) plugin=true; nativedo=true ;;
             esac
           done < <(git diff --name-only "$base" HEAD)
-          echo "android=$android" >> "$GITHUB_OUTPUT"
-          echo "vendor=$vendor" >> "$GITHUB_OUTPUT"
           echo "plugin=$plugin" >> "$GITHUB_OUTPUT"
           echo "nativedo=$nativedo" >> "$GITHUB_OUTPUT"
 
@@ -139,129 +118,12 @@ jobs:
       - name: Plugin typecheck
         run: bun run typecheck
 
-  vendor-tooling:
-    needs: changes
-    if: needs.changes.outputs.vendor == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      # Blobless sparse clone: materializing the two baselines is one batched
-      # fetch each (~100 MB), which keeps the guard at ~0.3s instead of paying
-      # a lazy fetch per compared blob.
-      - name: Pristine Telegram checkout (blobless, sparse)
-        run: |
-          PIN="$(python3 -c "import json;print(json.load(open('vendor-overlay.json'))['upstream']['pinned_commit'])")"
-          REF="$(python3 -c "import json;print((json.load(open('vendor-overlay.json')).get('reference') or {}).get('commit') or '')")"
-          git init -q ../telegram
-          git -C ../telegram remote add origin https://github.com/DrKLO/Telegram.git
-          git -C ../telegram config extensions.partialClone origin
-          git -C ../telegram config remote.origin.promisor true
-          git -C ../telegram config remote.origin.partialclonefilter blob:none
-          git -C ../telegram sparse-checkout init --cone
-          git -C ../telegram sparse-checkout set TMessagesProj/src/main/java
-          git -C ../telegram fetch -q --depth=1 --filter=blob:none origin "$PIN"
-          if [ -n "$REF" ] && [ "$REF" != "$PIN" ]; then
-            git -C ../telegram fetch -q --depth=1 --filter=blob:none origin "$REF"
-            git -C ../telegram checkout -q "$REF"
-          fi
-          git -C ../telegram checkout -q "$PIN"
-
-      # The sparse cone covers the sources; this warms the declared resource
-      # blobs too (parallel, ~30 s) so the guard can byte-compare them.
-      - name: Prefetch vendor blobs
-        run: scripts/vendor-setup.sh --prefetch
-
-      - name: Vendor tooling unit tests
-        run: python3 -m unittest discover -s scripts/tests -t scripts/tests
-
-      - name: Vendor guard
-        run: scripts/vendor-guard.sh
-
-  android:
-    needs: changes
-    if: needs.changes.outputs.android == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-      - uses: android-actions/setup-android@v3
-        with:
-          packages: "platforms;android-35 build-tools;34.0.0 platform-tools"
-
-      # Every run used to re-download the wrapper and the whole dependency graph;
-      # on a bad network day that failed with "Could not resolve <artifact>" on a
-      # different coordinate each attempt (coil-gif, kotlin-stdlib, the AGP plugin
-      # marker, compose-ui, appcompat-resources, com.android.tools:annotations
-      # within one afternoon), which is what the retry below and the cache are for:
-      # a warm Gradle home turns those into local reads.
-      #
-      # The key lists the build scripts instead of `apps/android/**/*.gradle*`, which also matches
-      # the `.gradle` project directory: its contents are written during the build, so the key
-      # computed at save time never equalled the one computed at restore time (measured in run
-      # 36511514498: restore asked for ...2665b8c9, the save wrote ...058a062d) - the exact key
-      # could never hit, and every run uploaded a fresh multi-hundred-MB entry.
-      - uses: actions/cache/restore@v4
-        id: gradle-cache
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-v2-${{ runner.os }}-${{ hashFiles('apps/android/*.gradle.kts', 'apps/android/*/build.gradle.kts', 'apps/android/*/build.gradle', 'apps/android/gradle/**') }}
-          restore-keys: |
-            gradle-v2-${{ runner.os }}-
-
-      - name: Unit tests and screenshot verification
-        # `runUnitAndScreenshotTests` is `:app:verifyPaparazziDebug`: the whole
-        # unit suite plus a pixel comparison of every snapshot against the
-        # committed goldens. Each host verifies its own set
-        # (`src/test/snapshots/<platform>`); this runner is Linux, so it checks
-        # the same rendering it can reproduce.
-        # Retried once, not more: artifact resolution fails transiently often
-        # enough to matter, but a retry is a second full job's worth of minutes
-        # on a plan whose quota this repo shares with everything else, so the
-        # second attempt reads what the cached Gradle home already has and gives
-        # up after that.
-        run: |
-          for attempt in 1 2; do
-            ./apps/android/gradlew -p apps/android runUnitAndScreenshotTests --quiet && exit 0
-            status=$?
-            echo "attempt $attempt failed (exit $status)"
-            if [ "$attempt" = 2 ]; then exit $status; fi
-            sleep 15
-          done
-
-      # Saved only on success: a failed run leaves Gradle's cache with the missing-artifact markers
-      # of whatever it could not download, and restoring that made the next attempt fail on the same
-      # coordinate instead of a fresh one (observed on this workflow's first try at caching).
-      #
-      # Only when the exact key missed. The key is the Gradle build files' hash, so a key hit means
-      # this run added nothing the entry does not already have - and re-uploading the whole cache
-      # costs ~30 s of runner time per push. A restore-keys hit (the key changed, but an older entry
-      # exists) reports `cache-hit: false` and does get saved, which is what keeps the entry current.
-      #
-      # This only became reachable once the key stopped matching `.gradle` (see the restore step):
-      # with that glob every run reported a miss and uploaded again.
-      - uses: actions/cache/save@v4
-        if: success() && steps.gradle-cache.outputs.cache-hit != 'true'
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-v2-${{ runner.os }}-${{ hashFiles('apps/android/*.gradle.kts', 'apps/android/*/build.gradle.kts', 'apps/android/*/build.gradle', 'apps/android/gradle/**') }}
-
   # The full-Telegram stack: `apps/android/telegram` (a git subtree of upstream
-  # kept byte-for-byte) plus our module at `apps/android/nativedo`. This job is
-  # separate from `android` because it needs a different toolchain (platform/
-  # build-tools 36, NDK 27.2.12479018, CMake 3.22.1), a full-history clone (the
-  # subtree pin and its 15 dependency gitlinks live in history), and a source
-  # fetch of those pinned dependency trees before Gradle can run.
+  # kept byte-for-byte) plus our module at `apps/android/nativedo`. This job needs
+  # a different toolchain (platform/build-tools 36, NDK 27.2.12479018, CMake
+  # 3.22.1), a full-history clone (the subtree pin and its dependency gitlinks
+  # live in history), and a source fetch of those pinned dependency trees before
+  # Gradle can run.
   nativedo:
     needs: changes
     if: needs.changes.outputs.nativedo == 'true'
@@ -282,20 +144,20 @@ jobs:
         with:
           packages: "platforms;android-36 build-tools;36.0.0 ndk;27.2.12479018 cmake;3.22.1 platform-tools"
 
-      # Same retry-and-cache reasoning as the `android` job: artifact resolution
-      # fails transiently, and a warm Gradle home turns a re-attempt into local
-      # reads. The key lists the build scripts explicitly instead of a broad
+      # Same retry-and-cache reasoning as before: artifact resolution fails
+      # transiently, and a warm Gradle home turns a re-attempt into local reads.
+      # The key lists the build scripts explicitly instead of a broad
       # `**/*.gradle*` glob, which would also match the `.gradle` project
-      # directory and could never hit (see the android job).
+      # directory and could never hit.
       - uses: actions/cache/restore@v4
         id: nativedo-gradle-cache
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-nativedo-v1-${{ runner.os }}-${{ hashFiles('apps/android/*.gradle.kts', 'apps/android/*/build.gradle.kts', 'apps/android/*/build.gradle', 'apps/android/telegram/gradle/**', 'apps/android/telegram/gradle.properties', 'apps/android/telegram/buildSrc/**/*.gradle.kts') }}
+          key: gradle-nativedo-v2-${{ runner.os }}-${{ hashFiles('apps/android/telegram/build.gradle', 'apps/android/telegram/settings.gradle', 'apps/android/telegram/gradle.properties', 'apps/android/telegram/gradle/**', 'apps/android/telegram/buildSrc/**/*.gradle*', 'apps/android/telegram/TMessagesProj/build.gradle', 'apps/android/nativedo/build.gradle') }}
           restore-keys: |
-            gradle-nativedo-v1-${{ runner.os }}-
+            gradle-nativedo-v2-${{ runner.os }}-
 
       - name: Materialize pinned Telegram dependency trees
         # Idempotent and pinned to the subtree's gitlinks: fetches each of the 15
@@ -327,20 +189,112 @@ jobs:
       - name: Unit tests
         run: ./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:testDailyDebugUnitTest --quiet
 
+      # On failure keep what a human needs to diagnose it without re-running the
+      # job: the JUnit XML, the test report, and Gradle logs. Retained for a
+      # week; a green run uploads nothing.
+      - name: Upload verification artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nativedo-verification
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            apps/android/nativedo/build/test-results/**
+            apps/android/nativedo/build/reports/tests/**
+            apps/android/nativedo/build/outputs/logs/**
+
+      # Saved only on success: a failed run leaves Gradle's cache with the
+      # missing-artifact markers of whatever it could not download, and restoring
+      # that made the next attempt fail on the same coordinate instead of a fresh
+      # one. Only when the exact key missed; a restore-keys hit reports
+      # `cache-hit: false` and does get saved, which keeps the entry current.
+      - uses: actions/cache/save@v4
+        if: success() && steps.nativedo-gradle-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-nativedo-v2-${{ runner.os }}-${{ hashFiles('apps/android/telegram/build.gradle', 'apps/android/telegram/settings.gradle', 'apps/android/telegram/gradle.properties', 'apps/android/telegram/gradle/**', 'apps/android/telegram/buildSrc/**/*.gradle*', 'apps/android/telegram/TMessagesProj/build.gradle', 'apps/android/nativedo/build.gradle') }}
+
+  # The installable deliverable. It runs after `nativedo` so the APK only exists
+  # for a commit whose unit tests and hook guard passed, and so this job restores
+  # the Gradle dependency cache that job just saved instead of racing it.
+  nativedo-apk:
+    needs: [changes, nativedo]
+    if: needs.changes.outputs.nativedo == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: "platforms;android-36 build-tools;36.0.0 ndk;27.2.12479018 cmake;3.22.1 platform-tools"
+
+      - uses: actions/cache/restore@v4
+        id: nativedo-gradle-cache
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-nativedo-v2-${{ runner.os }}-${{ hashFiles('apps/android/telegram/build.gradle', 'apps/android/telegram/settings.gradle', 'apps/android/telegram/gradle.properties', 'apps/android/telegram/gradle/**', 'apps/android/telegram/buildSrc/**/*.gradle*', 'apps/android/telegram/TMessagesProj/build.gradle', 'apps/android/nativedo/build.gradle') }}
+          restore-keys: |
+            gradle-nativedo-v2-${{ runner.os }}-
+
+      # CMake/NDK output is the slow part of this job. Its inputs are the pinned
+      # subtree (all native sources) plus the CMake/AGP configuration, so the key
+      # is the `git-subtree-split` SHA and a hash of those config files. No `.so`
+      # is committed or shared through this cache.
+      - name: Resolve subtree pin
+        id: pin
+        run: |
+          pin="$(git log --format=%B -- apps/android/telegram | sed -n 's/^git-subtree-split: //p' | head -n1)"
+          echo "pin=${pin:-unknown}" >> "$GITHUB_OUTPUT"
+          echo "subtree pin: ${pin:-unknown}"
+
+      - uses: actions/cache/restore@v4
+        id: native-cache
+        with:
+          path: |
+            apps/android/telegram/TMessagesProj/.cxx
+            apps/android/telegram/TMessagesProj/build/intermediates/cxx
+          key: nativedo-native-v1-${{ runner.os }}-${{ steps.pin.outputs.pin }}-${{ hashFiles('apps/android/telegram/TMessagesProj/jni/CMakeLists.txt', 'apps/android/telegram/TMessagesProj/jni/**/CMakeLists.txt', 'apps/android/telegram/TMessagesProj/jni/Application.mk', 'apps/android/telegram/TMessagesProj/build.gradle', 'apps/android/telegram/build.gradle', 'apps/android/telegram/gradle.properties', 'apps/android/telegram/buildSrc/**/*.gradle*', 'apps/android/nativedo/build.gradle') }}
+          restore-keys: |
+            nativedo-native-v1-${{ runner.os }}-${{ steps.pin.outputs.pin }}-
+
+      - name: Materialize pinned Telegram dependency trees
+        run: scripts/telegram-deps.sh
+
+      - name: Bound build memory
+        run: |
+          mkdir -p ~/.gradle
+          cat >> ~/.gradle/gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8
+          org.gradle.workers.max=2
+          org.gradle.parallel=false
+          kotlin.compiler.execution.strategy=in-process
+          EOF
+
       - name: Shared signing key (optional)
         # The key the Mac and orb builds use, when this repository holds it as secrets. With it the
-        # APK this job assembles can replace an install made on another machine; without it the
-        # assemble below still runs and verifies the code, signed with Gradle's per-machine debug
-        # key (which cannot update another machine's install).
+        # APK can replace an install made on another machine; without it the assemble below still
+        # runs and produces an installable APK signed with Gradle's per-machine debug key (which
+        # cannot update another machine's install).
         # Secrets: NATIVEDO_KEYSTORE_B64 (base64 of the .jks file), NATIVEDO_KEYSTORE_PASSWORD,
         # NATIVEDO_KEY_ALIAS, NATIVEDO_KEY_PASSWORD. The materialized files are gitignored and
-        # never land in an uploaded artifact (those paths are all under `build/`).
+        # never land in the uploaded artifact (it contains only `build/outputs/apk/**/*.apk`).
         env:
           KEYSTORE_B64: ${{ secrets.NATIVEDO_KEYSTORE_B64 }}
           STORE_PASSWORD: ${{ secrets.NATIVEDO_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.NATIVEDO_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.NATIVEDO_KEY_PASSWORD }}
         run: |
+          umask 077
           if [ -z "$KEYSTORE_B64" ]; then
             echo "no NATIVEDO_KEYSTORE_B64 secret: the arm64 APK uses the per-machine debug key"
             exit 0
@@ -354,29 +308,23 @@ jobs:
           } > apps/android/nativedo/keystore.properties
 
       - name: arm64 assemble
+        # An injected ABI otherwise makes AGP mark the APK as test-only (install
+        # error -15); `testOnly=false` keeps it installable from the phone's
+        # package installer.
         run: ./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:assembleDailyDebug -Pandroid.injected.build.abi=arm64-v8a -Pandroid.injected.testOnly=false --quiet
 
-      # On failure keep what a human needs to diagnose it without re-running the
-      # ~15 minute job: the JUnit XML, the test report, and the APK/logs if the
-      # build got far enough. Retained for a week; a green run uploads nothing.
-      - name: Upload verification artifacts
-        if: failure()
+      - name: Upload arm64 APK
         uses: actions/upload-artifact@v4
         with:
-          name: nativedo-verification
-          if-no-files-found: ignore
-          retention-days: 7
-          path: |
-            apps/android/nativedo/build/test-results/**
-            apps/android/nativedo/build/reports/tests/**
-            apps/android/nativedo/build/outputs/apk/**
-            apps/android/nativedo/build/intermediates/apk/**
-            apps/android/nativedo/build/outputs/logs/**
+          name: nativedo-dailyDebug-arm64
+          if-no-files-found: error
+          retention-days: 14
+          path: apps/android/nativedo/build/outputs/apk/daily/debug/*.apk
 
       - uses: actions/cache/save@v4
-        if: success() && steps.nativedo-gradle-cache.outputs.cache-hit != 'true'
+        if: success() && steps.native-cache.outputs.cache-hit != 'true'
         with:
           path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-nativedo-v1-${{ runner.os }}-${{ hashFiles('apps/android/*.gradle.kts', 'apps/android/*/build.gradle.kts', 'apps/android/*/build.gradle', 'apps/android/telegram/gradle/**', 'apps/android/telegram/gradle.properties', 'apps/android/telegram/buildSrc/**/*.gradle.kts') }}
+            apps/android/telegram/TMessagesProj/.cxx
+            apps/android/telegram/TMessagesProj/build/intermediates/cxx
+          key: nativedo-native-v1-${{ runner.os }}-${{ steps.pin.outputs.pin }}-${{ hashFiles('apps/android/telegram/TMessagesProj/jni/CMakeLists.txt', 'apps/android/telegram/TMessagesProj/jni/**/CMakeLists.txt', 'apps/android/telegram/TMessagesProj/jni/Application.mk', 'apps/android/telegram/TMessagesProj/build.gradle', 'apps/android/telegram/build.gradle', 'apps/android/telegram/gradle.properties', 'apps/android/telegram/buildSrc/**/*.gradle*', 'apps/android/nativedo/build.gradle') }}

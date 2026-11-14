@@ -7,13 +7,15 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-GRADLE_PROJECT="$REPO_ROOT/apps/android"
+GRADLE_PROJECT="$REPO_ROOT/apps/android/telegram"
 ANDROID_SDK_DIR="${ANDROID_HOME:-$HOME/Android/Sdk}"
 
 missing=()
-[[ -d "$ANDROID_SDK_DIR/platforms/android-35" ]] || missing+=("Android SDK platform 35 in $ANDROID_SDK_DIR")
-[[ -d "$ANDROID_SDK_DIR/build-tools/34.0.0" ]] || missing+=("Android build-tools 34.0.0 in $ANDROID_SDK_DIR")
-command -v javac >/dev/null 2>&1 || missing+=("JDK 17")
+[[ -d "$ANDROID_SDK_DIR/platforms/android-36" ]] || missing+=("Android SDK platform 36 in $ANDROID_SDK_DIR")
+[[ -d "$ANDROID_SDK_DIR/build-tools/36.0.0" ]] || missing+=("Android build-tools 36.0.0 in $ANDROID_SDK_DIR")
+[[ -d "$ANDROID_SDK_DIR/ndk/27.2.12479018" ]] || missing+=("Android NDK 27.2.12479018 in $ANDROID_SDK_DIR")
+[[ -d "$ANDROID_SDK_DIR/cmake/3.22.1" ]] || missing+=("CMake 3.22.1 in $ANDROID_SDK_DIR")
+command -v javac >/dev/null 2>&1 || missing+=("JDK 17+")
 
 if (( ${#missing[@]} > 0 )); then
   printf 'orb resume: toolchain incomplete: %s\n' "${missing[*]}" >&2
@@ -35,28 +37,22 @@ fi
 signing_key="$HOME/.nativedo/nativedo-signing.jks"
 keystore_properties="$REPO_ROOT/apps/android/nativedo/keystore.properties"
 if [[ -n "${NATIVEDO_KEYSTORE_B64:-}" ]]; then
+  umask 077
   mkdir -p "${signing_key%/*}"
-  printf '%s' "$NATIVEDO_KEYSTORE_B64" | base64 -d >"$signing_key"
-  chmod 600 "$signing_key"
-  {
-    printf 'storeFile=%s\n' "$signing_key"
-    printf 'storePassword=%s\n' "${NATIVEDO_KEYSTORE_PASSWORD:-}"
-    printf 'keyAlias=%s\n' "${NATIVEDO_KEY_ALIAS:-androiddebugkey}"
-    printf 'keyPassword=%s\n' "${NATIVEDO_KEY_PASSWORD:-${NATIVEDO_KEYSTORE_PASSWORD:-}}"
-  } >"$keystore_properties"
-fi
-
-VENDOR_DIR="$(
-  PYTHONPATH="$REPO_ROOT/scripts" NATIVEDO_ROOT="$REPO_ROOT" python3 -c \
-    'from vendorlib import vendor_dir; print(vendor_dir())' 2>/dev/null ||
-    echo "$REPO_ROOT/../telegram"
-)"
-if [[ -d "$VENDOR_DIR/.git" || -f "$VENDOR_DIR/.git" ]]; then
-  vendor_head="$(git -C "$VENDOR_DIR" rev-parse HEAD 2>/dev/null || echo unknown)"
-  pin="$(python3 -c "import json; print(json.load(open('$REPO_ROOT/vendor-overlay.json'))['upstream']['pinned_commit'])" 2>/dev/null || true)"
-  if [[ -n "$pin" && "$vendor_head" != "$pin" ]]; then
-    echo "orb resume: vendor tree at ${vendor_head:0:8} is not the pin (${pin:0:8}); run scripts/vendor-setup.sh"
+  # Decode to a temporary file first: a truncated or invalid secret must not
+  # replace a working key. A failure here is reported but never aborts resume.
+  key_tmp="$(mktemp "${signing_key}.XXXXXX")"
+  if printf '%s' "$NATIVEDO_KEYSTORE_B64" | base64 -d >"$key_tmp" 2>/dev/null && [[ -s "$key_tmp" ]]; then
+    chmod 600 "$key_tmp"
+    mv -f "$key_tmp" "$signing_key"
+    {
+      printf 'storeFile=%s\n' "$signing_key"
+      printf 'storePassword=%s\n' "${NATIVEDO_KEYSTORE_PASSWORD:-}"
+      printf 'keyAlias=%s\n' "${NATIVEDO_KEY_ALIAS:-androiddebugkey}"
+      printf 'keyPassword=%s\n' "${NATIVEDO_KEY_PASSWORD:-${NATIVEDO_KEYSTORE_PASSWORD:-}}"
+    } >"$keystore_properties"
+  else
+    rm -f "$key_tmp"
+    echo "orb resume: NATIVEDO_KEYSTORE_B64 is not valid base64 (or decodes to nothing); keeping the existing signing key" >&2
   fi
-else
-  echo "orb resume: sparse Telegram tree missing at $VENDOR_DIR; run scripts/vendor-setup.sh for vendor diffs"
 fi
