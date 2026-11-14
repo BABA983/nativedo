@@ -1,0 +1,19 @@
+title = "NativeDo secrets scan"
+
+# Keep the default rules. The only allowlist is the upstream Telegram Android
+# subtree, which ships public sample configuration and upstream test material
+# (for example google-services.json and WebRTC test certificates). Nothing in our
+# own code is allowlisted.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Upstream Telegram Android content only"
+paths = [
+  # The current tree keeps the subtree under this prefix.
+  '''^apps/android/telegram/''',
+  # `git subtree` imported the same upstream content as a squashed orphan commit
+  # whose tree root is the Telegram repository root. These root paths exist only
+  # in that import commit; our own tree has no TMessagesProj* directory at root.
+  '''^TMessagesProj[^/]*/''',
+]

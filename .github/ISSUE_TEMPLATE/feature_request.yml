@@ -1,0 +1,39 @@
+name: Feature request
+description: Suggest a change in behavior or a new capability
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        NativeDo is a native linux.do client, not a generic Discourse SDK or a Telegram
+        fork. Please describe the reader problem first, then the change you have in mind.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do, and what makes it hard today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: What should the app do instead? Screenshots or a mockup help.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other ways to solve the same problem, if any.
+    validations:
+      required: false
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - label: This request is about the app, not the linux.do server or moderation.
+          required: true

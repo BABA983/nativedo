@@ -1,0 +1,74 @@
+name: Bug report
+description: Report a reproducible problem in the Android app
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please remove cookies, tokens, email addresses and other
+        personal data from logs and screenshots before posting. Security problems
+        belong in a private advisory, not here.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: The actual result, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The shortest sequence that still shows the problem.
+      placeholder: |
+        1. Open ...
+        2. Tap ...
+        3. See ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: The versionName shown in the app, including the commit suffix if present.
+      placeholder: 0.1.0-debug-abc1234
+    validations:
+      required: true
+  - type: input
+    id: android
+    attributes:
+      label: Android version and device
+      placeholder: Android 15, Pixel 8
+    validations:
+      required: true
+  - type: dropdown
+    id: build
+    attributes:
+      label: Build
+      options:
+        - dailyDebug
+        - dailyRelease
+        - previewDebug
+        - previewRelease
+        - built from source
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or screenshots
+      description: Paste only the lines around the failure. Redact secrets and personal data.
+      render: text
+    validations:
+      required: false
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I removed cookies, tokens, passwords, email addresses and other personal data.
+          required: true
+        - label: This is not a security vulnerability.
+          required: true
