@@ -7,6 +7,7 @@ import io.github.baba983.nativedo.app.NativeDo
 import io.github.baba983.nativedo.harness.FakeDiscourseSite
 import io.github.baba983.nativedo.harness.UpstreamUiHarness
 import io.github.baba983.nativedo.harness.contentListOf
+import io.github.baba983.nativedo.harness.contentRowCount
 import io.github.baba983.nativedo.harness.shadows.ShadowAnimatedFileNative
 import io.github.baba983.nativedo.harness.shadows.ShadowConnectionsManager
 import io.github.baba983.nativedo.harness.shadows.ShadowIntro
@@ -165,7 +166,7 @@ internal class DiscourseMentionsScrollTest {
         val fragment = TopicFragment.forTopic(TOPIC_ID, "Mentions scroll")
         harness.present(fragment)
         harness.await("composer owner") { harness.visibleFragment() === fragment }
-        harness.await("posts") { contentListOf(harness.activity)?.adapter?.itemCount == 1 }
+        harness.await("posts") { contentRowCount(harness) == 1 }
         harness.layoutApp()
         return fragment
     }

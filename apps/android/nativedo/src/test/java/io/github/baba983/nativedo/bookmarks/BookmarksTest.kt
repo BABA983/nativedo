@@ -9,6 +9,7 @@ import io.github.baba983.nativedo.harness.FakeDiscourseSite
 import io.github.baba983.nativedo.harness.UpstreamUiHarness
 import io.github.baba983.nativedo.harness.clickMenuItem
 import io.github.baba983.nativedo.harness.contentListOf
+import io.github.baba983.nativedo.harness.contentRowCount
 import io.github.baba983.nativedo.harness.latestItemOptionsMenu
 import io.github.baba983.nativedo.harness.menuItemLabels
 import io.github.baba983.nativedo.harness.shadows.ShadowAnimatedFileNative
@@ -263,7 +264,7 @@ internal class BookmarksTest {
         return first + (index - visibleIndex)
     }
 
-    private fun rowCount(): Int = contentListOf(harness.activity)?.adapter?.itemCount ?: 0
+    private fun rowCount(): Int = contentRowCount(harness)
 
     private fun laidOutCells(): List<ChatMessageCell> {
         val list = contentListOf(harness.activity) ?: return emptyList()

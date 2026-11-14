@@ -14,6 +14,7 @@ import io.github.baba983.nativedo.core.di.AppContainer
 import io.github.baba983.nativedo.harness.FakeDiscourseSite
 import io.github.baba983.nativedo.harness.UpstreamUiHarness
 import io.github.baba983.nativedo.harness.contentListOf
+import io.github.baba983.nativedo.harness.contentRowCount
 import io.github.baba983.nativedo.harness.shadows.*
 import okhttp3.mockwebserver.MockResponse
 import okio.Buffer
@@ -759,7 +760,7 @@ internal class TopicBodyFidelityTest {
         harness.present(TopicFragment.forTopic(TOPIC, "Body fidelity"))
         harness.await("topic rows") {
             harness.layoutApp()
-            list().adapter?.itemCount == count && cells().isNotEmpty()
+            contentRowCount(harness) == count && cells().isNotEmpty()
         }
         harness.drawApp()
     }

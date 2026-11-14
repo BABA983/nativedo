@@ -13,6 +13,7 @@ import io.github.baba983.nativedo.core.di.AppContainer
 import io.github.baba983.nativedo.harness.FakeDiscourseSite
 import io.github.baba983.nativedo.harness.UpstreamUiHarness
 import io.github.baba983.nativedo.harness.contentListOf
+import io.github.baba983.nativedo.harness.contentRowCount
 import io.github.baba983.nativedo.harness.shadows.*
 import okhttp3.mockwebserver.MockResponse
 import okio.Buffer
@@ -509,7 +510,7 @@ internal class DiscourseEmojiRenderTest {
             harness.present(TopicFragment.forTopic(TOPIC, "Emoji font"))
             harness.await("the larger-size artwork") {
                 harness.drawApp()
-                list().adapter?.itemCount == 1 &&
+                contentRowCount(harness) == 1 &&
                     emojiHolders().any { it.drawable?.imageReceiver?.bitmap != null }
             }
             harness.layoutApp()
@@ -681,7 +682,7 @@ internal class DiscourseEmojiRenderTest {
         harness.present(TopicFragment.forTopic(TOPIC, "Emoji render"))
         harness.await("topic rows") {
             harness.layoutApp()
-            list().adapter?.itemCount == count && cells().isNotEmpty()
+            contentRowCount(harness) == count && cells().isNotEmpty()
         }
         harness.drawApp()
     }
@@ -695,8 +696,10 @@ internal class DiscourseEmojiRenderTest {
     private fun cells(): List<ChatMessageCell> = (0 until list().childCount)
         .map { list().getChildAt(it) }.filterIsInstance<ChatMessageCell>()
     private fun cell(): ChatMessageCell {
-        val manager = list().layoutManager as LinearLayoutManager
-        return manager.findViewByPosition(manager.findFirstVisibleItemPosition()) as ChatMessageCell
+        for (index in 0 until list().childCount) {
+            (list().getChildAt(index) as? ChatMessageCell)?.let { return it }
+        }
+        throw AssertionError("the list drew no message cell")
     }
 
     private companion object {

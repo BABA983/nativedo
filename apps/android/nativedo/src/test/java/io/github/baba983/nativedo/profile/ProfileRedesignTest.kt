@@ -5,6 +5,7 @@ import android.view.ViewGroup
 import io.github.baba983.nativedo.app.NativeDo
 import io.github.baba983.nativedo.harness.FakeDiscourseSite
 import io.github.baba983.nativedo.harness.UpstreamUiHarness
+import io.github.baba983.nativedo.harness.contentRowCount
 import io.github.baba983.nativedo.harness.shadows.ShadowAnimatedFileNative
 import io.github.baba983.nativedo.harness.shadows.ShadowConnectionsManager
 import io.github.baba983.nativedo.harness.shadows.ShadowIntro
@@ -350,7 +351,7 @@ internal class ProfileRedesignTest {
     // ------------------------------------------------------------------------------------------
 
     /** The topic list and the profile's own list are the two RecyclerListViews on screen. */
-    private fun listRowCount(): Int = listView()?.adapter?.itemCount ?: 0
+    private fun listRowCount(): Int = contentRowCount(harness)
 
     private fun listView(): RecyclerListView? =
         io.github.baba983.nativedo.harness.contentListOf(harness.activity)

@@ -1463,12 +1463,22 @@ internal class TopicRepliesThreadTest {
 
     private fun bubbleIndexOfFloor(fragment: TopicFragment, floorNumber: Int): Int {
         val floors = floorsOf(fragment)
+        val bubbles = field(fragment, "bubbles") as List<MessageObject>
         val bubbleFloors = field(fragment, "bubbleFloors") as List<Int>
         val floorIndex = floors.indexOfFirst { it.postNumber == floorNumber }
         if (floorIndex < 0) {
             throw AssertionError("floor $floorNumber is not loaded")
         }
-        return bubbleFloors.indexOfLast { it == floorIndex }
+        // [bubblesOf] omits the date rows, so the floor's last message row is counted in that
+        // same view: the raw row list also holds a date row above the floor's first bubble.
+        var visible = -1
+        var last = -1
+        for (index in bubbleFloors.indices) {
+            if (bubbles[index].isDateObject) continue
+            visible++
+            if (bubbleFloors[index] == floorIndex) last = visible
+        }
+        return last
     }
 
     private fun tapThreadStatus(fragment: TopicFragment) {
@@ -1648,7 +1658,9 @@ internal class TopicRepliesThreadTest {
 
     @Suppress("UNCHECKED_CAST")
     private fun bubblesOf(fragment: TopicFragment): List<MessageObject> =
-        field(fragment, "bubbles") as List<MessageObject>
+        // The list also draws one date row per day; these assertions count a floor's own
+        // bubbles, so the separators above them are not rows of the thread.
+        (field(fragment, "bubbles") as List<MessageObject>).filter { !it.isDateObject }
 
     private fun topicDetailOf(fragment: TopicFragment): TopicDetail =
         field(fragment, "topicDetail") as TopicDetail

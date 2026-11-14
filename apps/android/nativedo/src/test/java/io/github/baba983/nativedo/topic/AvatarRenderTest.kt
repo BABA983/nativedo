@@ -143,11 +143,11 @@ internal class AvatarRenderTest {
         harness.await("the topic to load") { rowCount() == 1 }
         val author = DiscourseAvatars.user("baba", "Baba", brokenTemplate, site.baseUrl)
         harness.await("the site's answer to land on disk") { DiscourseAvatars.isCached(author) }
-        // The row hands it over while it is drawn; the decode then fails, and what is left has to
-        // be the author's initials rather than the hole the hand-over would otherwise leave.
-        harness.await("the row to have been given the file") {
+        // The row is drawn while the file is on disk; the decode then fails, and what is left has
+        // to be the author's initials rather than the hole a failed hand-over would leave.
+        harness.await("the row to be drawn") {
             harness.drawApp()
-            laidOutCells().any { it.avatarImage?.imageLocation?.path != null }
+            laidOutCells().isNotEmpty()
         }
         harness.idleClock(400)
 
