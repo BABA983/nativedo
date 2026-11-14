@@ -313,7 +313,7 @@ jobs:
           for attempt in 1 2; do
             ./apps/android/telegram/gradlew -p apps/android/telegram \
               :nativedo:testDailyDebugUnitTest \
-              -Pnativedo.test.maxHeapSize=2g \
+              -Pnativedo.test.maxHeapSize=3g \
               ${{ steps.shard.outputs.args }} --console=plain && exit 0
             status=$?
             echo "attempt $attempt failed (exit $status)"
