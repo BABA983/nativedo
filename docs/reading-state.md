@@ -55,6 +55,15 @@ greater of server progress and the local read floor. Read state is scoped by sit
 account and topic. The viewport store exists but is not wired into this screen:
 returning to a previous pixel offset is **not** current active behavior.
 
+The window's own state - where the loaded slice starts and ends in the stream, the pages on
+their way, the edges that failed, and the reading mode the rows were read in - lives in
+[TopicReadingWindow](../apps/android/nativedo/src/main/java/io/github/baba983/nativedo/topic/TopicReadingWindow.kt),
+a Kotlin class with no View. The screen asks it before every read and renders what it reports:
+a page from a window that was replaced cannot move the new window's cursor, and a failed read
+puts the mode the rows on screen were actually read in back. Its races and recovery rules are
+covered by [its test](../apps/android/nativedo/src/test/java/io/github/baba983/nativedo/topic/TopicReadingWindowTest.kt);
+the screen's own flows stay end to end in the paging and filter tests below.
+
 The topic's floating page-down arrow appears while real stream posts remain below
 the viewport, even when they are already read. Its badge counts only real posts
 after the reporter's monotonic read mark, not all posts below the screen; scrolling
@@ -72,7 +81,9 @@ remains below the viewport the down arrow plays its own hide, and the up arrow
 takes the resting slot it frees - the stack collapses to one button instead of
 resting over an empty slot, and the pair rides back apart when the down arrow
 returns. The up arrow's resting offset is a function of the down arrow's
-visibility factor, so a frame mid-flight never leaves a gap.
+visibility factor, so a frame mid-flight never leaves a gap. Its tap reads floor
+1 when the loaded window starts mid-stream - row 0 is not floor 1 there - and
+only scrolls to the top when the head is already loaded.
 
 ### Only the original poster
 
@@ -92,7 +103,10 @@ does not move. Reporting the poster's floor 40 would advance the site's cursor
 past every floor in between, which the reader never saw. The page-down badge
 counts the poster's posts below the viewport rather than unread posts, and the
 end-of-topic read-on pull is withheld because the topic's real end was not
-reached. The [filter flow](../apps/android/nativedo/src/test/java/io/github/baba983/nativedo/topic/TopicOnlyOpTest.kt)
+reached. A filtered window that does not arrive leaves the rows on screen
+unchanged, so the row and the capsule go back to the mode those rows were read
+in - not to the mode before the last tap, which a second tap can have replaced.
+The [filter flow](../apps/android/nativedo/src/test/java/io/github/baba983/nativedo/topic/TopicOnlyOpTest.kt)
 drives the overflow row, the filtered request, filtered paging, the suspended
 read report and the way back.
 
@@ -117,7 +131,10 @@ same cursor. The topic list's next-page footer follows the same split - its tap 
 the recovery WebView instead of retrying a request the site will refuse again. A chat
 channel's older window that needs the session ends in the screen's own session state,
 whose tap opens the login page; an outage there is a retry hint and leaves the rows
-standing. The [topic paging flow](../apps/android/nativedo/src/test/java/io/github/baba983/nativedo/topic/TopicPagingTest.kt)
+standing. The chat hint's retry repeats the read that failed with its own target,
+direction and landing: an older page asks for the same older cursor, a refresh
+refreshes, and a send's own readback still asks around the accepted id, so the message
+just sent can appear. The [topic paging flow](../apps/android/nativedo/src/test/java/io/github/baba983/nativedo/topic/TopicPagingTest.kt)
 and the [channel flow](../apps/android/nativedo/src/test/java/io/github/baba983/nativedo/chat/ChatChannelTest.kt)
 drive both.
 
@@ -180,8 +197,10 @@ the list's top edge. Both are upstream's chat interaction and upstream's own cel
 pill, so the plate, the text colour and the floating pill's reduced alpha come from
 upstream rather than from a second drawing. The row's date is the day's midnight,
 not the floor's hour, so the row and the pill always name the same day; a window
-whose slice is prepended keeps one row at the seam when the slice's last day is the
-day the window already opens on.
+whose slice is prepended keeps one row at the seam when the slice's last date row
+is the day the window already opens on. The seam reads that day from the slice's
+last date row, not from its last row - the last row is a floor's bubble - and
+keeps both rows when the days differ.
 
 The pill is not a scroll-only overlay: it is up exactly while the day's row is
 scrolled away, and the row and the pill hand over through the pill's own slide

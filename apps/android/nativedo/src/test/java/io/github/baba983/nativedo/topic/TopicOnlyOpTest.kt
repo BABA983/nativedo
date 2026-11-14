@@ -316,8 +316,11 @@ internal class TopicOnlyOpTest {
         return reporter.javaClass.getMethod("getReachedFloorMark").invoke(reporter) as Int
     }
 
-    /** Whether the screen carries only the poster's floors, from its own state. */
-    private fun onlyOpOf(fragment: TopicFragment): Boolean = field(fragment, "onlyOp") as Boolean
+    /** Whether the screen carries only the poster's floors, from the window's own state. */
+    private fun onlyOpOf(fragment: TopicFragment): Boolean {
+        val reading = field(fragment, "reading") as TopicReadingWindow
+        return reading.isOnlyOp
+    }
 
     /** Puts the row drawing [floor] at the top of the viewport. */
     private fun scrollFloorToTop(fragment: TopicFragment, floor: Int) {

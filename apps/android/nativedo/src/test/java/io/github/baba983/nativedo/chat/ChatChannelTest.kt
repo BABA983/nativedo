@@ -376,14 +376,24 @@ internal class ChatChannelTest {
 
     /**
      * A readback that failed must not make the client resend the message: the write already landed,
-     * and replaying it would post a second copy. The screen keeps what it had.
+     * and replaying it would post a second copy. The screen keeps what it had. The hint's retry is
+     * the readback again - around the accepted id - not the older cursor: the reader's next tap has
+     * to be able to bring the sent message back.
      */
     @Test
-    fun aReadbackThatFailsDoesNotResendTheMessage() {
+    fun aReadbackThatFailsDoesNotResendTheMessageAndItsRetryAsksForItAgain() {
         serveJoinedChannel()
+        val refuseReadback = AtomicBoolean(true)
         site.serveResponseByQuery("chat/api/channels/71/messages.json") { path ->
             if (path.contains("target_message_id=9004")) {
-                MockResponse().setResponseCode(500).setBody("""{"errors":["boom"]}""")
+                if (refuseReadback.get()) {
+                    MockResponse().setResponseCode(500).setBody("""{"errors":["boom"]}""")
+                } else {
+                    MockResponse()
+                        .setResponseCode(200)
+                        .setHeader("Content-Type", "application/json")
+                        .setBody(harness.fixture("chat-messages-sent.json"))
+                }
             } else {
                 MockResponse()
                     .setResponseCode(200)
@@ -395,13 +405,31 @@ internal class ChatChannelTest {
 
         val fragment = openChannel(71L, "站点反馈")
         harness.await("the first window") { fragment.messageCount() == 3 }
+        harness.layoutApp()
 
         fragment.setComposerTextForTest("这条不能发两次")
         fragment.sendForTest("这条不能发两次")
-        harness.await("the write to be recorded") {
-            site.requestPaths.count { it == "chat/71.json" } == 1
+
+        // Watch the send's readback one task at a time. A full looper drain also runs the hint's
+        // own hide timer, so the write, the readback request and the hint the failure shows are
+        // collected before anything can drain them away.
+        var writeRecorded = false
+        var readbackAsked = false
+        var bulletin: org.telegram.ui.Components.Bulletin? = null
+        repeat(12_000) {
+            if (!writeRecorded || bulletin == null) {
+                harness.idle(1)
+                writeRecorded = writeRecorded || site.requestPaths.count { it == "chat/71.json" } == 1
+                readbackAsked = readbackAsked || site.queriesFor("chat/api/channels/71/messages.json")
+                    .any { it.contains("target_message_id=9004") }
+                bulletin = org.telegram.ui.Components.Bulletin.getVisibleBulletin()
+                java.util.concurrent.locks.LockSupport.parkNanos(500_000L)
+            }
         }
-        harness.idleClock(300)
+        assertTrue("the write reached the site", writeRecorded)
+        assertTrue("the failed readback was asked for", readbackAsked)
+        assertNotNull("the failed readback is said in passing, not silently", bulletin)
+        val hint = bulletin!!
 
         assertEquals(
             "the failed readback never replays the write",
@@ -409,6 +437,33 @@ internal class ChatChannelTest {
             site.requestPaths.count { it == "chat/71.json" },
         )
         assertEquals("the client does not invent the message it could not read", 3, fragment.messageCount())
+
+        val button = retryButtonOf(hint) as? org.telegram.ui.Components.Bulletin.UndoButton
+            ?: throw AssertionError("the failed readback carries no retry")
+        assertEquals("the hint's action is the retry", "重试", bulkText(button).joinToString(" "))
+
+        refuseReadback.set(false)
+        val readsBefore = site.queriesFor("chat/api/channels/71/messages.json").size
+        button.performClick()
+        harness.await("the retried read to be asked") {
+            site.queriesFor("chat/api/channels/71/messages.json").size > readsBefore
+        }
+        val retried = site.queriesFor("chat/api/channels/71/messages.json").last()
+        println("chat-readback-retry: $retried")
+        assertTrue(
+            "the retry asks for the accepted message again: $retried",
+            retried.contains("target_message_id=9004"),
+        )
+        assertFalse(
+            "the retry is not older history: $retried",
+            retried.contains("direction=past"),
+        )
+        harness.await("the accepted message read back") { fragment.messageCount() == 4 }
+        assertEquals(
+            "the retry still never replays the write",
+            1,
+            site.requestPaths.count { it == "chat/71.json" },
+        )
         harness.assertNoTelegramSideEffects()
     }
 
