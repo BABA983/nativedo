@@ -133,18 +133,14 @@ jobs:
   # 3.22.1), a full-history clone (the subtree pin and its dependency gitlinks
   # live in history), and a source fetch of those pinned dependency trees before
   # Gradle can run.
-  nativedo:
+  #
+  # Compile the test classes once and publish the Gradle build cache, so the
+  # shards below do not each pay the ~8-10 minute :TMessagesProj Java compile.
+  nativedo-build:
     needs: changes
     if: needs.changes.outputs.nativedo == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    # The suite is 108 Robolectric classes, each in a fresh JVM. On the
-    # private-repository 2-core runner a single job takes longer than the
-    # runner stays healthy, so split the classes into four parallel shards.
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [0, 1, 2, 3]
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
@@ -166,7 +162,7 @@ jobs:
           java-version: "17"
       - uses: android-actions/setup-android@v3
         with:
-          packages: "platforms;android-36 build-tools;36.0.0 platform-tools"
+          packages: "platforms;android-36 build-tools;36.0.0 ndk;27.2.12479018 cmake;3.22.1 platform-tools"
 
       # Same retry-and-cache reasoning as before: artifact resolution fails
       # transiently, and a warm Gradle home turns a re-attempt into local reads.
@@ -199,20 +195,97 @@ jobs:
         run: python3 -m unittest discover -s scripts/tests -t scripts/tests -p 'test_telegram_*.py'
 
       - name: Bound build memory
-        # Override upstream's 8 GB daemon without editing the subtree. Tests
-        # separately bound their heap and recycle native-graphics state per class.
-        # Private-repository runners have ~7 GB, so the daemon and the test JVM
-        # together must stay well below that.
+        # Override upstream's 8 GB daemon without editing the subtree. The
+        # build cache lets the test shards reuse this job's compiled classes.
         run: |
           free -m
           nproc
           df -h /
           mkdir -p ~/.gradle
           cat >> ~/.gradle/gradle.properties <<'EOF'
-          org.gradle.jvmargs=-Xmx1g -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8
+          org.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8
           org.gradle.workers.max=1
           org.gradle.parallel=false
           kotlin.compiler.execution.strategy=in-process
+          org.gradle.caching=true
+          EOF
+
+      - name: Compile test classes
+        run: |
+          ./apps/android/telegram/gradlew -p apps/android/telegram \
+            :TMessagesProj:compileDebugJavaWithJavac \
+            :nativedo:compileDailyDebugUnitTestKotlin \
+            :nativedo:compileDailyDebugUnitTestJavaWithJavac \
+            :nativedo:processDailyDebugUnitTestJavaRes \
+            --console=plain
+
+      # Saved only on success: a failed run leaves Gradle's cache with the
+      # missing-artifact markers of whatever it could not download, and restoring
+      # that made the next attempt fail on the same coordinate instead of a fresh
+      # one. Only when the exact key missed; a restore-keys hit reports
+      # `cache-hit: false` and does get saved, which keeps the entry current.
+      - uses: actions/cache/save@v4
+        if: success() && steps.nativedo-gradle-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-nativedo-v2-${{ runner.os }}-${{ hashFiles('apps/android/telegram/build.gradle', 'apps/android/telegram/settings.gradle', 'apps/android/telegram/gradle.properties', 'apps/android/telegram/gradle/**', 'apps/android/telegram/buildSrc/**/*.gradle*', 'apps/android/telegram/TMessagesProj/build.gradle', 'apps/android/nativedo/build.gradle') }}
+
+  # The suite is 108 Robolectric classes, each in a fresh JVM. On the
+  # private-repository 2-core runner a single job is killed before it finishes,
+  # so split the classes into four parallel shards that restore the build cache
+  # published by `nativedo-build` instead of compiling again.
+  nativedo:
+    needs: [changes, nativedo-build]
+    if: needs.changes.outputs.nativedo == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost /usr/local/lib/android/sdk/ndk
+          df -h /
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: "platforms;android-36 build-tools;36.0.0 platform-tools"
+
+      - uses: actions/cache/restore@v4
+        id: nativedo-gradle-cache
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-nativedo-v2-${{ runner.os }}-${{ hashFiles('apps/android/telegram/build.gradle', 'apps/android/telegram/settings.gradle', 'apps/android/telegram/gradle.properties', 'apps/android/telegram/gradle/**', 'apps/android/telegram/buildSrc/**/*.gradle*', 'apps/android/telegram/TMessagesProj/build.gradle', 'apps/android/nativedo/build.gradle') }}
+          restore-keys: |
+            gradle-nativedo-v2-${{ runner.os }}-
+
+      - name: Materialize pinned Telegram dependency trees
+        run: scripts/telegram-deps.sh
+
+      - name: Bound build memory
+        run: |
+          free -m
+          nproc
+          df -h /
+          mkdir -p ~/.gradle
+          cat >> ~/.gradle/gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8
+          org.gradle.workers.max=1
+          org.gradle.parallel=false
+          kotlin.compiler.execution.strategy=in-process
+          org.gradle.caching=true
           EOF
 
       - name: Select test shard
@@ -233,7 +306,20 @@ jobs:
           printf 'args=%s\n' "${args[*]}" >> "$GITHUB_OUTPUT"
 
       - name: Unit tests (shard ${{ matrix.shard }})
-        run: ./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:testDailyDebugUnitTest -Pnativedo.test.maxHeapSize=1g ${{ steps.shard.outputs.args }} --console=plain
+        # The plugin portal occasionally fails to resolve a buildSrc dependency;
+        # retry once so a transient miss does not fail the shard. A runner
+        # shutdown or a test failure is not retried into a false green.
+        run: |
+          for attempt in 1 2; do
+            ./apps/android/telegram/gradlew -p apps/android/telegram \
+              :nativedo:testDailyDebugUnitTest \
+              -Pnativedo.test.maxHeapSize=2g \
+              ${{ steps.shard.outputs.args }} --console=plain && exit 0
+            status=$?
+            echo "attempt $attempt failed (exit $status)"
+            if [ "$attempt" = 2 ]; then exit $status; fi
+            sleep 15
+          done
 
       # On failure keep what a human needs to diagnose it without re-running the
       # job: the JUnit XML, the test report, and Gradle logs. Retained for a
@@ -250,22 +336,9 @@ jobs:
             apps/android/nativedo/build/reports/tests/**
             apps/android/nativedo/build/outputs/logs/**
 
-      # Saved only on success: a failed run leaves Gradle's cache with the
-      # missing-artifact markers of whatever it could not download, and restoring
-      # that made the next attempt fail on the same coordinate instead of a fresh
-      # one. Only when the exact key missed; a restore-keys hit reports
-      # `cache-hit: false` and does get saved, which keeps the entry current.
-      - uses: actions/cache/save@v4
-        if: success() && matrix.shard == 0 && steps.nativedo-gradle-cache.outputs.cache-hit != 'true'
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-nativedo-v2-${{ runner.os }}-${{ hashFiles('apps/android/telegram/build.gradle', 'apps/android/telegram/settings.gradle', 'apps/android/telegram/gradle.properties', 'apps/android/telegram/gradle/**', 'apps/android/telegram/buildSrc/**/*.gradle*', 'apps/android/telegram/TMessagesProj/build.gradle', 'apps/android/nativedo/build.gradle') }}
-
   # The installable deliverable. It runs after `nativedo` so the APK only exists
   # for a commit whose unit tests and hook guard passed, and so this job restores
-  # the Gradle dependency cache that job just saved instead of racing it.
+  # the Gradle dependency cache that `nativedo-build` saved instead of racing it.
   nativedo-apk:
     needs: [changes, nativedo]
     if: needs.changes.outputs.nativedo == 'true'
