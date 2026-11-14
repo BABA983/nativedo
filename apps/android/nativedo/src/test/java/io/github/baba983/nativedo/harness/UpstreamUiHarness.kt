@@ -307,12 +307,20 @@ internal class UpstreamUiHarness {
      * deadline would never be reached when there is no work left to idle.</p>
      */
     fun await(what: String, iterations: Int = 4_000, condition: () -> Boolean) {
-        repeat(iterations) {
+        repeat(iterations) { iteration ->
             idle()
             idleUpstreamQueues()
             if (condition()) {
                 idle()
                 return
+            }
+            // A device lays the screen out and draws the next frame while it waits; Robolectric's
+            // paused clock never reaches that frame on its own. 13.2.1 adds the page host and a
+            // presented screen's list on those passes, so without one a screen that was just
+            // presented never binds a row, however long the wait.
+            if (iteration % 4 == 3) {
+                layoutApp()
+                org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(16))
             }
             // Real time, not simulated: the fetch finishes on OkHttp's own thread, and the
             // sandbox shadows Thread.sleep onto Robolectric's paused clock, which would never
