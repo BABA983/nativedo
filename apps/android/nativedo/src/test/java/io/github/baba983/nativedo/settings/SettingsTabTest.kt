@@ -102,7 +102,7 @@ internal class SettingsTabTest {
 
         // Before consent, even a real request leaves no recorded event in the export.
         kotlinx.coroutines.runBlocking { runCatching { container.discourseApiClient.fetchCurrentUser() } }
-        clickNamedRow("导出诊断日志")
+        clickNamedRow("分享诊断日志")
         val empty = sharedDiagnosticFiles()
         assertFalse("recording is opt-in", empty.values.any { it.contains("event=") })
 
@@ -129,7 +129,7 @@ internal class SettingsTabTest {
             currentFragmentName(shell) == "DiagnosticsFragment"
         }
         harness.renderApp("diagnostics-expired")
-        clickNamedRow("导出诊断日志")
+        clickNamedRow("分享诊断日志")
         val files = sharedDiagnosticFiles()
         assertTrue("the archive has build metadata", files.containsKey("build.txt"))
         val events = files.filterKeys { it.endsWith(".log") }.values.joinToString("\n")
@@ -147,7 +147,7 @@ internal class SettingsTabTest {
             dialog != null && "日志已清除" in dialogTexts(dialog)
         }
         confirmButton(ShadowDialog.getLatestDialog() as AlertDialog, "好")
-        clickNamedRow("导出诊断日志")
+        clickNamedRow("分享诊断日志")
         assertFalse("clear removes the recorded events", sharedDiagnosticFiles().values.any { it.contains("event=") })
         harness.assertNoTelegramSideEffects()
     }
