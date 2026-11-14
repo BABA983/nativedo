@@ -109,6 +109,31 @@ def subtree_base_commit(root: Path) -> str:
     return lines[0].strip()
 
 
+def subtree_pin(root: Path) -> str:
+    """The upstream commit recorded by the subtree's squash import.
+
+    `git subtree` writes `Merge commit '<squash>' as '<dir>'` on the merge and
+    `git-subtree-split: <sha>` on the squashed commit. Read both from history so
+    a hand-built squash import resolves the same way as the original one.
+    """
+    merge = subtree_base_commit(root)
+    subject = _git(["log", "-1", "--format=%s", merge], root).stdout.strip()
+    match = re.fullmatch(
+        r"Merge commit '([0-9a-fA-F]{7,40})' as '" + re.escape(SUBTREE_PREFIX) + r"'",
+        subject,
+    )
+    if not match:
+        raise TelegramPinError(
+            f"subtree merge {merge} does not name its squash commit: {subject!r}"
+        )
+    squash = match.group(1)
+    body = _git(["log", "-1", "--format=%B", squash], root).stdout
+    trailer = re.search(r"^git-subtree-split: ([0-9a-fA-F]{7,40})\s*$", body, re.M)
+    if not trailer:
+        raise TelegramPinError(f"squash commit {squash} has no git-subtree-split trailer")
+    return trailer.group(1)
+
+
 def _assert_subtree_commit(root: Path, base: str) -> None:
     if not re.fullmatch(r"[0-9a-fA-F]{7,40}", base or ""):
         raise TelegramPinError(f"bad subtree pin {base!r}: not a commit id")

@@ -227,4 +227,3 @@ The subtree import is the source pin. Materialize native dependencies from its
 gitlinks with `telegram-deps.sh`; do not borrow arbitrary `.so` files from another
 checkout. Update only for a product goal, compare host hooks to the new source and
 run the hook, app and device gates appropriate to the change.
-The [legacy vendor workflow](../VENDOR.md) does not govern this subtree.

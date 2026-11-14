@@ -382,9 +382,9 @@ jobs:
       - name: Resolve subtree pin
         id: pin
         run: |
-          pin="$(git log --format=%B -- apps/android/telegram | sed -n 's/^git-subtree-split: //p' | head -n1)"
-          echo "pin=${pin:-unknown}" >> "$GITHUB_OUTPUT"
-          echo "subtree pin: ${pin:-unknown}"
+          pin="$(PYTHONPATH=scripts python3 -c 'from pathlib import Path; from telegramlib import subtree_pin; print(subtree_pin(Path(".")))')"
+          echo "pin=$pin" >> "$GITHUB_OUTPUT"
+          echo "subtree pin: $pin"
 
       - uses: actions/cache/restore@v4
         id: native-cache
