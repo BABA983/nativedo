@@ -591,6 +591,10 @@ internal class SessionCorrectionTest {
                 it.contains("username=carol") && it.contains("filter=4")
             }
         }
+        // The dangerous window is the new feed's request being in flight: let the old account's
+        // blocked answer through now, before the new rows are bound. A stale generation must drop
+        // it; if it does not, the baba rows would land in the tab below.
+        oldStreamReleased.countDown()
         val name = field<org.telegram.ui.ActionBar.SimpleTextView>(profile, "nameTextView")
         val online = field<org.telegram.ui.ActionBar.SimpleTextView>(profile, "onlineTextView")
         harness.await("the root header to name the new account") {
@@ -600,18 +604,22 @@ internal class SessionCorrectionTest {
             val loaded = field<io.github.baba983.nativedo.core.model.UserProfile?>(profile, "profile")
             loaded != null && loaded.username == "carol"
         }
-
-        // The old account's stream finally answers; it must not repopulate the new account's tab.
-        oldStreamReleased.countDown()
-        harness.idleClock(600)
         val tabs = field<Array<Any?>>(profile, "tabPages")
         val items = field<MutableList<Any?>>(tabs[0]!!, "items")
+        // The request reaching the site is not the stream arriving: wait for the new account's
+        // rows to be bound, then give the already-released old answer time to be processed.
+        harness.await("the new account's stream to fill the tab") {
+            items.filterIsInstance<io.github.baba983.nativedo.core.model.TopicSummary>()
+                .map { it.title }
+                .let { titles -> titles.isNotEmpty() && titles.all { it.startsWith("carol") } }
+        }
+        harness.idleClock(600)
         val titles = items.filterIsInstance<io.github.baba983.nativedo.core.model.TopicSummary>()
             .map { it.title }
         assertTrue("the tab shows the new account's stream", titles.isNotEmpty())
-        assertTrue(
+        assertFalse(
             "no row of the previous account's stream survived",
-            titles.all { it.startsWith("carol") },
+            titles.any { it.startsWith("baba") },
         )
         harness.layoutApp()
         harness.renderApp("session-correction/root-profile-new-account")
