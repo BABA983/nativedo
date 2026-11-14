@@ -574,10 +574,22 @@ internal class DiscourseEmojiRenderTest {
         return if (start in 0 until end) spannable.subSequence(start, end).toString() else ""
     }
 
-    /** Each emoji's document id and the square the span reserved for it, in the visible cell. */
+    /**
+     * Each emoji's document id and the square the span reserved for it, in the visible cell.
+     *
+     * <p>[AnimatedEmojiSpan.AnimatedEmojiHolder.drawableBounds] is a draw-pass value: it is only
+     * populated once the span's line has actually been drawn, and a cold span whose row is not
+     * under the current scroll offset leaves it empty. The reservation the layout makes is
+     * [AnimatedEmojiSpan.measuredSize], which is what decides the wrap and the bubble's height;
+     * read that so the assertion is about the span's box, not about whether this frame drew it.</p>
+     */
     private fun emojiBoxesByDocument(): Map<Long, Pair<Int, Int>> = emojiHolders().mapNotNull { holder ->
-        val id = holder.span?.documentId ?: return@mapNotNull null
-        id to (holder.drawableBounds.width() to holder.drawableBounds.height())
+        val span = holder.span ?: return@mapNotNull null
+        val measured = AnimatedEmojiSpan::class.java
+            .getDeclaredField("measuredSize")
+            .apply { isAccessible = true }
+            .getInt(span)
+        span.documentId to (measured to measured)
     }.toMap()
 
     /**
