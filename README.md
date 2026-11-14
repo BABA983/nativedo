@@ -36,8 +36,8 @@ Use JDK 17, Android SDK platform/build-tools 36, NDK `27.2.12479018` and CMake
 Alternatively open `apps/android/telegram` in Android Studio and run `nativedo` (`dailyDebug`).
 No separate Telegram clone or copied prebuilt `.so` is needed for this build.
 The subtree import is the pin; dependency and hook tools resolve it from Git history.
-CI builds this same arm64 APK on pushes to `main` and `spike/full-telegram-subtree`
-and on pull requests, and uploads it as the `nativedo-dailyDebug-arm64` artifact.
+CI builds this same arm64 APK on pushes to `main` and on manual runs (`workflow_dispatch`),
+and uploads it as the `nativedo-dailyDebug-arm64` artifact.
 
 A variant is a channel (flavor) × a build type:
 
