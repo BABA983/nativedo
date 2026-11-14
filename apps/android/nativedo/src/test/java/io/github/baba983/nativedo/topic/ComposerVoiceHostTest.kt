@@ -369,9 +369,16 @@ internal class ComposerVoiceHostTest {
         harness.idleClock(650)
         assertTrue("pause exposes the real editor", composer.hasAudioToSend())
         harness.renderApp("forum-voice-paused")
-        val pageDown = descendants(fragment.fragmentView)
-            .filterIsInstance<org.telegram.ui.Components.chat.buttons.ChatActivityBlurredRoundPageDownButton>().single()
-        assertFalse("page navigation must not cover the resume control", pageDown.isShown && pageDown.alpha > 0)
+        // The screen owns two stock page buttons: the down control and, above it, the way back
+        // up. Both are built from the same class; neither may cover the resume control while a
+        // take is paused.
+        val pageButtons = descendants(fragment.fragmentView)
+            .filterIsInstance<org.telegram.ui.Components.chat.buttons.ChatActivityBlurredRoundPageDownButton>()
+        assertTrue("the page controls exist", pageButtons.isNotEmpty())
+        assertFalse(
+            "page navigation must not cover the resume control",
+            pageButtons.any { it.isShown && it.alpha > 0 },
+        )
         val controls = composer.controlsView
         val pauseNode = controls.accessibilityNodeProvider.createAccessibilityNodeInfo(2)!!
         val pauseBounds = android.graphics.Rect()
