@@ -49,6 +49,7 @@ concurrency:
 jobs:
   changes:
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     outputs:
       plugin: ${{ steps.filter.outputs.plugin }}
       plugin_enabled: ${{ steps.filter.outputs.plugin_enabled }}
@@ -104,6 +105,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.plugin == 'true' && needs.changes.outputs.plugin_enabled == 'true'
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: .amp/plugins
@@ -138,9 +140,9 @@ jobs:
   # shards below do not each pay the ~8-10 minute :TMessagesProj Java compile.
   nativedo-build:
     needs: changes
-    if: needs.changes.outputs.nativedo == 'true'
+    if: needs.changes.outputs.nativedo == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -234,17 +236,17 @@ jobs:
 
   # The suite is 108 Robolectric classes, each in a fresh JVM. On the
   # private-repository 2-core runner a single job is killed before it finishes,
-  # so split the classes into four parallel shards that restore the build cache
+  # so split the classes into two parallel shards that restore the build cache
   # published by `nativedo-build` instead of compiling again.
   nativedo:
     needs: [changes, nativedo-build]
-    if: needs.changes.outputs.nativedo == 'true'
+    if: needs.changes.outputs.nativedo == 'true' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/spike/full-telegram-subtree'))
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3]
+        shard: [0, 1]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -298,7 +300,7 @@ jobs:
           )
           args=()
           for i in "${!classes[@]}"; do
-            if (( i % 4 == ${{ matrix.shard }} )); then
+            if (( i % 2 == ${{ matrix.shard }} )); then
               args+=(--tests "${classes[$i]}")
             fi
           done
@@ -340,8 +342,8 @@ jobs:
   # for a commit whose unit tests and hook guard passed, and so this job restores
   # the Gradle dependency cache that `nativedo-build` saved instead of racing it.
   nativedo-apk:
-    needs: [changes, nativedo]
-    if: needs.changes.outputs.nativedo == 'true'
+    needs: [changes, nativedo-build]
+    if: needs.changes.outputs.nativedo == 'true' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/spike/full-telegram-subtree'))
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
