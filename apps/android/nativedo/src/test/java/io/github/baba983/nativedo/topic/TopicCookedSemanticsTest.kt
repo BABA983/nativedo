@@ -121,7 +121,19 @@ internal class TopicCookedSemanticsTest {
 
         val blocks = cell().messageObject.messageOwner.rich_message.blocks
         val text = blocks.first().text
-        assertEquals("before hidden bold :innocent: tail after", RichMessageLayout.getString(text).toString())
+        // `getString` walks text nodes only: a custom emoji is artwork carried by its span, not
+        // the shortcode it was written as, so the emoji is asserted on the span the cell draws.
+        val plain = RichMessageLayout.getString(text).toString()
+        assertTrue(
+            "the inline run keeps the text on both sides of the emoji: $plain",
+            plain.startsWith("before hidden bold") && plain.endsWith("tail after"),
+        )
+        val drawn = RichTextStyle.toSpannable(text) as Spanned
+        assertEquals(
+            "the inline emoji survives as a custom-emoji span",
+            1,
+            drawn.getSpans(0, drawn.length, org.telegram.ui.Components.AnimatedEmojiSpan::class.java).size,
+        )
         assertTrue("the inline spoiler run must stay spoiler text", containsSpoiler(text))
         val table = blocks[1] as TL_iv.pageBlockTable
         assertTrue("a hidden table image's fallback link must stay hidden",

@@ -12,6 +12,10 @@
     scheme may be claimed on the site's behalf. Upstream's activities stay (they host the viewer,
     the editor and the in-app browser); only the exported entry *routes* are dropped.
 
+  * the backup gate: upstream allows backup; this app's shared cookie jar and WebView storage
+    must not enter a device backup or a device-to-device transfer, so allowBackup is overridden
+    to false and the extraction rules exclude every domain explicitly.
+
   The application class is ours too: upstream's answers the app id with null, which every
   FileProvider authority is built from.
 -->
@@ -20,7 +24,10 @@
 
     <application
         android:name="io.github.baba983.nativedo.app.NativeDoApplication"
-        tools:replace="android:name">
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        tools:replace="android:name,android:allowBackup">
         <activity
             android:name="io.github.baba983.nativedo.app.NativeDoActivity"
             android:exported="true"

@@ -1257,7 +1257,7 @@ public class ChatChannelFragment extends BaseFragment {
                         stateUi = SessionUi.stateForLoadFailure(error);
                         clearFloatingDate();
                     } else {
-                        showPagingFailure(error);
+                        showPagingFailure(error, targetMessageId, direction, askedReplace, landOnTarget);
                     }
                     notifyRowsChanged();
                     return kotlin.Unit.INSTANCE;
@@ -1265,12 +1265,15 @@ public class ChatChannelFragment extends BaseFragment {
     }
 
     /**
-     * A page of older messages that did not arrive while the conversation is on screen. The rows
-     * stay; the hint says whether the session is what the page needs - its action opens the login
-     * WebView, whose completion reloads the channel - or whether it is an outage, which the hint's
-     * action retries from the same older cursor.
+     * A read that did not arrive while the conversation is on screen: an older page, a refresh, or
+     * a send's own readback. The rows stay; the hint says whether the session is what the read
+     * needs - its action opens the login WebView, whose completion reloads the channel - or whether
+     * it is an outage, whose action repeats the read that failed with the parameters it was asked
+     * with. Retrying the older cursor instead would answer a different question: a failed refresh
+     * would load older history, and a failed readback would never show the message just sent.
      */
-    private void showPagingFailure(Throwable error) {
+    private void showPagingFailure(Throwable error, Long targetMessageId, String direction,
+            boolean replace, boolean landOnTarget) {
         final io.github.baba983.nativedo.topic.TopicLoadFailure reason =
                 io.github.baba983.nativedo.topic.TopicLoadFailure.of(error);
         final boolean session = reason == io.github.baba983.nativedo.topic.TopicLoadFailure.Challenge
@@ -1296,7 +1299,7 @@ public class ChatChannelFragment extends BaseFragment {
                             openRecovery(
                                     reason == io.github.baba983.nativedo.topic.TopicLoadFailure.Challenge);
                         } else {
-                            retryOlderPage();
+                            retryFailedRead(targetMessageId, direction, replace, landOnTarget);
                         }
                     }).show();
         } catch (Exception bulletinError) {
@@ -1304,12 +1307,13 @@ public class ChatChannelFragment extends BaseFragment {
         }
     }
 
-    /** Asks for the same older window again, from the first message the screen still holds. */
-    private void retryOlderPage() {
-        if (loadingOlder || chatMessages.isEmpty()) {
+    /** Asks for the read that failed again, with the same target, direction and landing. */
+    private void retryFailedRead(Long targetMessageId, String direction, boolean replace,
+            boolean landOnTarget) {
+        if (loading || loadingOlder || sending) {
             return;
         }
-        loadMessages(chatMessages.get(0).getId(), "past", false);
+        loadMessages(targetMessageId, direction, replace, landOnTarget);
     }
 
     private void applyPage(ChatMessagePage page, boolean replace, boolean landOnTarget) {

@@ -112,7 +112,7 @@ internal class TopicReplyFooterTest {
         harness.await("the topic to load") { rowCount() == 7 }
 
         val fragment = harness.visibleFragment() as TopicFragment
-        val bubbles = field(fragment, "bubbles") as List<MessageObject>
+        val bubbles = (field(fragment, "bubbles") as List<MessageObject>).filter { !it.isDateObject }
         // Floor 1's three bubbles lead the list; floor 2, 3, 4, 5 are one each.
         assertEquals("floor 1 is three bubbles", 3, floorBubbleCount(fragment, 0))
         val first = bubbles[0]
@@ -242,7 +242,7 @@ internal class TopicReplyFooterTest {
         harness.await("the first page") { rowCount() == firstPage }
 
         val fragment = harness.visibleFragment() as TopicFragment
-        var floorOne = (field(fragment, "bubbles") as List<MessageObject>).first()
+        var floorOne = (field(fragment, "bubbles") as List<MessageObject>).first { !it.isDateObject }
         assertEquals("the site's count", 3, floorOne.getRepliesCount())
         assertEquals("one loaded face at first", 1, floorOne.messageOwner.replies.recent_repliers.size)
 
@@ -255,7 +255,7 @@ internal class TopicReplyFooterTest {
         list.scrollBy(0, 400)
         harness.await("the rest of the stream") { rowCount() == total }
 
-        floorOne = (field(fragment, "bubbles") as List<MessageObject>).first()
+        floorOne = (field(fragment, "bubbles") as List<MessageObject>).first { !it.isDateObject }
         assertTrue("the footer survives the paging rebuild", floorOne.hasReplies())
         assertEquals("and keeps the site's count", 3, floorOne.getRepliesCount())
         assertEquals(
@@ -269,10 +269,11 @@ internal class TopicReplyFooterTest {
         harness.assertNoTelegramSideEffects()
     }
 
-    /** How many bubbles the floor at [floorIndex] draws. */
+    /** How many bubbles the floor at [floorIndex] draws; a day's date row names the floor but is not one of its bubbles. */
     private fun floorBubbleCount(fragment: TopicFragment, floorIndex: Int): Int {
+        val bubbles = field(fragment, "bubbles") as List<MessageObject>
         val bubbleFloors = field(fragment, "bubbleFloors") as List<Int>
-        return bubbleFloors.count { it == floorIndex }
+        return bubbleFloors.indices.count { bubbleFloors[it] == floorIndex && !bubbles[it].isDateObject }
     }
 
     private fun post(

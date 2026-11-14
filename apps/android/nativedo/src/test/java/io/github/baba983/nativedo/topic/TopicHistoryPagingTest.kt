@@ -210,6 +210,35 @@ internal class TopicHistoryPagingTest {
     }
 
     /**
+     * The slice above the window carries a holographic title. The failure this pins: only a floor
+     * bound with the window armed the gradient's frame loop, so a title the reader scrolled up into
+     * stayed a still tag even though the same title animates below.
+     */
+    @Test
+    fun aPrependedFloorsHolographicTitleAnimates() {
+        serveResumeSite()
+        val fragment = openResumeWindow()
+
+        val list = listView()!!
+        scrollToTop(list)
+        list.scrollBy(0, 1)
+        harness.await("the previous slice to load") { rowCount() > WINDOW_PAGE }
+
+        // Go up into the slice: its first floor is the one that carries the title.
+        scrollToTop(list)
+        harness.layoutApp()
+        harness.idle()
+        val phases = linkedSetOf<Float>()
+        repeat(4) {
+            phases += DiscourseUserTitles.phase
+            harness.idleClock(250)
+        }
+        println("history-title: phases=$phases")
+        assertTrue("the prepended title animates: $phases", phases.size > 1)
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
      * The reply/avatar maps survive a prepend: a floor that answers one brought in by the page gains
      * its preview (targeted by floor number, not by a stale index), and the new author's avatar is
      * registered.
@@ -936,7 +965,10 @@ internal class TopicHistoryPagingTest {
     }
 
     /** The stream index of the first post the loaded window carries: how the backward cursor moves. */
-    private fun windowStartOf(fragment: TopicFragment): Int = field(fragment, "windowStart") as Int
+    private fun windowStartOf(fragment: TopicFragment): Int {
+        val reading = field(fragment, "reading") as TopicReadingWindow
+        return reading.windowStart
+    }
 
     // ---- payloads ------------------------------------------------------------
 
@@ -991,6 +1023,10 @@ internal class TopicHistoryPagingTest {
             put("avatar_template", "/user_avatar/linux.do/reader$floor/{size}.png")
             if (floor == REPLYING_FLOOR) {
                 put("reply_to_post_number", REPLY_TARGET_FLOOR)
+            }
+            if (floor == ANIMATED_FLOOR) {
+                // A holographic title on the first floor of the slice above the window.
+                put("user_title", "种子用户")
             }
         }
 
@@ -1126,6 +1162,8 @@ internal class TopicHistoryPagingTest {
         /** A floor below the loaded window, read as a page-down jump (which the test fails). */
         const val JUMP_FLOOR = 60
         const val JUMP_PATH = "t/$TOPIC_ID/$JUMP_FLOOR.json"
+        /** The first floor of the slice above the window; its holographic title must animate. */
+        const val ANIMATED_FLOOR = WINDOW_FLOOR_FIRST - WINDOW_PAGE
         /** Ids are deliberately far from floors and from stream positions. */
         const val ID_BASE = 700_000L
         const val ID_STEP = 131L

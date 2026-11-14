@@ -96,8 +96,9 @@ internal class IncomingReplyTest {
         harness.present(TopicFragment.forTopic(TOPIC_ID, "Replies"))
         harness.await("the topic to load") { rowCount() == 20 }
 
-        // The answering floor is the last one; bring it on screen so its cell is bound.
-        listView()!!.scrollToPosition(rowCount() - 1)
+        // The answering floor is the last one; bring it on screen so its cell is bound. The
+        // adapter also holds the day's date rows, so the last floor is the last adapter row.
+        listView()!!.scrollToPosition(listView()!!.adapter!!.itemCount - 1)
         harness.layoutApp()
         harness.idleClock(200)
         val replyCell = laidOutCells().firstOrNull { it.messageObject!!.messageOwner.id == 1020 }
@@ -110,7 +111,7 @@ internal class IncomingReplyTest {
 
         // Move away from the target, then tap the preview: the list is back at floor 2.
         val manager = listView()!!.layoutManager as LinearLayoutManager
-        listView()!!.scrollToPosition(19)
+        listView()!!.scrollToPosition(listView()!!.adapter!!.itemCount - 1)
         harness.layoutApp()
         assertTrue("the list sat away from the target", manager.findFirstVisibleItemPosition() > 2)
         replyCell.delegate.didPressReplyMessage(replyCell, replyCell.messageObject!!.getReplyMsgId(), 0f, 0f, false)

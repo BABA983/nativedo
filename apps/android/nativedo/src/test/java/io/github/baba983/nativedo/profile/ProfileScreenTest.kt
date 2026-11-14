@@ -9,6 +9,7 @@ import io.github.baba983.nativedo.app.NativeDo
 import io.github.baba983.nativedo.harness.FakeDiscourseSite
 import io.github.baba983.nativedo.harness.UpstreamUiHarness
 import io.github.baba983.nativedo.harness.contentListOf
+import io.github.baba983.nativedo.harness.contentRowCount
 import io.github.baba983.nativedo.harness.shadows.ShadowAnimatedFileNative
 import io.github.baba983.nativedo.harness.shadows.ShadowConnectionsManager
 import io.github.baba983.nativedo.harness.shadows.ShadowIntro
@@ -302,7 +303,7 @@ internal class ProfileScreenTest {
         return out.toByteArray()
     }
 
-    private fun rowCount(): Int = listView()?.adapter?.itemCount ?: 0
+    private fun rowCount(): Int = contentRowCount(harness)
 
     private fun laidOutCells(): List<ChatMessageCell> {
         val list = listView() ?: return emptyList()

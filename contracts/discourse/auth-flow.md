@@ -57,13 +57,19 @@ open the same login WebView in recovery mode, initially at `/challenge`.
 Normal first login still starts at `/login`. Keep the existing cookies, identity,
 topic position and reply draft. Loading a page or pressing Back never completes
 recovery, even with authenticated cookies; Back cancels, including pending DOM
-callbacks. Recovery does not autofill credentials.
+callbacks. The app does not capture, store or inject login-form credentials: the
+login WebView leaves username/password filling to Android's Autofill framework and
+the reader's password manager. Recovery does not autofill credentials.
 
 After the reader finishes the site's verification, they press `完成验证` on a
-successfully loaded same-origin page outside `/login`. Reuse the login completion
-use case to persist the session. A main-frame 403 document stays visible so its
-challenge can be used, but cannot complete recovery until a successful
-navigation. Normal first login still completes automatically.
+same-origin page outside `/login`. The tap asks the session itself - the shared
+jar's cookies and the native session check - rather than the navigation
+bookkeeping: a challenge that solved in place leaves the navigation generations
+disagreeing while the site already accepts the session. A main-frame 403
+document stays visible so its challenge can be used, and the tap may complete
+from it once that check succeeds; the document itself never completes recovery,
+and a page outside the site cannot. Normal first login still completes
+automatically.
 
 Authenticated means the login is usable, not that Cloudflare permits native
 writes. Do not send a write probe or replay a reply on opening or completion.
@@ -72,7 +78,10 @@ reporter only after explicit completion. A reply still requires a new user send.
 
 Before showing the visible recovery state for a challenged native read, the
 client may load the homepage once in a hidden same-origin WebView so Cloudflare
-can mint a fresh `cf_clearance`, then replay that `GET`/`HEAD` once. A write is
+can mint a fresh `cf_clearance`, then replay that `GET`/`HEAD` once. Only a
+changed `cf_clearance` or a same-origin page that finished without a challenge
+counts as a successful refresh; a page that has not answered yet is not evidence
+that the old clearance works, and nothing is replayed on that guess. A write is
 never replayed automatically; it still requires a new user send.
 
 ## Native Requests

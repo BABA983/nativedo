@@ -380,25 +380,6 @@ public class TopicFragment extends BaseFragment
     private org.telegram.ui.ActionBar.ActionBarMenuSubItem notificationLevelMenuItem;
     /** The overflow item's only-original-poster row; null on a discussion page, which is a subset. */
     private org.telegram.ui.ActionBar.ActionBarMenuSubItem onlyOpMenuItem;
-    /**
-     * Whether the list carries only the original poster's floors, read as the site's own
-     * `username_filters` answer rather than filtered on the client. Read-progress reporting is
-     * suspended while it is on: crediting floors here would advance the topic's cursor past posts
-     * the reader never saw.
-     */
-    private boolean onlyOp;
-    /**
-     * A tap on 只看楼主 before the site had named the author: read the head once, then take the
-     * mode the reader asked for if that answer names one.
-     */
-    private boolean pendingOnlyOpToggle;
-    /**
-     * Whether the window read now in flight is the one a 只看楼主 switch asked for, and the mode
-     * before it: a filtered window that does not arrive leaves the old rows on screen, so the row
-     * and the capsule must go back to the mode those rows really are.
-     */
-    private boolean onlyOpSwitchInFlight;
-    private boolean onlyOpBeforeSwitch;
     /** The overflow item itself, which the level ItemOptions anchors on. */
     private org.telegram.ui.ActionBar.ActionBarMenuItem overflowItem;
     /**
@@ -579,29 +560,12 @@ public class TopicFragment extends BaseFragment
     /** Floor numbers whose reply target is being read from the site, so each is asked for once. */
     private final java.util.HashSet<Integer> replyRequestsInFlight = new java.util.HashSet<>();
     private List<Long> streamPostIds = new ArrayList<>();
-    private int nextPageStart;
-    /** The stream index of the first post the loaded window carries (the top of the window). */
-    private int windowStart;
-    private boolean loadingPage;
-    /** True while the slice before the loaded window is on its way. */
-    private boolean loadingBackward;
     /**
-     * A downward stream page that failed. Automatic attempts are paused for this visit to the bottom
-     * edge: a finger resting there must not re-request a broken page on every callback it produces.
-     * The failure hint's own retry, or leaving the edge and coming back, is what asks again.
+     * Where the loaded window sits in that stream, the pages on their way and the reading mode the
+     * rows on screen were read in. The screen renders what it reports; the state, its races and
+     * its failure recovery live there.
      */
-    private boolean nextPageFailed;
-    /** The same latch for the upward direction, held until the reader leaves the top edge. */
-    private boolean previousPageFailed;
-    /**
-     * Which window the topic's reads belong to. A head read, a window read and a stream page all
-     * capture this value when they are asked and drop themselves if it has moved on - the window was
-     * replaced by a navigation or by another window, or the screen left. This is the same isolation
-     * a discussion page gets from [threadGeneration], one level up.
-     */
-    private int windowGeneration;
-    /** Retained rows cannot start stream pages while a replacement window is being read. */
-    private boolean loadingWindow;
+    private final TopicReadingWindow reading = new TopicReadingWindow();
     /** The reader's place in this topic, and the report of it the site asks for. */
     private TopicReadReporter reporter;
     /** What is shown instead of the list when the topic could not be read at all. */
@@ -1234,7 +1198,11 @@ public class TopicFragment extends BaseFragment
         threadPageUp.setPivotY(AndroidUtilities.dp(28 + 8));
         threadPageUp.setContentDescription("回到顶部");
         threadPageUp.setOnClickListener(view -> {
-            if (listView != null) {
+            if (reading.needsFirstFloorRead()) {
+                // The loaded window starts part-way into the stream, so row 0 is not floor 1:
+                // read the head and land on the first floor instead of scrolling to the window's top.
+                loadWindow(1, 1);
+            } else if (listView != null) {
                 listView.smoothScrollToPosition(0);
             }
         });
@@ -1879,35 +1847,22 @@ public class TopicFragment extends BaseFragment
     }
 
     /**
-     * A new window read takes the window over from whatever pages were in flight for the one before
-     * it. Their callbacks are dropped by the bumped generation, so the pagination flags they own are
-     * cleared here instead - a dropped callback that owned the flag would otherwise strand that
-     * direction's paging forever. The page-down jump is the caller's own flag: a jump that starts
-     * here owns it, and a read that supersedes one clears it separately.
+     * Drops every read that belonged to the window on screen without starting another. The search
+     * owns the list in that interval, and leaving the screen ends the window, so nothing from it
+     * may land afterwards. A read that replaces the window uses [TopicReadingWindow.beginWindow].
      */
     private void supersedeWindow() {
-        windowGeneration++;
-        loadingPage = false;
-        loadingBackward = false;
-        loadingWindow = true;
-        // A mode switch's read is only the switch's while it is the newest read; a read that
-        // replaces it owns whatever answer arrives next.
-        onlyOpSwitchInFlight = false;
-        // A new window owns its own edges: a direction that failed in the one being replaced must
-        // not stay latched and silence that direction in the window that replaces it.
-        nextPageFailed = false;
-        previousPageFailed = false;
+        reading.supersedeWindow();
     }
 
     private void loadTopic(long topicId) {
         this.topicId = topicId;
         // A read begins: whatever was still in flight for the window that was here belongs to it, and
         // this read carries the generation that says the answers now on their way are not its.
-        supersedeWindow();
+        final int generation = reading.beginWindow();
         // A page-down jump that was still on its way for the window this read replaces is dropped
         // with it; the button must not be left on its spinner.
         pageDownJumping = false;
-        final int generation = windowGeneration;
         // The first page is on its way: a chat shows its ring while it has no messages, and this
         // is the same moment (ChatActivity:9197).
         showProgressView(bubbles.isEmpty());
@@ -1938,9 +1893,9 @@ public class TopicFragment extends BaseFragment
         // Opening a topic at its first floor would show a reader half-way through a thread the part
         // they have already read.
         retryAction = () -> loadTopic(topicId);
-        final String authorFilter = onlyOp ? opUsername() : null;
+        final String authorFilter = reading.isOnlyOp() ? opUsername() : null;
         DiscourseLoader.INSTANCE.topic(container, topicId, null, authorFilter, detail -> {
-            if (generation != windowGeneration) {
+            if (!reading.isCurrent(generation)) {
                 // The reader left this read behind - another floor, another window, the screen gone -
                 // before the head arrived; the answer names a window nobody is looking at.
                 return kotlin.Unit.INSTANCE;
@@ -1958,10 +1913,9 @@ public class TopicFragment extends BaseFragment
             show(detail, position > 1 ? position : 0);
             return kotlin.Unit.INSTANCE;
         }, error -> {
-            if (generation != windowGeneration) {
+            if (!reading.isCurrent(generation)) {
                 return kotlin.Unit.INSTANCE;
             }
-            loadingWindow = false;
             showTopicFailure(error);
             return kotlin.Unit.INSTANCE;
         });
@@ -1971,24 +1925,22 @@ public class TopicFragment extends BaseFragment
     private void loadWindow(int postNumber, int scrollTo) {
         // A window read replaces whatever window was here: the answer on its way belongs to the one
         // this call is opening, not to the one it replaced.
-        supersedeWindow();
+        final int generation = reading.beginWindow();
         // A page-down jump that was still on its way is dropped with the window it belonged to.
         pageDownJumping = false;
-        final int generation = windowGeneration;
         retryAction = () -> loadWindow(postNumber, scrollTo);
-        final String authorFilter = onlyOp ? opUsername() : null;
+        final String authorFilter = reading.isOnlyOp() ? opUsername() : null;
         DiscourseLoader.INSTANCE.topic(container, topicId, postNumber, authorFilter, detail -> {
-            if (generation != windowGeneration) {
+            if (!reading.isCurrent(generation)) {
                 return kotlin.Unit.INSTANCE;
             }
             noteServedFromCache(detail.getFromCache());
             show(detail, scrollTo);
             return kotlin.Unit.INSTANCE;
         }, error -> {
-            if (generation != windowGeneration) {
+            if (!reading.isCurrent(generation)) {
                 return kotlin.Unit.INSTANCE;
             }
-            loadingWindow = false;
             showTopicFailure(error);
             return kotlin.Unit.INSTANCE;
         });
@@ -2364,7 +2316,7 @@ public class TopicFragment extends BaseFragment
         if (streamIndex >= 0) {
             show = streamIndex < streamPostIds.size() - 1;
         }
-        if (onlyOp) {
+        if (reading.isOnlyOp()) {
             // The filtered stream is the poster's floors: the number is how many of those are still
             // below the viewport. Nothing here claims "unread" - this screen reports no read
             // position while the filter is on, so no cursor moves as the reader scrolls.
@@ -2388,7 +2340,7 @@ public class TopicFragment extends BaseFragment
         // ChatActivity animates unread count changes through the stock CounterView.
         threadPageDown.setCount(show ? count : 0, true);
         threadPageDown.setContentDescription(
-                onlyOp ? onlyOpPageDownDescription(count) : topicPageDownDescription(count));
+                reading.isOnlyOp() ? onlyOpPageDownDescription(count) : topicPageDownDescription(count));
         applyPageDownVisible(show, true);
     }
 
@@ -2454,7 +2406,7 @@ public class TopicFragment extends BaseFragment
      * taps goes to the newest post.
      */
     private int topicPageDownTargetFloor() {
-        if (onlyOp) {
+        if (reading.isOnlyOp()) {
             // The filter tracks no read cursor: a tap moves to the next floor after the viewport,
             // and the filtered window read lands on the first poster's floor at or after it.
             Integer last = lastVisibleFloorNumber();
@@ -2542,13 +2494,12 @@ public class TopicFragment extends BaseFragment
      * and the reader's place, says so in passing, and leaves the button enabled to try again.
      */
     private void loadPageDownWindow(int floor) {
-        supersedeWindow();
-        final int generation = windowGeneration;
+        final int generation = reading.beginWindow();
         final long topicId = getArguments() == null ? 0 : getArguments().getLong(ARG_TOPIC_ID, 0);
         retryAction = () -> loadPageDownWindow(floor);
-        final String authorFilter = onlyOp ? opUsername() : null;
+        final String authorFilter = reading.isOnlyOp() ? opUsername() : null;
         DiscourseLoader.INSTANCE.topic(container, topicId, floor, authorFilter, detail -> {
-            if (generation != windowGeneration) {
+            if (!reading.isCurrent(generation)) {
                 // The window moved on while this read was on its way; the rows belong to a window
                 // nobody is looking at.
                 return kotlin.Unit.INSTANCE;
@@ -2558,10 +2509,9 @@ public class TopicFragment extends BaseFragment
             show(detail, floor);
             return kotlin.Unit.INSTANCE;
         }, error -> {
-            if (generation != windowGeneration) {
+            if (!reading.isCurrent(generation)) {
                 return kotlin.Unit.INSTANCE;
             }
-            loadingWindow = false;
             pageDownJumping = false;
             updateTopicPageDown();
             showPageDownFailure(error);
@@ -2867,9 +2817,8 @@ public class TopicFragment extends BaseFragment
 
     /** What has arrived: the topic's stream, its floors, and where in it the reader is standing. */
     private kotlin.Unit show(TopicDetail detail, int scrollTo) {
-        loadingWindow = false;
-        // The answer belongs to the newest read: a filter switch waiting on one has it now.
-        onlyOpSwitchInFlight = false;
+        // The answer is here and its rows are about to be bound in the mode the read was asked for.
+        reading.windowShown();
         // The page is here: ChatActivity turns its ring off with the same call it turned it on
         // (9197 -> showProgressView(false)).
         showProgressView(false);
@@ -2886,20 +2835,17 @@ public class TopicFragment extends BaseFragment
         // The site's own title is the authoritative one; a link that named no title gets it here,
         // and it goes into the center capsule the way a chat's title does.
         bindHeader(detail);
-        if (pendingOnlyOpToggle) {
+        if (reading.takePendingOnlyOpToggle()) {
             // The reader asked for the poster's floors before any answer named who that is. The
             // answer in hand is the one that can name them; the mode is then taken on a read of the
             // filtered stream rather than by hiding rows this window happens to hold.
-            pendingOnlyOpToggle = false;
             if (opUsername() == null) {
                 showPassingNote("站点没有给出楼主的名字");
             } else {
-                onlyOp = true;
+                reading.beginOnlyOpSwitch(true);
                 updateOnlyOpMenuItem();
                 bindSubtitle(detail);
-                onlyOpBeforeSwitch = false;
                 loadTopic(topicId);
-                onlyOpSwitchInFlight = true;
                 return kotlin.Unit.INSTANCE;
             }
         }
@@ -2958,7 +2904,7 @@ public class TopicFragment extends BaseFragment
         if (nextTopicCandidate == null || listView == null) {
             return false;
         }
-        if (threadMode || topicSearch != null || showingCachedContent || onlyOp) {
+        if (threadMode || topicSearch != null || showingCachedContent || reading.isOnlyOp()) {
             return false;
         }
         if (textSelectionHelper != null && textSelectionHelper.isInSelectionMode()) {
@@ -2979,8 +2925,8 @@ public class TopicFragment extends BaseFragment
         }
         // The real end of the stream, with no page or window still coming and no edge latched: a
         // topic with more pages, one still loading, or one whose page failed must not navigate.
-        if (loadingPage || loadingWindow || loadingBackward
-                || nextPageStart < streamPostIds.size() || nextPageFailed || previousPageFailed) {
+        if (reading.hasPageInFlight() || !reading.isAtStreamEnd(streamPostIds.size())
+                || reading.isForwardPageFailed() || reading.isBackwardPageFailed()) {
             return false;
         }
         return true;
@@ -3005,11 +2951,11 @@ public class TopicFragment extends BaseFragment
             return;
         }
         nextTopicNavigationStarted = true;
-        final int generation = windowGeneration;
+        final int generation = reading.getGeneration();
         Runnable navigate = () -> {
             // The screen left, or another window replaced this one, while the card settled: the
             // release belongs to a screen nobody is looking at.
-            if (generation != windowGeneration || listView == null) {
+            if (!reading.isCurrent(generation) || listView == null) {
                 return;
             }
             openNextTopic(candidate);
@@ -3221,7 +3167,7 @@ public class TopicFragment extends BaseFragment
         // rows that are not on screen; the line names the filter instead, so the reader can always
         // tell why the topic looks shorter than its own count.
         String tail = null;
-        if (onlyOp) {
+        if (reading.isOnlyOp()) {
             tail = "只看楼主";
         } else if (replies >= 0) {
             tail = Math.max(0, replies) + " 回复";
@@ -3230,7 +3176,7 @@ public class TopicFragment extends BaseFragment
             String composed = subtitle == null ? tail : subtitle + " · " + tail;
             // The filter label is short and must not be what the width check drops: a reader
             // looking at filtered rows has to be able to see why.
-            if (onlyOp || subtitleFits(composed)) {
+            if (reading.isOnlyOp() || subtitleFits(composed)) {
                 subtitle = composed;
             }
         }
@@ -3417,7 +3363,7 @@ public class TopicFragment extends BaseFragment
             return;
         }
         onlyOpMenuItem.setTextAndIcon(
-                onlyOp ? "显示全部" : "只看楼主",
+                reading.isOnlyOp() ? "显示全部" : "只看楼主",
                 org.telegram.messenger.R.drawable.msg_openprofile);
     }
 
@@ -3450,20 +3396,20 @@ public class TopicFragment extends BaseFragment
         if (opUsername() == null) {
             // The site names the author in its own answer; a tap before that answer arrived reads
             // the head once and takes the mode when it names one (see [show]).
-            pendingOnlyOpToggle = true;
-            if (topicDetail == null && !loadingWindow) {
+            reading.requestOnlyOpBeforeAuthor();
+            if (topicDetail == null && !reading.isLoadingWindow()) {
                 loadTopic(topicId);
             }
             return;
         }
-        setOnlyOp(!onlyOp);
+        setOnlyOp(!reading.isOnlyOp());
     }
 
     private void setOnlyOp(boolean only) {
-        if (onlyOp == only || threadMode || isThreadMode()) {
+        if (reading.isOnlyOp() == only || threadMode || isThreadMode()) {
             return;
         }
-        onlyOp = only;
+        reading.beginOnlyOpSwitch(only);
         updateOnlyOpMenuItem();
         // Nothing on this screen is credited as read while the filter is on: the rows are the
         // poster's, and reporting them would advance the topic's cursor past floors by others the
@@ -3476,16 +3422,12 @@ public class TopicFragment extends BaseFragment
         }
         // Re-read at the top of the viewport: the filtered answer is a window of the filtered
         // stream around that floor, and the list lands on the first poster's floor at or after it.
-        onlyOpBeforeSwitch = !only;
         Integer anchor = firstVisibleFloorNumber();
         if (anchor == null || anchor <= 0) {
             loadTopic(topicId);
         } else {
             loadWindow(anchor, anchor);
         }
-        // `loadTopic`/`loadWindow` supersede the previous read, which clears the flag; this read is
-        // the switch's from here on, and a failure puts the mode those rows really are back.
-        onlyOpSwitchInFlight = true;
     }
 
     /** The floor drawn by the first row of the viewport, or null; divider rows name none. */
@@ -3681,7 +3623,7 @@ public class TopicFragment extends BaseFragment
         if (searchReadingPosts != null) {
             return;
         }
-        if (onlyOp) {
+        if (reading.isOnlyOp()) {
             // The filtered list is the poster's floors; crediting them would advance the site's
             // cursor past floors by others that were never shown. No floor is on screen as far as
             // the report is concerned, and the arrow's number is the filtered stream below.
@@ -3905,7 +3847,7 @@ public class TopicFragment extends BaseFragment
         // And any edit write or post read still in flight belongs to the screen that left.
         editGeneration++;
         // And any stream page or window read still in flight belongs to the screen that left.
-        windowGeneration++;
+        reading.supersedeWindow();
         // The post menu is its own window; leaving the screen with it open would leave a stale menu
         // anchored over whatever is presented next.
         if (messageMenu != null) {
@@ -3944,9 +3886,9 @@ public class TopicFragment extends BaseFragment
         int index = rowIndexOrAfter(floor);
         if (index >= 0) {
             if (topicSearch != null) {
-                final int generation = windowGeneration;
+                final int generation = reading.getGeneration();
                 listView.post(() -> {
-                    if (topicSearch == null || generation != windowGeneration) {
+                    if (topicSearch == null || !reading.isCurrent(generation)) {
                         return;
                     }
                     // No unfenced animator-finished callback may scroll an older query after Back.
@@ -4010,7 +3952,7 @@ public class TopicFragment extends BaseFragment
         if (topicSearch != null) {
             return true;
         }
-        if (topicDetail == null || loadingWindow) {
+        if (topicDetail == null || reading.isLoadingWindow()) {
             return false;
         }
         LinearLayoutManager manager = (LinearLayoutManager) listView.getLayoutManager();
@@ -4026,7 +3968,6 @@ public class TopicFragment extends BaseFragment
             threadLoading = false;
         }
         supersedeWindow();
-        loadingWindow = false;
         if (reporter != null) {
             reporter.setForeground(false);
         }
@@ -4059,7 +4000,6 @@ public class TopicFragment extends BaseFragment
                     @Override public void queryChanged() {
                         searchScroll.cancel();
                         supersedeWindow();
-                        loadingWindow = false;
                         showProgressView(false);
                     }
                     @Override public void navigate(int floor, boolean forward) {
@@ -4076,7 +4016,6 @@ public class TopicFragment extends BaseFragment
                         }
                         // Even an already-loaded target supersedes a previous target's late response.
                         supersedeWindow();
-                        loadingWindow = false;
                         if (loaded) {
                             scrollToFloor(floor);
                         } else {
@@ -4162,7 +4101,6 @@ public class TopicFragment extends BaseFragment
         topicSearch.destroy();
         topicSearch = null;
         supersedeWindow();
-        loadingWindow = false;
         showProgressView(false);
         if (failureView != null) {
             failureView.setVisibility(View.GONE);
@@ -4170,8 +4108,7 @@ public class TopicFragment extends BaseFragment
         topicDetail = searchReadingDetail;
         streamPostIds = topicDetail.getStreamPostIds();
         noteServedFromCache(topicDetail.getFromCache());
-        windowStart = streamPositionBefore(searchReadingPosts);
-        nextPageStart = streamPositionAfter(searchReadingPosts);
+        reading.bindWindow(streamPostIds, searchReadingPosts);
         bindPosts(searchReadingPosts);
         searchReadingPosts = null;
         searchReadingDetail = null;
@@ -4268,8 +4205,7 @@ public class TopicFragment extends BaseFragment
         bindGeneration++;
         // And any stream page on its way belonged to that window too: the flag it left behind must
         // not stop the new window's first page, and its own callback is dropped by generation.
-        loadingPage = false;
-        loadingBackward = false;
+        reading.rebindPages();
         floors.clear();
         bubbles.clear();
         bubbleFloors.clear();
@@ -4446,48 +4382,13 @@ public class TopicFragment extends BaseFragment
      */
     private List<Post> firstPage(TopicDetail detail) {
         List<Post> all = detail.getPosts();
-        windowStart = streamPositionBefore(all);
-        nextPageStart = streamPositionAfter(all);
+        reading.bindWindow(streamPostIds, all);
         return all;
-    }
-
-    /**
-     * Where the loaded window begins in the stream: the index of the first post it carries. A window
-     * from the middle of the thread starts part-way in, so the slice before it is the one the reader
-     * scrolls up into; a window starting at the head answers 0 and has nothing above it.
-     */
-    private int streamPositionBefore(List<Post> loaded) {
-        if (!loaded.isEmpty()) {
-            int index = streamPostIds.indexOf(loaded.get(0).getId());
-            if (index >= 0) {
-                return index;
-            }
-        }
-        return 0;
-    }
-
-    /**
-     * Where the stream continues from the posts the payload already carries. A topic opened at a
-     * floor arrives as a window from the middle of the thread, so the next page is the stream id
-     * after the last post here - which is the same thing as the size of the window only when the
-     * window starts at the first floor.
-     */
-    private int streamPositionAfter(List<Post> loaded) {
-        if (!loaded.isEmpty()) {
-            int index = streamPostIds.indexOf(loaded.get(loaded.size() - 1).getId());
-            if (index >= 0) {
-                return index + 1;
-            }
-        }
-        return Math.min(loaded.size(), streamPostIds.size());
     }
 
     /** One floor, drawn as its date row (when it opens a day) and the bubbles its body splits into. */
     private void add(Post post, long topicId) {
-        if (!animatedTitlesLoaded && DiscourseUserTitles.INSTANCE.isAnimated(post.getAuthorTitle())) {
-            animatedTitlesLoaded = true;
-            startTitleGradient();
-        }
+        armAnimatedTitle(post);
         int floor = floors.size();
         floors.add(post);
         appendFloorRows(post, topicId, floor, bubbles, bubbleBodies, bubbleFloors);
@@ -4498,6 +4399,14 @@ public class TopicFragment extends BaseFragment
         String avatarTemplate = post.getAuthorAvatarTemplate();
         if (avatarTemplate != null && !avatarTemplate.isEmpty()) {
             avatarTemplates.put(DiscourseRows.userId(post.getAuthorUsername()), avatarTemplate);
+        }
+    }
+
+    /** A floor that carries a holographic title needs the frame loop, whichever path loaded it. */
+    private void armAnimatedTitle(Post post) {
+        if (!animatedTitlesLoaded && DiscourseUserTitles.INSTANCE.isAnimated(post.getAuthorTitle())) {
+            animatedTitlesLoaded = true;
+            startTitleGradient();
         }
     }
 
@@ -4569,23 +4478,13 @@ public class TopicFragment extends BaseFragment
         return row.isDateObject || row == unreadDivider;
     }
 
-    /** A floor's day, as the chat counts it: the site's timestamp in the reader's own calendar. */
-    private static int dayKey(long epochSeconds) {
-        if (epochSeconds <= 0) {
-            return -1;
-        }
-        java.util.Calendar calendar = java.util.Calendar.getInstance();
-        calendar.setTimeInMillis(epochSeconds * 1000L);
-        return calendar.get(java.util.Calendar.YEAR) * 1000 + calendar.get(java.util.Calendar.DAY_OF_YEAR);
-    }
-
     /** The day the last row of [rows] belongs to; the day a floor that follows it opens against. */
-    private static int lastRowDay(List<MessageObject> rows) {
+    private int lastRowDay(List<MessageObject> rows) {
         if (rows.isEmpty()) {
             return -1;
         }
         MessageObject last = rows.get(rows.size() - 1);
-        return last.messageOwner == null ? -1 : dayKey(last.messageOwner.date);
+        return last.messageOwner == null ? -1 : reading.dayKey(last.messageOwner.date);
     }
 
     /**
@@ -4619,8 +4518,8 @@ public class TopicFragment extends BaseFragment
      */
     private void appendFloorRows(Post post, long topicId, int floor,
             List<MessageObject> rows, List<PreparedPostBody> bodies, List<Integer> rowFloors) {
-        int day = dayKey(DiscourseRows.epochSeconds(post.getCreatedAt()));
-        if (day >= 0 && lastRowDay(rows) != day) {
+        int day = reading.dayKey(DiscourseRows.epochSeconds(post.getCreatedAt()));
+        if (reading.opensDateRow(lastRowDay(rows), day)) {
             rows.add(dateRow(post));
             bodies.add(null);
             // The row stands above this floor and introduces it, so it names the floor below it.
@@ -4963,7 +4862,7 @@ public class TopicFragment extends BaseFragment
             maybeLoadThreadReplies(dy);
             return;
         }
-        if (loadingWindow || container == null || listView == null || bubbles.isEmpty()) {
+        if (reading.isLoadingWindow() || container == null || listView == null || bubbles.isEmpty()) {
             return;
         }
         LinearLayoutManager manager = (LinearLayoutManager) listView.getLayoutManager();
@@ -4981,9 +4880,9 @@ public class TopicFragment extends BaseFragment
         // Leaving the edge re-arms it, so coming back can ask again.
         boolean nearBottom = last >= bubbles.size() - 1 - LOAD_MORE_THRESHOLD;
         if (dy != 0 && !nearBottom) {
-            nextPageFailed = false;
+            reading.clearForwardPageFailure();
         }
-        if (!loadingPage && !nextPageFailed && nextPageStart < streamPostIds.size() && nearBottom) {
+        if (nearBottom) {
             loadNextStreamPage();
         }
         // Upward: near the top of what is loaded, the slice before it is fetched too. The scroll's
@@ -4991,36 +4890,36 @@ public class TopicFragment extends BaseFragment
         // failure is latched the same way until the reader leaves the top edge.
         boolean nearTop = first <= LOAD_MORE_THRESHOLD;
         if (dy != 0 && !nearTop) {
-            previousPageFailed = false;
+            reading.clearBackwardPageFailure();
         }
-        if (!loadingBackward && !previousPageFailed && windowStart > 0 && nearTop) {
+        if (nearTop) {
             loadPreviousStreamPage();
         }
     }
 
     /** Appends the next slice of the stream below what is loaded. */
     private void loadNextStreamPage() {
-        if (loadingPage || nextPageStart >= streamPostIds.size()) {
+        if (!reading.canStartForwardPage(streamPostIds.size())) {
             return;
         }
-        final int generation = windowGeneration;
-        final int end = Math.min(nextPageStart + PAGE_SIZE, streamPostIds.size());
+        final int generation = reading.getGeneration();
+        final int end = Math.min(reading.getNextPageStart() + PAGE_SIZE, streamPostIds.size());
         // The slice that reaches the real end of the stream is the one the site answers the read-on
         // suggestion with: the head window of a topic a next page follows carries none.
         final boolean lastStreamPage = end >= streamPostIds.size();
-        List<Long> page = new ArrayList<>(streamPostIds.subList(nextPageStart, end));
-        loadingPage = true;
+        List<Long> page = new ArrayList<>(
+                streamPostIds.subList(reading.getNextPageStart(), end));
+        reading.startForwardPage();
         final long topicId = getArguments() == null ? 0 : getArguments().getLong(ARG_TOPIC_ID, 0);
         DiscourseLoader.INSTANCE.topicPosts(container, topicId, page, lastStreamPage, pagePayload -> {
-            if (generation != windowGeneration) {
+            if (!reading.isCurrent(generation)) {
                 // The window moved on while this page was on its way; the rows belong to a window
                 // nobody is looking at. The flag is the new window's to reset, not this callback's.
                 return kotlin.Unit.INSTANCE;
             }
             List<Post> loaded = pagePayload.getPosts();
             noteServedFromCache(showingCachedContent || pagePayload.getFromCache() || anyPostFromCache(loaded));
-            loadingPage = false;
-            nextPageStart = end;
+            reading.finishForwardPage(generation, end);
             int firstNew = bubbles.size();
             int floorsBefore = floors.size();
             // The page's floors are known before its bubbles are built, so a reply among them that
@@ -5077,13 +4976,12 @@ public class TopicFragment extends BaseFragment
             }
             return kotlin.Unit.INSTANCE;
         }, error -> {
-            if (generation != windowGeneration) {
+            if (!reading.isCurrent(generation)) {
                 return kotlin.Unit.INSTANCE;
             }
-            loadingPage = false;
             // The topic is on screen, so the rows stay and the cursor does not move. The direction
             // is latched for this visit to the bottom edge; the hint carries the retry explicitly.
-            nextPageFailed = true;
+            reading.failForwardPage(generation);
             showPagingFailure(error, true);
             return kotlin.Unit.INSTANCE;
         });
@@ -5095,43 +4993,42 @@ public class TopicFragment extends BaseFragment
      * and is retried the next time the reader nears the top.
      */
     private void loadPreviousStreamPage() {
-        if (loadingBackward || windowStart <= 0 || windowStart > streamPostIds.size()) {
+        if (!reading.canStartBackwardPage(streamPostIds.size())) {
             return;
         }
-        final int generation = windowGeneration;
-        final int start = Math.max(0, windowStart - PAGE_SIZE);
-        List<Long> page = new ArrayList<>(streamPostIds.subList(start, windowStart));
+        final int generation = reading.getGeneration();
+        final int start = Math.max(0, reading.getWindowStart() - PAGE_SIZE);
+        List<Long> page = new ArrayList<>(
+                streamPostIds.subList(start, reading.getWindowStart()));
         if (page.isEmpty()) {
             return;
         }
-        loadingBackward = true;
+        reading.startBackwardPage();
         final long topicId = getArguments() == null ? 0 : getArguments().getLong(ARG_TOPIC_ID, 0);
         DiscourseLoader.INSTANCE.topicPosts(container, topicId, page, false, pagePayload -> {
-            if (generation != windowGeneration) {
+            if (!reading.isCurrent(generation)) {
                 // The window moved on while this page was on its way; the rows belong to a window
                 // nobody is looking at.
                 return kotlin.Unit.INSTANCE;
             }
             List<Post> loaded = pagePayload.getPosts();
             noteServedFromCache(showingCachedContent || pagePayload.getFromCache() || anyPostFromCache(loaded));
-            loadingBackward = false;
+            reading.finishBackwardPage(generation, start);
             if (loaded == null || loaded.isEmpty()) {
                 // The slice holds no visible posts (deleted, or not visible to this reader): the
                 // cursor still moves past it, so the next approach asks for the slice above it
                 // instead of asking for this empty one forever.
-                windowStart = start;
                 return kotlin.Unit.INSTANCE;
             }
-            prependStreamPage(loaded, start);
+            prependStreamPage(loaded);
             return kotlin.Unit.INSTANCE;
         }, error -> {
-            if (generation != windowGeneration) {
+            if (!reading.isCurrent(generation)) {
                 return kotlin.Unit.INSTANCE;
             }
-            loadingBackward = false;
             // The rows already on screen stay and the cursor does not move. The direction is latched
             // for this visit to the top edge; the hint carries the retry explicitly.
-            previousPageFailed = true;
+            reading.failBackwardPage(generation);
             showPagingFailure(error, false);
             return kotlin.Unit.INSTANCE;
         });
@@ -5142,7 +5039,7 @@ public class TopicFragment extends BaseFragment
      * already drawn are not rebuilt - their MessageObjects, and anything opened on them, survive -
      * and the message that was at the top of the viewport is put back at the same pixel.
      */
-    private void prependStreamPage(List<Post> loaded, int startIndex) {
+    private void prependStreamPage(List<Post> loaded) {
         if (loaded == null || loaded.isEmpty() || listView == null) {
             return;
         }
@@ -5178,6 +5075,9 @@ public class TopicFragment extends BaseFragment
             int floor = newFloors.size();
             newFloors.add(post);
             appendFloorRows(post, topicId, floor, newBubbles, newBubbleBodies, newBubbleFloors);
+            // A slice is a load path of its own: a holographic title it brings arms the same frame
+            // loop a floor bound with the window does.
+            armAnimatedTitle(post);
             String avatarTemplate = post.getAuthorAvatarTemplate();
             if (avatarTemplate != null && !avatarTemplate.isEmpty()) {
                 avatarTemplates.put(DiscourseRows.userId(post.getAuthorUsername()), avatarTemplate);
@@ -5186,16 +5086,22 @@ public class TopicFragment extends BaseFragment
         int addedFloors = newFloors.size();
         int addedBubbles = newBubbles.size();
 
-        // A slice whose last day is the day the window already opens on leaves the window's own date
-        // row inside that same day: the slice's row is the day's (it stands above the day's first
-        // floor), so the old row goes and the seam carries one date row, not two.
-        boolean droppedSeamDate = !newBubbles.isEmpty()
-                && newBubbles.get(newBubbles.size() - 1).isDateObject
-                && !bubbles.isEmpty()
-                && bubbles.get(0).isDateObject
-                && dayKey(newBubbles.get(newBubbles.size() - 1).messageOwner.date)
-                        == dayKey(bubbles.get(0).messageOwner.date);
-        if (droppedSeamDate) {
+        // A slice whose last date row is the day the window already opens on leaves the window's
+        // own date row inside that same day: the slice's row is the day's (it stands above the
+        // day's first floor), so the old row goes and the seam carries one date row, not two. The
+        // slice's last *row* is a floor's bubble, so the day is read from its last date row.
+        int pageLastDay = -1;
+        for (int index = newBubbles.size() - 1; index >= 0; index--) {
+            MessageObject row = newBubbles.get(index);
+            if (row.isDateObject && row.messageOwner != null) {
+                pageLastDay = reading.dayKey(row.messageOwner.date);
+                break;
+            }
+        }
+        int windowOpeningDay = !bubbles.isEmpty() && bubbles.get(0).isDateObject
+                && bubbles.get(0).messageOwner != null
+                ? reading.dayKey(bubbles.get(0).messageOwner.date) : -1;
+        if (reading.dropsOpeningDateRow(pageLastDay, windowOpeningDay)) {
             bubbles.remove(0);
             bubbleBodies.remove(0);
             bubbleFloors.remove(0);
@@ -5214,7 +5120,6 @@ public class TopicFragment extends BaseFragment
         bubbles.addAll(0, newBubbles);
         bubbleBodies.addAll(0, newBubbleBodies);
         bubbleFloors.addAll(0, newBubbleFloors);
-        windowStart = startIndex;
 
         if (listView.getAdapter() != null) {
             listView.getAdapter().notifyItemRangeInserted(0, addedBubbles);
@@ -6413,8 +6318,8 @@ public class TopicFragment extends BaseFragment
         final TopicLoadFailure reason = TopicLoadFailure.of(error);
         org.telegram.messenger.FileLog.e(
                 forward ? "topic next page failed" : "topic previous page failed", error);
-        final int generation = windowGeneration;
-        final int cursor = forward ? nextPageStart : windowStart;
+        final int generation = reading.getGeneration();
+        final int cursor = forward ? reading.getNextPageStart() : reading.getWindowStart();
         // A page that needs the session is not an outage: the hint says which it is, and its own
         // action opens the login/verification WebView before asking for the page again.
         final int messageRes;
@@ -6447,9 +6352,9 @@ public class TopicFragment extends BaseFragment
      * tap; a duplicate tap while the read is out is refused by the loading flag the read itself owns.
      */
     private void retryStreamPage(boolean forward, int generation, int cursor, TopicLoadFailure reason) {
-        if (generation != windowGeneration || getParentActivity() == null
-                || cursor != (forward ? nextPageStart : windowStart)
-                || (forward ? loadingPage : loadingBackward)) {
+        if (!reading.isCurrent(generation) || getParentActivity() == null
+                || cursor != (forward ? reading.getNextPageStart() : reading.getWindowStart())
+                || (forward ? reading.isLoadingForwardPage() : reading.isLoadingBackwardPage())) {
             return;
         }
         // Validate the hint before opening login, and again once recovery finishes: navigation or
@@ -6460,10 +6365,10 @@ public class TopicFragment extends BaseFragment
         }
         if (forward) {
             // Clearing the latch is what lets this one attempt through; a failure sets it again.
-            nextPageFailed = false;
+            reading.clearForwardPageFailure();
             loadNextStreamPage();
         } else {
-            previousPageFailed = false;
+            reading.clearBackwardPageFailure();
             loadPreviousStreamPage();
         }
     }
@@ -6484,17 +6389,12 @@ public class TopicFragment extends BaseFragment
      * Bulletin, anchored above the composer - with [pagingLineRes] as its copy.
      */
     private void showFailure(Throwable error, int pagingLineRes, String logLabel) {
-        // A filtered window that did not arrive leaves the previous rows on screen; the row and
-        // the capsule go back to the mode those rows really are instead of naming a filter that
-        // is not in force.
-        if (onlyOpSwitchInFlight) {
-            onlyOpSwitchInFlight = false;
-            if (onlyOp != onlyOpBeforeSwitch) {
-                onlyOp = onlyOpBeforeSwitch;
-                updateOnlyOpMenuItem();
-                if (topicDetail != null) {
-                    bindSubtitle(topicDetail);
-                }
+        // A window that did not arrive leaves the rows on screen as they were, so the mode goes
+        // back to the one those rows were read in instead of naming a filter that is not in force.
+        if (reading.failWindowRead()) {
+            updateOnlyOpMenuItem();
+            if (topicDetail != null) {
+                bindSubtitle(topicDetail);
             }
         }
         // The read is over, so the ring goes with it (ChatActivity:20606 shows the same).

@@ -17,10 +17,6 @@ _Last updated: 2026-11-14._
   username, display name and avatar template, the reader's Discourse preferences,
   theme and link-opening choices, drafts, topic read positions, and caches for
   categories, emoji, SVG sprites and read content.
-- **Login form autofill.** If you submit the forum's login form, the app may save the
-  username and password for the next autofill. The username is stored as plain text;
-  the password is encrypted with a non-exportable Android Keystore key. This is
-  local only. You can remove it by clearing the app's data.
 - **Diagnostics.** The optional session diagnostics and the app's log lines are
   local. They use fixed event names and status codes, never URLs, request or
   response bodies, identities or cookie values. Nothing is uploaded automatically;
@@ -29,10 +25,16 @@ _Last updated: 2026-11-14._
   app keeps a per-install client id and a key pair in app-private storage so the
   grant can be recognized later.
 
-Clearing the app's data or uninstalling it removes this local state. The Android
-manifest inherits `android:allowBackup="true"` from the upstream Telegram tree, so
-if device backup is enabled on your phone, Android may include app-private data in
-your own device backup. You can turn device backup off in Android settings.
+NativeDo does not capture, store or inject the forum login form's username or
+password. The login WebView leaves filling to Android's Autofill framework and your
+password manager; data those keep is governed by those apps and their own terms,
+not by NativeDo. A preference file written by an earlier build's autofill feature is
+cleared the first time the app starts after upgrading.
+
+Clearing the app's data or uninstalling it removes this local state. NativeDo sets
+`android:allowBackup="false"` and explicit data-extraction rules, so app-private data
+(cookies, WebView storage, preferences and caches) is not included in an Android
+device backup or a device-to-device transfer.
 
 ## What the app sends
 
@@ -54,10 +56,9 @@ components only.
 
 - Use the forum's own logout to end the server session; NativeDo also clears its
   local session when you log out or when the server proves the session is gone.
-- Clear the app's data to remove local cookies, preferences, caches and autofill
-  credentials.
-- Do not use the autofill feature if you do not want the app to remember your login
-  form values.
+- Clear the app's data to remove local cookies, preferences and caches.
+- Use Android's autofill settings or your password manager to manage saved login
+  credentials; NativeDo does not keep a copy.
 
 ## Contact
 

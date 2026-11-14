@@ -57,7 +57,6 @@ class LoginWebViewFragment @JvmOverloads constructor(
     private val recoveryMode: Boolean = false,
 ) : BaseFragment() {
     private val fragmentScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private lateinit var autofillManager: LoginAutofillManager
     private lateinit var appContainer: AppContainer
     private var webView: WebView? = null
     private var webRoot: FrameLayout? = null
@@ -92,7 +91,6 @@ class LoginWebViewFragment @JvmOverloads constructor(
         })
 
         appContainer = NativeDo.container(context)
-        autofillManager = LoginAutofillManager(appContainer.credentialStore)
 
         val root = FrameLayout(context).apply {
             setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite))
@@ -122,7 +120,6 @@ class LoginWebViewFragment @JvmOverloads constructor(
     private fun createLoginWebView(context: Context, root: FrameLayout): WebView {
         val loginWebView = LoginWebViewFactory.create(context, appContainer.userAgent)
         LoginWebViewFactory.configureCookies(loginWebView)
-        if (!recoveryMode) autofillManager.attach(loginWebView)
 
         webView = loginWebView
         rendererGone = false
@@ -264,7 +261,6 @@ class LoginWebViewFragment @JvmOverloads constructor(
             if (!loginWebCanCompleteNavigation(navigationGeneration, failedNavigationGeneration)) {
                 return
             }
-            if (!recoveryMode) autofillManager.onPageFinished(view, url)
             captureDiscourseAssetsIcons(webView = view, currentUrl = url)
             if (!recoveryMode) maybeCompleteLogin(webView = view, currentUrl = url)
         }

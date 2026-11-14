@@ -1,7 +1,5 @@
 package io.github.baba983.nativedo.core.session
 
-import android.content.Context
-import android.content.SharedPreferences
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
@@ -12,54 +10,14 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 /**
- * Stores WebView login credentials (username + password) for auto-fill.
+ * Seals a small secret before it touches disk.
  *
- * The username is plain; the password is sealed with an AndroidKeyStore
- * AES/GCM key ([AndroidKeystoreCipher]) so it never rests on disk in the
- * clear. Credentials are saved only after the user successfully logs in.
+ * <p>The active app has no stored login password: the login WebView leaves form filling to
+ * Android's Autofill framework. The remaining caller is the experimental device-authorization
+ * key store, whose User API Key and software private key are sealed with
+ * [AndroidKeystoreCipher]. The interface is kept generic because it describes a cipher, not a
+ * credential store.</p>
  */
-class CredentialStore(
-    private val prefs: SharedPreferences?,
-    private val cipher: CredentialCipher = AndroidKeystoreCipher,
-) {
-    constructor(context: Context?) : this(
-        context?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE),
-    )
-
-    data class Credentials(val username: String?, val password: String?)
-
-    fun load(): Credentials {
-        val storedPassword = prefs?.getString(KEY_PASSWORD, null)
-        return Credentials(
-            username = prefs?.getString(KEY_USERNAME, null),
-            password = storedPassword?.let(cipher::decrypt),
-        )
-    }
-
-    fun save(username: String, password: String) {
-        prefs?.edit()?.apply {
-            putString(KEY_USERNAME, username)
-            putString(KEY_PASSWORD, cipher.encrypt(password))
-        }?.apply()
-    }
-
-    fun clear() {
-        prefs?.edit()?.clear()?.apply()
-    }
-
-    fun hasCredentials(): Boolean {
-        val credentials = load()
-        return !credentials.username.isNullOrBlank() && !credentials.password.isNullOrBlank()
-    }
-
-    private companion object {
-        const val PREFS_NAME = "nativedo.credentials"
-        const val KEY_USERNAME = "username"
-        const val KEY_PASSWORD = "password"
-    }
-}
-
-/** Seals credential values before they touch disk. */
 interface CredentialCipher {
     fun encrypt(plaintext: String): String?
 
@@ -70,6 +28,9 @@ interface CredentialCipher {
  * AES/GCM sealing backed by a non-exportable AndroidKeyStore key. Ciphertext
  * is `v1:` + Base64(IV || ciphertext); anything else fails to decrypt, which
  * transparently discards values written by older, plaintext versions.
+ *
+ * <p>The key alias predates the device-authorization flow: it was also used by the retired login
+ * autofill store. It is deliberately unchanged so existing device keys stay readable.</p>
  */
 object AndroidKeystoreCipher : CredentialCipher {
     private const val KEY_ALIAS = "nativedo_credentials"

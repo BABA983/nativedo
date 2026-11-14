@@ -28,6 +28,12 @@ internal class FakeDiscourseSite {
     private val routes = mutableMapOf(
         "latest.json" to "latest-topics.json",
         "emojis.json" to null,
+        // The topic screen announces its reader through the site's reply presence. An empty
+        // channel state is the honest fake answer: the screen has no other readers to draw, and
+        // a 404 here would make the presence controller retry on every idle tick.
+        "presence/get" to null,
+        "presence/update" to null,
+        "topics/timings" to null,
         // Every write asks for a CSRF token first, so a site that cannot hand one out cannot be
         // written to at all.
         "session/csrf" to "csrf.json",

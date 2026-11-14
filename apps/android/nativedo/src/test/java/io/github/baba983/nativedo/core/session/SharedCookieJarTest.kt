@@ -235,6 +235,25 @@ internal class SharedCookieJarTest {
         )
     }
 
+    /**
+     * The retired login autofill store must not survive an upgrade: a previous build saved the
+     * WebView form's username and password there, and the container clears it before any screen
+     * runs.
+     */
+    @Test
+    fun aRetiredLoginAutofillStoreIsClearedWhenTheContainerIsBuilt() {
+        val retired = RuntimeEnvironment.getApplication()
+            .getSharedPreferences("nativedo.credentials", Context.MODE_PRIVATE)
+        retired.edit()
+            .putString("username", "reader")
+            .putString("password", "v1:sealed")
+            .commit()
+
+        container()
+
+        assertTrue("the retired login autofill store is empty", retired.all.isEmpty())
+    }
+
     // ------------------------------------------------------------------ fixtures
 
     private fun container(): AppContainer =

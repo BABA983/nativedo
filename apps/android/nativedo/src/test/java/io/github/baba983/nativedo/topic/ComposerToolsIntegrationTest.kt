@@ -11,6 +11,7 @@ import io.github.baba983.nativedo.app.NativeDo
 import io.github.baba983.nativedo.harness.FakeDiscourseSite
 import io.github.baba983.nativedo.harness.UpstreamUiHarness
 import io.github.baba983.nativedo.harness.contentListOf
+import io.github.baba983.nativedo.harness.contentRowCount
 import io.github.baba983.nativedo.harness.shadows.*
 import org.junit.After
 import org.junit.Assert.*
@@ -218,7 +219,7 @@ internal class ComposerToolsIntegrationTest {
         if (newTopic) Theme.applyTheme(Theme.getTheme("Dark Blue"), false, false)
         harness.present(fragment)
         harness.await("composer owner") { harness.visibleFragment() === fragment }
-        if (!newTopic) harness.await("posts") { contentListOf(harness.activity)?.adapter?.itemCount == 1 }
+        if (!newTopic) harness.await("posts") { contentRowCount(harness) == 1 }
         harness.layoutApp()
         return fragment
     }

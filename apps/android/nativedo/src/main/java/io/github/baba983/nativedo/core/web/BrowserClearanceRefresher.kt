@@ -36,6 +36,10 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
  * Deliberately lazy: it runs only after a native challenge, never on a schedule
  * and never while logged out. If the challenge needs a human, the page times
  * out and the caller falls back to the visible recovery flow.
+ *
+ * <p>A load counts only when the jar's clearance really changed, or when a same-origin page
+ * finished without a challenge: a homepage that has not answered yet is not evidence that the
+ * old clearance works.</p>
  */
 class BrowserClearanceRefresher(
     private val appContext: Context,
@@ -111,11 +115,17 @@ class BrowserClearanceRefresher(
                     timeout = Runnable { finish(false) }
                     mainHandler.postDelayed(timeout, LOAD_TIMEOUT_MILLIS)
                     continuation.invokeOnCancellation {
-                        mainHandler.removeCallbacks(timeout)
-                        settleJob?.let(mainHandler::removeCallbacks)
-                        runCatching {
-                            webView.stopLoading()
-                            webView.destroy()
+                        // A coroutine may be cancelled from any thread; the WebView may only be
+                        // touched on the main one.
+                        mainHandler.post {
+                            if (completed) return@post
+                            completed = true
+                            mainHandler.removeCallbacks(timeout)
+                            settleJob?.let(mainHandler::removeCallbacks)
+                            runCatching {
+                                webView.stopLoading()
+                                webView.destroy()
+                            }
                         }
                     }
 
@@ -145,10 +155,6 @@ class BrowserClearanceRefresher(
                             finish(true)
                             return
                         }
-                        if (!challengeSeen) {
-                            finish(true)
-                            return
-                        }
                         if (pollCount >= MAX_POLL_ATTEMPTS) {
                             finish(false)
                             return
@@ -157,13 +163,29 @@ class BrowserClearanceRefresher(
                     }
 
                     webView.webViewClient = object : WebViewClient() {
+                        override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
+                            if (completed) return
+                            // A new main-frame navigation owns its own challenge evidence: a
+                            // challenge that solved and navigated on must not keep this load
+                            // waiting for a clearance it no longer needs.
+                            challengeSeen = false
+                        }
+
                         override fun onPageFinished(view: WebView, url: String) {
                             if (completed || !isDiscourseSameOrigin(url, baseUrl)) return
                             // Do not settle on the challenge page itself; wait
                             // for the silent challenge to mint a new clearance
                             // or for Cloudflare to navigate to the real page.
                             if (isChallengePath(url)) return
-                            schedulePoll(0, Runnable { pollForClearance() })
+                            if (challengeSeen) {
+                                // This navigation was challenged; only a clearance it mints can
+                                // make the replay worth sending.
+                                schedulePoll(0, Runnable { pollForClearance() })
+                                return
+                            }
+                            // A same-origin page finished without a challenge: the browser stack
+                            // reached the site, which is the evidence the old 800 ms poll guessed.
+                            finish(true)
                         }
 
                         override fun onReceivedError(
