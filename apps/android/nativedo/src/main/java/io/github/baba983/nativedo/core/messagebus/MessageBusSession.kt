@@ -102,6 +102,12 @@ class MessageBusSession(
     private val holderJobs = mutableListOf<Job>()
     private val foregrounded = AtomicBoolean(false)
     private val generationLock = Any()
+    /**
+     * Whether this foreground period already asked for the bootstrap. A failed fetch is not
+     * retried by anything but the next foreground: the session-state flow replays its current
+     * value to a new collector, and that replay must not turn one foreground into a fetch loop.
+     */
+    private var startAttempted = false
 
     /**
      * Bumped whenever the session changes (a start begins, a stop happens). A holder collector
@@ -127,6 +133,7 @@ class MessageBusSession(
     /** The app came to the front; a signed-in session starts polling. */
     fun onForeground() {
         foregrounded.set(true)
+        synchronized(generationLock) { startAttempted = false }
         if (sessionState.value is AppSessionState.Authenticated) {
             ensureStarted()
         }
@@ -231,9 +238,10 @@ class MessageBusSession(
             running.start()
             return@synchronized
         }
-        if (startJob?.isActive == true) {
+        if (startJob?.isActive == true || startAttempted) {
             return@synchronized
         }
+        startAttempted = true
         startJob = scope.launch {
             MessageBusDiagnostics.event("bootstrap_fetch")
             val html = try {
@@ -343,6 +351,7 @@ class MessageBusSession(
         refreshToken = 0
         startJob?.cancel()
         startJob = null
+        startAttempted = false
         client?.stop()
         if (!clearState) {
             return@synchronized
