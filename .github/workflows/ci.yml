@@ -240,7 +240,7 @@ jobs:
   # published by `nativedo-build` instead of compiling again.
   nativedo:
     needs: [changes, nativedo-build]
-    if: needs.changes.outputs.nativedo == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/spike/full-telegram-subtree'
+    if: needs.changes.outputs.nativedo == 'true' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/spike/full-telegram-subtree')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
@@ -343,7 +343,7 @@ jobs:
   # the Gradle dependency cache that `nativedo-build` saved instead of racing it.
   nativedo-apk:
     needs: [changes, nativedo-build]
-    if: needs.changes.outputs.nativedo == 'true' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/spike/full-telegram-subtree'))
+    if: needs.changes.outputs.nativedo == 'true' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/spike/full-telegram-subtree')))
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:

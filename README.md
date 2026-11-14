@@ -133,3 +133,23 @@ python3 -m unittest discover -s scripts/tests -t scripts/tests -p 'test_telegram
 `--verify` checks dependency stamps; an unstamped populated tree is unverified,
 not proof of a matching or mismatching pin. The CI jobs are in
 [ci.yml](.github/workflows/ci.yml).
+## License, third-party code and disclaimer
+
+NativeDo's own code is licensed under **GPL-2.0-or-later**. The full license text is
+in [LICENSE](LICENSE).
+
+This project is not affiliated with, endorsed by, or sponsored by Telegram. It does
+not use Telegram's name or trademarks as its own; "Telegram" appears only to name the
+upstream Android UI source this client builds on. That source is the
+[DrKLO/Telegram](https://github.com/DrKLO/Telegram) subtree under
+`apps/android/telegram`, distributed under GPL-2.0-or-later; its license text stays at
+`apps/android/telegram/LICENSE`.
+
+Third-party dependencies declared in `apps/android/nativedo/build.gradle`, and the
+libraries vendored by the Telegram subtree, keep their own licenses. See
+[THIRD_PARTY.md](THIRD_PARTY.md). Native libraries and other bundled components carry
+their own notices from their upstream projects.
+
+NativeDo is an unofficial client for linux.do, provided "as is", without warranty of
+any kind. Use it at your own risk and follow linux.do's rules. linux.do is a
+third-party service and is not part of this project.

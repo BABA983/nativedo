@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/BABA983/nativedo/security/advisories/new
+    about: Report security and session-handling problems privately, not in a public issue.
+  - name: linux.do account or server problem
+    url: https://linux.do/
+    about: Account, moderation and server issues belong to linux.do, not to this app.
