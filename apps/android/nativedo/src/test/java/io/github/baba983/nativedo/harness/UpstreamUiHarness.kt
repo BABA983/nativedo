@@ -81,12 +81,23 @@ internal class UpstreamUiHarness {
             } else {
                 Robolectric.buildActivity(NativeDoActivity::class.java, intent)
             }
-            controller.setup().get()
+            val controller2 = controller.setup()
+            // 13.2.1's page host creates the tab shell's views after Robolectric's visible() pass,
+            // so the views added later never receive the simulated attach. Ask again now that the
+            // tree is complete: an unattached tree loses View clicks (they are posted until attach)
+            // and reports window coordinates relative to the wrong root.
+            controller2.visible()
+            controller2.get()
         } finally {
             org.robolectric.shadows.ShadowChoreographer.setPaused(pausedFrames)
         }
         activity = app
         idle()
+        // 13.2.1's shell finishes its first layout on delayed passes: the tab strip and the page
+        // host are added after the window's first frame, and until that lands the strip is not
+        // attached (its clicks queue until attach) and reports window coordinates from the wrong
+        // root. Let the simulated clock reach those passes before a test drives the shell.
+        idleClock(300)
         reportBootRequests()
         resetSideEffectCounters()
         return app
