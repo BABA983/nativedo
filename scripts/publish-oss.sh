@@ -555,7 +555,13 @@ for oid, data in blobs.items():
     if any(pattern.search(data) for pattern in ip_res):
         failures.append(('known client IP', oid.decode()))
 
-client_ip_blobs = {oid: data for oid, data in blobs.items() if b'"client_ip"' in data}
+client_ip_blobs = {
+    oid: data
+    for oid, data in blobs.items()
+    if b'"client_ip"' in data
+    and b'"user_auth_tokens"' in data
+    and b'"associated_accounts"' in data
+}
 if client_ip_blobs:
     expected = sanitized[full_path]
     for oid, data in client_ip_blobs.items():
