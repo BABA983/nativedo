@@ -138,6 +138,13 @@ jobs:
     if: needs.changes.outputs.nativedo == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    # The suite is 108 Robolectric classes, each in a fresh JVM. On the
+    # private-repository 2-core runner a single job takes longer than the
+    # runner stays healthy, so split the classes into four parallel shards.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -208,8 +215,25 @@ jobs:
           kotlin.compiler.execution.strategy=in-process
           EOF
 
-      - name: Unit tests
-        run: ./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:testDailyDebugUnitTest -Pnativedo.test.maxHeapSize=2g --quiet
+      - name: Select test shard
+        id: shard
+        run: |
+          mapfile -t classes < <(
+            find apps/android/nativedo/src/test/java -name '*Test.kt' \
+              | sed 's|apps/android/nativedo/src/test/java/||; s|/|.|g; s|\.kt$||' \
+              | sort
+          )
+          args=()
+          for i in "${!classes[@]}"; do
+            if (( i % 4 == ${{ matrix.shard }} )); then
+              args+=(--tests "${classes[$i]}")
+            fi
+          done
+          echo "shard ${{ matrix.shard }}: ${#args[@]} of ${#classes[@]} test classes"
+          printf 'args=%s\n' "${args[*]}" >> "$GITHUB_OUTPUT"
+
+      - name: Unit tests (shard ${{ matrix.shard }})
+        run: ./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:testDailyDebugUnitTest -Pnativedo.test.maxHeapSize=2g ${{ steps.shard.outputs.args }} --quiet
 
       # On failure keep what a human needs to diagnose it without re-running the
       # job: the JUnit XML, the test report, and Gradle logs. Retained for a
@@ -218,7 +242,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: nativedo-verification
+          name: nativedo-verification-${{ matrix.shard }}
           if-no-files-found: ignore
           retention-days: 7
           path: |
@@ -232,7 +256,7 @@ jobs:
       # one. Only when the exact key missed; a restore-keys hit reports
       # `cache-hit: false` and does get saved, which keeps the entry current.
       - uses: actions/cache/save@v4
-        if: success() && steps.nativedo-gradle-cache.outputs.cache-hit != 'true'
+        if: success() && matrix.shard == 0 && steps.nativedo-gradle-cache.outputs.cache-hit != 'true'
         with:
           path: |
             ~/.gradle/caches
