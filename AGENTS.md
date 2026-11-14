@@ -16,6 +16,9 @@ Android is active; iOS is a scaffold.
 `apps/android/nativedo` builds against the full `apps/android/telegram` subtree.
 Our code belongs in `nativedo`, not at an upstream `org.telegram.*` path.
 The sole host seam inside the subtree is `NativeDoHooks` and its narrow call sites.
+The legacy `:app` / standalone `TMessagesProj` build is archived at tag
+`legacy-partial-mirror` and is no longer in the tree; `apps/android/telegram` is
+the only Android build.
 
 - Read the pinned upstream source before changing Telegram integration. Preserve
   upstream rendering, measurement, gesture, animation and recycling behavior.
@@ -29,21 +32,6 @@ The sole host seam inside the subtree is `NativeDoHooks` and its narrow call sit
   authorize Telegram account/network activity.
 - Keep copied license headers. Adapted ports carry SPDX `GPL-2.0-or-later` and
   one short upstream attribution, not structured port-status comment blocks.
-
-## Legacy stack only
-
-`apps/android/app` and standalone `apps/android/TMessagesProj` remain in the tree.
-They use [VENDOR.md](VENDOR.md) and `vendor-overlay.json`, **not** the subtree model.
-
-- Read `scripts/vendor-diff.sh <path>` before changing a mirror (`--pinned` for
-  drift against the pin). Native ports/shims must be classified honestly in the overlay.
-- Respect `forced_exact`: preserve method shape, signatures, constants, imports
-  and branch structure of listed gesture/animation/measurement/drawing/recycling
-  subsystems. Host wiring must not alter them; run the observable gate the guard names.
-- `reference` paths intentionally use older baselines; do not silently re-sync them.
-- Run `scripts/vendor-guard.sh --compile` for legacy vendor or overlay changes.
-  The pre-commit quick guard does not replace compile or the named visual gate.
-- Do not delete the legacy stack, its tooling or goldens without explicit agreement.
 
 ## Network and session
 
@@ -66,8 +54,6 @@ Never log credentials, cookie values or sensitive request/response content.
 - Follow [testing](docs/testing.md) for evidence scope. No mandatory append to a
   verification Markdown log; report each run with the change it verifies.
 - Run Gradle sequentially; use `--quiet` when possible. Commands live in README.
-- Legacy Paparazzi pixel verification and platform-baseline rules live in
-  [testing](docs/testing.md#choose-the-gate-for-the-build).
 - Docs-only changes need accuracy, consistency and local-link checks, not an APK build.
 
 ## Maintaining documentation
@@ -102,5 +88,5 @@ When `.codegraph/` exists, use `codegraph_explore` (MCP) or
 `codegraph explore "<symbols or question>"` before grep/read for code discovery.
 If unavailable, use normal source discovery; do not index just to satisfy this rule.
 
-Reference sources: the pinned Telegram subtree (or `scripts/vendor-setup.sh --print-dir`
-for legacy diffs) and [Discourse API docs](https://docs.discourse.org/).
+Reference sources: the pinned Telegram subtree and
+[Discourse API docs](https://docs.discourse.org/).

@@ -4,15 +4,11 @@ The active app hosts Telegram's UI, not Telegram's service. This is why product
 code is outside the upstream subtree while presentation objects may use upstream
 types. See [upstream hosting](upstream-hosting.md) for the host seam.
 
-## Two separate builds
+## One Android build
 
-| Build | Gradle root | Product module | Telegram sources | Provenance |
-|---|---|---|---|---|
-| Active | `apps/android/telegram` | `../nativedo` (`:nativedo`) | subtree's `TMessagesProj` | subtree import + hook guard |
-| Legacy | `apps/android` | `app` (`:app`) | standalone `TMessagesProj` | overlay + vendor guard |
-
-These are different `:TMessagesProj` modules. A task run against one Gradle root
-does not check the other. The legacy stack has not been deleted.
+`apps/android/telegram` is the only Gradle root. It builds the upstream subtree's
+`:TMessagesProj` and our `../nativedo` (`:nativedo`) module. A build or test run
+against another Gradle root would not check this one.
 
 ## Active product code
 
@@ -61,10 +57,9 @@ Copied/adapted Telegram code retains its licensing and attribution; NativeDo cod
 must not masquerade as an upstream mirror. Keep comments short and local, not
 per-file provenance ledgers.
 
-## Legacy boundary
+## Legacy archive
 
-Legacy native ports live in `app`; mirrored sources stay in standalone
-`TMessagesProj` with upstream packages. That module must not import NativeDo
-product code. If it needs host behavior, use an existing callback/SPI owned by
-the library and implemented by `app`. Classification and forced-exact rules are
-in [VENDOR.md](../VENDOR.md), not a mandate to redesign the active adapters.
+The previous `:app` / standalone `TMessagesProj` stack, its vendor overlay,
+tooling and Paparazzi goldens were removed after the subtree build replaced them.
+They remain at tag `legacy-partial-mirror` for recovery; nothing in the active
+tree imports or tests them.

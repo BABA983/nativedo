@@ -12,7 +12,6 @@ They are not a feature checklist, task backlog or verification diary.
 - **Which state belongs to the reader, server or viewport?** [Reading and state](reading-state.md)
 - **What does a test actually prove?** [Testing](testing.md)
 - **What does linux.do accept on the wire?** [Discourse contracts](../contracts/discourse/README.md)
-- **How is the old partial mirror maintained?** [Legacy vendoring](../VENDOR.md)
 
 Build commands live in [README](../README.md). Contributor rules live in
 [AGENTS](../AGENTS.md). Tests and fixtures are executable examples; source links
