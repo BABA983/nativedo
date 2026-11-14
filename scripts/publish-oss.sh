@@ -311,6 +311,10 @@ for value in [user.get('email')] + [
     if isinstance(value, str) and '@' in value:
         emails.add(value.strip())
 
+# The fixture's own mail providers, before trailer addresses join the set: only these
+# are rewritten as bare words below (a common provider name also occurs in upstream code).
+fixture_domains = sorted({email.split('@', 1)[1].split('.', 1)[0] for email in emails})
+
 # Co-authored-by trailers can carry an address whose local part extends the
 # fixture's own address (for example a personal Gmail next to the forum email).
 log = subprocess.run(
@@ -378,6 +382,12 @@ for name in usernames:
     blob_rules.append('%s==>example_user' % name)
 for index, ip in enumerate(ips, 1):
     blob_rules.append('regex:\\b%s\\b==>192.0.2.%d' % (re.escape(ip), index))
+# An earlier draft of this script carried hand-written patterns: the mail provider and the
+# addresses' first two octets in regex form (`a\.b\.`). Rewrite those fragments too.
+for domain in fixture_domains:
+    blob_rules.append('regex:(?i)\\b%s\\b==>example' % re.escape(domain))
+for prefix in sorted({'%s\\.%s\\.' % tuple(ip.split('.')[:2]) for ip in ips if ip.count('.') == 3}):
+    blob_rules.append('%s==>192\\.0\\.' % prefix)
 
 with open(os.path.join(work, 'replace-text.txt'), 'w', encoding='utf-8') as handle:
     handle.write('\n'.join(blob_rules) + ('\n' if blob_rules else ''))
