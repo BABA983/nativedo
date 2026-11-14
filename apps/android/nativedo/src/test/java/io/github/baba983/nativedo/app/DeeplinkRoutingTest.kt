@@ -249,6 +249,10 @@ internal class DeeplinkRoutingTest {
             Robolectric.buildActivity(NativeDoActivity::class.java).setup(state)
         }
         harness.idle()
+        // The replacement window finishes its restore on delayed passes, like the first boot:
+        // without them the restored page's transition still counts as in progress.
+        recreated.visible()
+        harness.idleClock(300)
         harness.activity = recreated.get()
     }
 

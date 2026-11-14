@@ -500,6 +500,11 @@ internal class ShellRecreationTest {
             Robolectric.buildActivity(NativeDoActivity::class.java).setup(state)
         }
         harness.idle()
+        // The replacement window finishes its restore on delayed passes, exactly like the first
+        // boot: until they run, the restored page's transition counts as in progress and swallows
+        // the next back.
+        recreated.visible()
+        harness.idleClock(300)
         harness.activity = recreated.get()
     }
 
