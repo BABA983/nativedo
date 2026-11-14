@@ -32,7 +32,7 @@ class OpenedPayload(val bytes: ByteArray, val transform: String)
  * authorization is easy to get wrong, so the key is only accepted after a real encrypt/decrypt
  * self-test with the exact OAEP transformation the server uses. When Keystore cannot do it, a
  * software keypair is generated and its PKCS#8 private half is sealed with the same
- * hardware-backed AES/GCM key that protects the saved credentials ([AndroidKeystoreCipher]); the
+ * hardware-backed AES/GCM key that protects the saved device key ([AndroidKeystoreCipher]); the
  * at-rest protection is equivalent, only the cipher operation moves into the process.
  *
  * Discourse's Ruby asks for `rsa_padding_mode=oaep` (OpenSSL default SHA-1) and its official Node

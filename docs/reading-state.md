@@ -8,6 +8,15 @@ fenced against newer tokens; challenge evidence preserves the session rather tha
 pretending it is logout. The [auth contract](../contracts/discourse/auth-flow.md)
 owns the exact rules, including CSRF and explicit recovery.
 
+The app stores no login-form username or password. The login WebView's fields are
+filled by Android's Autofill framework and the reader's password manager, not by a
+JavaScript bridge or a native credential store; the WebView is marked
+`importantForAutofill="yes"` so that path stays available. A previous build's retired
+autofill preference file is cleared when the app container is first built. App backup
+is disabled (`allowBackup="false"`, with explicit extraction rules excluding every
+domain), so the shared cookie jar and WebView storage cannot enter a device backup or
+device-to-device transfer.
+
 The [composition root](../apps/android/nativedo/src/main/java/io/github/baba983/nativedo/core/di/AppContainer.kt)
 shares this boundary with repositories and MessageBus. The device authorization
 experiment produces a separate User API Key; it is **not** the production cookie

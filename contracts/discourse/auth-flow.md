@@ -57,7 +57,9 @@ open the same login WebView in recovery mode, initially at `/challenge`.
 Normal first login still starts at `/login`. Keep the existing cookies, identity,
 topic position and reply draft. Loading a page or pressing Back never completes
 recovery, even with authenticated cookies; Back cancels, including pending DOM
-callbacks. Recovery does not autofill credentials.
+callbacks. The app does not capture, store or inject login-form credentials: the
+login WebView leaves username/password filling to Android's Autofill framework and
+the reader's password manager. Recovery does not autofill credentials.
 
 After the reader finishes the site's verification, they press `完成验证` on a
 same-origin page outside `/login`. The tap asks the session itself - the shared

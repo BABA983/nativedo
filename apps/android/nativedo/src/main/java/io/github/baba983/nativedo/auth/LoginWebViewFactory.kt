@@ -3,6 +3,8 @@ package io.github.baba983.nativedo.auth
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Color
+import android.os.Build
+import android.view.View
 import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.WebSettings
@@ -38,6 +40,11 @@ internal object LoginWebViewFactory {
         settings.layoutAlgorithm = WebSettings.LayoutAlgorithm.TEXT_AUTOSIZING
         settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
         settings.safeBrowsingEnabled = true
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            // Leave form filling to Android's Autofill framework and the reader's password
+            // manager: the app no longer captures, stores or injects login credentials.
+            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_YES
+        }
     }
 
     fun configureCookies(webView: WebView) {

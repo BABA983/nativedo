@@ -21,7 +21,6 @@ import io.github.baba983.nativedo.core.network.resolveNativeDoUserAgent
 import io.github.baba983.nativedo.core.network.resolveAcceptLanguage
 import io.github.baba983.nativedo.core.session.AndroidKeystoreCipher
 import io.github.baba983.nativedo.core.session.CompleteLoginUseCase
-import io.github.baba983.nativedo.core.session.CredentialStore
 import io.github.baba983.nativedo.core.session.LegacyCookieMigration
 import io.github.baba983.nativedo.core.session.SessionCoordinator
 import io.github.baba983.nativedo.core.session.SharedCookieJar
@@ -68,6 +67,21 @@ class AppContainer(
     private val json: Json = NetworkJson.instance
     private val appContext = context?.applicationContext
     val userAgent: String = userAgent ?: resolveNativeDoUserAgent(appContext)
+
+    init {
+        // The retired login autofill store: a previous build saved the WebView login form's
+        // username and password here. Clear it before any screen can run; an absent or already
+        // cleared file makes this a no-op. No other store reads this preference name.
+        appContext?.let { context ->
+            val retired = context.getSharedPreferences(
+                RETIRED_LOGIN_CREDENTIALS_PREFS,
+                Context.MODE_PRIVATE,
+            )
+            if (retired.all.isNotEmpty()) {
+                retired.edit().clear().apply()
+            }
+        }
+    }
 
     /** The retired native snapshot: read once by [LegacyCookieMigration], never written again. */
     private val legacyCookiePreferences = appContext?.getSharedPreferences(COOKIE_STORE_PREFS, Context.MODE_PRIVATE)
@@ -262,7 +276,6 @@ class AppContainer(
                     }
                     ?: NoCategoryPersistence,
         )
-    val credentialStore: CredentialStore = CredentialStore(appContext)
     private val deviceLoginPreferences = appContext?.getSharedPreferences(DEVICE_LOGIN_PREFS, Context.MODE_PRIVATE)
     private val deviceKeyPreferences = appContext?.getSharedPreferences(DEVICE_KEY_PREFS, Context.MODE_PRIVATE)
 
@@ -369,6 +382,8 @@ class AppContainer(
         const val DEVICE_LOGIN_PREFS: String = "nativedo.device_login"
         const val DEVICE_KEY_PREFS: String = "nativedo.device_key"
         const val DEVICE_CLIENT_ID_KEY: String = "client_id"
+        /** The retired login autofill store; only [AppContainer]'s startup cleanup names it. */
+        const val RETIRED_LOGIN_CREDENTIALS_PREFS: String = "nativedo.credentials"
     }
 
     private fun newDeviceClientId(): String {
