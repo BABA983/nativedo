@@ -209,7 +209,7 @@ jobs:
           df -h /
           mkdir -p ~/.gradle
           cat >> ~/.gradle/gradle.properties <<'EOF'
-          org.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8
+          org.gradle.jvmargs=-Xmx1g -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8
           org.gradle.workers.max=1
           org.gradle.parallel=false
           kotlin.compiler.execution.strategy=in-process
@@ -233,7 +233,7 @@ jobs:
           printf 'args=%s\n' "${args[*]}" >> "$GITHUB_OUTPUT"
 
       - name: Unit tests (shard ${{ matrix.shard }})
-        run: ./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:testDailyDebugUnitTest -Pnativedo.test.maxHeapSize=2g ${{ steps.shard.outputs.args }} --quiet
+        run: ./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:testDailyDebugUnitTest -Pnativedo.test.maxHeapSize=1g ${{ steps.shard.outputs.args }} --console=plain
 
       # On failure keep what a human needs to diagnose it without re-running the
       # job: the JUnit XML, the test report, and Gradle logs. Retained for a
