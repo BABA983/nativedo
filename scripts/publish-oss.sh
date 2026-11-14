@@ -9,6 +9,10 @@
 #
 # It is a dry run by default. Nothing is pushed unless --push is passed.
 #
+# The replacement set is derived from the historical user-profile-full.json in the
+# source mirror, not hardcoded here. That keeps the published script free of the
+# private addresses and lets the same script handle a later capture.
+#
 # Usage:
 #   scripts/publish-oss.sh [options] <target-remote> <source-branch>
 #
@@ -151,13 +155,29 @@ SANITIZED_PREFS="$SANITIZED_DIR/user-preferences.json"
 SANITIZED_BADGES="$SANITIZED_DIR/user-badges.json"
 for f in "$SANITIZED_FULL" "$SANITIZED_PREFS" "$SANITIZED_BADGES"; do
   [[ -f "$f" ]] || die "missing sanitized fixture: $f"
+  python3 -m json.tool "$f" >/dev/null || die "not valid JSON: $f"
 done
 
-# Never use a replacement file that still contains the known private values.
-if grep -E -q 'example_user|example|192\.0\.|192\.0\.|192\.0\.|192\.0\.|192\.0\.|192\.0\.|192\.0\.|192\.0\.|192\.0\.|192\.0\.|192\.0\.|(^|[^0-9])27023([^0-9]|$)|(^|[^A-Za-z])example_user([^A-Za-z]|$)' \
-  "$SANITIZED_FULL" "$SANITIZED_PREFS" "$SANITIZED_BADGES"; then
-  die "a sanitized fixture still contains known private values; refusing to rewrite"
-fi
+# The replacement fixture must itself be synthetic: example.com email addresses
+# and RFC 5737 client addresses. This prevents accidentally using a real capture
+# as the replacement.
+python3 - "$SANITIZED_FULL" <<'PY'
+import json
+import re
+import sys
+
+data = json.load(open(sys.argv[1]))
+user = data.get('user') or {}
+email = user.get('email')
+if email and not re.search(r'@example\.(com|org|net)$', email):
+    raise SystemExit('sanitized full fixture has a non-example email')
+for token in user.get('user_auth_tokens') or []:
+    if not isinstance(token, dict):
+        continue
+    ip = token.get('client_ip')
+    if ip and not re.match(r'^(192\.0\.2\.|198\.51\.100\.|203\.0\.113\.)', ip):
+        raise SystemExit('sanitized full fixture has a non-documentation client_ip')
+PY
 
 # Resolve a remote name (the default `origin`) to its URL; a local path or a URL
 # is used as-is.
@@ -202,9 +222,11 @@ fi
 MIRROR="$WORK_DIR/repo.git"
 GITLEAKS_REPORT="$WORK_DIR/gitleaks.json"
 PII_LOG="$WORK_DIR/pii-check.txt"
-BLOB_CALLBACK="$WORK_DIR/blob_callback.py"
+PII_PATTERNS="$WORK_DIR/pii-patterns.json"
+FILE_INFO_CALLBACK="$WORK_DIR/file-info-callback.py"
 REPLACEMENTS="$WORK_DIR/replace-text.txt"
 MESSAGE_REPLACEMENTS="$WORK_DIR/replace-message.txt"
+ORIGINAL_FULL="$WORK_DIR/original-user-profile-full.json"
 
 note "Mirroring $SOURCE ($SOURCE_URL)"
 rm -rf "$MIRROR"
@@ -242,70 +264,160 @@ while IFS= read -r ref; do
 done < <(git -C "$MIRROR" for-each-ref --format='%(refname)')
 git -C "$MIRROR" symbolic-ref HEAD "refs/heads/$BRANCH"
 
-# The callback replaces each known fixture with the sanitized version from this
-# checkout. Content signatures are used because filter-repo's blob callback does
-# not receive the path.
-cat >"$BLOB_CALLBACK" <<'PY'
+# Files we authored and do not want the history rewrite to touch. Their blob IDs
+# are compared after the rewrite; this catches a callback that matches by content
+# and accidentally replaces one of them.
+PROTECTED_PATHS=()
+PROTECTED_OIDS=()
+for path in scripts/publish-oss.sh .gitleaks.toml LICENSE; do
+  if oid="$(git -C "$MIRROR" rev-parse "refs/heads/$BRANCH:$path" 2>/dev/null)"; then
+    PROTECTED_PATHS+=("$path")
+    PROTECTED_OIDS+=("$oid")
+  fi
+done
+
+# The first commit that added the fixture holds the original capture. The branch
+# tip is already sanitized, so it cannot be used as the source of the PII set.
+ORIGINAL_COMMIT="$(git -C "$MIRROR" log --all --diff-filter=A --format=%H -- \
+  fixtures/discourse/user-profile-full.json | tail -n 1)"
+[[ -n "$ORIGINAL_COMMIT" ]] ||
+  die "cannot find the commit that added fixtures/discourse/user-profile-full.json"
+git -C "$MIRROR" show "$ORIGINAL_COMMIT:fixtures/discourse/user-profile-full.json" >"$ORIGINAL_FULL"
+
+note "Deriving the PII set from $ORIGINAL_COMMIT"
+NATIVEDO_ORIGINAL_FULL="$ORIGINAL_FULL" \
+NATIVEDO_SANITIZED_FULL="$SANITIZED_FULL" \
+NATIVEDO_SANITIZED_PREFS="$SANITIZED_PREFS" \
+NATIVEDO_SANITIZED_BADGES="$SANITIZED_BADGES" \
+NATIVEDO_WORK_DIR="$WORK_DIR" \
+NATIVEDO_MIRROR="$MIRROR" \
+python3 - <<'PY'
+import json
 import os
+import re
+import subprocess
 
-def read(path):
-    with open(path, 'rb') as handle:
-        return handle.read()
+work = os.environ['NATIVEDO_WORK_DIR']
+repo = os.environ['NATIVEDO_MIRROR']
+original = json.load(open(os.environ['NATIVEDO_ORIGINAL_FULL']))
+user = original.get('user') or {}
 
-full = read(os.environ['NATIVEDO_SANITIZED_FULL'])
-prefs = read(os.environ['NATIVEDO_SANITIZED_PREFS'])
-badges = read(os.environ['NATIVEDO_SANITIZED_BADGES'])
+emails = set()
+for value in [user.get('email')] + [
+    account.get('description')
+    for account in (user.get('associated_accounts') or [])
+    if isinstance(account, dict)
+]:
+    if isinstance(value, str) and '@' in value:
+        emails.add(value.strip())
 
-data = blob.data
-if b'"user_auth_tokens"' in data and b'"associated_accounts"' in data:
-    blob.data = full
-elif b'"user_option"' in data and b'"mailing_list_mode"' in data:
-    blob.data = prefs
-elif b'"user_badges"' in data and b'"granted_by_id"' in data:
-    blob.data = badges
+# Co-authored-by trailers can carry an address whose local part extends the
+# fixture's own address (for example a personal Gmail next to the forum email).
+log = subprocess.run(
+    ['git', '-C', repo, 'log', '--all', '--format=%B'],
+    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=True,
+).stdout.decode('utf-8', 'replace')
+message_emails = set(re.findall(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', log))
+fixture_locals = {email.split('@', 1)[0] for email in emails if '@' in email}
+for email in message_emails:
+    local = email.split('@', 1)[0]
+    if any(local.startswith(prefix) for prefix in fixture_locals if prefix):
+        emails.add(email)
+
+def private_email(email):
+    lower = email.lower()
+    if lower.endswith(('@example.com', '@example.org', '@example.net')):
+        return False
+    if lower.endswith('@users.noreply.github.com'):
+        return False
+    if lower in ('amp@ampcode.com', 'noreply@anthropic.com'):
+        return False
+    if lower.startswith('noreply@'):
+        return False
+    return True
+
+emails = sorted(email for email in emails if private_email(email))
+email_locals = sorted({email.split('@', 1)[0] for email in emails if '@' in email})
+
+username = user.get('username')
+usernames = []
+if isinstance(username, str) and username and username.lower() not in (
+    'example_user', 'example user', 'system', 'example_inviter'
+):
+    usernames = [username]
+
+def private_ip(ip):
+    return not re.match(
+        r'^(192\.0\.2\.|198\.51\.100\.|203\.0\.113\.|127\.|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)',
+        ip,
+    )
+
+ips = sorted({
+    token.get('client_ip')
+    for token in (user.get('user_auth_tokens') or [])
+    if isinstance(token, dict) and token.get('client_ip')
+})
+ips = [ip for ip in ips if private_ip(ip)]
+
+patterns = {
+    'emails': emails,
+    'email_locals': email_locals,
+    'usernames': usernames,
+    'ips': ips,
+}
+with open(os.path.join(work, 'pii-patterns.json'), 'w', encoding='utf-8') as handle:
+    json.dump(patterns, handle, indent=2)
+    handle.write('\n')
+
+blob_rules = []
+for email in emails:
+    blob_rules.append('%s==>user@example.com' % email)
+for local in email_locals:
+    blob_rules.append('regex:(?i)%s==>example_user' % re.escape(local))
+for name in usernames:
+    blob_rules.append('%s==>example_user' % name)
+for index, ip in enumerate(ips, 1):
+    blob_rules.append('regex:\\b%s\\b==>192.0.2.%d' % (re.escape(ip), index))
+
+with open(os.path.join(work, 'replace-text.txt'), 'w', encoding='utf-8') as handle:
+    handle.write('\n'.join(blob_rules) + ('\n' if blob_rules else ''))
+
+message_rules = list(blob_rules)
+for name in usernames:
+    message_rules.append('%s==>example_user' % name.lower())
+with open(os.path.join(work, 'replace-message.txt'), 'w', encoding='utf-8') as handle:
+    handle.write('\n'.join(message_rules) + ('\n' if message_rules else ''))
+
+callback = r'''
+if mode == b'160000':
+    return (filename, mode, blob_id)
+if 'sanitized' not in value.data:
+    import os
+    def read(path):
+        with open(path, 'rb') as handle:
+            return handle.read()
+    value.data['sanitized'] = {
+        b'fixtures/discourse/user-profile-full.json': read(os.environ['NATIVEDO_SANITIZED_FULL']),
+        b'fixtures/discourse/user-preferences.json': read(os.environ['NATIVEDO_SANITIZED_PREFS']),
+        b'fixtures/discourse/user-badges.json': read(os.environ['NATIVEDO_SANITIZED_BADGES']),
+    }
+original = value.get_contents_by_identifier(blob_id)
+contents = value.data['sanitized'].get(filename, original)
+if value.is_binary(contents):
+    return (filename, mode, blob_id)
+contents = value.apply_replace_text(contents)
+if contents == original:
+    return (filename, mode, blob_id)
+return (filename, mode, value.insert_file_with_contents(contents))
+'''
+with open(os.path.join(work, 'file-info-callback.py'), 'w', encoding='utf-8') as handle:
+    handle.write(callback)
+
+print('PII set: %d email(s), %d local part(s), %d username(s), %d IP(s)' % (
+    len(emails), len(email_locals), len(usernames), len(ips)))
 PY
 
-# Fallback for copies outside the fixtures: the known email, the 27 login-record
-# IPs (13 distinct addresses), the old username and the old user id. The IP
-# patterns are anchored so a longer address cannot be partially replaced.
-{
-  printf '%s\n' 'user@example.com==>user@example.com'
-  printf '%s\n' 'regex:(?i)example_user==>example_user'
-  # Capital-D example_user is the account name; lowercase "daud" is deliberately not a
-  # global rule because it also matches "dAudio" in upstream C++ identifiers.
-  printf '%s\n' 'example_user==>example_user'
-  i=0
-  for ip in \
-    192.0.2.1 \
-    192.0.2.2 \
-    192.0.2.3 \
-    192.0.2.4 \
-    192.0.2.5 \
-    192.0.2.6 \
-    192.0.2.7 \
-    192.0.2.8 \
-    192.0.2.9 \
-    192.0.2.10 \
-    192.0.2.11 \
-    192.0.2.12 \
-    192.0.2.13; do
-    i=$((i + 1))
-    escaped="${ip//./\\.}"
-    printf 'regex:\\b%s\\b==>192.0.2.%d\n' "$escaped" "$i"
-  done
-} >"$REPLACEMENTS"
-
-# Commit messages need the same scrub, plus the real address that appears only in
-# Co-authored-by trailers and the lowercase account name. Blob replacement cannot
-# use a bare lowercase "daud" rule because it also matches "dAudio" in upstream
-# C++ identifiers; commit messages have no such identifier.
-cp "$REPLACEMENTS" "$MESSAGE_REPLACEMENTS"
-{
-  printf '%s\n' 'user@example.com==>user@example.com'
-  printf '%s\n' 'daud==>example_user'
-} >>"$MESSAGE_REPLACEMENTS"
-
-note "Rewriting history (fixtures + fallback replacements)"
+note "Rewriting history (fixture paths + derived replacements)"
 export NATIVEDO_SANITIZED_FULL="$SANITIZED_FULL"
 export NATIVEDO_SANITIZED_PREFS="$SANITIZED_PREFS"
 export NATIVEDO_SANITIZED_BADGES="$SANITIZED_BADGES"
@@ -313,12 +425,20 @@ export NATIVEDO_SANITIZED_BADGES="$SANITIZED_BADGES"
 # orb's multi-line credential helper. The mirror needs no user/global config.
 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
   git -C "$MIRROR" filter-repo --force \
-  --blob-callback "$BLOB_CALLBACK" \
+  --file-info-callback "$FILE_INFO_CALLBACK" \
   --replace-text "$REPLACEMENTS" \
   --replace-message "$MESSAGE_REPLACEMENTS"
 
 git -C "$MIRROR" reflog expire --expire=now --all
 git -C "$MIRROR" gc --prune=now --quiet
+
+for i in "${!PROTECTED_PATHS[@]}"; do
+  path="${PROTECTED_PATHS[$i]}"
+  new_oid="$(git -C "$MIRROR" rev-parse "refs/heads/$BRANCH:$path" 2>/dev/null || true)"
+  if [[ "$new_oid" != "${PROTECTED_OIDS[$i]}" ]]; then
+    die "$path changed during the history rewrite; refusing to publish"
+  fi
+done
 
 COMMIT_COUNT="$(git -C "$MIRROR" rev-list --count "refs/heads/$BRANCH")"
 note "Rewritten history: $COMMIT_COUNT commits on $BRANCH"
@@ -350,22 +470,27 @@ if ((RUN_GITLEAKS)); then
 fi
 
 note "PII check over the rewritten history"
-python3 - "$MIRROR" "$SANITIZED_FULL" "$SANITIZED_PREFS" "$SANITIZED_BADGES" <<'PY' | tee "$PII_LOG"
+python3 - "$MIRROR" "$PII_PATTERNS" "$SANITIZED_FULL" "$SANITIZED_PREFS" "$SANITIZED_BADGES" <<'PY' | tee "$PII_LOG"
+import json
+import os
 import re
 import subprocess
 import sys
 
-repo, full_path, prefs_path, badges_path = sys.argv[1:5]
+repo, patterns_path, full_path, prefs_path, badges_path = sys.argv[1:6]
+patterns = json.load(open(patterns_path))
+emails = [pattern.encode() for pattern in patterns.get('emails', [])]
+locals_ = [pattern.encode() for pattern in patterns.get('email_locals', [])]
+usernames = [pattern.encode() for pattern in patterns.get('usernames', [])]
+ips = [pattern.encode() for pattern in patterns.get('ips', [])]
 
-known_ips = [
-    b'192.0.2.1', b'192.0.2.2', b'192.0.2.3', b'192.0.2.4',
-    b'192.0.2.5', b'192.0.2.6', b'192.0.2.7', b'192.0.2.8',
-    b'192.0.2.9', b'192.0.2.10', b'192.0.2.11', b'192.0.2.12',
-    b'192.0.2.13',
+email_res = [re.compile(re.escape(value), re.I) for value in emails + locals_]
+username_res = [re.compile(re.escape(value)) for value in usernames]
+lower_username_res = [re.compile(re.escape(value.lower())) for value in usernames]
+ip_res = [
+    re.compile(rb'(?<![0-9])' + re.escape(value) + rb'(?![0-9])')
+    for value in ips
 ]
-email_re = re.compile(rb'example_user(?:@example\.com|983@gmail\.com)', re.I)
-word_re = re.compile(rb'example_user', re.I)
-ip_re = re.compile(rb'(?<![0-9])(' + b'|'.join(re.escape(ip) for ip in known_ips) + rb')(?![0-9])')
 client_ip_re = re.compile(rb'"client_ip"\s*:\s*"([^"]+)"')
 doc_ip_re = re.compile(rb'^(?:192\.0\.2\.|198\.51\.100\.|203\.0\.113\.)')
 
@@ -423,9 +548,11 @@ proc.wait()
 
 failures = []
 for oid, data in blobs.items():
-    if email_re.search(data) or word_re.search(data):
+    if any(pattern.search(data) for pattern in email_res):
         failures.append(('known email/name', oid.decode()))
-    if ip_re.search(data):
+    if any(pattern.search(data) for pattern in username_res):
+        failures.append(('known username', oid.decode()))
+    if any(pattern.search(data) for pattern in ip_res):
         failures.append(('known client IP', oid.decode()))
 
 client_ip_blobs = {oid: data for oid, data in blobs.items() if b'"client_ip"' in data}
@@ -458,14 +585,19 @@ for path, expected in sanitized.items():
 
 # Commit metadata must not carry the known address either.
 metadata = git('log', '--all', '--format=%ae%n%ce%n%B')
-for label, pattern in (('commit email', email_re), ('commit text', word_re), ('commit IP', ip_re)):
-    if pattern.search(metadata):
+for label, pattern_list in (
+    ('commit email', email_res),
+    ('commit username', username_res + lower_username_res),
+    ('commit IP', ip_res),
+):
+    if any(pattern.search(metadata) for pattern in pattern_list):
         failures.append((label, 'commit metadata'))
 
 print('scanned %d unique blobs, %d commits' % (len(blobs), len(git('rev-list', '--all').splitlines())))
-for label in ('known email/name', 'known client IP', 'client_ip outside the sanitized fixture',
-              'non-documentation client_ip', 'fixture missing from rewritten history',
-              'stale fixture version', 'commit email', 'commit text', 'commit IP'):
+for label in ('known email/name', 'known username', 'known client IP',
+              'client_ip outside the sanitized fixture', 'non-documentation client_ip',
+              'fixture missing from rewritten history', 'stale fixture version',
+              'commit email', 'commit username', 'commit IP'):
     count = sum(1 for failure in failures if failure[0] == label)
     print('  %-45s %d' % (label + ':', count))
 if failures:
