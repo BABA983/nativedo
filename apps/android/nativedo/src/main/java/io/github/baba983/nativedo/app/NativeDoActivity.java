@@ -328,7 +328,6 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
 
                     private static final float LAZY_START = 0.015f;
                     private boolean predictiveBackStarted;
-                    private boolean predictiveBackInvoked;
 
                     @Override
                     public void onBackProgressed(@NonNull BackEvent backEvent) {

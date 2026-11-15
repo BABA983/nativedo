@@ -545,8 +545,6 @@ public class TopicFragment extends BaseFragment
     /** Our own rich-editor entry, on our own strip; upstream's composer is untouched. */
     private android.widget.TextView richTextButton;
     private boolean uploadingAttachment;
-    /** Post numbers per row: replying is by number, and the payload does not always carry them. */
-    private final List<Integer> postNumbers = new ArrayList<>();
     /** The loaded floor for each post number, so a reply's target is found without scanning rows. */
     private final HashMap<Integer, Post> postByNumber = new HashMap<>();
     /**
@@ -6807,21 +6805,6 @@ public class TopicFragment extends BaseFragment
                     "b1", null, photo.sizeFull.size, null, message, 1);
             photo.updateButtonState(true);
         }
-    }
-
-    /**
-     * Builds the rows again.
-     *
-     * <p>A cell asks for its author's avatar once and skips the request while it still holds the
-     * same one, and a row is always bound before the picture has been fetched; assigning the
-     * adapter again is what replaces the cells, and with them the state that remembered the
-     * unanswered request.</p>
-     */
-    private void rebuildRows() {
-        if (listView == null || listView.getAdapter() == null) {
-            return;
-        }
-        listView.setAdapter(listView.getAdapter());
     }
 
     private void notifyPostsChanged() {

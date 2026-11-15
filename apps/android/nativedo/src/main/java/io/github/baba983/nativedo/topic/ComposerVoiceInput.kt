@@ -8,7 +8,6 @@ import android.os.SystemClock
 import android.view.MotionEvent
 import androidx.core.app.ActivityCompat
 import io.github.baba983.nativedo.core.media.AndroidVoiceRecorder
-import io.github.baba983.nativedo.core.media.ToastVoiceRecordingFeedback
 import io.github.baba983.nativedo.core.media.VoiceRecorder
 import io.github.baba983.nativedo.core.media.VoiceRecording
 import io.github.baba983.nativedo.core.media.VoiceRecordingFeedback
@@ -198,11 +197,6 @@ class ComposerVoiceInput internal constructor(
 
     companion object {
         const val RECORD_PERMISSION_REQUEST_CODE = 0x4E44
-
-        @JvmStatic
-        fun bind(activity: Activity, composer: ChatActivityEnterView, delegate: DiscourseComposerDelegate,
-                 onRecorded: (VoiceRecording) -> Unit, captureAllowed: () -> Boolean = { true }): ComposerVoiceInput =
-            bind(activity, composer, delegate, ToastVoiceRecordingFeedback(activity), onRecorded, captureAllowed)
 
         /** Chat retains its existing review/upload contract rather than adopting the forum editor. */
         @JvmStatic
