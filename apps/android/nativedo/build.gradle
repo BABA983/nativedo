@@ -192,6 +192,9 @@ android {
                 // the JVM between classes so a full run does not accumulate that native state.
                 // CI overrides this on smaller runners; the local default stays 3g.
                 maxHeapSize = project.findProperty('nativedo.test.maxHeapSize') ?: '3g'
+                // A native abort leaves no Java stack; keep the JVM's own fatal-error log beside
+                // the JUnit XML, which the CI failure artifact already uploads.
+                jvmArgs "-XX:ErrorFile=${project.buildDir}/test-results/hs_err_pid%p.log"
                 maxParallelForks = 1
                 forkEvery = 1
                 testLogging {
