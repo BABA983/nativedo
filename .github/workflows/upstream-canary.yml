@@ -1,0 +1,260 @@
+name: upstream-canary
+
+# Weekly test-merge of the newest upstream Telegram release into a throwaway branch.
+#
+# It reports only. It never pushes a branch, never merges into `main` and never
+# advances the subtree pin; the deliberate upgrade (every one or two minor
+# releases, AGENTS.md) is a reviewed `git subtree` change on its own branch.
+#
+# The merge is the one an upgrade makes: git-subtree's squash commit merged into
+# the prefix with its subtree strategy, so conflicts are the upgrade's conflicts.
+# The merge message is then rewritten to the `Merge commit '<squash>' as
+# '<prefix>'` form the pin tools read from history, which lets `telegram-deps.sh`
+# resolve the canary's own dependency gitlinks for the compile gate.
+
+on:
+  schedule:
+    # Mondays 06:00 UTC (14:00 Asia/Shanghai).
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: upstream-canary
+  cancel-in-progress: false
+
+jobs:
+  canary:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The subtree pin and its dependency gitlinks live in history; a shallow
+          # clone cannot resolve either.
+          fetch-depth: 0
+
+      - name: Free disk space
+        # The canary materializes the new pin's native dependency trees and runs a
+        # Gradle build; the preinstalled SDKs the build does not use are removed the
+        # same way `ci.yml` does it.
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost /usr/local/lib/android/sdk/ndk
+          df -h /
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: "platforms;android-36 build-tools;36.0.0 ndk;27.2.12479018 cmake;3.22.1 platform-tools"
+
+      - name: Resolve the newest upstream release
+        id: upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          old_pin="$(PYTHONPATH=scripts python3 -c 'from pathlib import Path; from telegramlib import subtree_pin; print(subtree_pin(Path(".")))')"
+          branch="$(git ls-remote --symref https://github.com/DrKLO/Telegram.git HEAD \
+            | awk '/^ref:/ { sub("refs/heads/", "", $2); print $2; exit }')"
+          test -n "$branch"
+          # Upstream stopped tagging releases after 11.4.2; each release is a commit
+          # on the default branch whose subject is `update to <version> (<build>)`.
+          release="$(gh api "repos/DrKLO/Telegram/commits?sha=$branch&per_page=100" \
+            --jq '.[] | select(.commit.message | test("^update to [0-9]+\\.[0-9]+")) | [.sha, (.commit.message | split("\n")[0])] | @tsv' \
+            | head -n 1)"
+          if [ -z "$release" ]; then
+            echo "::error::no 'update to <version>' release commit in the last 100 upstream commits"
+            exit 1
+          fi
+          sha="${release%%$'\t'*}"
+          subject="${release#*$'\t'}"
+          {
+            echo "old_pin=$old_pin"
+            echo "sha=$sha"
+            echo "subject=$subject"
+          } >> "$GITHUB_OUTPUT"
+          echo "upstream release: $subject ($sha); current pin: $old_pin"
+
+      - name: Fetch the two ends of the merge
+        env:
+          OLD_PIN: ${{ steps.upstream.outputs.old_pin }}
+          NEW_SHA: ${{ steps.upstream.outputs.sha }}
+        run: |
+          set -euo pipefail
+          # Shallow, by full sha: git-subtree needs the old split commit's tree (for
+          # its squash message) and the new release's tree, not either repository's
+          # history. GitHub allows fetching an arbitrary full sha.
+          git fetch --depth=1 https://github.com/DrKLO/Telegram.git "$OLD_PIN"
+          git fetch --depth=1 https://github.com/DrKLO/Telegram.git "$NEW_SHA"
+
+      - name: Test-merge into a throwaway branch
+        id: merge
+        env:
+          NEW_SHA: ${{ steps.upstream.outputs.sha }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          branch="canary/upstream-$(date -u +%Y%m%d-%H%M)"
+          git switch -c "$branch"
+          # A local branch only: nothing is pushed. `--no-verify` on the amend below
+          # skips the repository's pre-commit hook, which compares against the pin
+          # this merge is about to replace; the guard runs explicitly against the
+          # pure upstream tree instead.
+          if ! GIT_EDITOR=true git subtree merge --squash --prefix apps/android/telegram \
+              "$NEW_SHA" https://github.com/DrKLO/Telegram.git > merge.log 2>&1; then
+            echo "result=conflict" >> "$GITHUB_OUTPUT"
+            git diff --name-only --diff-filter=U | tee conflicted.txt
+            echo "::error::the upstream release does not merge cleanly"
+            tail -40 merge.log
+            exit 1
+          fi
+          squash="$(git rev-parse HEAD^2)"
+          git commit --amend --no-verify --quiet -m "Merge commit '$squash' as 'apps/android/telegram'"
+          echo "result=clean" >> "$GITHUB_OUTPUT"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "merged $NEW_SHA into $branch"
+
+      - name: Hook guard against the new upstream tree
+        id: guard
+        if: steps.merge.outputs.result == 'clean'
+        env:
+          NEW_SHA: ${{ steps.upstream.outputs.sha }}
+        run: |
+          set -euo pipefail
+          # The canary merge is now the pin, and its tree already carries our hooks,
+          # so a diff against it is empty. Build the pure upstream tree under the
+          # prefix and diff against that: every remaining difference must be an
+          # allowed one-line hook callsite.
+          export GIT_INDEX_FILE="$RUNNER_TEMP/canary-index"
+          rm -f "$GIT_INDEX_FILE"
+          git read-tree --empty
+          git read-tree --prefix=apps/android/telegram/ "$NEW_SHA^{tree}"
+          tree="$(git write-tree)"
+          base="$(printf 'canary base: upstream %s\n' "$NEW_SHA" | git commit-tree "$tree")"
+          rm -f "$GIT_INDEX_FILE"
+          unset GIT_INDEX_FILE
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          scripts/telegram-hook-guard.sh --base "$base" | tee guard.log
+
+      - name: Materialize the new pin's dependency trees
+        if: steps.merge.outputs.result == 'clean' && steps.guard.outcome == 'success'
+        run: scripts/telegram-deps.sh
+
+      - name: Bound build memory
+        if: steps.merge.outputs.result == 'clean' && steps.guard.outcome == 'success'
+        # Same budgets as `ci.yml`: the canary runner has no more memory than the
+        # regular build runner.
+        run: |
+          mkdir -p ~/.gradle
+          cat >> ~/.gradle/gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8
+          org.gradle.workers.max=1
+          org.gradle.parallel=false
+          kotlin.compiler.execution.strategy=in-process
+          org.gradle.caching=true
+          EOF
+
+      - uses: actions/cache/restore@v4
+        if: steps.merge.outputs.result == 'clean' && steps.guard.outcome == 'success'
+        id: gradle-cache
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-canary-v1-${{ runner.os }}-${{ hashFiles('apps/android/telegram/build.gradle', 'apps/android/telegram/settings.gradle', 'apps/android/telegram/gradle.properties', 'apps/android/telegram/gradle/**', 'apps/android/telegram/buildSrc/**/*.gradle*', 'apps/android/telegram/TMessagesProj/build.gradle', 'apps/android/nativedo/build.gradle') }}
+          restore-keys: |
+            gradle-canary-v1-${{ runner.os }}-
+            gradle-nativedo-v2-${{ runner.os }}-
+
+      - name: Compile gate
+        id: compile
+        if: steps.merge.outputs.result == 'clean' && steps.guard.outcome == 'success'
+        run: |
+          set -o pipefail
+          ./apps/android/telegram/gradlew -p apps/android/telegram \
+            :TMessagesProj:compileDebugJavaWithJavac \
+            :nativedo:compileDailyDebugUnitTestKotlin \
+            :nativedo:compileDailyDebugUnitTestJavaWithJavac \
+            :nativedo:processDailyDebugUnitTestJavaRes \
+            --console=plain 2>&1 | tee compile.log
+
+      - uses: actions/cache/save@v4
+        if: success() && steps.compile.outcome == 'success' && steps.gradle-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-canary-v1-${{ runner.os }}-${{ hashFiles('apps/android/telegram/build.gradle', 'apps/android/telegram/settings.gradle', 'apps/android/telegram/gradle.properties', 'apps/android/telegram/gradle/**', 'apps/android/telegram/buildSrc/**/*.gradle*', 'apps/android/telegram/TMessagesProj/build.gradle', 'apps/android/nativedo/build.gradle') }}
+
+      - name: Job summary
+        if: always()
+        env:
+          SUBJECT: ${{ steps.upstream.outputs.subject }}
+          NEW_SHA: ${{ steps.upstream.outputs.sha }}
+          OLD_PIN: ${{ steps.upstream.outputs.old_pin }}
+          MERGE: ${{ steps.merge.outputs.result }}
+          BRANCH: ${{ steps.merge.outputs.branch }}
+          GUARD: ${{ steps.guard.outcome }}
+          COMPILE: ${{ steps.compile.outcome }}
+        run: |
+          {
+            echo "## Upstream Telegram canary"
+            echo
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| Upstream release | ${SUBJECT:-not resolved} |"
+            echo "| Upstream commit | \`${NEW_SHA:-unknown}\` |"
+            echo "| Current pin | \`${OLD_PIN:-unknown}\` |"
+            echo "| Test-merge | ${MERGE:-not run}${BRANCH:+ (\`$BRANCH\`)} |"
+            echo "| Hook guard | ${GUARD:-not run} |"
+            echo "| Compile gate | ${COMPILE:-not run} |"
+            echo
+            echo "The canary only reports: no branch was pushed and \`main\` was not touched."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open or update the canary issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUBJECT: ${{ steps.upstream.outputs.subject }}
+          NEW_SHA: ${{ steps.upstream.outputs.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          body="$RUNNER_TEMP/canary-issue.md"
+          {
+            echo "The weekly upstream canary failed."
+            echo
+            echo "- Upstream: ${SUBJECT:-unknown} (\`${NEW_SHA:-unknown}\`)"
+            echo "- Run: $RUN_URL"
+            echo
+            echo "### Merge conflicts"
+            echo '```'
+            if [ -s conflicted.txt ]; then cat conflicted.txt; else echo "none (the merge did not run or was clean)"; fi
+            echo '```'
+            echo
+            echo "### Hook guard"
+            echo '```'
+            if [ -s guard.log ]; then tail -60 guard.log; else echo "not run"; fi
+            echo '```'
+            echo
+            echo "### Compile gate"
+            echo '```'
+            if [ -s compile.log ]; then tail -60 compile.log; else echo "not run"; fi
+            echo '```'
+          } > "$body"
+          existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search 'in:title "Upstream canary failed"' --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body-file "$body"
+          else
+            gh issue create --title "Upstream canary failed: ${SUBJECT:-unknown}" --body-file "$body"
+          fi
