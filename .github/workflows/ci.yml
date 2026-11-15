@@ -319,14 +319,21 @@ jobs:
           # native logcat lines land).
           evidence_root=apps/android/nativedo/build/ci-evidence
           for attempt in 1 2; do
-            ./apps/android/telegram/gradlew -p apps/android/telegram \
-              :nativedo:testDailyDebugUnitTest \
-              -Pnativedo.test.maxHeapSize=3g \
-              ${{ steps.shard.outputs.args }} --console=plain && exit 0
-            status=$?
-            echo "attempt $attempt failed (exit $status)"
             evidence="$evidence_root/attempt-$attempt"
             mkdir -p "$evidence"
+            set -o pipefail
+            # Tee the console as well: the test JVM's stderr (Robolectric's native
+            # logcat lines and the abort reason) never reaches test-results when the
+            # worker dies, and that is exactly the output a crash needs.
+            if ./apps/android/telegram/gradlew -p apps/android/telegram \
+              :nativedo:testDailyDebugUnitTest \
+              -Pnativedo.test.maxHeapSize=3g \
+              ${{ steps.shard.outputs.args }} --console=plain 2>&1 | tee "$evidence/gradle.log"; then
+              rm -rf "$evidence"
+              exit 0
+            fi
+            status=$?
+            echo "attempt $attempt failed (exit $status)"
             cp -a apps/android/nativedo/build/test-results "$evidence/" 2>/dev/null || true
             cp -a apps/android/nativedo/build/reports/tests "$evidence/reports-tests" 2>/dev/null || true
             cp -a apps/android/nativedo/build/outputs/logs "$evidence/outputs-logs" 2>/dev/null || true
