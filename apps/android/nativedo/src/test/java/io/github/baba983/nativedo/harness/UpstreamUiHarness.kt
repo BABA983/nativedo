@@ -145,6 +145,23 @@ internal class UpstreamUiHarness {
         AndroidUtilities.density = metrics.density
         AndroidUtilities.displayMetrics = metrics
         AndroidUtilities.displaySize.set(metrics.widthPixels, metrics.heightPixels)
+        warmUpNativeGraphics()
+    }
+
+    /**
+     * Robolectric's native graphics runtime resolves the `java.nio.*Buffer` classes it needs
+     * lazily, on whichever thread first reaches native code. An animation's decoder thread can be
+     * that thread, and a frame that runs after its test's sandbox is gone cannot resolve them:
+     * the runtime logs "Class not found: java/nio/DoubleBuffer" and aborts the JVM (SIGABRT, exit
+     * 134). Touch native graphics here, on the test thread and inside a live sandbox, so the
+     * runtime's class cache is resolved before any background thread can be first.
+     */
+    private fun warmUpNativeGraphics() {
+        runCatching {
+            val bitmap = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
+            Canvas(bitmap).drawColor(Color.BLACK)
+            bitmap.recycle()
+        }
     }
 
     /**
