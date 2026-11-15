@@ -432,9 +432,13 @@ jobs:
           path: |
             apps/android/telegram/TMessagesProj/.cxx
             apps/android/telegram/TMessagesProj/build/intermediates/cxx
-          key: nativedo-native-v2-${{ runner.os }}-${{ steps.pin.outputs.pin }}-arm64-v8a-armeabi-v7a-x86_64-${{ hashFiles('apps/android/telegram/TMessagesProj/jni/CMakeLists.txt', 'apps/android/telegram/TMessagesProj/jni/**/CMakeLists.txt', 'apps/android/telegram/TMessagesProj/jni/Application.mk', 'apps/android/telegram/TMessagesProj/build.gradle', 'apps/android/telegram/build.gradle', 'apps/android/telegram/gradle.properties', 'apps/android/telegram/buildSrc/**/*.gradle*', 'apps/android/nativedo/build.gradle') }}
+          # Do not hash `jni/**/CMakeLists.txt`: `scripts/telegram-deps.sh` fills
+          # those pinned dependency trees after this restore step, so the glob
+          # would produce a different key at save time and the cache would never
+          # hit. The subtree pin already covers every native source and gitlink.
+          key: nativedo-native-v3-${{ runner.os }}-${{ steps.pin.outputs.pin }}-arm64-v8a-armeabi-v7a-x86_64-${{ hashFiles('apps/android/telegram/TMessagesProj/jni/CMakeLists.txt', 'apps/android/telegram/TMessagesProj/jni/Application.mk', 'apps/android/telegram/TMessagesProj/build.gradle', 'apps/android/telegram/build.gradle', 'apps/android/telegram/gradle.properties', 'apps/android/telegram/buildSrc/**/*.gradle*', 'apps/android/nativedo/build.gradle') }}
           restore-keys: |
-            nativedo-native-v2-${{ runner.os }}-${{ steps.pin.outputs.pin }}-arm64-v8a-armeabi-v7a-x86_64-
+            nativedo-native-v3-${{ runner.os }}-${{ steps.pin.outputs.pin }}-arm64-v8a-armeabi-v7a-x86_64-
 
       - name: Materialize pinned Telegram dependency trees
         run: scripts/telegram-deps.sh
@@ -582,4 +586,4 @@ jobs:
           path: |
             apps/android/telegram/TMessagesProj/.cxx
             apps/android/telegram/TMessagesProj/build/intermediates/cxx
-          key: nativedo-native-v2-${{ runner.os }}-${{ steps.pin.outputs.pin }}-arm64-v8a-armeabi-v7a-x86_64-${{ hashFiles('apps/android/telegram/TMessagesProj/jni/CMakeLists.txt', 'apps/android/telegram/TMessagesProj/jni/**/CMakeLists.txt', 'apps/android/telegram/TMessagesProj/jni/Application.mk', 'apps/android/telegram/TMessagesProj/build.gradle', 'apps/android/telegram/build.gradle', 'apps/android/telegram/gradle.properties', 'apps/android/telegram/buildSrc/**/*.gradle*', 'apps/android/nativedo/build.gradle') }}
+          key: nativedo-native-v3-${{ runner.os }}-${{ steps.pin.outputs.pin }}-arm64-v8a-armeabi-v7a-x86_64-${{ hashFiles('apps/android/telegram/TMessagesProj/jni/CMakeLists.txt', 'apps/android/telegram/TMessagesProj/jni/Application.mk', 'apps/android/telegram/TMessagesProj/build.gradle', 'apps/android/telegram/build.gradle', 'apps/android/telegram/gradle.properties', 'apps/android/telegram/buildSrc/**/*.gradle*', 'apps/android/nativedo/build.gradle') }}
