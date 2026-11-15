@@ -1,8 +1,7 @@
-// Ported from Telegram 12.10.5 `org/telegram/ui/Components/ProfileActionsView.java`.
-// The row, its 74dp height, its 16dp round radii, its per-button appear/delete animations and
-// its custom draw are upstream's; the actions themselves are this site's (message, follow,
-// mute, share, bookmarks, settings). Telegram-only modes (calls, stories, gifts) are kept but
-// unused, so the drawing code stays diffable against the upstream file.
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Ported from Telegram 13.2.1 `org/telegram/ui/Components/ProfileActionsView.java`.
+// The site's follow/unfollow, bookmark and share actions are the only additions.
+
 package io.github.baba983.nativedo.profile;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
@@ -23,7 +22,6 @@ import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.drawable.Drawable;
-import android.os.Build;
 import android.os.Bundle;
 import android.text.Layout;
 import android.view.HapticFeedbackConstants;
@@ -53,8 +51,11 @@ import org.telegram.ui.Components.AnimatedFloat;
 import org.telegram.ui.Components.ButtonBounce;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.LoadingDrawable;
+import org.telegram.ui.Components.ProfileButtonsGlass;
 import org.telegram.ui.Components.RLottieDrawable;
 import org.telegram.ui.Components.Text;
+import org.telegram.ui.Components.blur3.BlurredBackgroundDrawableViewFactory;
+import org.telegram.ui.Components.blur3.drawable.BlurredBackgroundDrawable;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -72,6 +73,12 @@ public class ProfileActionsView extends View {
     public boolean isAnimatingCallAction = false;
     public boolean isOpeningLayout = true;
     public float clipHeight = -1;
+
+    /** The buttons' glass, one drawable per drawn button in order; without it they are filled with their color. */
+    @Nullable
+    private BlurredBackgroundDrawableViewFactory glassFactory;
+    private final ArrayList<BlurredBackgroundDrawable> glass = new ArrayList<>();
+    private int glassUsed;
 
     private int activeCount = 0;
     private final int targetHeight;
@@ -108,7 +115,7 @@ public class ProfileActionsView extends View {
     public static final int KEY_EDIT_USERNAME = 15;
     public static final int KEY_EDIT_INFO = 16;
     public static final int KEY_SETTINGS = 17;
-    /** Site actions: follow/unfollow via the discourse-follow plugin, bookmarks, share. */
+    /** Site actions: follow/unfollow through the discourse-follow plugin, and the reader's bookmarks. */
     public static final int KEY_FOLLOW = 18;
     public static final int KEY_UNFOLLOW = 19;
     public static final int KEY_BOOKMARKS = 20;
@@ -148,6 +155,34 @@ public class ProfileActionsView extends View {
         setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_YES);
     }
 
+    /** The buttons on glass, see {@link ProfileButtonsGlass#actionsFactory}. */
+    public void setGlassFactory(@Nullable BlurredBackgroundDrawableViewFactory factory) {
+        glassFactory = factory;
+        glass.clear();
+        glassUsed = 0;
+        invalidate();
+    }
+
+    private void drawGlass(Canvas canvas, RectF rect, float radius, float alpha) {
+        if (glassUsed == glass.size()) {
+            glass.add(glassFactory.create(this, ProfileButtonsGlass.NO_COLORS).setRadius(radius));
+        }
+        final BlurredBackgroundDrawable drawable = glass.get(glassUsed++);
+        drawable.setBounds((int) rect.left, (int) rect.top, (int) Math.ceil(rect.right), (int) Math.ceil(rect.bottom));
+        drawable.setAlpha((int) (0xFF * alpha));
+        drawable.draw(canvas);
+    }
+
+    /** The glass of the buttons that are not drawn any more is out of the capture. */
+    private void hideUnusedGlass() {
+        for (int i = glassUsed; i < glass.size(); i++) {
+            final BlurredBackgroundDrawable drawable = glass.get(i);
+            if (!drawable.getBounds().isEmpty()) {
+                drawable.setBounds(0, 0, 0, 0);
+            }
+        }
+    }
+
     public void setOnActionClickListener(OnActionClickListener onActionClickListener) {
         this.onActionClickListener = onActionClickListener;
     }
@@ -181,9 +216,7 @@ public class ProfileActionsView extends View {
         if (color == 0) return;
         if (!hasColorById) {
             paint.setColor(color);
-            // Upstream's 40-alpha fill sits on the blurred profile background its expanded header
-            // paints; this screen's is the theme's own surface, so the capsule is drawn solid.
-            paint.setAlpha(255);
+//            paint.setAlpha(40);
             return;
         }
         int w = getMeasuredWidth();
@@ -225,9 +258,11 @@ public class ProfileActionsView extends View {
 
     @Override
     protected void onDraw(@NonNull Canvas canvas) {
+        glassUsed = 0;
         if (clipHeight >= 0f) {
             final float bottom = clipHeight - getY();
             if (bottom <= 0) {
+                hideUnusedGlass();
                 return;
             }
             canvas.clipRect(0f, 0f, getMeasuredWidth(), bottom);
@@ -236,6 +271,7 @@ public class ProfileActionsView extends View {
         float height = Math.max(0f, currentHeight - ypadding - top);
 
         if (height <= 0f) {
+            hideUnusedGlass();
             return;
         }
 
@@ -268,35 +304,41 @@ public class ProfileActionsView extends View {
         float fraction = Utilities.clamp01(height / targetHeight);
         float alphaFraction1 = Utilities.clamp01((fraction - 0.2f) / 0.8f);
         if (alphaFraction1 <= 0f) {
+            hideUnusedGlass();
             return;
         }
 
         for (int i = 0; i < c; i++) {
             Action action = actions.get(i);
-            if (!action.isDeleted) {
-                AndroidUtilities.rectTmp.set(action.rect);
-                AndroidUtilities.rectTmp.inset(
-                    action.rect.width() / 2.0f * (1.0f - action.getScale()),
-                    action.rect.height() / 2.0f * (1.0f - action.getScale())
-                );
-                int wasAlpha = paint.getAlpha();
-                int newAlpha = (int) (action.getAlpha() * alphaFraction1 * wasAlpha);
-                paint.setAlpha((int) (newAlpha * (radialGradient != null ? 0.1f : 1f)));
-
-                paint.setShadowLayer(0, 0, 0, 0);
-
-                canvas.drawRoundRect(AndroidUtilities.rectTmp, r, r, paint);
-                if (radialGradient != null) {
-                    int wasAlpha2 = shaderPaint.getAlpha();
-                    shaderPaint.setAlpha((int) (action.getAlpha() * alphaFraction1 * wasAlpha2));
-                    matrix.setTranslate(AndroidUtilities.rectTmp.left, AndroidUtilities.rectTmp.top);
-                    radialGradient.setLocalMatrix(matrix);
-                    canvas.drawRoundRect(AndroidUtilities.rectTmp, r, r, shaderPaint);
-                    shaderPaint.setAlpha(wasAlpha2);
-                }
-                paint.setAlpha(wasAlpha);
+            if (action.isDeleted) {
+                continue;
             }
+            AndroidUtilities.rectTmp.set(action.rect);
+            AndroidUtilities.rectTmp.inset(
+                action.rect.width() / 2.0f * (1.0f - action.getScale()),
+                action.rect.height() / 2.0f * (1.0f - action.getScale())
+            );
+            if (glassFactory != null) {
+                drawGlass(canvas, AndroidUtilities.rectTmp, r, action.getAlpha() * alphaFraction1);
+                continue;
+            }
+            int wasAlpha = paint.getAlpha();
+            int newAlpha = (int) (action.getAlpha() * alphaFraction1 * wasAlpha);
+            paint.setAlpha((int) (newAlpha * (radialGradient != null ? 0.1f : 1f)));
+            paint.setShadowLayer(0, 0, 0, 0);
+
+            canvas.drawRoundRect(AndroidUtilities.rectTmp, r, r, paint);
+            if (radialGradient != null) {
+                int wasAlpha2 = shaderPaint.getAlpha();
+                shaderPaint.setAlpha((int) (action.getAlpha() * alphaFraction1 * wasAlpha2));
+                matrix.setTranslate(AndroidUtilities.rectTmp.left, AndroidUtilities.rectTmp.top);
+                radialGradient.setLocalMatrix(matrix);
+                canvas.drawRoundRect(AndroidUtilities.rectTmp, r, r, shaderPaint);
+                shaderPaint.setAlpha(wasAlpha2);
+            }
+            paint.setAlpha(wasAlpha);
         }
+        hideUnusedGlass();
 
         float alphaFraction2 = Utilities.clamp01((fraction - 0.4f) / 0.6f);
         if (alphaFraction2 > 0f) {
@@ -344,10 +386,8 @@ public class ProfileActionsView extends View {
         }
 
         final boolean isButtonColorLight = isButtonColorLight();
-        float useFilledWhiteIcon = !isButtonColorLight ? 1 : MathUtils.clamp((parentExpanded - 0.75f) / 0.25f, 0, 1);
-        if (isButtonColorLight && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
-            useFilledWhiteIcon = 0f;
-        }
+        // over the photo the buttons are the dimmed photo on every Android (see ProfileButtonsGlass): white icons there
+        final float useFilledWhiteIcon = !isButtonColorLight ? 1 : MathUtils.clamp((parentExpanded - 0.75f) / 0.25f, 0, 1);
 
         final int textColor = ColorUtils.blendARGB(Color.BLACK, Color.WHITE, useFilledWhiteIcon);
         if (lastColorFilter == null || lastColorFilterColor != textColor) {
@@ -1163,7 +1203,7 @@ public class ProfileActionsView extends View {
 
         public void update(ActionButton button) {
             updateDrawable(0, button.filledIcon, button.outlineIcon);
-            setText(button.titleText());
+            setText(button.customTitle != null ? button.customTitle : getString(button.title));
         }
 
         @SuppressLint("UseCompatLoadingForDrawables")
@@ -1184,17 +1224,9 @@ public class ProfileActionsView extends View {
     }
 
     public enum ActionButton {
-        // The buttons this client reaches carry Chinese titles: upstream's resources have no
-        // values-zh in this build, so ProfileActionsMessage/ProfileButtonMute resolve to English.
-        // The icons stay upstream's own; 取消关注 uses upstream's "remove from contacts" mark
-        // (msg_user_remove, the one ProfileActivity's delete-contact row and SelfStoryViewsPage's
-        // StoryDeleteContact use) instead of the door/exit `leave` glyph, which reads as log-out.
-        MESSAGE("私信", R.drawable.filled_profile_message_24, R.drawable.outline_profile_message_24),
-        FOLLOW("关注", R.drawable.filled_profile_member_24, R.drawable.outline_profile_member_24),
-        UNFOLLOW("取消关注", R.drawable.msg_user_remove, R.drawable.msg_user_remove),
-        BOOKMARKS("书签", R.drawable.msg_saved, R.drawable.outline_saved_24),
-        NOTIFICATION_MUTE("静音", R.drawable.filled_profile_mute_24, R.drawable.outline_profile_mute_24),
-        NOTIFICATION_UNMUTE("取消静音", R.drawable.filled_profile_unmute_24, R.drawable.outline_profile_unmute_24),
+        MESSAGE(R.string.ProfileActionsMessage, R.drawable.filled_profile_message_24, R.drawable.outline_profile_message_24),
+        NOTIFICATION_MUTE(R.string.ProfileButtonMute, R.drawable.filled_profile_mute_24, R.drawable.outline_profile_mute_24),
+        NOTIFICATION_UNMUTE(R.string.ProfileButtonUnmute, R.drawable.filled_profile_unmute_24, R.drawable.outline_profile_unmute_24),
         DISCUSS(R.string.ProfileActionsDiscuss, R.drawable.filled_profile_message_24, R.drawable.outline_profile_message_24),
         GIFT(R.string.ProfileActionsGift, R.drawable.gift, R.drawable.input_gift_s),
         SHARE("分享", R.drawable.action_share, R.drawable.msg_share),
@@ -1210,30 +1242,30 @@ public class ProfileActionsView extends View {
         SET_PHOTO(R.string.ProfileActionsEditPhoto2, R.drawable.filled_profile_photo, R.drawable.outline_profile_photo),
         EDIT_USERNAME(R.string.ProfileActionsEditUsername, R.drawable.filled_profile_edit_24, R.drawable.outline_profile_edit_24),
         EDIT_INFO(R.string.ProfileActionsEditInfo, R.drawable.filled_profile_edit_24, R.drawable.outline_profile_edit_24),
-        SETTINGS("设置", R.drawable.filled_profile_settings, R.drawable.outline_profile_settings),;
+        SETTINGS(R.string.Settings, R.drawable.filled_profile_settings, R.drawable.outline_profile_settings),
+        FOLLOW("关注", R.drawable.filled_profile_member_24, R.drawable.outline_profile_member_24),
+        UNFOLLOW("取消关注", R.drawable.msg_user_remove, R.drawable.msg_user_remove),
+        BOOKMARKS("书签", R.drawable.msg_saved, R.drawable.outline_saved_24),;
 
         final @StringRes int title;
+        /** A site action's own wording; null for upstream's string resource. */
         final CharSequence customTitle;
         final @DrawableRes int filledIcon;
         final @DrawableRes int outlineIcon;
 
         ActionButton(@StringRes int title, @DrawableRes int filledIcon, @DrawableRes int outlineIcon) {
+            this(title, null, filledIcon, outlineIcon);
+        }
+
+        ActionButton(CharSequence customTitle, @DrawableRes int filledIcon, @DrawableRes int outlineIcon) {
+            this(0, customTitle, filledIcon, outlineIcon);
+        }
+
+        private ActionButton(@StringRes int title, CharSequence customTitle, @DrawableRes int filledIcon, @DrawableRes int outlineIcon) {
             this.title = title;
-            this.customTitle = null;
+            this.customTitle = customTitle;
             this.filledIcon = filledIcon;
             this.outlineIcon = outlineIcon;
-        }
-
-        /** A label of this site's own, outside Telegram's localized string table. */
-        ActionButton(CharSequence title, @DrawableRes int filledIcon, @DrawableRes int outlineIcon) {
-            this.title = 0;
-            this.customTitle = title;
-            this.filledIcon = filledIcon;
-            this.outlineIcon = outlineIcon;
-        }
-
-        CharSequence titleText() {
-            return customTitle != null ? customTitle : getString(title);
         }
     }
 

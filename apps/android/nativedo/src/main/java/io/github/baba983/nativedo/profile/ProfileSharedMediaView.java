@@ -15,10 +15,9 @@ import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.ScrollSlidingTextTabStrip;
 import org.telegram.ui.Components.ViewPagerFixed;
+import org.telegram.ui.Components.blur3.BlurredBackgroundDrawableViewFactory;
 import org.telegram.ui.Components.blur3.drawable.BlurredBackgroundDrawable;
 import org.telegram.ui.Components.blur3.drawable.color.impl.BlurredBackgroundProviderImpl;
-
-import io.github.baba983.nativedo.app.GlassPanelHost;
 
 /**
  * The profile's tab area.
@@ -72,17 +71,23 @@ public class ProfileSharedMediaView extends FrameLayout {
     private final Theme.ResourcesProvider resourcesProvider;
     private final ScrollSlidingTextTabStrip tabStrip;
     private final ViewPagerFixed pager;
-    /** The strip's blur source: the pages it floats over. */
-    private final GlassPanelHost glassHost;
+    /** The strip's blur, drawn from the fragment's own simple-glass source. */
+    private final BlurredBackgroundDrawableViewFactory glassFactory;
+    /** Records the pages under the strip in the same pass that draws them. */
+    private final Runnable recordGlass;
+    private BlurredBackgroundDrawable stripBackground;
     private int currentTab = -1;
     private boolean tabsBuilt;
     /** Whether the strip is pinned under the action bar (the media header's own state). */
     private boolean pinnedToTop;
 
-    public ProfileSharedMediaView(@NonNull Context context, Theme.ResourcesProvider resourcesProvider, @NonNull Delegate delegate) {
+    public ProfileSharedMediaView(@NonNull Context context, Theme.ResourcesProvider resourcesProvider, @NonNull Delegate delegate,
+                                  @NonNull BlurredBackgroundDrawableViewFactory glassFactory, @NonNull Runnable recordGlass) {
         super(context);
         this.delegate = delegate;
         this.resourcesProvider = resourcesProvider;
+        this.glassFactory = glassFactory;
+        this.recordGlass = recordGlass;
 
         tabStrip = new ScrollSlidingTextTabStrip(context, resourcesProvider);
         tabStrip.animationDuration = 320;
@@ -125,8 +130,7 @@ public class ProfileSharedMediaView extends FrameLayout {
         // GlassPanelHost, the same one the home strip and the topic capsules use; on a device whose
         // blur is off it falls back to the provider's flat colour, exactly as upstream's own
         // provider does.
-        glassHost = new GlassPanelHost(pager, this);
-        BlurredBackgroundDrawable stripBackground = glassHost.createPanel(
+        stripBackground = glassFactory.create(
                 tabStrip, BlurredBackgroundProviderImpl.topPanel(resourcesProvider));
         stripBackground.setRadius(dp(18));
         stripBackground.setPadding(dp(6.666f));
@@ -280,9 +284,7 @@ public class ProfileSharedMediaView extends FrameLayout {
         // The strip's glass samples the pages under it, so its source has to be recorded in the
         // same pass that draws them (upstream's {@code SharedMediaLayout.drawListForBlur} does the
         // same for its strip's background).
-        if (glassHost != null) {
-            glassHost.record();
-        }
+        recordGlass.run();
         super.dispatchDraw(canvas);
     }
 
@@ -304,7 +306,9 @@ public class ProfileSharedMediaView extends FrameLayout {
         if (tabStrip == null) {
             return;
         }
-        glassHost.updateColors();
+        if (stripBackground != null) {
+            stripBackground.updateColors();
+        }
         tabStrip.updateColors();
     }
 }
