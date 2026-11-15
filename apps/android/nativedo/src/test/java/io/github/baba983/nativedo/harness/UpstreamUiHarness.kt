@@ -190,6 +190,12 @@ internal class UpstreamUiHarness {
         runCatching {
             val bitmap = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
             Canvas(bitmap).drawColor(Color.BLACK)
+            // `Bitmap.createBitmap` and `Canvas` never resolve the NIO buffer classes. The first
+            // `copyPixelsFromBuffer` does, inside `GetBufferElementSizeShift`, and that is the
+            // lookup that fails after a sandbox is gone (`Class not found: java/nio/DoubleBuffer`,
+            // then abort). Resolve all four buffer classes here, on the test thread, while the
+            // sandbox is alive.
+            bitmap.copyPixelsFromBuffer(java.nio.ByteBuffer.allocateDirect(4))
             bitmap.recycle()
         }
     }
