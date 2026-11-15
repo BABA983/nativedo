@@ -574,7 +574,7 @@ internal class ShellRecreationTest {
      * its host to the next test, where it would answer for a dead activity.
      */
     private fun resetBrowserHost() {
-        NativeDoHooks.setBrowserHost(null)
+        NativeDoHooks.resetBrowserHosts()
     }
 
     private fun topicFloorOf(fragment: BaseFragment): Int =

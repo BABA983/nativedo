@@ -142,7 +142,7 @@ internal class PostLinkBrowserTest {
         val layout = NativeDoHooks.getSafeLastFragment()?.parentLayout as? ActionBarLayout
         val sheetFragment = layout?.getSheetFragment(false)
         val sheet = sheetFragment?.getLastSheet() as? ArticleViewer.Sheet
-        println("browser: sheet=$sheet hostTabs=${NativeDoHooks.getBottomSheetTabs()}")
+        println("browser: sheet=$sheet hostTabs=${NativeDoHooks.getBottomSheetTabs(harness.activity)}")
         assertTrue(
             "the link did not reach upstream's in-app browser on this screen",
             sheet != null,
@@ -374,7 +374,7 @@ internal class PostLinkBrowserTest {
     }
 
     /** The sheets the shell has opened through `BaseFragment.showAsSheet`, on its own stack. */
-    private fun sheetStack(): List<INavigationLayout> = NativeDoHooks.sheetFragmentsStack().orEmpty()
+    private fun sheetStack(): List<INavigationLayout> = NativeDoHooks.sheetFragmentsStack(harness.activity).orEmpty()
 
     /** The hosted fragment of [clazz] among the shell's open sheets, or null. */
     private fun hostedFragment(clazz: Class<*>): BaseFragment? =

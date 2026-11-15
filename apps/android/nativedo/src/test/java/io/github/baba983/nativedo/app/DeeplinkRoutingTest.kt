@@ -73,14 +73,14 @@ internal class DeeplinkRoutingTest {
         site.serve(1L, "topic-detail.json")
         NativeDo.setContainerFactory { context -> site.authenticatedContainer(context) }
         resetShellCount()
-        NativeDoHooks.setBrowserHost(null)
+        NativeDoHooks.resetBrowserHosts()
     }
 
     @After
     fun tearDown() {
         NativeDo.setContainerFactory { context -> site.authenticatedContainer(context) }
         resetShellCount()
-        NativeDoHooks.setBrowserHost(null)
+        NativeDoHooks.resetBrowserHosts()
         site.stop()
     }
 

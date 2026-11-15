@@ -1138,7 +1138,7 @@ public abstract class BaseFragment {
         BottomSheet[] bottomSheet = new BottomSheet[1];
         INavigationLayout[] actionBarLayout = new INavigationLayout[]{INavigationLayout.newLayout(getParentActivity(), false, () -> bottomSheet[0])};
         actionBarLayout[0].setIsSheet(true);
-        final ArrayList<INavigationLayout> sheetFragmentsStack = io.github.baba983.nativedo.hooks.NativeDoHooks.addSheetFragment(actionBarLayout[0]); // NativeDo: retain this sheet's owning host
+        final ArrayList<INavigationLayout> sheetFragmentsStack = io.github.baba983.nativedo.hooks.NativeDoHooks.addSheetFragment(getParentActivity(), actionBarLayout[0]); // NativeDo: retain this sheet's owning host
         fragment.onTransitionAnimationStart(true, false);
         bottomSheet[0] = new BottomSheet(getParentActivity(), true, fragment.getResourceProvider()) {
             {
