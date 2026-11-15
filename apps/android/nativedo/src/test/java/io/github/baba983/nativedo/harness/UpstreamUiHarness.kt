@@ -267,8 +267,14 @@ internal class UpstreamUiHarness {
         for (queue in upstreamQueues()) {
             // Not every worker is looper-backed: a DispatchQueuePriority runs on a plain thread
             // pool, which Robolectric does not pause and which therefore needs no draining.
+            // 13.2.1 moved ImageLoader's queues to DispatchQueue2, which exposes the handler as
+            // getHandlerSync() and only once its thread is up; the older DispatchQueue answered
+            // getHandler() directly.
             val handler = runCatching {
-                queue.javaClass.getMethod("getHandler").invoke(queue) as? Handler
+                (queue.javaClass.getMethod("getHandler").invoke(queue) as? Handler) ?: run {
+                    val ready = queue.javaClass.getMethod("isReady").invoke(queue) as? Boolean ?: false
+                    if (ready) queue.javaClass.getMethod("getHandlerSync").invoke(queue) as? Handler else null
+                }
             }.getOrNull() ?: continue
             val looper = handler.looper ?: continue
             val shadow = shadowOf(looper) as ShadowPausedLooper
