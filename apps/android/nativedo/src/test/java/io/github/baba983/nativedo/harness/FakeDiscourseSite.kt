@@ -41,9 +41,9 @@ internal class FakeDiscourseSite {
 
     /** What the fake site saw on the last request, so a test can assert the session was sent. */
     val lastRequestCookieHeader: String?
-        get() = lastCookieHeader
+        get() = synchronized(this) { lastCookieHeader }
 
-    val requestPaths: List<String> get() = requestedPaths.toList()
+    val requestPaths: List<String> get() = synchronized(this) { requestedPaths.toList() }
 
     /** Serves [json] at [path]: a topic page, a page of posts, anything the client asks for. */
     fun serveJson(path: String, json: String) {
@@ -61,7 +61,7 @@ internal class FakeDiscourseSite {
     }
 
     /** Every request the site saw, as `METHOD path`, in order. */
-    val recordedRequests: List<String> get() = requests.toList()
+    val recordedRequests: List<String> get() = synchronized(this) { requests.toList() }
 
     /**
      * When each request on [path] reached the site, on the same clock the screen's timers run on.
@@ -76,10 +76,14 @@ internal class FakeDiscourseSite {
     }
 
     /** The body of the last write the site received on [path], form-encoded as it was sent. */
-    fun requestBodyFor(path: String): String? = requestBodies[path.trimStart('/')]
+    fun requestBodyFor(path: String): String? = synchronized(this) {
+        requestBodies[path.trimStart('/')]
+    }
 
     /** Lossless body for media-upload checks; UTF-8 decoding cannot preserve an AAC container. */
-    fun requestBytesFor(path: String): ByteArray? = requestBytes[path.trimStart('/')]
+    fun requestBytesFor(path: String): ByteArray? = synchronized(this) {
+        requestBytes[path.trimStart('/')]
+    }
 
     /**
      * Every body the path was written with, in the order they arrived. A screen that reports its
@@ -91,7 +95,9 @@ internal class FakeDiscourseSite {
     }
 
     /** The CSRF token a write carried on [path]. */
-    fun csrfHeaderFor(path: String): String? = csrfHeaders[path.trimStart('/')]
+    fun csrfHeaderFor(path: String): String? = synchronized(this) {
+        csrfHeaders[path.trimStart('/')]
+    }
 
     /** Serves a topic whose first post the caller can shape: body, reactions, anything. */
     fun serveTopic(topicId: Long, mutate: (org.json.JSONObject) -> Unit) {
@@ -113,7 +119,9 @@ internal class FakeDiscourseSite {
     }
 
     /** What the site saw on [path], by the path it was asked for. */
-    fun cookieHeaderFor(path: String): String? = cookieHeaders[path.trimStart('/')]
+    fun cookieHeaderFor(path: String): String? = synchronized(this) {
+        cookieHeaders[path.trimStart('/')]
+    }
 
     /** An absolute URL on this site, for a cooked body that has to point at it. */
     fun url(path: String): String = baseUrl.trimEnd('/') + "/" + path.trimStart('/')
@@ -211,9 +219,9 @@ internal class FakeDiscourseSite {
             override fun dispatch(request: RecordedRequest): MockResponse {
                 val path = request.path.orEmpty().trimStart('/').substringBefore('?')
                 synchronized(this@FakeDiscourseSite) {
-                    requestedPaths += path
-                    requests += request.method.orEmpty() + " " + request.path.orEmpty()
-                    requestClocks += Triple(request.method.orEmpty(), path, android.os.SystemClock.elapsedRealtime())
+                    // Publish the request only after its body and headers are in the maps a test
+                    // reads next. A test waits on `recordedRequests`, so appending first lets it
+                    // see the request while the dispatcher is still recording its CSRF header.
                     if (request.method != "GET" && request.method != "HEAD") {
                         requestBytes[path] = request.body.clone().readByteArray()
                         request.body.readUtf8().let { body ->
@@ -225,6 +233,9 @@ internal class FakeDiscourseSite {
                     lastCookieHeader = request.getHeader("Cookie")
                     request.getHeader("Cookie")?.let { cookieHeaders[path] = it }
                     queries.getOrPut(path) { mutableListOf() } += request.path.orEmpty().substringAfter('?')
+                    requestedPaths += path
+                    requests += request.method.orEmpty() + " " + request.path.orEmpty()
+                    requestClocks += Triple(request.method.orEmpty(), path, android.os.SystemClock.elapsedRealtime())
                 }
                 messageBusPoll?.let { build ->
                     if (path.startsWith("message-bus/")) {
