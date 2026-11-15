@@ -3930,7 +3930,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             }
             return;
         }
-        if (io.github.baba983.nativedo.hooks.NativeDoHooks.browserHostPresent()) { // NativeDo: without tgnet the article lookup has no answer, so the page loads directly
+        if (io.github.baba983.nativedo.hooks.NativeDoHooks.browserHostPresent(parentActivity)) { // NativeDo: without tgnet the article lookup has no answer, so the page loads directly
             addPageToStack(url, 1);
             return;
         }
@@ -5181,8 +5181,8 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
     }
 
     public void openWebSettings() {
-        if (io.github.baba983.nativedo.hooks.NativeDoHooks.browserHostPresent()) { // NativeDo: this shell shows its own locally-backed browser settings
-            io.github.baba983.nativedo.hooks.NativeDoHooks.openBrowserSettings();
+        if (io.github.baba983.nativedo.hooks.NativeDoHooks.browserHostPresent(parentActivity)) { // NativeDo: this shell shows its own locally-backed browser settings
+            io.github.baba983.nativedo.hooks.NativeDoHooks.openBrowserSettings(parentActivity);
             return;
         }
         BaseFragment lastFragment = LaunchActivity.getSafeLastFragment();
@@ -15176,7 +15176,8 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 }
             };
             webViewContainer.setOnCloseRequestedListener(() -> {
-                final BottomSheetTabs tabs = io.github.baba983.nativedo.hooks.NativeDoHooks.getBottomSheetTabs(); // NativeDo: the host owns the minimized browser tabs
+                if (LaunchActivity.instance == null && !io.github.baba983.nativedo.hooks.NativeDoHooks.browserHostPresent(parentActivity)) return; // NativeDo: no host means no tabs to close into
+                final BottomSheetTabs tabs = io.github.baba983.nativedo.hooks.NativeDoHooks.getBottomSheetTabs(parentActivity); // NativeDo: the host owns the minimized browser tabs
                 if (tabs == null || !tabs.tryRemoveTabWith(ArticleViewer.this)) {
                     close(true, true);
                 }
@@ -16031,9 +16032,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             if (dismissing) return;
             dismissing = true;
             dismissingIntoTabs = tabs;
-            if (tabs) {
-                io.github.baba983.nativedo.hooks.NativeDoHooks.dismissSheet(this); // NativeDo: the host, not LaunchActivity, owns the tabs overlay
-            } else {
+            if (!tabs || !io.github.baba983.nativedo.hooks.NativeDoHooks.dismissSheet(this, context)) { // NativeDo: no host to minimize into falls back to the sheet's own animation
                 animateDismiss(true, true, () -> {
                     release();
                     destroy();
@@ -16296,7 +16295,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             if (dialog != null) {
                 dialog.updateNavigationBarColor();
             } else {
-                io.github.baba983.nativedo.hooks.NativeDoHooks.checkSystemBarColors(); // NativeDo: the host, not LaunchActivity, owns the system bars
+                io.github.baba983.nativedo.hooks.NativeDoHooks.checkSystemBarColors(context); // NativeDo: the host, not LaunchActivity, owns the system bars
                 AndroidUtilities.setLightNavigationBar(getWindowView(), AndroidUtilities.computePerceivedBrightness(getNavigationBarColor(getThemedColor(Theme.key_windowBackgroundGray))) >= .721f);
             }
         }

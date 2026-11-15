@@ -29,6 +29,23 @@ public class NativeDoApplication extends ApplicationLoader {
 
     private static boolean runtimeConfigLogged;
 
+    static {
+        disableTelegramServices();
+    }
+
+    /**
+     * Closes the two gates that keep Telegram's network and database out of this client, and marks
+     * the process as this app for the rendering hooks. The hooks default to upstream's behavior, so
+     * a code path with no NativeDo host runs exactly as Telegram runs it; this app is that host,
+     * and it sets these at class load - before any {@code ConnectionsManager} can be constructed or
+     * any {@code MessagesStorage} opened.
+     */
+    public static void disableTelegramServices() {
+        io.github.baba983.nativedo.hooks.NativeDoHooks.setNativeDoApp(true);
+        io.github.baba983.nativedo.hooks.NativeDoHooks.setMtprotoEnabled(false);
+        io.github.baba983.nativedo.hooks.NativeDoHooks.setTelegramStorageEnabled(false);
+    }
+
     @Override
     public void onCreate() {
         super.onCreate();

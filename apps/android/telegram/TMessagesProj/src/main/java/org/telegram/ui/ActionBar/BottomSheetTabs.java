@@ -556,7 +556,7 @@ public class BottomSheetTabs extends FrameLayout {
         final int count = tabs.size();
         if (count == 0) return;
         WebTabData lastTab = tabs.get(tabs.size() - 1);
-        BottomSheetTabsOverlay overlay = io.github.baba983.nativedo.hooks.NativeDoHooks.getBottomSheetTabsOverlay(); // NativeDo: the host, not LaunchActivity, owns the tabs overlay
+        BottomSheetTabsOverlay overlay = io.github.baba983.nativedo.hooks.NativeDoHooks.getBottomSheetTabsOverlay(getContext()); // NativeDo: the host, not LaunchActivity, owns the tabs overlay
         if (overlay != null) {
             overlay.stopAnimations();
         }

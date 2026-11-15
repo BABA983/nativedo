@@ -72,6 +72,11 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
     private final ArrayList<INavigationLayout> sheetFragmentsStack = new ArrayList<>();
     /** Upstream's browser hands its minimized pages to its host's overlay; this is that view. */
     private BottomSheetTabsOverlay browserTabsOverlay;
+    /**
+     * The browser host bound to this instance. Held here so destroy can clear exactly this
+     * registration, never a newer instance's.
+     */
+    private NativeDoHooks.BrowserHost browserHost;
     private DrawerLayoutContainer drawerLayoutContainer;
     private FrameLayout contentView;
     /**
@@ -160,7 +165,7 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         // every other upstream edit uses. The overlay is created first because the layout asks for
         // it while the tabs are built, exactly as LaunchActivity's does.
         browserTabsOverlay = new BottomSheetTabsOverlay(this);
-        NativeDoHooks.setBrowserHost(new NativeDoHooks.BrowserHost() {
+        browserHost = new NativeDoHooks.BrowserHost() {
             @Override
             public BottomSheetTabs getBottomSheetTabs() {
                 return actionBarLayout == null ? null : actionBarLayout.getBottomSheetTabs();
@@ -201,7 +206,11 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
             public BaseFragment createBrowserSettings() {
                 return new io.github.baba983.nativedo.settings.BrowserSettingsFragment();
             }
-        });
+        };
+        // Bound to this activity, not to the process: two live shells (a launcher instance and a
+        // VIEW link's second instance) each answer their own hooks, and this one's destroy can
+        // clear only its own registration.
+        NativeDoHooks.setBrowserHost(this, browserHost);
 
         // The upstream layout owns system/IME insets and the browser's minimized tabs. It does not
         // know about the root tab strip: that belongs to NativeDoMainTabsActivity, which pads its
@@ -737,14 +746,16 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         // The gate's answer may still be on its way; from here on it lands on a dead shell.
         destroyed = true;
         stopSessionObservation();
-        // LaunchActivity:6856-6861. The shell count is decremented first, so the shared viewers -
-        // and this shell's registration as the browser host - are released only when this was the
-        // last one: a configuration change's replacement activity owns both now, and clearing them
-        // here would take the replacement's window and its in-app browser with it.
+        // LaunchActivity:6856-6861. The shell count is decremented first, so the shared viewers
+        // are released only when this was the last one: a configuration change's replacement
+        // activity owns them now, and clearing them here would take the replacement's window and
+        // its in-app browser with it. The host registration is per activity, so this instance
+        // clears exactly its own and a newer instance's host survives even when this one dies
+        // last.
         activeInstanceCount--;
+        NativeDoHooks.clearBrowserHost(this, browserHost);
         if (activeInstanceCount == 0) {
             releaseSharedViewers();
-            NativeDoHooks.setBrowserHost(null);
         }
         NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.needSetDayNightTheme);
         NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.needCheckSystemBarColors);
@@ -821,6 +832,12 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
     @Override
     protected void onResume() {
         super.onResume();
+        // Re-registering here is what makes the shell in front own the context-less hooks: a
+        // second instance created over this one registers on its own create, and this one takes
+        // the host back when it is resumed again.
+        if (browserHost != null) {
+            NativeDoHooks.setBrowserHost(this, browserHost);
+        }
         // LaunchActivity:6977-6983: the app-wide "in front" flag the viewers read, and the heavy
         // drawing gate that goes with it, follow the shell's resume.
         NotificationCenter.getGlobalInstance()

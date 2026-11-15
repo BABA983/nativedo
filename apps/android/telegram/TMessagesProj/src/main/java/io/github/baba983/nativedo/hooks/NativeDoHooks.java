@@ -15,8 +15,12 @@ public final class NativeDoHooks {
      * speaks to linux.do, not to Telegram. When this is false, {@code ConnectionsManager}'s
      * constructor returns before {@code native_init()}, which is the only path that builds the
      * native datacenter list.
+     *
+     * <p>Defaults to true, which is upstream's behavior: a code path with no NativeDo host must
+     * run as Telegram runs it. {@code NativeDoApplication} turns it off at class load, before any
+     * connection can be constructed, so this app never starts tgnet.</p>
      */
-    private static volatile boolean mtprotoEnabled;
+    private static volatile boolean mtprotoEnabled = true;
 
     public static boolean mtprotoEnabled() {
         return mtprotoEnabled;
@@ -31,8 +35,11 @@ public final class NativeDoHooks {
      * {@code io.github.baba983.nativedo.core.storage}, and an empty Telegram database would only
      * shadow it. When this is false, {@code MessagesStorage} still builds its queue (upstream code
      * posts work to it) but never opens the file.
+     *
+     * <p>Like {@link #mtprotoEnabled()}, it defaults to upstream's behavior and this app's own
+     * application class turns it off before anything can open the database.</p>
      */
-    private static volatile boolean telegramStorageEnabled;
+    private static volatile boolean telegramStorageEnabled = true;
 
     public static boolean telegramStorageEnabled() {
         return telegramStorageEnabled;
@@ -40,6 +47,27 @@ public final class NativeDoHooks {
 
     public static void setTelegramStorageEnabled(boolean value) {
         telegramStorageEnabled = value;
+    }
+
+    /**
+     * Whether this process is NativeDo's app rather than a Telegram host.
+     *
+     * <p>The rendering hooks ask this, not "which shell is in front": they run on ImageLoader and
+     * text-layout paths that are not bound to a resumed activity, and the gap a configuration
+     * change opens between the old shell's destroy and the new one's create has no host at all. A
+     * reaction PNG or a rich-text emoji loaded in that gap must still be handled as this client's,
+     * or a Telegram datacenter download is started for a file that has no transport behind it.
+     * Defaults false, which is upstream's behavior; {@code NativeDoApplication} sets it at class
+     * load, next to the two transport gates.</p>
+     */
+    private static volatile boolean nativeDoApp;
+
+    public static boolean nativeDoApp() {
+        return nativeDoApp;
+    }
+
+    public static void setNativeDoApp(boolean value) {
+        nativeDoApp = value;
     }
 
     /**
@@ -243,7 +271,7 @@ public final class NativeDoHooks {
     /** Article thumbnails use the same local-only photo sources as their full-size blocks. */
     private static org.telegram.messenger.ImageLocation groupedPhotoThumb(org.telegram.tgnet.tl.TL_iv.PageBlock block) {
         if (!(block.thumbObject instanceof org.telegram.tgnet.TLRPC.Photo)) {
-            return browserHostPresent() ? null : org.telegram.messenger.ImageLocation.getForObject(block.thumb, block.thumbObject);
+            return nativeDoApp() ? null : org.telegram.messenger.ImageLocation.getForObject(block.thumb, block.thumbObject);
         }
         org.telegram.tgnet.TLRPC.Photo photo = (org.telegram.tgnet.TLRPC.Photo) block.thumbObject;
         org.telegram.messenger.ImageLocation location = photoImageLocation(block.thumb, photo);
@@ -365,17 +393,45 @@ public final class NativeDoHooks {
     }
 
     /**
+     * The forum posts whose bubbles would otherwise secure the window: the messages
+     * {@link io.github.baba983.nativedo.topic.DiscourseRows#localMessage} built with
+     * {@code noforwards}. Other local messages - the date and unread-divider rows, the search
+     * rows - do not set that flag, so upstream's predicate is already false for them and they
+     * need no entry here. Weak keys: a message no cell or screen holds any more must not be kept
+     * alive by this registry.
+     */
+    private static final java.util.Set<org.telegram.tgnet.TLRPC.Message> clientMessages =
+            java.util.Collections.synchronizedSet(
+                    java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>()));
+
+    /**
+     * Marks a forum post this client built with {@code noforwards}. Called as the message is
+     * constructed, before any cell can ask about it, so the answer below is never a race with the
+     * first bind.
+     */
+    public static void markClientMessage(org.telegram.tgnet.TLRPC.Message message) {
+        if (message != null) {
+            clientMessages.add(message);
+        }
+    }
+
+    /**
      * Whether a message may put {@code FLAG_SECURE} on the activity's window.
      *
      * <p>Upstream reads this off {@code noforwards}: content it may not forward is content it keeps
-     * out of a screen recording. That is not what the flag means here. {@code DiscourseRows} sets
-     * {@code noforwards} so that no forum post offers to forward one, and a forum post is public
-     * text; left alone, upstream would secure the window for every post, which on a device means
-     * no screenshot of any topic and a blank thumbnail in the recents list. Nothing this client
-     * draws is Telegram's secret media, so the answer is always no.</p>
+     * out of a screen recording. That is not what the flag means for a forum post.
+     * {@code DiscourseRows} sets {@code noforwards} so that no forum post offers to forward one, and
+     * a forum post is public text; left alone, upstream would secure the window for every post,
+     * which on a device means no screenshot of any topic and a blank thumbnail in the recents list.
+     * A forum post this client built (marked above) is therefore never Telegram's secret media.</p>
+     *
+     * <p>Any other message - one a real Telegram host built - keeps upstream's answer, so upstream's
+     * {@code FlagSecureReason} still protects paid media, view-once voice and revealed extended
+     * media there.</p>
      */
-    public static boolean messageMaySecureWindow() {
-        return false;
+    public static boolean messageMaySecureWindow(org.telegram.messenger.MessageObject messageObject) {
+        return messageObject == null || messageObject.messageOwner == null
+                || !clientMessages.contains(messageObject.messageOwner);
     }
 
     /**
@@ -429,24 +485,123 @@ public final class NativeDoHooks {
         org.telegram.ui.ActionBar.BaseFragment createBrowserSettings();
     }
 
-    private static volatile BrowserHost browserHost;
+    /**
+     * The hosts this app has bound, each to the activity that owns it.
+     *
+     * <p>One static host cannot answer for two live shells: a VIEW link creates a second instance
+     * in the caller's task, and a hook reached from one shell must not be handed the other's
+     * layout, overlay or sheet stack. The key is the activity itself, so a lookup resolves from
+     * the calling context's own activity; both sides are weak, so a destroyed shell neither leaks
+     * through this table nor keeps a replacement's host alive.</p>
+     */
+    private static final java.util.Map<android.app.Activity, java.lang.ref.WeakReference<BrowserHost>> browserHosts =
+            java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
 
-    public static void setBrowserHost(BrowserHost host) {
-        browserHost = host;
+    /**
+     * The host of the shell created or resumed last, for the upstream calls that carry no context
+     * of their own ({@code LaunchActivity.getSafeLastFragment}, the browser preference getters).
+     * Those run on the UI thread of the shell in front, which is this one.
+     */
+    private static volatile java.lang.ref.WeakReference<BrowserHost> currentBrowserHost =
+            new java.lang.ref.WeakReference<>(null);
+
+    /**
+     * Binds {@code host} to {@code activity}; called from the shell's create and again from its
+     * resume. A later registration for the same activity replaces the earlier one, and the newest
+     * registration is also what the context-less hooks answer with.
+     */
+    public static void setBrowserHost(android.app.Activity activity, BrowserHost host) {
+        if (activity == null || host == null) {
+            clearBrowserHost(activity, null);
+            return;
+        }
+        browserHosts.put(activity, new java.lang.ref.WeakReference<>(host));
+        currentBrowserHost = new java.lang.ref.WeakReference<>(host);
     }
 
     /**
-     * Whether this client's shell is hosting the browser. Upstream's article-webpage lookup goes
-     * through Telegram's server ({@code messages.getWebPage}); with tgnet off that answer never
-     * comes, so the browser loads the page directly instead of waiting for it.
+     * Compare-and-clear: removes only the host {@code activity} registered, and only while that
+     * registration is still {@code expected} (a {@code null} expectation accepts whatever this
+     * activity currently holds). A dying activity therefore cannot clear a newer instance's host,
+     * even when the newer one registered first and this one is destroyed last.
      */
-    public static boolean browserHostPresent() {
-        return browserHost != null;
+    public static void clearBrowserHost(android.app.Activity activity, BrowserHost expected) {
+        if (activity == null) {
+            return;
+        }
+        BrowserHost registered;
+        synchronized (browserHosts) {
+            java.lang.ref.WeakReference<BrowserHost> entry = browserHosts.get(activity);
+            registered = entry == null ? null : entry.get();
+            if (registered == null || (expected != null && registered != expected)) {
+                return;
+            }
+            browserHosts.remove(activity);
+        }
+        if (currentBrowserHost.get() == registered) {
+            currentBrowserHost = new java.lang.ref.WeakReference<>(null);
+        }
     }
 
-    public static org.telegram.ui.ActionBar.BottomSheetTabs getBottomSheetTabs() {
-        if (browserHost != null) {
-            org.telegram.ui.ActionBar.BottomSheetTabs tabs = browserHost.getBottomSheetTabs();
+    /**
+     * Drops every registration and the current pointer. This is the process-level reset (a host
+     * shutting down all its shells, a test that must not inherit another test's shell); an
+     * activity's own destroy uses {@link #clearBrowserHost(android.app.Activity, BrowserHost)} so
+     * it can only take its own host with it.
+     */
+    public static void resetBrowserHosts() {
+        synchronized (browserHosts) {
+            browserHosts.clear();
+        }
+        currentBrowserHost = new java.lang.ref.WeakReference<>(null);
+    }
+
+    private static BrowserHost registeredHost(android.app.Activity activity) {
+        if (activity == null) {
+            return null;
+        }
+        java.lang.ref.WeakReference<BrowserHost> entry = browserHosts.get(activity);
+        return entry == null ? null : entry.get();
+    }
+
+    /**
+     * The host owning the calling context's activity. A context that resolves to an activity with
+     * no host is an upstream activity and gets no host at all, so its code keeps upstream's
+     * behavior; a context with no activity (the application, a service) answers with the shell in
+     * front.
+     */
+    private static BrowserHost hostFor(android.content.Context context) {
+        android.app.Activity activity = context == null ? null
+                : org.telegram.messenger.AndroidUtilities.findActivity(context);
+        if (activity != null) {
+            return registeredHost(activity);
+        }
+        return currentBrowserHost.get();
+    }
+
+    /** The host of the shell in front, for the hooks that carry no context. */
+    private static BrowserHost currentHost() {
+        return currentBrowserHost.get();
+    }
+
+    /**
+     * Whether the calling context's shell is hosting the browser. Upstream's article-webpage
+     * lookup goes through Telegram's server ({@code messages.getWebPage}); with tgnet off that
+     * answer never comes, so the browser loads the page directly instead of waiting for it.
+     */
+    public static boolean browserHostPresent(android.content.Context context) {
+        return hostFor(context) != null;
+    }
+
+    /** The same question for a call with no context of its own. */
+    public static boolean browserHostPresent() {
+        return currentHost() != null;
+    }
+
+    public static org.telegram.ui.ActionBar.BottomSheetTabs getBottomSheetTabs(android.content.Context context) {
+        BrowserHost host = hostFor(context);
+        if (host != null) {
+            org.telegram.ui.ActionBar.BottomSheetTabs tabs = host.getBottomSheetTabs();
             if (tabs != null) {
                 return tabs;
             }
@@ -455,9 +610,10 @@ public final class NativeDoHooks {
                 ? org.telegram.ui.LaunchActivity.instance.getBottomSheetTabs() : null;
     }
 
-    public static org.telegram.ui.ActionBar.BottomSheetTabsOverlay getBottomSheetTabsOverlay() {
-        if (browserHost != null) {
-            org.telegram.ui.ActionBar.BottomSheetTabsOverlay overlay = browserHost.getBottomSheetTabsOverlay();
+    public static org.telegram.ui.ActionBar.BottomSheetTabsOverlay getBottomSheetTabsOverlay(android.content.Context context) {
+        BrowserHost host = hostFor(context);
+        if (host != null) {
+            org.telegram.ui.ActionBar.BottomSheetTabsOverlay overlay = host.getBottomSheetTabsOverlay();
             if (overlay != null) {
                 return overlay;
             }
@@ -467,29 +623,20 @@ public final class NativeDoHooks {
     }
 
     public static org.telegram.ui.ActionBar.BaseFragment getLastFragment() {
-        if (browserHost != null) {
-            org.telegram.ui.ActionBar.BaseFragment fragment = browserHost.getLastFragment();
-            if (fragment != null) {
-                return fragment;
-            }
-        }
-        return null;
+        BrowserHost host = currentHost();
+        return host == null ? null : host.getLastFragment();
     }
 
     public static org.telegram.ui.ActionBar.BaseFragment getSafeLastFragment() {
-        if (browserHost != null) {
-            org.telegram.ui.ActionBar.BaseFragment fragment = browserHost.getSafeLastFragment();
-            if (fragment != null) {
-                return fragment;
-            }
-        }
-        return null;
+        BrowserHost host = currentHost();
+        return host == null ? null : host.getSafeLastFragment();
     }
 
     /** Sheets belong to the activity that opened them, not Telegram's absent LaunchActivity. */
-    public static java.util.ArrayList<org.telegram.ui.ActionBar.INavigationLayout> sheetFragmentsStack() {
-        if (browserHost != null) {
-            java.util.ArrayList<org.telegram.ui.ActionBar.INavigationLayout> stack = browserHost.getSheetFragmentsStack();
+    public static java.util.ArrayList<org.telegram.ui.ActionBar.INavigationLayout> sheetFragmentsStack(android.content.Context context) {
+        BrowserHost host = hostFor(context);
+        if (host != null) {
+            java.util.ArrayList<org.telegram.ui.ActionBar.INavigationLayout> stack = host.getSheetFragmentsStack();
             if (stack != null) {
                 return stack;
             }
@@ -499,8 +646,9 @@ public final class NativeDoHooks {
     }
 
     /** Capture the owning stack so a late dismissal cannot remove a replacement activity's sheet. */
-    public static java.util.ArrayList<org.telegram.ui.ActionBar.INavigationLayout> addSheetFragment(org.telegram.ui.ActionBar.INavigationLayout layout) {
-        java.util.ArrayList<org.telegram.ui.ActionBar.INavigationLayout> stack = sheetFragmentsStack();
+    public static java.util.ArrayList<org.telegram.ui.ActionBar.INavigationLayout> addSheetFragment(
+            android.content.Context context, org.telegram.ui.ActionBar.INavigationLayout layout) {
+        java.util.ArrayList<org.telegram.ui.ActionBar.INavigationLayout> stack = sheetFragmentsStack(context);
         if (stack != null) {
             stack.add(layout);
         }
@@ -518,25 +666,29 @@ public final class NativeDoHooks {
      * Upstream's {@code ActionBarLayout} hands a freshly created {@code BottomSheetTabs} to the
      * activity's overlay; this is the same hand-over for this client's shell.
      */
-    public static void onBottomSheetTabsCreated(org.telegram.ui.ActionBar.BottomSheetTabs tabs) {
-        org.telegram.ui.ActionBar.BottomSheetTabsOverlay overlay = getBottomSheetTabsOverlay();
+    public static void onBottomSheetTabsCreated(android.content.Context context, org.telegram.ui.ActionBar.BottomSheetTabs tabs) {
+        org.telegram.ui.ActionBar.BottomSheetTabsOverlay overlay = getBottomSheetTabsOverlay(context);
         if (overlay != null) {
             overlay.setTabsView(tabs);
         }
     }
 
-    /** A browser sheet being dismissed into the minimized-tabs strip. */
-    public static void dismissSheet(org.telegram.ui.ActionBar.BottomSheetTabsOverlay.Sheet sheet) {
-        org.telegram.ui.ActionBar.BottomSheetTabsOverlay overlay = getBottomSheetTabsOverlay();
-        if (overlay != null) {
-            overlay.dismissSheet(sheet);
-        }
+    /**
+     * A browser sheet being dismissed into the minimized-tabs strip. False means there is no
+     * overlay to minimize into (no host, no LaunchActivity), so the caller keeps its own dismissal
+     * animation instead of being left half-dismissed.
+     */
+    public static boolean dismissSheet(
+            org.telegram.ui.ActionBar.BottomSheetTabsOverlay.Sheet sheet, android.content.Context context) {
+        org.telegram.ui.ActionBar.BottomSheetTabsOverlay overlay = getBottomSheetTabsOverlay(context);
+        return overlay != null && overlay.dismissSheet(sheet);
     }
 
     /** The browser changing its navigation-bar color; the shell re-derives the system bars. */
-    public static void checkSystemBarColors() {
-        if (browserHost != null) {
-            browserHost.checkSystemBarColors();
+    public static void checkSystemBarColors(android.content.Context context) {
+        BrowserHost host = hostFor(context);
+        if (host != null) {
+            host.checkSystemBarColors();
             return;
         }
         if (org.telegram.ui.LaunchActivity.instance != null) {
@@ -578,7 +730,7 @@ public final class NativeDoHooks {
      * Returns [upstream] when no shell is hosting, so a real Telegram host reads its own value.
      */
     public static boolean isWebBrowserInAppEnabled(boolean upstream) {
-        if (browserHost == null) {
+        if (currentHost() == null) {
             return upstream;
         }
         return webBrowserOpenInApp;
@@ -589,7 +741,7 @@ public final class NativeDoHooks {
      * persisted the new value); false tells upstream to run its own account-setting path.
      */
     public static boolean toggleWebBrowserInAppEnabled() {
-        if (browserHost == null) {
+        if (currentHost() == null) {
             return false;
         }
         Runnable handler = webBrowserToggleHandler;
@@ -617,7 +769,8 @@ public final class NativeDoHooks {
         if (upstream) {
             return true;
         }
-        if (!webBrowserOpenInApp || browserHost == null || url == null) {
+        boolean inApp = webBrowserOpenInApp;
+        if (!inApp || currentHost() == null || url == null) {
             return false;
         }
         android.net.Uri uri = android.net.Uri.parse(url);
@@ -626,10 +779,10 @@ public final class NativeDoHooks {
     }
 
     /** Local settings only: Telegram account settings and shared-cookie clearing are not hosted. */
-    public static void openBrowserSettings() {
-        org.telegram.ui.ActionBar.BaseFragment lastFragment = getSafeLastFragment();
-        BrowserHost host = browserHost;
-        if (lastFragment == null || host == null) {
+    public static void openBrowserSettings(android.content.Context context) {
+        BrowserHost host = hostFor(context);
+        org.telegram.ui.ActionBar.BaseFragment lastFragment = host == null ? null : host.getSafeLastFragment();
+        if (lastFragment == null) {
             return;
         }
         org.telegram.ui.ActionBar.BaseFragment.BottomSheetParams params = new org.telegram.ui.ActionBar.BaseFragment.BottomSheetParams();
@@ -643,7 +796,7 @@ public final class NativeDoHooks {
      * chats). Returns true when the shell handled it; a real Telegram host keeps upstream's dialog.
      */
     public static boolean shareInAppBrowser(android.app.Activity activity, String url) {
-        if (browserHost == null || activity == null || url == null) {
+        if (hostFor(activity) == null || activity == null || url == null) {
             return false;
         }
         android.content.Intent send = new android.content.Intent(android.content.Intent.ACTION_SEND);
@@ -660,8 +813,9 @@ public final class NativeDoHooks {
      * ({@code ArticleViewer.addBookmark}), neither of which exists in this host, so the entries are
      * not offered while the shell hosts the browser. A real Telegram host keeps them.
      */
-    public static void addBrowserMenuSavedEntry(org.telegram.ui.Components.ItemOptions options, int id, int icon, CharSequence text, Runnable action) {
-        if (browserHost != null
+    public static void addBrowserMenuSavedEntry(android.content.Context context,
+            org.telegram.ui.Components.ItemOptions options, int id, int icon, CharSequence text, Runnable action) {
+        if (hostFor(context) != null
                 && (id == org.telegram.ui.web.WebActionBar.bookmark_item
                     || id == org.telegram.ui.web.WebActionBar.bookmarks_item)) {
             return;
@@ -717,23 +871,33 @@ public final class NativeDoHooks {
      * <p>Upstream reposts the runnable with no delay and relies on the platform's traversal barrier
      * to hold it to one step per frame: the invalidate inside each step schedules a traversal,
      * whose sync barrier parks the repost until the next frame. Where that barrier does not apply,
-     * the whole 320 ms animation drains inside a single frame - the selected capsule jumps to its
-     * destination instead of travelling - which is the failure this frame delay removes. Drawing
-     * and interpolation stay upstream's own; only the repost's delay changes, and a real Telegram
-     * host (no shell bound here) keeps upstream's own scheduling.</p>
+     * the repost chain never yields to a frame and the whole 320 ms animation drains in one pass -
+     * the selected capsule jumps to its destination instead of travelling. That is a real
+     * contract, not a cosmetic one: {@code HomeCategoryPagerTest} taps a tab, samples inside the
+     * animation, and fails with "the capsule must not jump to its destination before a frame can
+     * be painted". A frame-clock repost ({@code View.postOnAnimation}) does not fix it in the
+     * paused-looper harness either: the shadow frame clock advances with the drain, so every step
+     * still runs inside one idle window. The 16 ms handler delay is what keeps one step per
+     * simulated frame, and it matches the clamp upstream applies to its own delta (17 ms), so the
+     * animation's duration and interpolation are unchanged. A real Telegram host (no shell bound
+     * here) keeps upstream's own scheduling.</p>
      */
-    public static void repostIndicatorAnimation(Runnable runnable) {
-        if (browserHost == null) {
+    public static void repostIndicatorAnimation(android.content.Context context, Runnable runnable) {
+        if (hostFor(context) == null) {
             org.telegram.messenger.AndroidUtilities.runOnUIThread(runnable);
         } else {
             org.telegram.messenger.AndroidUtilities.runOnUIThread(runnable, 16);
         }
     }
 
-    /** A client-owned reaction PNG must never fall through to a Telegram datacenter download. */
+    /**
+     * A client-owned reaction PNG must never fall through to a Telegram datacenter download. Only
+     * a hosted shell (this app, whose reaction documents carry a local path) rewrites the location;
+     * a real Telegram host keeps upstream's document location.
+     */
     public static org.telegram.messenger.ImageLocation documentImageLocation(
             org.telegram.tgnet.TLRPC.Document document, org.telegram.messenger.ImageLocation upstream) {
-        if (!mtprotoEnabled && "image/png".equals(document.mime_type)
+        if (nativeDoApp() && document != null && "image/png".equals(document.mime_type)
                 && document.localPath != null && !document.localPath.isEmpty()) {
             return org.telegram.messenger.ImageLocation.getForPath(document.localPath);
         }
@@ -751,7 +915,7 @@ public final class NativeDoHooks {
      * is kept for anything this client did not fetch, so a real Telegram reaction still animates.</p>
      */
     public static int pathImageType(org.telegram.messenger.ImageLocation imageLocation, int upstream) {
-        if (!mtprotoEnabled && imageLocation != null && imageLocation.path != null
+        if (nativeDoApp() && imageLocation != null && imageLocation.path != null
                 && imageLocation.path.toLowerCase(java.util.Locale.ROOT).endsWith(".png")) {
             return 0;
         }
@@ -779,7 +943,7 @@ public final class NativeDoHooks {
      */
     public static void inlineEmojiSpanForBody(
             org.telegram.ui.Components.AnimatedEmojiSpan span, android.graphics.Paint paint, boolean inButton) {
-        if (span == null || paint == null || inButton || mtprotoEnabled) {
+        if (span == null || paint == null || inButton || !nativeDoApp()) {
             return;
         }
         final android.graphics.Paint.FontMetricsInt fm = paint.getFontMetricsInt();
@@ -790,7 +954,7 @@ public final class NativeDoHooks {
 
     /** The site's static PNG has no Lottie enter animation to wait for. */
     public static boolean hasReactionEnterAnimation(int account, String emoticon, boolean upstream) {
-        if (!mtprotoEnabled && emoticon != null) {
+        if (nativeDoApp() && emoticon != null) {
             org.telegram.tgnet.TLRPC.TL_availableReaction reaction =
                     org.telegram.messenger.MediaDataController.getInstance(account).getReactionsMap().get(emoticon);
             if (reaction != null && reaction.appear_animation != null

@@ -10520,7 +10520,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     }
 
     private void updateFlagSecure() {
-        if (!io.github.baba983.nativedo.hooks.NativeDoHooks.messageMaySecureWindow()) return; // NativeDo: a forum post is not secret media
+        if (!io.github.baba983.nativedo.hooks.NativeDoHooks.messageMaySecureWindow(currentMessageObject)) return; // NativeDo: a forum post is not secret media
         if (flagSecure == null) {
             Activity activity = AndroidUtilities.findActivity(getContext());
             Window window = activity == null ? null : activity.getWindow();

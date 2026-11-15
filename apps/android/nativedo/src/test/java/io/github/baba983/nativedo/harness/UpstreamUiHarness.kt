@@ -153,6 +153,11 @@ internal class UpstreamUiHarness {
      * A native abort leaves no Java stack in Gradle's output, and the JVM's crash handler can sit
      * for minutes before the process dies. Keep a recent dump of every thread beside the test
      * results so the thread that reached native code is still named when the worker disappears.
+     *
+     * <p>One second between dumps: the file is overwritten in place, so this is about how much CPU
+     * the dump costs, not log size. At 50 ms it rewrote every thread's stack twenty times a second
+     * for no extra evidence - the thread that aborts is long-lived (a decoder, a worker), so a
+     * snapshot at most a second old still names it.</p>
      */
     private fun startThreadDumper() {
         if (!threadDumperStarted.compareAndSet(false, true)) return
@@ -173,7 +178,7 @@ internal class UpstreamUiHarness {
         Thread {
             while (true) {
                 dump()
-                java.util.concurrent.locks.LockSupport.parkNanos(50_000_000L)
+                java.util.concurrent.locks.LockSupport.parkNanos(1_000_000_000L)
             }
         }.apply {
             isDaemon = true

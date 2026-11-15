@@ -15,12 +15,20 @@ and narrow call sites are the allowed subtree differences. The
 [hook guard](../scripts/telegram_hook_guard.py) is the inventory and gate; do not
 maintain a second per-call-site ledger here.
 
-- tgnet initialization and Telegram database opening are gated off.
+- tgnet initialization and Telegram database opening are gated off. The hooks default
+  to upstream's behavior, so an upstream code path with no NativeDo host runs as it
+  does in Telegram; `NativeDoApplication` closes both gates and marks the process as
+  this app at class load. Rendering hooks read that process marker, not the shell in
+  front: image and text-layout paths can run in the gap between two shells' create and
+  destroy, when no host is registered.
 - Browser hosting answers the shell questions upstream normally asks
   `LaunchActivity`: current fragment, tabs, overlay and the per-activity sheet stack.
-  Sheet dismissal retains its original stack rather than looking up a replacement
-  activity's stack. This preserves upstream `ArticleViewer` sheets, minimization
-  and restoration without a Telegram activity.
+  Each answer comes from the host bound to the calling context's own activity, not a
+  process-wide one: a VIEW link's second instance answers for its own layout, and a
+  destroyed instance compare-and-clears only its own registration. Sheet dismissal
+  retains its original stack rather than looking up a replacement activity's stack.
+  This preserves upstream `ArticleViewer` sheets, minimization and restoration
+  without a Telegram activity.
 - Editor and mention adapters bind product behavior to an individual component,
   not a global callback that outlives its owning screen.
 - The attachment sheet (`ChatAttachAlert`) and the composer's recording gesture are
@@ -234,5 +242,12 @@ until their filters have product behavior; they are not decorative shortcuts.
 The subtree import is the source pin; it currently carries upstream Telegram 13.2.1
 (`7be672ea`). Materialize native dependencies from its gitlinks with
 `telegram-deps.sh`; do not borrow arbitrary `.so` files from another checkout.
-Update only for a product goal, compare host hooks to the new source and
-run the hook, app and device gates appropriate to the change.
+
+`upstream-canary.yml` runs weekly. It finds the newest upstream release (the newest
+`update to <version> (<build>)` commit on upstream's default branch, because upstream
+stopped tagging after 11.4.2), test-merges it into a throwaway branch, runs the hook
+guard against the pure upstream tree and the compile gate, and reports to the job
+summary and to an issue on failure. It never pushes a branch and never merges into
+`main`. The pin itself advances deliberately, every one or two minor releases, as a
+reviewed `git subtree` change: compare host hooks to the new source and run the hook,
+app and device gates appropriate to the change.

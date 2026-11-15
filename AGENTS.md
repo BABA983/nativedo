@@ -22,8 +22,11 @@ the only Android build.
 
 - Read the pinned upstream source before changing Telegram integration. Preserve
   upstream rendering, measurement, gesture, animation and recycling behavior.
-- The subtree import is the pin; advance it deliberately with `git subtree` for
-  a product goal, not on every upstream release. Do not hand-maintain a second pin.
+- The subtree import is the pin. `.github/workflows/upstream-canary.yml` test-merges the
+  newest upstream release into a throwaway branch weekly; it only reports (job summary,
+  issue on failure) and never pushes or merges. Advance the pin deliberately with
+  `git subtree` every one or two minor releases, for a product goal. Do not
+  hand-maintain a second pin.
 - Run `scripts/telegram-hook-guard.sh` for subtree changes. Its allowed host hooks
   are not permission to rewrite upstream behavior. Extend a hook only when a
   concrete product boundary needs it; keep callbacks instance-bound when appropriate.

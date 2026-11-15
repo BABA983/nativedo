@@ -139,7 +139,7 @@ public class BottomSheetTabDialog extends Dialog {
         navigationBar.invalidate();
         AndroidUtilities.setNavigationBarColor(this, color);
         AndroidUtilities.setLightNavigationBar(this, AndroidUtilities.computePerceivedBrightness(color) >= .721f);
-        io.github.baba983.nativedo.hooks.NativeDoHooks.checkSystemBarColors(); // NativeDo: the host, not LaunchActivity, owns the system bars
+        io.github.baba983.nativedo.hooks.NativeDoHooks.checkSystemBarColors(getContext()); // NativeDo: the host, not LaunchActivity, owns the system bars
     }
 
     public static class WindowView extends FrameLayout implements BottomSheetTabsOverlay.SheetView {

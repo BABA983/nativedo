@@ -551,7 +551,7 @@ public class Browser {
     }
 
     public static boolean openInTelegramBrowser(Context context, String url, Browser.Progress progress) {
-        BottomSheetTabs tabs = io.github.baba983.nativedo.hooks.NativeDoHooks.getBottomSheetTabs(); // NativeDo: the host owns the minimized browser tabs
+        BottomSheetTabs tabs = io.github.baba983.nativedo.hooks.NativeDoHooks.getBottomSheetTabs(context); // NativeDo: the host owns the minimized browser tabs
         if (tabs != null && tabs.tryReopenTab(url) != null) {
             return true;
         }
