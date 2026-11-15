@@ -104,6 +104,22 @@ android {
         targetSdkVersion 36
         versionCode 1
         versionName '0.1.0'
+        ndk {
+            // NativeDo: the APK splits below package these three. x86 is
+            // intentionally absent; x86_64 covers the emulator the owner uses.
+            abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
+        }
+    }
+
+    // Phones and the owner's x86_64 emulator: arm64-v8a, armeabi-v7a and
+    // x86_64, plus a universal package carrying all three. x86 is not shipped.
+    splits {
+        abi {
+            enable true
+            reset()
+            include 'arm64-v8a', 'armeabi-v7a', 'x86_64'
+            universalApk true
+        }
     }
 
     buildFeatures {
@@ -171,6 +187,16 @@ android {
             // R8 stays off: this module compiles the vendored Telegram tree, whose reflection (JNI
             // callbacks, tgnet) needs keep rules and a device pass before shrinking is safe.
             minifyEnabled false
+        }
+    }
+
+    // One flat name for every variant: nativedo-<versionName>-<abi>.apk, with
+    // `universal` for the combined package. A debug versionName already carries
+    // the commit, and a preview versionName already carries `-preview`.
+    applicationVariants.all { variant ->
+        variant.outputs.each { output ->
+            def abi = output.getFilter('ABI')
+            output.outputFileName = "nativedo-${variant.versionName}-${abi == null ? 'universal' : abi}.apk"
         }
     }
 

@@ -147,6 +147,9 @@ android {
 
         multiDexEnabled true
 
+        ndk { // NativeDo: compile only the ABIs the app ships; x86 is emulator-only
+            abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64' // NativeDo
+        } // NativeDo
         externalNativeBuild {
             cmake {
                 version '3.22.1'

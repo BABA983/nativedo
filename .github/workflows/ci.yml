@@ -29,6 +29,14 @@ on:
     types: [opened, ready_for_review, synchronize]
     paths: *ci_paths
   workflow_dispatch:
+    inputs:
+      nightly_test:
+        description: 'Publish to the throwaway nightly-test pre-release (verification only)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
 
 # A newer commit on the same ref makes the older run pointless, so a push cancels the run it
 # supersedes. What cancellation must not do is drop a gate: each push is classified over its own
@@ -376,6 +384,8 @@ jobs:
     if: needs.changes.outputs.nativedo == 'true' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
     runs-on: ubuntu-24.04
     timeout-minutes: 90
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -422,9 +432,9 @@ jobs:
           path: |
             apps/android/telegram/TMessagesProj/.cxx
             apps/android/telegram/TMessagesProj/build/intermediates/cxx
-          key: nativedo-native-v1-${{ runner.os }}-${{ steps.pin.outputs.pin }}-${{ hashFiles('apps/android/telegram/TMessagesProj/jni/CMakeLists.txt', 'apps/android/telegram/TMessagesProj/jni/**/CMakeLists.txt', 'apps/android/telegram/TMessagesProj/jni/Application.mk', 'apps/android/telegram/TMessagesProj/build.gradle', 'apps/android/telegram/build.gradle', 'apps/android/telegram/gradle.properties', 'apps/android/telegram/buildSrc/**/*.gradle*', 'apps/android/nativedo/build.gradle') }}
+          key: nativedo-native-v2-${{ runner.os }}-${{ steps.pin.outputs.pin }}-arm64-v8a-armeabi-v7a-x86_64-${{ hashFiles('apps/android/telegram/TMessagesProj/jni/CMakeLists.txt', 'apps/android/telegram/TMessagesProj/jni/**/CMakeLists.txt', 'apps/android/telegram/TMessagesProj/jni/Application.mk', 'apps/android/telegram/TMessagesProj/build.gradle', 'apps/android/telegram/build.gradle', 'apps/android/telegram/gradle.properties', 'apps/android/telegram/buildSrc/**/*.gradle*', 'apps/android/nativedo/build.gradle') }}
           restore-keys: |
-            nativedo-native-v1-${{ runner.os }}-${{ steps.pin.outputs.pin }}-
+            nativedo-native-v2-${{ runner.os }}-${{ steps.pin.outputs.pin }}-arm64-v8a-armeabi-v7a-x86_64-
 
       - name: Materialize pinned Telegram dependency trees
         run: scripts/telegram-deps.sh
@@ -448,7 +458,7 @@ jobs:
         # cannot update another machine's install).
         # Secrets: NATIVEDO_KEYSTORE_B64 (base64 of the .jks file), NATIVEDO_KEYSTORE_PASSWORD,
         # NATIVEDO_KEY_ALIAS, NATIVEDO_KEY_PASSWORD. The materialized files are gitignored and
-        # never land in the uploaded artifact (it contains only `build/outputs/apk/**/*.apk`).
+        # never land in the uploaded artifacts (those contain only the APK files).
         env:
           KEYSTORE_B64: ${{ secrets.NATIVEDO_KEYSTORE_B64 }}
           STORE_PASSWORD: ${{ secrets.NATIVEDO_KEYSTORE_PASSWORD }}
@@ -457,7 +467,7 @@ jobs:
         run: |
           umask 077
           if [ -z "$KEYSTORE_B64" ]; then
-            echo "no NATIVEDO_KEYSTORE_B64 secret: the arm64 APK uses the per-machine debug key"
+            echo "no NATIVEDO_KEYSTORE_B64 secret: the APKs use the per-machine debug key"
             exit 0
           fi
           printf '%s' "$KEYSTORE_B64" | base64 -d > apps/android/nativedo/signing.jks
@@ -468,23 +478,103 @@ jobs:
             echo "keyPassword=${KEY_PASSWORD:-$STORE_PASSWORD}"
           } > apps/android/nativedo/keystore.properties
 
-      - name: arm64 assemble
-        # An injected ABI otherwise makes AGP mark the APK as test-only (install
-        # error -15); `testOnly=false` keeps it installable from the phone's
-        # package installer.
-        run: ./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:assembleDailyDebug -Pandroid.injected.build.abi=arm64-v8a -Pandroid.injected.testOnly=false --quiet
+      - name: Assemble dailyDebug APKs
+        run: ./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:assembleDailyDebug --quiet
 
-      - name: Upload arm64 APK
-        uses: actions/upload-artifact@v4
+      - name: Locate APKs
+        id: apks
+        run: |
+          dir=apps/android/nativedo/build/outputs/apk/daily/debug
+          for abi in arm64-v8a armeabi-v7a x86_64 universal; do
+            file="$(find "$dir" -maxdepth 1 -name "nativedo-*-${abi}.apk" -print -quit)"
+            if [ -z "$file" ]; then
+              echo "missing ${abi} APK in $dir" >&2
+              ls -l "$dir" >&2 || true
+              exit 1
+            fi
+            echo "${abi//-/_}=$file" >> "$GITHUB_OUTPUT"
+          done
+
+      # One unzipped artifact per APK: with `archive: false` the file name is
+      # the artifact name, so the owner downloads the .apk directly.
+      - name: Upload arm64-v8a APK
+        uses: actions/upload-artifact@v7
         with:
-          name: nativedo-dailyDebug-arm64
+          archive: false
           if-no-files-found: error
           retention-days: 14
-          # An injected ABI makes AGP write the APK under build/intermediates/apk;
-          # a normal variant writes it under build/outputs/apk.
-          path: |
-            apps/android/nativedo/build/intermediates/apk/daily/debug/*.apk
-            apps/android/nativedo/build/outputs/apk/daily/debug/*.apk
+          path: ${{ steps.apks.outputs.arm64_v8a }}
+
+      - name: Upload armeabi-v7a APK
+        uses: actions/upload-artifact@v7
+        with:
+          archive: false
+          if-no-files-found: error
+          retention-days: 14
+          path: ${{ steps.apks.outputs.armeabi_v7a }}
+
+      - name: Upload x86_64 APK
+        uses: actions/upload-artifact@v7
+        with:
+          archive: false
+          if-no-files-found: error
+          retention-days: 14
+          path: ${{ steps.apks.outputs.x86_64 }}
+
+      - name: Upload universal APK
+        uses: actions/upload-artifact@v7
+        with:
+          archive: false
+          if-no-files-found: error
+          retention-days: 14
+          path: ${{ steps.apks.outputs.universal }}
+
+      - name: Publish nightly pre-release
+        # Main pushes publish `nightly`; a branch dispatch can publish the
+        # throwaway `nightly-test` to exercise this step without touching it.
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.nightly_test)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.nightly_test && 'nightly-test' || 'nightly' }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          sha="$GITHUB_SHA"
+          subject="$(git log -1 --format=%s "$sha")"
+          notes="$(printf 'Built from %s on %s.\n\n%s\n\nRun: %s' "$sha" "$GITHUB_REF_NAME" "$subject" "$RUN_URL")"
+          dir=apps/android/nativedo/build/outputs/apk/daily/debug
+          arm64="${{ steps.apks.outputs.arm64_v8a }}"
+          universal="${{ steps.apks.outputs.universal }}"
+          cp "$arm64" "$dir/nativedo-nightly-arm64-v8a.apk"
+          cp "$universal" "$dir/nativedo-nightly-universal.apk"
+          assets=(
+            "$arm64"
+            "${{ steps.apks.outputs.armeabi_v7a }}"
+            "${{ steps.apks.outputs.x86_64 }}"
+            "$universal"
+            "$dir/nativedo-nightly-arm64-v8a.apk"
+            "$dir/nativedo-nightly-universal.apk"
+          )
+          # Upload the new set first. A failure here leaves the previous release
+          # assets in place; only a complete upload reaches the cleanup below.
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            if gh api "repos/$GITHUB_REPOSITORY/git/refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+              gh release create "$RELEASE_TAG" --prerelease --latest=false --title "NativeDo ${RELEASE_TAG}" --notes "$notes" --verify-tag
+            else
+              gh release create "$RELEASE_TAG" --prerelease --latest=false --title "NativeDo ${RELEASE_TAG}" --notes "$notes" --target "$sha"
+            fi
+          fi
+          gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+          keep="$(printf '%s\n' "${assets[@]}" | xargs -n1 basename | sort)"
+          gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' | while IFS= read -r name; do
+            if ! grep -qxF "$name" <<<"$keep"; then
+              gh release delete-asset "$RELEASE_TAG" "$name" --yes
+            fi
+          done
+          # Move the tag and notes only after every asset is in place. Never
+          # mark this release latest: it is always a prerelease.
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$RELEASE_TAG" -f sha="$sha" -F force=true
+          gh release edit "$RELEASE_TAG" --prerelease --latest=false --title "NativeDo ${RELEASE_TAG}" --notes "$notes"
 
       - uses: actions/cache/save@v4
         if: success() && steps.native-cache.outputs.cache-hit != 'true'
@@ -492,4 +582,4 @@ jobs:
           path: |
             apps/android/telegram/TMessagesProj/.cxx
             apps/android/telegram/TMessagesProj/build/intermediates/cxx
-          key: nativedo-native-v1-${{ runner.os }}-${{ steps.pin.outputs.pin }}-${{ hashFiles('apps/android/telegram/TMessagesProj/jni/CMakeLists.txt', 'apps/android/telegram/TMessagesProj/jni/**/CMakeLists.txt', 'apps/android/telegram/TMessagesProj/jni/Application.mk', 'apps/android/telegram/TMessagesProj/build.gradle', 'apps/android/telegram/build.gradle', 'apps/android/telegram/gradle.properties', 'apps/android/telegram/buildSrc/**/*.gradle*', 'apps/android/nativedo/build.gradle') }}
+          key: nativedo-native-v2-${{ runner.os }}-${{ steps.pin.outputs.pin }}-arm64-v8a-armeabi-v7a-x86_64-${{ hashFiles('apps/android/telegram/TMessagesProj/jni/CMakeLists.txt', 'apps/android/telegram/TMessagesProj/jni/**/CMakeLists.txt', 'apps/android/telegram/TMessagesProj/jni/Application.mk', 'apps/android/telegram/TMessagesProj/build.gradle', 'apps/android/telegram/build.gradle', 'apps/android/telegram/gradle.properties', 'apps/android/telegram/buildSrc/**/*.gradle*', 'apps/android/nativedo/build.gradle') }}

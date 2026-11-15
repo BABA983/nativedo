@@ -14,8 +14,9 @@ shadows replace upstream native methods; assertions guard against tgnet/database
 initialization. This checks wiring, state and host rendering, not a real device
 or linux.do accepting the same requests or timing independence.
 
-The arm64 `dailyDebug` APK is built by CI and uploaded as an artifact for
-physical-device installation; the host harness does not replace that device pass.
+The `dailyDebug` APKs (arm64-v8a, armeabi-v7a, x86_64 and universal) are built
+by CI and uploaded as unzipped artifacts for physical-device installation; the
+host harness does not replace that device pass.
 
 ## Retain contracts, not implementation mirrors
 
