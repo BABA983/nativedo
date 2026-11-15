@@ -81,12 +81,23 @@ internal class UpstreamUiHarness {
             } else {
                 Robolectric.buildActivity(NativeDoActivity::class.java, intent)
             }
-            controller.setup().get()
+            val controller2 = controller.setup()
+            // 13.2.1's page host creates the tab shell's views after Robolectric's visible() pass,
+            // so the views added later never receive the simulated attach. Ask again now that the
+            // tree is complete: an unattached tree loses View clicks (they are posted until attach)
+            // and reports window coordinates relative to the wrong root.
+            controller2.visible()
+            controller2.get()
         } finally {
             org.robolectric.shadows.ShadowChoreographer.setPaused(pausedFrames)
         }
         activity = app
         idle()
+        // 13.2.1's shell finishes its first layout on delayed passes: the tab strip and the page
+        // host are added after the window's first frame, and until that lands the strip is not
+        // attached (its clicks queue until attach) and reports window coordinates from the wrong
+        // root. Let the simulated clock reach those passes before a test drives the shell.
+        idleClock(300)
         reportBootRequests()
         resetSideEffectCounters()
         return app
@@ -256,8 +267,15 @@ internal class UpstreamUiHarness {
         for (queue in upstreamQueues()) {
             // Not every worker is looper-backed: a DispatchQueuePriority runs on a plain thread
             // pool, which Robolectric does not pause and which therefore needs no draining.
-            val handler = runCatching {
+            // 13.2.1 moved ImageLoader's queues to DispatchQueue2, which exposes the handler as
+            // getHandlerSync() and only once its thread is up; the older DispatchQueue answered
+            // getHandler() directly.
+            val direct = runCatching {
                 queue.javaClass.getMethod("getHandler").invoke(queue) as? Handler
+            }.getOrNull()
+            val handler = direct ?: runCatching {
+                val ready = queue.javaClass.getMethod("isReady").invoke(queue) as? Boolean ?: false
+                if (ready) queue.javaClass.getMethod("getHandlerSync").invoke(queue) as? Handler else null
             }.getOrNull() ?: continue
             val looper = handler.looper ?: continue
             val shadow = shadowOf(looper) as ShadowPausedLooper
@@ -288,6 +306,7 @@ internal class UpstreamUiHarness {
 
     private var budgetReported = false
 
+
     /**
      * Waits for work that finishes off the main thread (the API client runs on OkHttp's pool)
      * while draining the main looper, which is where the callbacks land.
@@ -296,12 +315,24 @@ internal class UpstreamUiHarness {
      * deadline would never be reached when there is no work left to idle.</p>
      */
     fun await(what: String, iterations: Int = 4_000, condition: () -> Boolean) {
-        repeat(iterations) {
+        var frameAdvances = 0
+        repeat(iterations) { iteration ->
             idle()
             idleUpstreamQueues()
             if (condition()) {
                 idle()
                 return
+            }
+            // A device lays the screen out and draws the next frame while it waits; Robolectric's
+            // paused clock never reaches that frame on its own. 13.2.1 adds the page host and a
+            // presented screen's list on those passes, so without one a screen that was just
+            // presented never binds a row, however long the wait. The budget is one delayed open
+            // animation's worth of frames: a reader's dwell is measured on the same clock, and a
+            // wait must not hand it minutes the test never spent in front.
+            if (frameAdvances < 16 && iteration % 4 == 3) {
+                frameAdvances++
+                layoutApp()
+                org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(16))
             }
             // Real time, not simulated: the fetch finishes on OkHttp's own thread, and the
             // sandbox shadows Thread.sleep onto Robolectric's paused clock, which would never

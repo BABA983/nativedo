@@ -1684,7 +1684,26 @@ public class ChatChannelFragment extends BaseFragment {
 
     private void scrollToNewest() {
         if (listView != null && listView.getAdapter() != null && chatMessages.size() > 0) {
-            listView.scrollToPosition(messageRowOffset() + chatMessages.size() - 1);
+            final int target = messageRowOffset() + chatMessages.size() - 1;
+            listView.scrollToPosition(target);
+            if (listView.getHeight() == 0) {
+                // The window landed before the list had a size: RecyclerView consumes the pending
+                // position in that zero-height layout and the rows stay at the first message.
+                // Ask again once the list is measured, with the window it has by then.
+                listView.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+                    @Override
+                    public void onLayoutChange(View v, int left, int top, int right, int bottom,
+                                               int oldLeft, int oldTop, int oldRight, int oldBottom) {
+                        if (listView.getHeight() <= 0) {
+                            return;
+                        }
+                        listView.removeOnLayoutChangeListener(this);
+                        if (!chatMessages.isEmpty()) {
+                            listView.scrollToPosition(messageRowOffset() + chatMessages.size() - 1);
+                        }
+                    }
+                });
+            }
         }
     }
 

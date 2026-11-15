@@ -1,6 +1,5 @@
 package io.github.baba983.nativedo.topic
 
-import android.view.ViewGroup
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import io.github.baba983.nativedo.app.NativeDo
@@ -353,20 +352,23 @@ internal class ReadProgressTest {
     }
 
     /** The floors the topic screen has drawn, as the post numbers behind its bubbles. */
+    /**
+     * The floors the viewport holds, by the list's own visible range - the same range the reporter
+     * is told about. A cell can be attached and VISIBLE while it sits in the RecyclerView's extra
+     * layout space below the fold, so walking every child would count a floor the reader cannot see.
+     */
     private fun drawnFloors(): List<Int> {
-        val content = harness.activity.findViewById<ViewGroup>(android.R.id.content) ?: return emptyList()
-        return chatCells(content)
-            .mapNotNull { cell -> cell.messageObject?.messageOwner?.rich_message?.let { cell } }
-            .mapNotNull { cell -> (cell.messageObject!!.messageOwner.id - POST_ID_BASE).toInt() }
-            .filter { it in 1..1_000 }
-    }
-
-    private fun chatCells(view: android.view.View): List<ChatMessageCell> {
-        if (view is ChatMessageCell && view.isShown) return listOf(view)
-        if (view is ViewGroup) {
-            return (0 until view.childCount).flatMap { chatCells(view.getChildAt(it)) }
+        val list = contentListOf(harness.activity) ?: return emptyList()
+        val manager = list.layoutManager as? androidx.recyclerview.widget.LinearLayoutManager
+            ?: return emptyList()
+        val first = manager.findFirstVisibleItemPosition()
+        val last = manager.findLastVisibleItemPosition()
+        if (first < 0 || last < first) return emptyList()
+        return (first..last).mapNotNull { position ->
+            val cell = manager.findViewByPosition(position) as? ChatMessageCell ?: return@mapNotNull null
+            val id = cell.messageObject?.messageOwner?.id ?: return@mapNotNull null
+            (id - POST_ID_BASE).toInt().takeIf { it in 1..1_000 }
         }
-        return emptyList()
     }
 
     private fun positionOf(view: android.view.View): Int {

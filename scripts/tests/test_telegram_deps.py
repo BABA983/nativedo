@@ -48,9 +48,9 @@ class PinnedPlanTest(unittest.TestCase):
     """The plan comes from the pinned gitlinks, not from a README or manifest."""
 
     @requires_history
-    def test_fifteen_dependencies_with_pinned_shas(self) -> None:
+    def test_nineteen_dependencies_with_pinned_shas(self) -> None:
         plan = telegramlib.dependency_plan(ROOT)
-        self.assertEqual(15, len(plan))
+        self.assertEqual(19, len(plan))
         by_name = {dep.name: dep for dep in plan}
         expected = {
             "TMessagesProj/jni/td": (
@@ -58,7 +58,7 @@ class PinnedPlanTest(unittest.TestCase):
                 "https://github.com/tdlib/td.git",
             ),
             "TMessagesProj_Modules/media": (
-                "c430d207677071b1873f9f18266d55ec45722180",
+                "09b6c97c0d691c50cd4541e1573995d4066d6f5c",
                 "https://github.com/Arseny271/media.git",
             ),
             "TMessagesProj/lib/jlatexmath": (
@@ -102,7 +102,7 @@ class PinnedPlanTest(unittest.TestCase):
             code = telegram_deps.main(["--root", str(ROOT), "--plan"])
         self.assertEqual(0, code)
         lines = [ln for ln in out.getvalue().splitlines() if ln.strip()]
-        self.assertEqual(15, len(lines))
+        self.assertEqual(19, len(lines))
         self.assertTrue(all(ln.count("\t") == 2 for ln in lines))
 
 

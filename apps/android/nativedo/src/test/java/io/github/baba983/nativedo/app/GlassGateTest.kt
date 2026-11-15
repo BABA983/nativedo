@@ -31,8 +31,8 @@ import org.telegram.messenger.SharedConfig
 import org.telegram.ui.ActionBar.ActionBar
 import org.telegram.ui.ActionBar.BaseFragment
 import org.telegram.ui.Components.blur3.drawable.BlurredBackgroundDrawable
-import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceColor
-import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceRenderNode
+import org.telegram.utils.glass.source.GlassSourceColor
+import org.telegram.utils.glass.source.GlassSourceRenderNode
 
 /**
  * The blur gate behind the topic header's capsules: which source the ActionBar's glass drawable
@@ -128,11 +128,11 @@ internal class GlassGateTest {
         // here; that is the fallback, not a bug.
         assertFalse(
             "a LOW device must not take a render node",
-            headerSource() is BlurredBackgroundSourceRenderNode,
+            headerSource() is GlassSourceRenderNode,
         )
         assertTrue(
             "the LOW header samples upstream's flat colour source",
-            headerSource() is BlurredBackgroundSourceColor,
+            headerSource() is GlassSourceColor,
         )
     }
 
@@ -147,7 +147,7 @@ internal class GlassGateTest {
 
         assertTrue(
             "on a HIGH class with the chat blur on, the header's source is the render node",
-            headerSource() is BlurredBackgroundSourceRenderNode,
+            headerSource() is GlassSourceRenderNode,
         )
     }
 

@@ -4,7 +4,6 @@ import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.app.Activity;
 import android.content.Intent;
-import android.content.IntentFilter;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.os.Build;
@@ -29,7 +28,6 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.AnimationNotificationsLocker;
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.FileLog;
-import org.telegram.messenger.LiteMode;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.ui.ActionBar.ActionBarLayout;
 import org.telegram.ui.ActionBar.BaseFragment;
@@ -91,11 +89,6 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
     /** The system-bar colors stay put while the reveal runs, as in upstream's handler. */
     private boolean isNavigationBarColorFrozen;
     /**
-     * Upstream's power-saver feed (LaunchActivity:380, 412): the battery level drives LiteMode's
-     * preset, and the preset is what the glass (chat blur / liquid glass) reads.
-     */
-    private final LiteMode.BatteryReceiver batteryReceiver = new LiteMode.BatteryReceiver();
-    /**
      * Whether the session gate has answered *and* the answer was a signed-in reader. A VIEW link
      * arriving while the gate is still asking, or while the login page is up, is kept pending
      * rather than presented: the topic is private content, and opening it before the gate says the
@@ -155,9 +148,6 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         if (Build.VERSION.SDK_INT >= 24) {
             AndroidUtilities.isInMultiwindow = isInMultiWindowMode();
         }
-        // LaunchActivity:412: the sticky battery broadcast is what LiteMode's power-saver level
-        // (and with it the glass presets) follows while the app is up.
-        registerReceiver(batteryReceiver, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
         AndroidUtilities.checkDisplaySize(this, getResources().getConfiguration());
         Theme.createCommonResources(this);
         Theme.createDialogsResources(this);
@@ -759,12 +749,6 @@ public class NativeDoActivity extends Activity implements NotificationCenter.Not
         NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.needSetDayNightTheme);
         NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.needCheckSystemBarColors);
         NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.didSetNewTheme);
-        // LaunchActivity:6857: the sticky battery broadcast is dropped with the activity.
-        try {
-            unregisterReceiver(batteryReceiver);
-        } catch (Exception e) {
-            FileLog.e(e);
-        }
         // LaunchActivity:6886-6894. (Upstream's API-33 branch tests the wrong field at 6891 - the
         // plain callback is the one registered there - so this unregisters the one it registered.)
         if (Build.VERSION.SDK_INT >= 34) {

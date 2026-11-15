@@ -133,6 +133,10 @@ public class NativeDoApplication extends ApplicationLoader {
         // early cached the preset that followed the uninitialized class, and its value (not the
         // preference) is what isEnabled() answers with.
         LiteMode.loadPreference();
+        // ApplicationLoader.postInitApplication() (ApplicationLoader.java:237) registers the
+        // sticky battery broadcast that feeds LiteMode's power-saver level; this shell does not
+        // run that method, so it asks for the same registration here.
+        LiteMode.registerBatteryReceiver();
         if (!runtimeConfigLogged) {
             runtimeConfigLogged = true;
             FileLog.d("nativedo runtime config: performance class = "
