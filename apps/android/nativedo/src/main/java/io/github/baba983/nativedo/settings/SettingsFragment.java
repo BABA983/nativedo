@@ -3,18 +3,17 @@ package io.github.baba983.nativedo.settings;
 import android.animation.ValueAnimator;
 import android.content.Context;
 import android.content.pm.PackageInfo;
-import android.graphics.Canvas;
-import android.graphics.Color;
-import android.graphics.Paint;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.recyclerview.widget.RecyclerView;
@@ -39,6 +38,7 @@ import org.telegram.ui.DialogsActivity;
 import org.telegram.ui.LiteModeSettingsActivity;
 import org.telegram.ui.SettingsActivity.SettingCell;
 import org.telegram.ui.ThemeActivity;
+import org.telegram.utils.glass.BaseFragmentSimpleGlass;
 
 import java.util.ArrayList;
 
@@ -124,7 +124,8 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
 
     private FrameLayout contentView;
     private UniversalRecyclerView listView;
-    private View actionBarBackground;
+    /** Upstream's fading band under the header, made from the fragment's own glass factory. */
+    private View actionBarFadeView;
     private FrameLayout topView;
     private BackupImageView avatarView;
     private AvatarDrawable avatarDrawable;
@@ -132,7 +133,6 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
     private TextView subtitleView;
     private TextView versionView;
     private TLRPC.User avatarUser;
-    private int bottomInset;
 
     private ValueAnimator actionBarVisibleAnimator;
     private boolean actionBarVisible;
@@ -154,12 +154,12 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
                 if (listView != null && listView.adapter != null) {
                     listView.adapter.update(false);
                 }
-                if (actionBarBackground != null) {
-                    actionBarBackground.invalidate();
+                if (actionBarFadeView != null) {
+                    actionBarFadeView.invalidate();
                 }
-                if (actionBar != null) {
-                    actionBar.updateColors();
-                    actionBar.invalidate();
+                if (simpleActionBar != null) {
+                    simpleActionBar.updateColors();
+                    simpleActionBar.invalidate();
                 }
                 if (fragmentView != null) {
                     fragmentView.invalidate();
@@ -178,8 +178,18 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
         super();
     }
 
+    /**
+     * Upstream's simple glass header, as its own settings screen uses it: the bar floats over the
+     * list and fades its title in once the header scrolls under it.
+     */
+    @Override
+    protected boolean useSimpleActionBar() {
+        return true;
+    }
+
     @Override
     protected View createView(Context context) {
+        setHasOwnBackground(true);
         // The page's own strip location: its bar belongs to its screen, and the tab host's glass
         // strip floats over the pages, never under them.
         final boolean hasMainTabs = arguments != null && arguments.getBoolean("hasMainTabs", false);
@@ -193,17 +203,16 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
         applySession(lastSessionState);
 
         // Upstream's settings action bar floats over the list and its title only appears once the
-        // header scrolls under it (SettingsActivity.updateActionBarVisible). The title view is
-        // created inside the titles container only if the container exists first, so it is asked
-        // for before the title is set, exactly as SettingsActivity's createView orders it.
-        actionBar.setAllowOverlayTitle(true);
-        actionBar.setUseContainerForTitles();
-        actionBar.setTitle("设置");
-        actionBar.setAddToContainer(false);
-        actionBar.setOccupyStatusBar(true);
-        actionBar.setBackgroundColor(Color.TRANSPARENT);
-        actionBar.setBackground(null);
-        actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
+        // header scrolls under it (SettingsActivity.updateActionBarVisible). The tab page has no
+        // back: the shell owns the root; a settings page presented on top of another screen keeps
+        // the back arrow.
+        if (hasMainTabs) {
+            simpleActionBar.setBackButtonImage(0);
+        } else {
+            simpleActionBar.setBackButtonImage(org.telegram.messenger.R.drawable.ic_ab_back);
+        }
+        simpleActionBar.setTitle("设置");
+        simpleActionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
             @Override
             public void onItemClick(int id) {
                 if (id == -1) {
@@ -211,19 +220,21 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
                 }
             }
         });
+        simpleActionBar.setBackground(null);
 
         contentView = new FrameLayout(context);
         contentView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
 
-        listView = new UniversalRecyclerView(context, 0, 0, false,
+        listView = new UniversalRecyclerView(this,
                 (items, adapter) -> fillItems(items),
                 (item, view, position, x, y) -> onClick(item),
-                (item, view, position, x, y) -> false,
-                null);
+                (item, view, position, x, y) -> false);
         listView.setSections();
+        listView.setSectionsDrawBackground(true);
+        listView.setCaptureSectionsDecoratorAllowed(true);
         // Upstream's own list starts under the status bar; the 12dp is what its header shadow item
-        // is offset by.
-        listView.setPadding(0, AndroidUtilities.statusBarHeight + AndroidUtilities.dp(12), 0, AndroidUtilities.dp(4));
+        // is offset by. The simple glass sets the same padding again with the real insets.
+        BaseFragmentSimpleGlass.setListViewParams(listView, 0, 0, AndroidUtilities.dp(12), additionNavigationBarHeight);
         listView.setClipToPadding(false);
         listView.setVerticalScrollBarEnabled(false);
         listView.addOnScrollListener(new RecyclerView.OnScrollListener() {
@@ -235,25 +246,11 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
         contentView.addView(listView, LayoutHelper.createFrame(
                 LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.FILL));
 
-        // Upstream paints the bar as a blurred scrim; the shell's list is opaque, so the same rect
-        // is filled with the bar color and the layout's own header shadow goes under it.
-        actionBarBackground = new View(context) {
-            private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-
-            @Override
-            protected void onDraw(@NonNull Canvas canvas) {
-                AndroidUtilities.rectTmp2.set(0, 0, getMeasuredWidth(), actionBar.getHeight());
-                paint.setColor(Theme.getColor(Theme.key_actionBarDefault));
-                canvas.drawRect(AndroidUtilities.rectTmp2, paint);
-                if (getParentLayout() != null) {
-                    getParentLayout().drawHeaderShadow(canvas, actionBar.getHeight());
-                }
-            }
-        };
-        actionBarBackground.setAlpha(0f);
-        contentView.addView(actionBarBackground, LayoutHelper.createFrame(
-                LayoutHelper.MATCH_PARENT, 200, Gravity.TOP));
-        contentView.addView(actionBar, LayoutHelper.createFrame(
+        // Upstream's own fading band under the glass bar (SettingsActivity's actionBarFadeView).
+        actionBarFadeView = new View(context);
+        actionBarFadeView.setBackground(getBaseSimpleGlass().createActionBarFadeDrawable(actionBarFadeView));
+        contentView.addView(actionBarFadeView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 0, Gravity.TOP));
+        contentView.addView(simpleActionBar, LayoutHelper.createFrame(
                 LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.FILL_HORIZONTAL));
 
         buildHeader(context);
@@ -272,12 +269,15 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
         listView.adapter.update(false);
 
         ViewCompat.setOnApplyWindowInsetsListener(contentView, (view, insets) -> {
-            bottomInset = AndroidUtilities.getDefaultWindowInsets(insets, false).bottom;
-            checkUi_listPadding();
+            final Insets systemInsets = AndroidUtilities.getDefaultWindowInsets(insets, false);
+            updateActionBarFadeHeight(systemInsets.top);
+            BaseFragmentSimpleGlass.setListViewParams(listView, systemInsets.top, systemInsets.bottom,
+                    AndroidUtilities.dp(12), additionNavigationBarHeight);
             return WindowInsetsCompat.CONSUMED;
         });
 
         fragmentView = contentView;
+        updateActionBarFadeHeight(mSystemInsets.top);
         updateActionBarVisible(true, false);
         ViewCompat.requestApplyInsets(contentView);
         org.telegram.messenger.NotificationCenter.getGlobalInstance().addObserver(
@@ -287,14 +287,16 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
         return contentView;
     }
 
-    /**
-     * The list runs to the window's bottom and under the glass strip; the bottom padding holds the
-     * last row above the navigation bar and the strip, the way the topic list's own does.
-     */
-    private void checkUi_listPadding() {
-        if (listView != null) {
-            listView.setPadding(0, listView.getPaddingTop(), 0,
-                    AndroidUtilities.dp(4) + bottomInset + additionNavigationBarHeight);
+    /** Upstream's own height for the fade band: the status bar plus the bar row. */
+    private void updateActionBarFadeHeight(int insetTop) {
+        if (actionBarFadeView == null) {
+            return;
+        }
+        final int height = insetTop + ActionBar.getCurrentActionBarHeight();
+        final ViewGroup.LayoutParams params = actionBarFadeView.getLayoutParams();
+        if (params.height != height) {
+            params.height = height;
+            actionBarFadeView.setLayoutParams(params);
         }
     }
 
@@ -758,7 +760,7 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
         if (listView.getChildCount() > 0) {
             final View firstChild = listView.getChildAt(0);
             visible = listView.getChildAdapterPosition(firstChild) > 0
-                    || firstChild.getY() + firstChild.getHeight() < actionBar.getHeight();
+                    || firstChild.getY() + firstChild.getHeight() < simpleActionBar.getHeight();
         } else {
             visible = false;
         }
@@ -771,19 +773,24 @@ public class SettingsFragment extends BaseFragment implements NativeDoMainTabsAc
             actionBarVisibleAnimator = null;
         }
         if (!animated) {
-            actionBar.getTitlesContainer().setAlpha(visible ? 1.0f : 0.0f);
-            actionBarBackground.setAlpha(visible ? 1.0f : 0.0f);
+            setActionBarVisibilityFactor(visible ? 1.0f : 0.0f);
         } else {
             actionBarVisibleAnimator = ValueAnimator.ofFloat(
-                    actionBar.getTitlesContainer().getAlpha(), visible ? 1.0f : 0.0f);
+                    simpleActionBar.getTitlesAlpha(), visible ? 1.0f : 0.0f);
             actionBarVisibleAnimator.addUpdateListener(a -> {
-                final float t = (float) a.getAnimatedValue();
-                actionBar.getTitlesContainer().setAlpha(t);
-                actionBarBackground.setAlpha(t);
+                setActionBarVisibilityFactor((float) a.getAnimatedValue());
             });
             actionBarVisibleAnimator.setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT);
             actionBarVisibleAnimator.setDuration(420);
             actionBarVisibleAnimator.start();
+        }
+    }
+
+    /** Upstream's fade: the title and the band under it move together. */
+    private void setActionBarVisibilityFactor(float factor) {
+        simpleActionBar.setTitlesAlpha(factor);
+        if (actionBarFadeView != null) {
+            actionBarFadeView.setAlpha(factor);
         }
     }
 

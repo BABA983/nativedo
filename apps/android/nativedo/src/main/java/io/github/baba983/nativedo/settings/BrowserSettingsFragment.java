@@ -4,6 +4,7 @@ import android.content.Context;
 import android.view.View;
 
 import org.telegram.ui.Cells.TextCheckCell;
+import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalAdapter;
 import org.telegram.ui.Components.UniversalFragment;
@@ -15,6 +16,12 @@ public class BrowserSettingsFragment extends UniversalFragment {
 
     private static final int ROW_OPEN_IN_APP = 1;
 
+    /** Upstream's own browser-settings screen uses the simple glass header. */
+    @Override
+    protected boolean useSimpleActionBar() {
+        return true;
+    }
+
     @Override
     protected CharSequence getTitle() {
         return "浏览器设置";
@@ -24,7 +31,13 @@ public class BrowserSettingsFragment extends UniversalFragment {
     public View createView(Context context) {
         final View view = super.createView(context);
         listView.setSections();
+        listView.setSectionsDrawBackground(true);
         return view;
+    }
+
+    @Override
+    protected RecyclerListView getListViewForSimpleGlass() {
+        return listView;
     }
 
     @Override
@@ -54,12 +67,5 @@ public class BrowserSettingsFragment extends UniversalFragment {
     @Override
     public boolean isSupportEdgeToEdge() {
         return true;
-    }
-
-    @Override
-    public void onInsets(int left, int top, int right, int bottom) {
-        super.onInsets(left, top, right, bottom);
-        listView.setPadding(0, listView.getPaddingTop(), 0, bottom);
-        listView.setClipToPadding(false);
     }
 }

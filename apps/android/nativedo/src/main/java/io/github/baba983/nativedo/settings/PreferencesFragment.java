@@ -2,13 +2,16 @@ package io.github.baba983.nativedo.settings;
 
 import android.content.Context;
 import android.content.DialogInterface;
+import android.view.Gravity;
 import android.view.View;
+import android.widget.FrameLayout;
 
-import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLog;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.Components.FlickerLoadingView;
+import org.telegram.ui.Components.LayoutHelper;
+import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalRecyclerView;
 
@@ -84,9 +87,9 @@ public class PreferencesFragment extends BaseFragment {
                 if (listView != null && listView.adapter != null) {
                     listView.adapter.update(false);
                 }
-                if (actionBar != null) {
-                    actionBar.updateColors();
-                    actionBar.invalidate();
+                if (simpleActionBar != null) {
+                    simpleActionBar.updateColors();
+                    simpleActionBar.invalidate();
                 }
                 if (fragmentView != null) {
                     fragmentView.invalidate();
@@ -97,18 +100,24 @@ public class PreferencesFragment extends BaseFragment {
         this.mode = mode;
     }
 
+    /** Upstream's simple glass header, the same one its settings sub-pages use. */
+    @Override
+    protected boolean useSimpleActionBar() {
+        return true;
+    }
+
     @Override
     protected View createView(Context context) {
+        setHasOwnBackground(true);
         container = NativeDo.container(getParentActivity());
         if (container != null && container.getSessionStore().snapshot() != null
                 && container.getSessionStore().snapshot().getUsername() != null) {
             username = container.getSessionStore().snapshot().getUsername();
         }
 
-        actionBar.setTitle(mode == MODE_NOTIFICATIONS ? "通知" : "隐私");
-        actionBar.setBackButtonImage(org.telegram.messenger.R.drawable.ic_ab_back);
-        actionBar.setAllowOverlayTitle(true);
-        actionBar.setActionBarMenuOnItemClick(new org.telegram.ui.ActionBar.ActionBar.ActionBarMenuOnItemClick() {
+        simpleActionBar.setTitle(mode == MODE_NOTIFICATIONS ? "通知" : "隐私");
+        simpleActionBar.setBackButtonImage(org.telegram.messenger.R.drawable.ic_ab_back);
+        simpleActionBar.setActionBarMenuOnItemClick(new org.telegram.ui.ActionBar.ActionBar.ActionBarMenuOnItemClick() {
             @Override
             public void onItemClick(int id) {
                 if (id == -1) {
@@ -116,21 +125,31 @@ public class PreferencesFragment extends BaseFragment {
                 }
             }
         });
+        simpleActionBar.setBackground(null);
 
         listView = new UniversalRecyclerView(this,
                 (items, adapter) -> fillItems(items),
                 (item, view, position, x, y) -> onClick(item),
                 (item, view, position, x, y) -> false);
+        listView.setSections();
+        listView.setSectionsDrawBackground(true);
+        listView.setCaptureSectionsDecoratorAllowed(true);
         listView.setVerticalScrollBarEnabled(false);
-        listView.setPadding(0, AndroidUtilities.dp(4), 0, AndroidUtilities.dp(4));
-        listView.setClipToPadding(false);
 
-        fragmentView = listView;
+        FrameLayout contentView = new FrameLayout(context);
+        contentView.addView(listView, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.FILL));
+        fragmentView = contentView;
         load();
 
         org.telegram.messenger.NotificationCenter.getGlobalInstance().addObserver(
                 themeObserver, org.telegram.messenger.NotificationCenter.needSetDayNightTheme);
         return fragmentView;
+    }
+
+    @Override
+    protected RecyclerListView getListViewForSimpleGlass() {
+        return listView;
     }
 
     private void load() {
