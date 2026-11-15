@@ -75,12 +75,14 @@ jobs:
           fi
           sha="${release%%$'\t'*}"
           subject="${release#*$'\t'}"
+          if [ "$sha" = "$old_pin" ]; then up_to_date=true; else up_to_date=false; fi
           {
             echo "old_pin=$old_pin"
             echo "sha=$sha"
             echo "subject=$subject"
+            echo "up_to_date=$up_to_date"
           } >> "$GITHUB_OUTPUT"
-          echo "upstream release: $subject ($sha); current pin: $old_pin"
+          echo "upstream release: $subject ($sha); current pin: $old_pin; up to date: $up_to_date"
 
       - name: Fetch the two ends of the merge
         env:
@@ -96,6 +98,9 @@ jobs:
 
       - name: Test-merge into a throwaway branch
         id: merge
+        # Already at the newest release: nothing to merge, and git-subtree would exit
+        # without creating a merge commit.
+        if: steps.upstream.outputs.up_to_date != 'true'
         env:
           NEW_SHA: ${{ steps.upstream.outputs.sha }}
         run: |
@@ -200,6 +205,7 @@ jobs:
           SUBJECT: ${{ steps.upstream.outputs.subject }}
           NEW_SHA: ${{ steps.upstream.outputs.sha }}
           OLD_PIN: ${{ steps.upstream.outputs.old_pin }}
+          UP_TO_DATE: ${{ steps.upstream.outputs.up_to_date }}
           MERGE: ${{ steps.merge.outputs.result }}
           BRANCH: ${{ steps.merge.outputs.branch }}
           GUARD: ${{ steps.guard.outcome }}
@@ -213,6 +219,7 @@ jobs:
             echo "| Upstream release | ${SUBJECT:-not resolved} |"
             echo "| Upstream commit | \`${NEW_SHA:-unknown}\` |"
             echo "| Current pin | \`${OLD_PIN:-unknown}\` |"
+            echo "| Pin already current | ${UP_TO_DATE:-unknown} |"
             echo "| Test-merge | ${MERGE:-not run}${BRANCH:+ (\`$BRANCH\`)} |"
             echo "| Hook guard | ${GUARD:-not run} |"
             echo "| Compile gate | ${COMPILE:-not run} |"
