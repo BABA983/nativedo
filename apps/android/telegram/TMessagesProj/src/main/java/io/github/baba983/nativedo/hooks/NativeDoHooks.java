@@ -50,6 +50,27 @@ public final class NativeDoHooks {
     }
 
     /**
+     * Whether this process is NativeDo's app rather than a Telegram host.
+     *
+     * <p>The rendering hooks ask this, not "which shell is in front": they run on ImageLoader and
+     * text-layout paths that are not bound to a resumed activity, and the gap a configuration
+     * change opens between the old shell's destroy and the new one's create has no host at all. A
+     * reaction PNG or a rich-text emoji loaded in that gap must still be handled as this client's,
+     * or a Telegram datacenter download is started for a file that has no transport behind it.
+     * Defaults false, which is upstream's behavior; {@code NativeDoApplication} sets it at class
+     * load, next to the two transport gates.</p>
+     */
+    private static volatile boolean nativeDoApp;
+
+    public static boolean nativeDoApp() {
+        return nativeDoApp;
+    }
+
+    public static void setNativeDoApp(boolean value) {
+        nativeDoApp = value;
+    }
+
+    /**
      * The files this client is fetching itself, by the name upstream's own media block looks its
      * file up under. A linux.do clip is fetched by our HTTP client - the site serves some uploads
      * to a signed-in reader only, and it is that client which carries the session - so upstream's
@@ -250,7 +271,7 @@ public final class NativeDoHooks {
     /** Article thumbnails use the same local-only photo sources as their full-size blocks. */
     private static org.telegram.messenger.ImageLocation groupedPhotoThumb(org.telegram.tgnet.tl.TL_iv.PageBlock block) {
         if (!(block.thumbObject instanceof org.telegram.tgnet.TLRPC.Photo)) {
-            return browserHostPresent() ? null : org.telegram.messenger.ImageLocation.getForObject(block.thumb, block.thumbObject);
+            return nativeDoApp() ? null : org.telegram.messenger.ImageLocation.getForObject(block.thumb, block.thumbObject);
         }
         org.telegram.tgnet.TLRPC.Photo photo = (org.telegram.tgnet.TLRPC.Photo) block.thumbObject;
         org.telegram.messenger.ImageLocation location = photoImageLocation(block.thumb, photo);
@@ -372,17 +393,21 @@ public final class NativeDoHooks {
     }
 
     /**
-     * The messages this client built itself ({@link io.github.baba983.nativedo.topic.DiscourseRows}
-     * is their only construction site). Weak keys: a message that no cell or screen holds any more
-     * must not be kept alive by this registry.
+     * The forum posts whose bubbles would otherwise secure the window: the messages
+     * {@link io.github.baba983.nativedo.topic.DiscourseRows#localMessage} built with
+     * {@code noforwards}. Other local messages - the date and unread-divider rows, the search
+     * rows - do not set that flag, so upstream's predicate is already false for them and they
+     * need no entry here. Weak keys: a message no cell or screen holds any more must not be kept
+     * alive by this registry.
      */
     private static final java.util.Set<org.telegram.tgnet.TLRPC.Message> clientMessages =
             java.util.Collections.synchronizedSet(
                     java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>()));
 
     /**
-     * Marks a message as one this client built. Called as the message is constructed, before any
-     * cell can ask about it, so the answer below is never a race with the first bind.
+     * Marks a forum post this client built with {@code noforwards}. Called as the message is
+     * constructed, before any cell can ask about it, so the answer below is never a race with the
+     * first bind.
      */
     public static void markClientMessage(org.telegram.tgnet.TLRPC.Message message) {
         if (message != null) {
@@ -398,7 +423,7 @@ public final class NativeDoHooks {
      * {@code DiscourseRows} sets {@code noforwards} so that no forum post offers to forward one, and
      * a forum post is public text; left alone, upstream would secure the window for every post,
      * which on a device means no screenshot of any topic and a blank thumbnail in the recents list.
-     * A message this client built is therefore never Telegram's secret media.</p>
+     * A forum post this client built (marked above) is therefore never Telegram's secret media.</p>
      *
      * <p>Any other message - one a real Telegram host built - keeps upstream's answer, so upstream's
      * {@code FlagSecureReason} still protects paid media, view-once voice and revealed extended
@@ -872,7 +897,7 @@ public final class NativeDoHooks {
      */
     public static org.telegram.messenger.ImageLocation documentImageLocation(
             org.telegram.tgnet.TLRPC.Document document, org.telegram.messenger.ImageLocation upstream) {
-        if (currentHost() != null && document != null && "image/png".equals(document.mime_type)
+        if (nativeDoApp() && document != null && "image/png".equals(document.mime_type)
                 && document.localPath != null && !document.localPath.isEmpty()) {
             return org.telegram.messenger.ImageLocation.getForPath(document.localPath);
         }
@@ -890,7 +915,7 @@ public final class NativeDoHooks {
      * is kept for anything this client did not fetch, so a real Telegram reaction still animates.</p>
      */
     public static int pathImageType(org.telegram.messenger.ImageLocation imageLocation, int upstream) {
-        if (currentHost() != null && imageLocation != null && imageLocation.path != null
+        if (nativeDoApp() && imageLocation != null && imageLocation.path != null
                 && imageLocation.path.toLowerCase(java.util.Locale.ROOT).endsWith(".png")) {
             return 0;
         }
@@ -918,7 +943,7 @@ public final class NativeDoHooks {
      */
     public static void inlineEmojiSpanForBody(
             org.telegram.ui.Components.AnimatedEmojiSpan span, android.graphics.Paint paint, boolean inButton) {
-        if (span == null || paint == null || inButton || currentHost() == null) {
+        if (span == null || paint == null || inButton || !nativeDoApp()) {
             return;
         }
         final android.graphics.Paint.FontMetricsInt fm = paint.getFontMetricsInt();
@@ -929,7 +954,7 @@ public final class NativeDoHooks {
 
     /** The site's static PNG has no Lottie enter animation to wait for. */
     public static boolean hasReactionEnterAnimation(int account, String emoticon, boolean upstream) {
-        if (currentHost() != null && emoticon != null) {
+        if (nativeDoApp() && emoticon != null) {
             org.telegram.tgnet.TLRPC.TL_availableReaction reaction =
                     org.telegram.messenger.MediaDataController.getInstance(account).getReactionsMap().get(emoticon);
             if (reaction != null && reaction.appear_animation != null

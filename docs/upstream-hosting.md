@@ -17,7 +17,10 @@ maintain a second per-call-site ledger here.
 
 - tgnet initialization and Telegram database opening are gated off. The hooks default
   to upstream's behavior, so an upstream code path with no NativeDo host runs as it
-  does in Telegram; `NativeDoApplication` closes both gates at class load.
+  does in Telegram; `NativeDoApplication` closes both gates and marks the process as
+  this app at class load. Rendering hooks read that process marker, not the shell in
+  front: image and text-layout paths can run in the gap between two shells' create and
+  destroy, when no host is registered.
 - Browser hosting answers the shell questions upstream normally asks
   `LaunchActivity`: current fragment, tabs, overlay and the per-activity sheet stack.
   Each answer comes from the host bound to the calling context's own activity, not a

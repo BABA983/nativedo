@@ -188,6 +188,71 @@ internal class NativeDoHooksTest {
         )
     }
 
+    /**
+     * The rendering hooks ask whether this process is the app, not which shell is in front. They
+     * run on image and text-layout paths that can outlive a resumed shell (the gap between two
+     * shells during a recreate, or after the last one's destroy), so they must still answer with
+     * no host registered at all.
+     */
+    @Test
+    fun renderingHooksAnswerForTheAppWithNoShellRegistered() {
+        harness.bootViews()
+        NativeDoHooks.resetBrowserHosts()
+        NativeDoApplication.disableTelegramServices()
+
+        val document = org.telegram.tgnet.TLRPC.TL_document().apply {
+            mime_type = "image/png"
+            localPath = "/tmp/nativedo-reaction.png"
+        }
+        val pngPath = org.telegram.messenger.ImageLocation.getForPath("/tmp/nativedo-reaction.png")
+        val tgsPath = org.telegram.messenger.ImageLocation.getForPath("/tmp/nativedo-reaction.tgs")
+
+        // A/B on the process marker alone, with no shell registered either way.
+        NativeDoHooks.setNativeDoApp(false)
+        assertEquals(
+            "upstream's Lottie decode type was not kept without the app marker",
+            org.telegram.messenger.FileLoader.IMAGE_TYPE_LOTTIE,
+            NativeDoHooks.pathImageType(pngPath, org.telegram.messenger.FileLoader.IMAGE_TYPE_LOTTIE),
+        )
+        assertEquals(
+            "a PNG document was rewritten without the app marker",
+            tgsPath.path,
+            NativeDoHooks.documentImageLocation(document, tgsPath)?.path,
+        )
+        NativeDoHooks.setNativeDoApp(true)
+        assertEquals(
+            "a client PNG path was decoded as a Lottie",
+            0,
+            NativeDoHooks.pathImageType(pngPath, org.telegram.messenger.FileLoader.IMAGE_TYPE_LOTTIE),
+        )
+        assertEquals(
+            "a client PNG document did not become its local path",
+            "/tmp/nativedo-reaction.png",
+            NativeDoHooks.documentImageLocation(document, tgsPath)?.path,
+        )
+
+        val reaction = org.telegram.tgnet.TLRPC.TL_availableReaction().apply {
+            reaction = "nativedo-canary"
+            appear_animation = document
+        }
+        org.telegram.messenger.MediaDataController.getInstance(0).reactionsMap["nativedo-canary"] = reaction
+        assertFalse(
+            "a client PNG reaction kept a Lottie enter animation",
+            NativeDoHooks.hasReactionEnterAnimation(0, "nativedo-canary", true),
+        )
+
+        val span = org.telegram.ui.Components.AnimatedEmojiSpan(1L, 1.2f, null)
+        val paint = android.graphics.Paint().apply { textSize = 32f }
+        NativeDoHooks.inlineEmojiSpanForBody(span, paint, false)
+        val metrics = paint.fontMetricsInt
+        val lineHeight = kotlin.math.abs(metrics.ascent) + kotlin.math.abs(metrics.descent)
+        assertEquals(
+            "a rich-text emoji was left at upstream's size",
+            Math.round(lineHeight / 1.2f),
+            span.size.toInt(),
+        )
+    }
+
     /** A host with no browser: only its registration identity matters here. */
     private class FakeBrowserHost : NativeDoHooks.BrowserHost {
         override fun getBottomSheetTabs(): BottomSheetTabs? = null
