@@ -127,8 +127,6 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
     private static final int TYPE_DETAIL = 2;
     private static final int TYPE_BIO = 3;
     private static final int TYPE_ACTION = 4;
-    /** A row of the reader's own things, which opens a screen of its own. */
-    private static final int TYPE_LINK = 5;
     /** The tab area - the strip and its pages - the last row of the info list. */
     private static final int TYPE_MEDIA = 6;
     /** The row a session state draws in place of the info rows: the state and the tap that acts on it. */
@@ -150,10 +148,6 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
     /** How close a page's list comes to its end before the next page is asked for. */
     private static final int LOAD_MORE_THRESHOLD = 3;
 
-    /** The profile's own writes: the discourse-follow plugin's route pair (see endpoints.md). */
-    private static final String FOLLOW_LEVEL_MUTED = "mute";
-    private static final String FOLLOW_LEVEL_NORMAL = "normal";
-
     private FrameLayout frameLayout;
     private RecyclerListView listView;
     /**
@@ -169,7 +163,6 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
     private int mediaRow = -1;
     /** The four actions under the header, upstream's own row (ProfileActivity.java:3880-3973). */
     private ProfileActionsView actionsView;
-    private boolean actionsBuilt;
     private ProfileSharedMediaView mediaView;
     /** One page per tab; the first {@link #pageCount()} entries are in use. */
     private final TabPageState[] tabPages = new TabPageState[TAB_COUNT];

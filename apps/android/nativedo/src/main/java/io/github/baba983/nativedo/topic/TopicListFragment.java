@@ -143,7 +143,6 @@ public class TopicListFragment extends BaseFragment
     private int maximumVelocity;
     private boolean startedTracking;
     private boolean maybeStartTracking;
-    private android.view.VelocityTracker swipeVelocityTracker;
     /**
      * DialogsActivity's own page-settle interpolator (730-733): the quintic ease-out the chat
      * list's filter pages come to rest on.

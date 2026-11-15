@@ -2866,16 +2866,6 @@ public class ChatChannelFragment extends BaseFragment {
         return channel != null && !channel.isJoined() && channel.getCanJoin();
     }
 
-    private void onRowTap() {
-        if (stateUi != null) {
-            onStateAction();
-            return;
-        }
-        if (noteText() != null && isNoteTappable()) {
-            join();
-        }
-    }
-
     private void onStateAction() {
         if (stateUi == null) {
             return;

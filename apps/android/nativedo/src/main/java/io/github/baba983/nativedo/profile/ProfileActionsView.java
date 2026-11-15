@@ -16,13 +16,11 @@ import android.graphics.Color;
 import android.graphics.ColorFilter;
 import android.graphics.Matrix;
 import android.graphics.Paint;
-import android.graphics.Path;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
 import android.graphics.RadialGradient;
 import android.graphics.Rect;
 import android.graphics.RectF;
-import android.graphics.RenderNode;
 import android.graphics.Shader;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
@@ -51,7 +49,6 @@ import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.Utilities;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.ChatMessageCell;
-import org.telegram.ui.ProfileActivity;
 import org.telegram.ui.Components.AnimatedFloat;
 import org.telegram.ui.Components.ButtonBounce;
 import org.telegram.ui.Components.CubicBezierInterpolator;
@@ -75,16 +72,9 @@ public class ProfileActionsView extends View {
     public boolean isAnimatingCallAction = false;
     public boolean isOpeningLayout = true;
     public float clipHeight = -1;
-    private final Path clipAvatarPath = new Path();
-    private final Path clipPath = new Path();
-    private ProfileActivity.AvatarImageView avatarView;
-    private float renderNodeScale;
-    private float renderNodeTranslateY;
-    private RenderNode renderNode;
 
     private int activeCount = 0;
     private final int targetHeight;
-    private boolean ignoreRect = false;
     private float currentHeight = 0;
 
     private OnActionClickListener onActionClickListener = null;
@@ -156,24 +146,6 @@ public class ProfileActionsView extends View {
         setBackgroundColor(0);
 
         setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_YES);
-    }
-
-    public void drawingBlur(boolean drawing) {
-        if (ignoreRect != drawing || renderNode != null) {
-            ignoreRect = drawing;
-            renderNode = null;
-            avatarView = null;
-            invalidate();
-        }
-    }
-
-    public void drawingBlur(RenderNode renderNode, ProfileActivity.AvatarImageView avatarView, float scale, float dy) {
-        this.ignoreRect = false;
-        this.renderNode = renderNode;
-        this.avatarView = avatarView;
-        this.renderNodeScale = scale;
-        this.renderNodeTranslateY = dy;
-        invalidate();
     }
 
     public void setOnActionClickListener(OnActionClickListener onActionClickListener) {
@@ -272,10 +244,6 @@ public class ProfileActionsView extends View {
         float left = xpadding;
         float r = getRoundRadius();
 
-        if (renderNode != null) {
-            clipPath.rewind();
-        }
-
         Action newFirstAction = null, newLastAction = null;
         int c = actions.size();
         for (int i = 0; i < c; i++) {
@@ -293,15 +261,6 @@ public class ProfileActionsView extends View {
             }
 
             action.updatePosition();
-            if (renderNode != null) {
-                AndroidUtilities.rectTmp.set(action.rect);
-                AndroidUtilities.rectTmp.inset(
-                    action.rect.width() / 2.0f * (1.0f - action.getScale()),
-                    action.rect.height() / 2.0f * (1.0f - action.getScale())
-                );
-                AndroidUtilities.rectTmp.inset(-1, -1);
-                clipPath.addRoundRect(AndroidUtilities.rectTmp, r, r, Path.Direction.CCW);
-            }
         }
         firstAction = newFirstAction;
         lastAction = newLastAction;
@@ -312,36 +271,32 @@ public class ProfileActionsView extends View {
             return;
         }
 
-        if (!ignoreRect) {
-            for (int i = 0; i < c; i++) {
-                Action action = actions.get(i);
-                if (!action.isDeleted) {
-                    AndroidUtilities.rectTmp.set(action.rect);
-                    AndroidUtilities.rectTmp.inset(
-                        action.rect.width() / 2.0f * (1.0f - action.getScale()),
-                        action.rect.height() / 2.0f * (1.0f - action.getScale())
-                    );
-                    int wasAlpha = paint.getAlpha();
-                    int newAlpha = (int) (action.getAlpha() * alphaFraction1 * wasAlpha);
-                    paint.setAlpha((int) (newAlpha * (radialGradient != null ? 0.1f : 1f)));
+        for (int i = 0; i < c; i++) {
+            Action action = actions.get(i);
+            if (!action.isDeleted) {
+                AndroidUtilities.rectTmp.set(action.rect);
+                AndroidUtilities.rectTmp.inset(
+                    action.rect.width() / 2.0f * (1.0f - action.getScale()),
+                    action.rect.height() / 2.0f * (1.0f - action.getScale())
+                );
+                int wasAlpha = paint.getAlpha();
+                int newAlpha = (int) (action.getAlpha() * alphaFraction1 * wasAlpha);
+                paint.setAlpha((int) (newAlpha * (radialGradient != null ? 0.1f : 1f)));
 
-                    paint.setShadowLayer(0, 0, 0, 0);
+                paint.setShadowLayer(0, 0, 0, 0);
 
-                    canvas.drawRoundRect(AndroidUtilities.rectTmp, r, r, paint);
-                    if (radialGradient != null) {
-                        int wasAlpha2 = shaderPaint.getAlpha();
-                        shaderPaint.setAlpha((int) (action.getAlpha() * alphaFraction1 * wasAlpha2));
-                        matrix.setTranslate(AndroidUtilities.rectTmp.left, AndroidUtilities.rectTmp.top);
-                        radialGradient.setLocalMatrix(matrix);
-                        canvas.drawRoundRect(AndroidUtilities.rectTmp, r, r, shaderPaint);
-                        shaderPaint.setAlpha(wasAlpha2);
-                    }
-                    paint.setAlpha(wasAlpha);
+                canvas.drawRoundRect(AndroidUtilities.rectTmp, r, r, paint);
+                if (radialGradient != null) {
+                    int wasAlpha2 = shaderPaint.getAlpha();
+                    shaderPaint.setAlpha((int) (action.getAlpha() * alphaFraction1 * wasAlpha2));
+                    matrix.setTranslate(AndroidUtilities.rectTmp.left, AndroidUtilities.rectTmp.top);
+                    radialGradient.setLocalMatrix(matrix);
+                    canvas.drawRoundRect(AndroidUtilities.rectTmp, r, r, shaderPaint);
+                    shaderPaint.setAlpha(wasAlpha2);
                 }
+                paint.setAlpha(wasAlpha);
             }
         }
-
-        drawRenderNode(canvas);
 
         float alphaFraction2 = Utilities.clamp01((fraction - 0.4f) / 0.6f);
         if (alphaFraction2 > 0f) {
@@ -349,40 +304,6 @@ public class ProfileActionsView extends View {
                 drawAction(canvas, actions.get(i), fraction, alphaFraction2);
             }
         }
-    }
-
-    private void drawRenderNode(Canvas canvas) {
-        if (renderNode == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || !renderNode.hasDisplayList() || !canvas.isHardwareAccelerated()) {
-            return;
-        }
-
-        canvas.save();
-        if (avatarView != null) {
-            View v = (View) avatarView.getParent();
-            float vl = v.getX();
-            float vt = v.getY() - getTranslationY();
-            float vw = v.getWidth() * v.getScaleX();
-            float vh = v.getHeight() * v.getScaleY();
-
-            clipAvatarPath.rewind();
-            clipAvatarPath.addRoundRect(
-                    vl,
-                    vt,
-                    vl + vw,
-                    vt + vh,
-                    avatarView.getRoundRadiusForExpand() * v.getScaleX(),
-                    avatarView.getRoundRadiusForExpand() * v.getScaleY(),
-                    Path.Direction.CCW
-            );
-            canvas.clipPath(clipAvatarPath);
-        }
-
-        canvas.clipPath(clipPath);
-        canvas.translate(0f, renderNodeTranslateY);
-        canvas.scale(renderNodeScale, renderNodeScale);
-        canvas.drawRenderNode(renderNode);
-
-        canvas.restore();
     }
 
     public void stopLoading(int key) {

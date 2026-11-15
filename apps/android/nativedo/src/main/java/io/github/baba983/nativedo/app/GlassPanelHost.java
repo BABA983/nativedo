@@ -107,7 +107,6 @@ public final class GlassPanelHost {
      * ({@code setExternalCapturePosition}, BaseFragment:1517).
      */
     private final RectF externalCapturePosition = new RectF();
-    private boolean recordingEnabled = true;
 
     /**
      * @param recordedContent the content the panels float over; the source records only the part of
@@ -248,7 +247,7 @@ public final class GlassPanelHost {
      * behind the panels in its post-draw pass, so a panel samples the content and never itself.
      */
     public void record() {
-        if (scrollableNoiseSuppressor == null || !recordingEnabled) {
+        if (scrollableNoiseSuppressor == null) {
             return;
         }
         engine.invalidate();
@@ -302,14 +301,6 @@ public final class GlassPanelHost {
             recordedContent.draw(canvas);
         }
         canvas.restore();
-    }
-
-    /** Stops recording while no panel is visible, and starts again when one returns. */
-    public void setRecordingEnabled(boolean enabled) {
-        recordingEnabled = enabled;
-        if (enabled) {
-            engine.invalidate();
-        }
     }
 
     /**

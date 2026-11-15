@@ -8,7 +8,6 @@ import android.animation.AnimatorSet;
 import android.animation.ValueAnimator;
 import android.graphics.Canvas;
 import android.graphics.Paint;
-import android.graphics.Path;
 import android.text.Layout;
 import android.text.StaticLayout;
 import android.text.TextPaint;
@@ -47,7 +46,6 @@ class NextTopicPullDrawable {
     private Paint cardFillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private TextPaint textPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
     private TextPaint textPaint2 = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-    private Path path = new Path();
     private final android.graphics.RectF card = new android.graphics.RectF();
 
     private StaticLayout chatNameLayout;
