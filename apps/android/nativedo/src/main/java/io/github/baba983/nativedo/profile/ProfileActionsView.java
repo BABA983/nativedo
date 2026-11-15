@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Ported from Telegram 13.2.1 `org/telegram/ui/Components/ProfileActionsView.java`.
+// The site's follow/unfollow, bookmark and share actions are the only additions.
+
 package io.github.baba983.nativedo.profile;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
