@@ -1,11 +1,15 @@
 package io.github.baba983.nativedo.settings;
 
 import android.content.Context;
+import android.view.Gravity;
 import android.view.View;
+import android.widget.FrameLayout;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
+import org.telegram.ui.Components.LayoutHelper;
+import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalRecyclerView;
 
@@ -43,21 +47,27 @@ public class StorageFragment extends BaseFragment {
                     return;
                 }
                 notifyRowsChanged();
-                if (actionBar != null) {
-                    actionBar.updateColors();
-                    actionBar.invalidate();
+                if (simpleActionBar != null) {
+                    simpleActionBar.updateColors();
+                    simpleActionBar.invalidate();
                 }
                 if (fragmentView != null) {
                     fragmentView.invalidate();
                 }
             };
 
+    /** Upstream's simple glass header, the same one its storage screen uses. */
+    @Override
+    protected boolean useSimpleActionBar() {
+        return true;
+    }
+
     @Override
     protected View createView(Context context) {
-        actionBar.setTitle("存储使用");
-        actionBar.setBackButtonImage(org.telegram.messenger.R.drawable.ic_ab_back);
-        actionBar.setAllowOverlayTitle(true);
-        actionBar.setActionBarMenuOnItemClick(new org.telegram.ui.ActionBar.ActionBar.ActionBarMenuOnItemClick() {
+        setHasOwnBackground(true);
+        simpleActionBar.setTitle("存储使用");
+        simpleActionBar.setBackButtonImage(org.telegram.messenger.R.drawable.ic_ab_back);
+        simpleActionBar.setActionBarMenuOnItemClick(new org.telegram.ui.ActionBar.ActionBar.ActionBarMenuOnItemClick() {
             @Override
             public void onItemClick(int id) {
                 if (id == -1) {
@@ -65,20 +75,30 @@ public class StorageFragment extends BaseFragment {
                 }
             }
         });
+        simpleActionBar.setBackground(null);
 
         listView = new UniversalRecyclerView(this,
                 (items, adapter) -> fillItems(items),
                 (item, view, position, x, y) -> onClick(item),
                 (item, view, position, x, y) -> false);
+        listView.setSections();
+        listView.setSectionsDrawBackground(true);
+        listView.setCaptureSectionsDecoratorAllowed(true);
         listView.setVerticalScrollBarEnabled(false);
-        listView.setPadding(0, AndroidUtilities.dp(4), 0, AndroidUtilities.dp(4));
-        listView.setClipToPadding(false);
 
-        fragmentView = listView;
+        FrameLayout contentView = new FrameLayout(context);
+        contentView.addView(listView, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.FILL));
+        fragmentView = contentView;
         loadSizes();
         org.telegram.messenger.NotificationCenter.getGlobalInstance().addObserver(
                 themeObserver, org.telegram.messenger.NotificationCenter.needSetDayNightTheme);
         return fragmentView;
+    }
+
+    @Override
+    protected RecyclerListView getListViewForSimpleGlass() {
+        return listView;
     }
 
     private void loadSizes() {

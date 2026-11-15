@@ -10,6 +10,7 @@ import android.view.View;
 import androidx.core.content.FileProvider;
 
 import org.telegram.ui.ActionBar.AlertDialog;
+import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalAdapter;
 import org.telegram.ui.Components.UniversalFragment;
@@ -40,11 +41,23 @@ public class DiagnosticsFragment extends UniversalFragment {
         return "诊断";
     }
 
+    /** Upstream's simple glass header, the same one its settings sub-pages use. */
+    @Override
+    protected boolean useSimpleActionBar() {
+        return true;
+    }
+
+    @Override
+    protected RecyclerListView getListViewForSimpleGlass() {
+        return listView;
+    }
+
     @Override
     public View createView(Context context) {
         SessionDiagnostics.initialize(context);
         View view = super.createView(context);
         listView.setSections();
+        listView.setSectionsDrawBackground(true);
         return view;
     }
 
@@ -188,12 +201,5 @@ public class DiagnosticsFragment extends UniversalFragment {
     @Override
     public boolean isSupportEdgeToEdge() {
         return true;
-    }
-
-    @Override
-    public void onInsets(int left, int top, int right, int bottom) {
-        super.onInsets(left, top, right, bottom);
-        listView.setPadding(0, listView.getPaddingTop(), 0, bottom);
-        listView.setClipToPadding(false);
     }
 }
