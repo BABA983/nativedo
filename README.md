@@ -28,16 +28,20 @@ Use JDK 17, Android SDK platform/build-tools 36, NDK `27.2.12479018` and CMake
 # Materialize native dependency trees at the subtree's pinned gitlinks.
 ./scripts/telegram-deps.sh
 
-# Build the daily arm64 APK for installation through the phone's package installer.
-# An injected ABI otherwise makes AGP mark the APK as test-only (install error -15).
-./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:assembleDailyDebug -Pandroid.injected.build.abi=arm64-v8a -Pandroid.injected.testOnly=false --quiet
+# Build the daily debug APKs: arm64-v8a, armeabi-v7a, x86_64 and universal.
+./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:assembleDailyDebug --quiet
 ```
+
+APKs land in `apps/android/nativedo/build/outputs/apk/daily/debug/`:
+`nativedo-0.1.0-debug-<sha>-arm64-v8a.apk`, `...-armeabi-v7a.apk`,
+`...-x86_64.apk` and `...-universal.apk`.
 
 Alternatively open `apps/android/telegram` in Android Studio and run `nativedo` (`dailyDebug`).
 No separate Telegram clone or copied prebuilt `.so` is needed for this build.
 The subtree import is the pin; dependency and hook tools resolve it from Git history.
-CI builds this same arm64 APK on pushes to `main` and on manual runs (`workflow_dispatch`),
-and uploads it as the `nativedo-dailyDebug-arm64` artifact.
+CI builds the same APKs on pushes to `main` and on manual runs (`workflow_dispatch`).
+Each APK is uploaded as its own unzipped artifact named after the file, so the
+download is the `.apk` itself.
 
 A variant is a channel (flavor) × a build type:
 
@@ -57,11 +61,15 @@ the trial build should look like what users get, `previewDebug` when it needs th
 signed-in install instead of replacing it:
 
 ```sh
-./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:assemblePreviewDebug -Pandroid.injected.build.abi=arm64-v8a -Pandroid.injected.testOnly=false --quiet
+./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:assemblePreviewDebug --quiet
 ```
 
+APK names are `nativedo-<versionName>-<abi>.apk`, with `universal` for the
+combined package: `nativedo-0.1.0-debug-<sha>-arm64-v8a.apk`,
+`nativedo-0.1.0-preview-debug-<sha>-universal.apk`, `nativedo-0.1.0-universal.apk`.
+
 Non-release APKs carry their commit in `versionName` (`0.1.0-debug-<sha>`,
-`0.1.0-preview-debug-<sha>`). `versionCode` stays `1` on purpose: hand-installed builds must
+`0.1.0-preview-debug-<sha>`), which is also in the file name. `versionCode` stays `1` on purpose: hand-installed builds must
 replace each other in either direction, and a bumped code would make installing an older build
 fail as a downgrade.
 
@@ -113,6 +121,19 @@ the full native build or test suite fits on such an orb. NativeDo tests separate
 limit their heap to 3 GB, run one JVM at a time and restart it between classes to
 release native-graphics allocations. Full tests are slower, but do not keep
 accumulating those allocations in one process.
+
+## Nightly builds
+
+Every successful push to `main` replaces the `nightly` prerelease with that run's
+APKs. It is always a prerelease, never "latest". The stable links are:
+
+- universal: https://github.com/BABA983/nativedo/releases/download/nightly/nativedo-nightly-universal.apk
+- arm64-v8a: https://github.com/BABA983/nativedo/releases/download/nightly/nativedo-nightly-arm64-v8a.apk
+
+Version-specific assets use the
+`https://github.com/BABA983/nativedo/releases/download/nightly/<name>` pattern
+with `nativedo-<versionName>-<abi>.apk` names. The release notes carry the
+commit, its subject and the run link.
 
 ## Checks
 
