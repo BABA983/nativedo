@@ -7,6 +7,8 @@ import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Canvas;
+import android.graphics.PointF;
+import android.graphics.RectF;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.os.Bundle;
@@ -54,10 +56,13 @@ import org.telegram.ui.Components.EmptyTextProgressView;
 import org.telegram.ui.Components.FlickerLoadingView;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.LinkSpanDrawable;
+import org.telegram.ui.Components.ProfileButtonsGlass;
 import org.telegram.ui.Components.ProfileGooeyView;
 import org.telegram.ui.Components.RecyclerListView;
+import org.telegram.ui.Components.chat.ViewPositionWatcher;
 import org.telegram.ui.DialogsActivity;
 import org.telegram.ui.ProfileActivity;
+import org.telegram.utils.glass.BaseFragmentSimpleGlass;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
 import static org.telegram.messenger.AndroidUtilities.dpf2;
@@ -163,6 +168,8 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
     private int mediaRow = -1;
     /** The four actions under the header, upstream's own row (ProfileActivity.java:3880-3973). */
     private ProfileActionsView actionsView;
+    /** The action row's glass, from the fragment's own simple-glass source. */
+    private ProfileButtonsGlass buttonsGlass;
     private ProfileSharedMediaView mediaView;
     /** One page per tab; the first {@link #pageCount()} entries are in use. */
     private final TabPageState[] tabPages = new TabPageState[TAB_COUNT];
@@ -479,6 +486,12 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         actionsView = new ProfileActionsView(context, AndroidUtilities.dp(74));
         actionsView.setOnActionClickListener(this::onActionClicked);
         actionsView.setVisibility(View.GONE);
+
+        // Upstream's profile buttons on glass (ProfileActivity.setupHeaderGlass): the fragment's
+        // simple-glass source supplies the fill, the action row draws through its factory.
+        buttonsGlass = new ProfileButtonsGlass(glassEngine, getBaseSimpleGlass());
+        buttonsGlass.setButtonColor(getThemedColor(Theme.key_windowBackgroundWhite), false);
+        actionsView.setGlassFactory(buttonsGlass.actionsFactory);
 
         extraHeight = getHeaderExtraHeight();
 
@@ -1597,7 +1610,13 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
                             state.listView.smoothScrollToPosition(0);
                         }
                     }
-                });
+                }, getBaseSimpleGlass().factory, glassEngine::invalidate);
+        // The strip's glass samples the pages under it, so the fragment's own simple-glass source
+        // records the pager in the media view's coordinate space (SharedMediaLayout's drawListForBlur).
+        final BaseFragmentSimpleGlass glass = getBaseSimpleGlass();
+        glass.setViews(frameLayout, null, resourceProvider);
+        glass.setClipView(mediaView.getPager());
+        glass.setCapture(this::captureMedia);
         mediaView.buildTabs();
         // The row the info list holds; settleHeaderInList gives it the list's visible height. The
         // rows are rebuilt here so the row is appended by the one place that knows the order.
@@ -1607,6 +1626,24 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
             buildRows(profile);
         }
         pageState(TAB_TOPICS).loadFirstIfNeeded();
+    }
+
+    /** The media pages under the strip, in the fragment's own glass coordinate space. */
+    private final PointF mediaCapturePoint = new PointF();
+
+    private void captureMedia(Canvas canvas, RectF position) {
+        if (mediaView == null) {
+            return;
+        }
+        final View pager = mediaView.getPager();
+        if (!ViewPositionWatcher.computeCoordinatesInParent(pager, frameLayout, mediaCapturePoint)) {
+            return;
+        }
+        canvas.save();
+        canvas.clipRect(position);
+        canvas.translate(mediaCapturePoint.x, mediaCapturePoint.y);
+        pager.draw(canvas);
+        canvas.restore();
     }
 
     private TabPageState pageState(int tab) {
@@ -3329,7 +3366,11 @@ public class ProfileFragment extends BaseFragment implements NativeDoMainTabsAct
         @Override
         protected void onDraw(Canvas canvas) {
             // Upstream also updates action colours while painting its header, including theme animation.
-            actionsView.setActionsColor(getThemedColor(Theme.key_windowBackgroundWhite), false);
+            final int actionColor = getThemedColor(Theme.key_windowBackgroundWhite);
+            actionsView.setActionsColor(actionColor, false);
+            if (buttonsGlass != null) {
+                buttonsGlass.setButtonColor(actionColor, false);
+            }
             final int height = ActionBar.getCurrentActionBarHeight() + (actionBar.getOccupyStatusBar() ? AndroidUtilities.statusBarHeight : 0);
             final float v = height + extraHeight;
             final int y1 = (int) v;
