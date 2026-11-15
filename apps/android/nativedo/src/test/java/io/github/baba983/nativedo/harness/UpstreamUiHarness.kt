@@ -270,11 +270,12 @@ internal class UpstreamUiHarness {
             // 13.2.1 moved ImageLoader's queues to DispatchQueue2, which exposes the handler as
             // getHandlerSync() and only once its thread is up; the older DispatchQueue answered
             // getHandler() directly.
-            val handler = runCatching {
-                (queue.javaClass.getMethod("getHandler").invoke(queue) as? Handler) ?: run {
-                    val ready = queue.javaClass.getMethod("isReady").invoke(queue) as? Boolean ?: false
-                    if (ready) queue.javaClass.getMethod("getHandlerSync").invoke(queue) as? Handler else null
-                }
+            val direct = runCatching {
+                queue.javaClass.getMethod("getHandler").invoke(queue) as? Handler
+            }.getOrNull()
+            val handler = direct ?: runCatching {
+                val ready = queue.javaClass.getMethod("isReady").invoke(queue) as? Boolean ?: false
+                if (ready) queue.javaClass.getMethod("getHandlerSync").invoke(queue) as? Handler else null
             }.getOrNull() ?: continue
             val looper = handler.looper ?: continue
             val shadow = shadowOf(looper) as ShadowPausedLooper
@@ -304,6 +305,7 @@ internal class UpstreamUiHarness {
     }
 
     private var budgetReported = false
+
 
     /**
      * Waits for work that finishes off the main thread (the API client runs on OkHttp's pool)

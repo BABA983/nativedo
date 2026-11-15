@@ -634,7 +634,7 @@ internal class TopicImageTest {
         val preview = "uploads/preview-${System.nanoTime()}.png"
         val original = "uploads/original-${System.nanoTime()}.png"
         site.serveImage(preview, solidPng(320, 180, Color.MAGENTA))
-        site.serveThrottled(original, solidPng(1600, 900, Color.CYAN), "image/png", bytesPerPeriod = 1024, periodMillis = 200)
+        site.serveThrottled(original, solidPng(1600, 900, Color.CYAN), "image/png", bytesPerPeriod = 512, periodMillis = 500)
         val html = """
             <p>看这张图：</p>
             <p><div class="lightbox-wrapper"><a class="lightbox" href="${site.url(original)}">
@@ -790,7 +790,7 @@ internal class TopicImageTest {
         site.serveImage(paths[2], solidPng(400, 300, colors[2]))
         // The picture the reader taps is cold (still arriving) when the viewer opens.
         site.serveThrottled(paths[1], solidPng(400, 300, colors[1]), "image/png",
-            bytesPerPeriod = 1024, periodMillis = 200)
+            bytesPerPeriod = 256, periodMillis = 500)
         site.serveCooked(TOPIC_ID, picturePost(paths))
         harness.bootApp()
         harness.await("home") { rowCount() == 2 }
@@ -805,10 +805,7 @@ internal class TopicImageTest {
             field(viewer, "currentIndex"))
         assertEquals("the strip lists exactly this post's three pictures", 3, strip().count)
         assertEquals("the strip marks the picture the viewer is on", 1, strip().index)
-        // The tapped picture is served in 256-byte slices every 500 ms, so the wait is bounded by
-        // that transfer's real time rather than by a frame: give it the same budget the other
-        // throttled-original test uses.
-        harness.await("all three cells to decode their own colours", iterations = 18_000) {
+        harness.await("all three cells to decode their own colours") {
             harness.idleUpstreamQueues()
             stripCellColor(0) == Color.RED &&
                 stripCellColor(1) == Color.GREEN &&
@@ -817,7 +814,7 @@ internal class TopicImageTest {
         assertEquals("the first cell shows the first picture", Color.RED, stripCellColor(0))
         assertEquals("the second cell shows the tapped picture", Color.GREEN, stripCellColor(1))
         assertEquals("the third cell shows the third picture", Color.BLUE, stripCellColor(2))
-        harness.await("the viewer to draw the tapped picture's original", iterations = 18_000) {
+        harness.await("the viewer to draw the tapped picture's original") {
             (field(PhotoViewer.getInstance(), "centerImage") as ImageReceiver).bitmap
                 ?.let { Color.green(it.getPixel(it.width / 2, it.height / 2)) > 200 } == true
         }
