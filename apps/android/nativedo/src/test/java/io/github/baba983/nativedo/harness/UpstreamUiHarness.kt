@@ -159,17 +159,21 @@ internal class UpstreamUiHarness {
         val file = repoFile(
             "apps/android/nativedo/build/test-results/thread-dump-${android.os.Process.myPid()}.txt",
         )
+        val dump = {
+            runCatching {
+                val text = Thread.getAllStackTraces().entries.joinToString("\n\n") { (thread, stack) ->
+                    "\"${thread.name}\" id=${thread.id} state=${thread.state}\n" +
+                        stack.joinToString("\n") { "    at $it" }
+                }
+                file.parentFile?.mkdirs()
+                file.writeText(text)
+            }
+        }
+        Runtime.getRuntime().addShutdownHook(Thread({ dump() }, "nativedo-thread-dump-final"))
         Thread {
             while (true) {
-                runCatching {
-                    val dump = Thread.getAllStackTraces().entries.joinToString("\n\n") { (thread, stack) ->
-                        "\"${thread.name}\" id=${thread.id} state=${thread.state}\n" +
-                            stack.joinToString("\n") { "    at $it" }
-                    }
-                    file.parentFile?.mkdirs()
-                    file.writeText(dump)
-                }
-                java.util.concurrent.locks.LockSupport.parkNanos(200_000_000L)
+                dump()
+                java.util.concurrent.locks.LockSupport.parkNanos(50_000_000L)
             }
         }.apply {
             isDaemon = true
@@ -318,26 +322,73 @@ internal class UpstreamUiHarness {
      */
     fun idleUpstreamQueues(tasks: Int = 400) {
         for (queue in upstreamQueues()) {
-            // Not every worker is looper-backed: a DispatchQueuePriority runs on a plain thread
-            // pool, which Robolectric does not pause and which therefore needs no draining.
-            // 13.2.1 moved ImageLoader's queues to DispatchQueue2, which exposes the handler as
-            // getHandlerSync() and only once its thread is up; the older DispatchQueue answered
-            // getHandler() directly.
-            val direct = runCatching {
-                queue.javaClass.getMethod("getHandler").invoke(queue) as? Handler
-            }.getOrNull()
-            val handler = direct ?: runCatching {
-                val ready = queue.javaClass.getMethod("isReady").invoke(queue) as? Boolean ?: false
-                if (ready) queue.javaClass.getMethod("getHandlerSync").invoke(queue) as? Handler else null
-            }.getOrNull() ?: continue
-            val looper = handler.looper ?: continue
-            val shadow = shadowOf(looper) as ShadowPausedLooper
-            shadow.idleFor(50, java.util.concurrent.TimeUnit.MILLISECONDS)
-            var ran = 0
-            while (ran < tasks && !shadow.isIdle()) {
-                shadow.runOneTask()
-                ran++
-            }
+            idleQueue(queue, tasks)
+        }
+    }
+
+    private fun idleQueue(queue: Any, tasks: Int) {
+        // Not every worker is looper-backed: a DispatchQueuePriority runs on a plain thread
+        // pool, which Robolectric does not pause and which therefore needs no draining here.
+        // 13.2.1 moved ImageLoader's queues to DispatchQueue2, which exposes the handler as
+        // getHandlerSync() and only once its thread is up; the older DispatchQueue answered
+        // getHandler() directly.
+        val direct = runCatching {
+            queue.javaClass.getMethod("getHandler").invoke(queue) as? Handler
+        }.getOrNull()
+        val handler = direct ?: runCatching {
+            val ready = queue.javaClass.getMethod("isReady").invoke(queue) as? Boolean ?: false
+            if (ready) queue.javaClass.getMethod("getHandlerSync").invoke(queue) as? Handler else null
+        }.getOrNull() ?: return
+        val looper = handler.looper ?: return
+        val shadow = shadowOf(looper) as ShadowPausedLooper
+        shadow.idleFor(50, java.util.concurrent.TimeUnit.MILLISECONDS)
+        var ran = 0
+        while (ran < tasks && !shadow.isIdle()) {
+            shadow.runOneTask()
+            ran++
+        }
+    }
+
+    /**
+     * Gives every upstream worker its turn while this test's sandbox is still alive.
+     *
+     * <p>Robolectric pauses loopers, so a task left in one of them is harmless until the runner
+     * resets the sandbox; then it can run with a closed class loader. The plain pools are worse:
+     * `ImageLoader.cacheOutQueue` (a `DispatchQueuePriority`) and `AnimatedFileDrawable.executor`
+     * are ordinary threads that keep running while the test finishes. A native class lookup from
+     * either after teardown aborts the JVM (`Class not found: java/nio/ShortBuffer`, exit 134).
+     * Run the queued work and wait out the active work before the test returns.</p>
+     */
+    fun quiesceUpstreamThreads() {
+        idleUpstreamQueues()
+        awaitPoolIdle(ImageLoader.getInstance(), "cacheOutQueue")
+        awaitAnimationExecutorIdle()
+    }
+
+    private fun awaitPoolIdle(owner: Any, field: String) {
+        val queue = runCatching {
+            owner.javaClass.getDeclaredField(field).apply { isAccessible = true }.get(owner)
+        }.getOrNull() ?: return
+        val pool = runCatching {
+            queue.javaClass.getDeclaredField("threadPoolExecutor").apply { isAccessible = true }
+                .get(queue) as? java.util.concurrent.ThreadPoolExecutor
+        }.getOrNull() ?: return
+        val deadline = System.nanoTime() + 2_000_000_000L
+        while ((pool.activeCount > 0 || !pool.queue.isEmpty()) && System.nanoTime() < deadline) {
+            java.util.concurrent.locks.LockSupport.parkNanos(1_000_000L)
+        }
+    }
+
+    private fun awaitAnimationExecutorIdle() {
+        val executor = runCatching {
+            org.telegram.ui.Components.AnimatedFileDrawable::class.java
+                .getDeclaredField("executor").apply { isAccessible = true }
+                .get(null) as? java.util.concurrent.ScheduledThreadPoolExecutor
+        }.getOrNull() ?: return
+        executor.queue.clear()
+        val deadline = System.nanoTime() + 2_000_000_000L
+        while (executor.activeCount > 0 && System.nanoTime() < deadline) {
+            java.util.concurrent.locks.LockSupport.parkNanos(1_000_000L)
         }
     }
 
@@ -596,6 +647,9 @@ internal class UpstreamUiHarness {
      * reaching SQLite.</p>
      */
     fun assertNoTelegramSideEffects() {
+        // The last harness call of a test: let upstream's real workers finish before Robolectric
+        // closes the sandbox, so none of them reaches native code with a dead class loader.
+        quiesceUpstreamThreads()
         println(
             "harness: request_attempts=${ShadowConnectionsManager.REQUEST_ATTEMPTS} " +
                 "native_sendRequest=${ShadowConnectionsManager.SEND_REQUEST_CALLS} " +
