@@ -426,19 +426,38 @@ jobs:
           echo "pin=$pin" >> "$GITHUB_OUTPUT"
           echo "subtree pin: $pin"
 
+      # Compute the config hash once, before `scripts/telegram-deps.sh` fills
+      # the pinned dependency trees. `hashFiles` cannot be used for this: the
+      # save step runs after the build, and a glob over the materialized trees
+      # (or over generated build files) would produce a different key, so the
+      # cache would never hit. The subtree pin covers every native source and
+      # gitlink; this hash covers the configuration files that live outside it.
+      - name: Hash native build inputs
+        id: native-inputs
+        run: |
+          set -euo pipefail
+          files=(
+            apps/android/telegram/TMessagesProj/jni/CMakeLists.txt
+            apps/android/telegram/TMessagesProj/jni/Application.mk
+            apps/android/telegram/TMessagesProj/build.gradle
+            apps/android/telegram/build.gradle
+            apps/android/telegram/gradle.properties
+            apps/android/telegram/buildSrc/build.gradle.kts
+            apps/android/nativedo/build.gradle
+          )
+          hash="$(sha256sum "${files[@]}" | sha256sum | cut -d' ' -f1)"
+          echo "hash=$hash" >> "$GITHUB_OUTPUT"
+          echo "native input hash: $hash"
+
       - uses: actions/cache/restore@v4
         id: native-cache
         with:
           path: |
             apps/android/telegram/TMessagesProj/.cxx
             apps/android/telegram/TMessagesProj/build/intermediates/cxx
-          # Do not hash `jni/**/CMakeLists.txt`: `scripts/telegram-deps.sh` fills
-          # those pinned dependency trees after this restore step, so the glob
-          # would produce a different key at save time and the cache would never
-          # hit. The subtree pin already covers every native source and gitlink.
-          key: nativedo-native-v3-${{ runner.os }}-${{ steps.pin.outputs.pin }}-arm64-v8a-armeabi-v7a-x86_64-${{ hashFiles('apps/android/telegram/TMessagesProj/jni/CMakeLists.txt', 'apps/android/telegram/TMessagesProj/jni/Application.mk', 'apps/android/telegram/TMessagesProj/build.gradle', 'apps/android/telegram/build.gradle', 'apps/android/telegram/gradle.properties', 'apps/android/telegram/buildSrc/**/*.gradle*', 'apps/android/nativedo/build.gradle') }}
+          key: nativedo-native-v4-${{ runner.os }}-${{ steps.pin.outputs.pin }}-arm64-v8a-armeabi-v7a-x86_64-${{ steps.native-inputs.outputs.hash }}
           restore-keys: |
-            nativedo-native-v3-${{ runner.os }}-${{ steps.pin.outputs.pin }}-arm64-v8a-armeabi-v7a-x86_64-
+            nativedo-native-v4-${{ runner.os }}-${{ steps.pin.outputs.pin }}-arm64-v8a-armeabi-v7a-x86_64-
 
       - name: Materialize pinned Telegram dependency trees
         run: scripts/telegram-deps.sh
@@ -586,4 +605,4 @@ jobs:
           path: |
             apps/android/telegram/TMessagesProj/.cxx
             apps/android/telegram/TMessagesProj/build/intermediates/cxx
-          key: nativedo-native-v3-${{ runner.os }}-${{ steps.pin.outputs.pin }}-arm64-v8a-armeabi-v7a-x86_64-${{ hashFiles('apps/android/telegram/TMessagesProj/jni/CMakeLists.txt', 'apps/android/telegram/TMessagesProj/jni/Application.mk', 'apps/android/telegram/TMessagesProj/build.gradle', 'apps/android/telegram/build.gradle', 'apps/android/telegram/gradle.properties', 'apps/android/telegram/buildSrc/**/*.gradle*', 'apps/android/nativedo/build.gradle') }}
+          key: nativedo-native-v4-${{ runner.os }}-${{ steps.pin.outputs.pin }}-arm64-v8a-armeabi-v7a-x86_64-${{ steps.native-inputs.outputs.hash }}
