@@ -146,6 +146,36 @@ internal class UpstreamUiHarness {
         AndroidUtilities.displayMetrics = metrics
         AndroidUtilities.displaySize.set(metrics.widthPixels, metrics.heightPixels)
         warmUpNativeGraphics()
+        if (System.getenv("CI") == "true") startThreadDumper()
+    }
+
+    /**
+     * A native abort leaves no Java stack in Gradle's output, and the JVM's crash handler can sit
+     * for minutes before the process dies. Keep a recent dump of every thread beside the test
+     * results so the thread that reached native code is still named when the worker disappears.
+     */
+    private fun startThreadDumper() {
+        if (!threadDumperStarted.compareAndSet(false, true)) return
+        val file = repoFile(
+            "apps/android/nativedo/build/test-results/thread-dump-${android.os.Process.myPid()}.txt",
+        )
+        Thread {
+            while (true) {
+                runCatching {
+                    val dump = Thread.getAllStackTraces().entries.joinToString("\n\n") { (thread, stack) ->
+                        "\"${thread.name}\" id=${thread.id} state=${thread.state}\n" +
+                            stack.joinToString("\n") { "    at $it" }
+                    }
+                    file.parentFile?.mkdirs()
+                    file.writeText(dump)
+                }
+                java.util.concurrent.locks.LockSupport.parkNanos(200_000_000L)
+            }
+        }.apply {
+            isDaemon = true
+            name = "nativedo-thread-dump"
+            start()
+        }
     }
 
     /**
@@ -589,6 +619,10 @@ internal class UpstreamUiHarness {
             dir = dir.parentFile
         }
         error("cannot locate the repo root from ${System.getProperty("user.dir")}")
+    }
+
+    private companion object {
+        private val threadDumperStarted = java.util.concurrent.atomic.AtomicBoolean()
     }
 }
 
