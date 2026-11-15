@@ -846,20 +846,22 @@ public final class NativeDoHooks {
      * <p>Upstream reposts the runnable with no delay and relies on the platform's traversal barrier
      * to hold it to one step per frame: the invalidate inside each step schedules a traversal,
      * whose sync barrier parks the repost until the next frame. Where that barrier does not apply,
-     * the repost chain never yields to a frame: the whole 320 ms animation drains in one pass - the
-     * selected capsule jumps to its destination instead of travelling - and in the paused-looper
-     * host tests the chain keeps the main queue busy, so every drain burns its task budget (the tab
-     * strip test takes about 1.8x as long without a frame signal). The repost therefore uses the
-     * platform's own frame callback, {@code View.postOnAnimation}: one step per frame on a device,
-     * exactly the signal the traversal barrier gives upstream, and a queued step that waits for
-     * attach when the strip is not attached yet. Drawing and interpolation stay upstream's own; a
-     * real Telegram host (no shell bound here) keeps upstream's own scheduling.</p>
+     * the repost chain never yields to a frame and the whole 320 ms animation drains in one pass -
+     * the selected capsule jumps to its destination instead of travelling. That is a real
+     * contract, not a cosmetic one: {@code HomeCategoryPagerTest} taps a tab, samples inside the
+     * animation, and fails with "the capsule must not jump to its destination before a frame can
+     * be painted". A frame-clock repost ({@code View.postOnAnimation}) does not fix it in the
+     * paused-looper harness either: the shadow frame clock advances with the drain, so every step
+     * still runs inside one idle window. The 16 ms handler delay is what keeps one step per
+     * simulated frame, and it matches the clamp upstream applies to its own delta (17 ms), so the
+     * animation's duration and interpolation are unchanged. A real Telegram host (no shell bound
+     * here) keeps upstream's own scheduling.</p>
      */
-    public static void repostIndicatorAnimation(android.view.View view, Runnable runnable) {
-        if (view == null || hostFor(view.getContext()) == null) {
+    public static void repostIndicatorAnimation(android.content.Context context, Runnable runnable) {
+        if (hostFor(context) == null) {
             org.telegram.messenger.AndroidUtilities.runOnUIThread(runnable);
         } else {
-            view.postOnAnimation(runnable);
+            org.telegram.messenger.AndroidUtilities.runOnUIThread(runnable, 16);
         }
     }
 
