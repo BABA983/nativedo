@@ -312,16 +312,46 @@ jobs:
         # retry once so a transient miss does not fail the shard. A runner
         # shutdown or a test failure is not retried into a false green.
         run: |
+          # Keep every failed attempt's evidence, not only the last one: a native
+          # abort often kills only the first attempt, and the retry then passes.
+          # `test-results` carries the JVM's `-XX:ErrorFile` hs_err log and
+          # Gradle's binary test output (the test JVM's stderr, where Robolectric's
+          # native logcat lines land).
+          evidence_root=apps/android/nativedo/build/ci-evidence
           for attempt in 1 2; do
-            ./apps/android/telegram/gradlew -p apps/android/telegram \
+            evidence="$evidence_root/attempt-$attempt"
+            mkdir -p "$evidence"
+            set -o pipefail
+            # Tee the console as well: the test JVM's stderr (Robolectric's native
+            # logcat lines and the abort reason) never reaches test-results when the
+            # worker dies, and that is exactly the output a crash needs.
+            if ./apps/android/telegram/gradlew -p apps/android/telegram \
               :nativedo:testDailyDebugUnitTest \
               -Pnativedo.test.maxHeapSize=3g \
-              ${{ steps.shard.outputs.args }} --console=plain && exit 0
+              ${{ steps.shard.outputs.args }} --console=plain 2>&1 | tee "$evidence/gradle.log"; then
+              rm -rf "$evidence"
+              exit 0
+            fi
             status=$?
             echo "attempt $attempt failed (exit $status)"
+            cp -a apps/android/nativedo/build/test-results "$evidence/" 2>/dev/null || true
+            cp -a apps/android/nativedo/build/reports/tests "$evidence/reports-tests" 2>/dev/null || true
+            cp -a apps/android/nativedo/build/outputs/logs "$evidence/outputs-logs" 2>/dev/null || true
             if [ "$attempt" = 2 ]; then exit $status; fi
             sleep 15
           done
+
+      # A failed attempt is worth an artifact even when the retry turns the job
+      # green: that is exactly how the 13.2.1 native abort hid for several runs.
+      # `if-no-files-found: ignore` keeps a clean run artifact-free.
+      - name: Upload failed-attempt evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nativedo-attempt-evidence-${{ matrix.shard }}
+          if-no-files-found: ignore
+          retention-days: 7
+          path: apps/android/nativedo/build/ci-evidence/**
 
       # On failure keep what a human needs to diagnose it without re-running the
       # job: the JUnit XML, the test report, and Gradle logs. Retained for a
